@@ -2,7 +2,7 @@ import { inflateSync } from "node:zlib";
 
 import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 
-import { METADATA_KEYS, STANDARD_DESCENTS, STANDARD_FONT_ALIASES } from "./constants.js";
+import { DEFAULT_FONT_ASCENT, DEFAULT_FONT_DESCENT, FONT_UNITS_PER_EM, METADATA_KEYS, STANDARD_FONT_METRICS } from "./constants.js";
 import type {
   BBox,
   ColorOp,
@@ -1337,8 +1337,8 @@ export function parseFontRecords(objects: Map<number, string>): FontRecord[] {
       baseFont,
       firstChar,
       widths,
-      ascent: ascent == null ? undefined : Number(ascent) / 1000,
-      descent: descent == null ? undefined : -Math.abs(Number(descent) / 1000)
+      ascent: ascent == null ? undefined : Number(ascent) / FONT_UNITS_PER_EM,
+      descent: descent == null ? undefined : -Math.abs(Number(descent) / FONT_UNITS_PER_EM)
     });
   }
   return fonts;
@@ -1445,6 +1445,93 @@ function readFirstPdfString(text: string): string | null {
   return hex == null ? null : decodePdfHexValue(hex);
 }
 
+function stripSubsetPrefix(name: string): string {
+  return name.replace(/^[A-Z]{6}\+/, "");
+}
+
+function standardFontMetrics(name: string | undefined): typeof STANDARD_FONT_METRICS[string] | undefined {
+  if (!name) return undefined;
+  return STANDARD_FONT_METRICS[name];
+}
+
+function canonicalFontName(name: string | undefined): string | undefined {
+  if (!name) return undefined;
+  const stripped = stripSubsetPrefix(name);
+  return standardFontMetrics(stripped)?.fontName ?? stripped;
+}
+
+function fontFamilyName(name: string | undefined): string | undefined {
+  return canonicalFontName(name)?.replace(/(?:[-,](?:Bold|Italic|Oblique|Roman))*$/i, "");
+}
+
+function fontBBoxMetric(fontObj: any, index: 1 | 3): number | undefined {
+  return Array.isArray(fontObj?.bbox) && typeof fontObj.bbox[index] === "number" ? Number(fontObj.bbox[index]) / FONT_UNITS_PER_EM : undefined;
+}
+
+function widthComparison(record: FontRecord, fontObj: any): { averageDelta: number; matchedWidths: number } | null {
+  if (!fontObj?.widths) return null;
+  let totalDelta = 0;
+  let matchedWidths = 0;
+  for (let code = 0; code < 256; code += 1) {
+    const raw = record.widths[code - record.firstChar];
+    const actual = fontObj.widths[code];
+    if (raw != null && actual != null && (raw !== 0 || actual !== 0)) {
+      totalDelta += Math.abs(raw - actual);
+      matchedWidths += 1;
+    }
+  }
+  return matchedWidths ? { averageDelta: totalDelta / matchedWidths, matchedWidths } : null;
+}
+
+function chooseFontRecord(fontRecords: FontRecord[], used: Set<number>, fontObjName: string | undefined, fontObj: any): FontRecord | undefined {
+  const matchingName = (record: FontRecord): boolean => {
+    const recordStandard = standardFontMetrics(record.baseFont);
+    const objectStandard = standardFontMetrics(fontObjName);
+    return record.baseFont === fontObjName || (recordStandard != null && objectStandard != null && recordStandard.fontName === objectStandard.fontName);
+  };
+  const exact =
+    fontRecords.find((record) => matchingName(record) && (record.ascent != null || record.descent != null)) ??
+    fontRecords.find(matchingName);
+  if (exact) return exact;
+
+  const available = fontRecords.filter((record) => !used.has(record.objectNumber));
+  const scored = available.flatMap((record, index) => {
+    const widths = widthComparison(record, fontObj);
+    const recordFamily = fontFamilyName(record.baseFont);
+    const objectFamily = fontFamilyName(fontObjName);
+    const familyRank = !recordFamily || !objectFamily ? 1 : recordFamily === objectFamily ? 0 : 2;
+    return widths ? [{ record, familyRank, averageDelta: widths.averageDelta, matchedWidths: widths.matchedWidths, index }] : [];
+  });
+  scored.sort((a, b) => a.familyRank - b.familyRank || a.averageDelta - b.averageDelta || b.matchedWidths - a.matchedWidths || a.index - b.index);
+  return scored[0]?.record;
+}
+
+function resolveFontName(best: FontRecord | undefined, fontObjName: string | undefined, fallbackId: string): string {
+  const standard = standardFontMetrics(best?.baseFont) ?? standardFontMetrics(fontObjName);
+  return pythonBytesName(standard?.fontName ?? fontObjName ?? best?.baseFont ?? fallbackId);
+}
+
+function resolveFontMetrics(best: FontRecord | undefined, fontObj: any, style: Record<string, any>, fontname: string): Pick<MappedFont, "ascent" | "descent"> {
+  const standard = standardFontMetrics(best?.baseFont) ?? standardFontMetrics(fontname);
+  const ascent = firstFinite(
+    DEFAULT_FONT_ASCENT,
+    standard?.ascent,
+    best?.ascent,
+    fontObj?.ascent,
+    style.ascent,
+    fontBBoxMetric(fontObj, 3)
+  );
+  const descent = firstFinite(
+    DEFAULT_FONT_DESCENT,
+    standard?.descent,
+    best?.descent,
+    fontObj?.descent,
+    style.descent,
+    fontBBoxMetric(fontObj, 1)
+  );
+  return { ascent: cleanNumber(ascent), descent: cleanNumber(descent > 0 ? -descent : descent) };
+}
+
 function mapFonts(pdfPage: any, styles: Record<string, any>, fontRecords: FontRecord[], fontIds: string[]): Map<string, MappedFont> {
   const mapped = new Map<string, MappedFont>();
   const used = new Set<number>();
@@ -1456,44 +1543,15 @@ function mapFonts(pdfPage: any, styles: Record<string, any>, fontRecords: FontRe
       fontObj = null;
     }
     const fontObjName = typeof fontObj?.name === "string" ? fontObj.name : undefined;
-    let best = fontObjName
-      ? (fontRecords.find((record) => record.baseFont === fontObjName && (record.ascent != null || record.descent != null)) ??
-        fontRecords.find((record) => record.baseFont === fontObjName))
-      : undefined;
-    let bestScore = Number.POSITIVE_INFINITY;
-    if (!best) {
-      for (const record of fontRecords) {
-        if (used.has(record.objectNumber)) continue;
-        let score = 0;
-        let count = 0;
-        for (let code = 0; code < 256; code += 1) {
-          const raw = record.widths[code - record.firstChar];
-          const actual = fontObj?.widths?.[code];
-          if (raw != null && actual != null && (raw !== 0 || actual !== 0)) {
-            score += Math.abs(raw - actual);
-            count += 1;
-          }
-        }
-        if (count === 0) score += 10000;
-        if (fontObj?.isSerifFont && !/Times|Serif|Roman/i.test(record.baseFont)) score += 1000;
-        if (!fontObj?.isSerifFont && /Times|Serif|Roman/i.test(record.baseFont)) score += 1000;
-        if (score < bestScore) {
-          bestScore = score;
-          best = record;
-        }
-      }
-    }
+    const best = chooseFontRecord(fontRecords, used, fontObjName, fontObj);
     if (best) used.add(best.objectNumber);
     const style = styles[id] ?? {};
-    const bboxAscent = Array.isArray(fontObj?.bbox) && typeof fontObj.bbox[3] === "number" ? Number(fontObj.bbox[3]) / 1000 : undefined;
-    const bboxDescent = Array.isArray(fontObj?.bbox) && typeof fontObj.bbox[1] === "number" ? Number(fontObj.bbox[1]) / 1000 : undefined;
-    const fontname = pythonBytesName(STANDARD_FONT_ALIASES[best?.baseFont ?? ""] ?? STANDARD_FONT_ALIASES[fontObjName ?? ""] ?? fontObjName ?? best?.baseFont ?? id);
-    const standardDescent = STANDARD_DESCENTS[fontname];
-    const useBBoxMetrics = !best && /^(Arial|ArialMT|Arial-BoldMT|Arial-ItalicMT|Arial-BoldItalicMT)$/.test(fontObjName ?? "");
+    const fontname = resolveFontName(best, fontObjName, id);
+    const metrics = resolveFontMetrics(best, fontObj, style, fontname);
     mapped.set(id, {
       fontname,
-      ascent: cleanNumber(firstFinite(0.8, useBBoxMetrics ? bboxAscent : undefined, best?.ascent, fontObj?.ascent, style.ascent)),
-      descent: cleanNumber(firstFinite(-0.2, standardDescent, useBBoxMetrics ? bboxDescent : undefined, best?.descent, fontObj?.descent, style.descent)),
+      ascent: metrics.ascent,
+      descent: metrics.descent,
       fontMatrix0: Number(fontObj?.fontMatrix?.[0] ?? 0.001),
       vertical: Boolean(style.vertical ?? fontObj?.vertical)
     });
