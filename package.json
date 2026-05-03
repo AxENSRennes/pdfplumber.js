@@ -1,0 +1,31 @@
+{
+  "name": "pdfplumber-js",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser-capable TypeScript port of pdfplumber with Python parity tests.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "fixtures:generate": "wsl_venv/bin/python scripts/generate-goldens.py",
+    "fixtures:generate:parity": "wsl_venv/bin/python scripts/generate-parity-goldens.py",
+    "python:setup": "python3 -m venv wsl_venv && wsl_venv/bin/python -m pip install -U pip && wsl_venv/bin/python -m pip install -e ./pdfplumber-python",
+    "test": "vitest run",
+    "test:compat": "PDFPLUMBER_JS_RUN_COMPAT=1 vitest run test/compat",
+    "test:parity": "PDFPLUMBER_JS_RUN_PARITY=1 vitest run test/parity",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^5.7.284"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.2"
+  }
+}

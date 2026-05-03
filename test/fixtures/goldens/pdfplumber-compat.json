@@ -1,0 +1,5248 @@
+{
+  "reference": {
+    "generatedAt": "2026-05-02T17:06:20.416865+00:00",
+    "pdfminerVersion": "20260107",
+    "pdfplumberCommit": "98041536932ce85d18a1fba80d9db0686b831d9d",
+    "pdfplumberVersion": "0.11.9"
+  },
+  "scenarios": [
+    {
+      "checks": [
+        {
+          "expected": 1,
+          "type": "pdf.pageCount"
+        },
+        {
+          "expected": {
+            "CreationDate": "D:20151212184957Z00'00'",
+            "ModDate": "D:20151212184957Z00'00'",
+            "Producer": "Mac OS X 10.9.5 Quartz PDFContext"
+          },
+          "type": "pdf.metadata"
+        },
+        {
+          "expected": {
+            "char": 4319,
+            "line": 192,
+            "rect": 254
+          },
+          "type": "pdf.objectCounts"
+        },
+        {
+          "expected": 0,
+          "type": "pdf.annots.count"
+        },
+        {
+          "expected": 0,
+          "type": "pdf.hyperlinks.count"
+        },
+        {
+          "expected": {
+            "bbox": [
+              0,
+              0,
+              1008,
+              612
+            ],
+            "cropbox": [
+              0,
+              0,
+              1008,
+              612
+            ],
+            "height": 612,
+            "mediabox": [
+              0,
+              0,
+              1008,
+              612
+            ],
+            "page_number": 1,
+            "width": 1008
+          },
+          "page": 0,
+          "type": "page.geometry"
+        },
+        {
+          "expected": {
+            "char": 4319,
+            "line": 192,
+            "rect": 254
+          },
+          "page": 0,
+          "type": "page.objectCounts"
+        },
+        {
+          "expected": {
+            "curve_edges": 0,
+            "edges": 1208,
+            "rect_edges": 1016
+          },
+          "page": 0,
+          "type": "page.edgeCounts"
+        },
+        {
+          "args": {
+            "count": 8
+          },
+          "expected": [
+            {
+              "adv": 0.667,
+              "bottom": 78.9008,
+              "doctop": 71.9408,
+              "fontname": "DCLTEC+Helvetica-Bold",
+              "height": 6.96,
+              "mcid": null,
+              "non_stroking_color": [
+                0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 6.96,
+              "stroking_color": [
+                0
+              ],
+              "tag": null,
+              "text": "S",
+              "top": 71.9408,
+              "upright": true,
+              "width": 4.64232,
+              "x0": 47.04,
+              "x1": 51.68232,
+              "y0": 533.0992,
+              "y1": 540.0592
+            },
+            {
+              "adv": 0.333,
+              "bottom": 78.9008,
+              "doctop": 71.9408,
+              "fontname": "DCLTEC+Helvetica-Bold",
+              "height": 6.96,
+              "mcid": null,
+              "non_stroking_color": [
+                0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 6.96,
+              "stroking_color": [
+                0
+              ],
+              "tag": null,
+              "text": "t",
+              "top": 71.9408,
+              "upright": true,
+              "width": 2.31768,
+              "x0": 51.5988,
+              "x1": 53.91648,
+              "y0": 533.0992,
+              "y1": 540.0592
+            },
+            {
+              "adv": 0.556,
+              "bottom": 78.9008,
+              "doctop": 71.9408,
+              "fontname": "DCLTEC+Helvetica-Bold",
+              "height": 6.96,
+              "mcid": null,
+              "non_stroking_color": [
+                0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 6.96,
+              "stroking_color": [
+                0
+              ],
+              "tag": null,
+              "text": "a",
+              "top": 71.9408,
+              "upright": true,
+              "width": 3.86976,
+              "x0": 53.99304,
+              "x1": 57.8628,
+              "y0": 533.0992,
+              "y1": 540.0592
+            },
+            {
+              "adv": 0.333,
+              "bottom": 78.9008,
+              "doctop": 71.9408,
+              "fontname": "DCLTEC+Helvetica-Bold",
+              "height": 6.96,
+              "mcid": null,
+              "non_stroking_color": [
+                0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 6.96,
+              "stroking_color": [
+                0
+              ],
+              "tag": null,
+              "text": "t",
+              "top": 71.9408,
+              "upright": true,
+              "width": 2.31768,
+              "x0": 57.83496,
+              "x1": 60.15264,
+              "y0": 533.0992,
+              "y1": 540.0592
+            },
+            {
+              "adv": 0.556,
+              "bottom": 78.9008,
+              "doctop": 71.9408,
+              "fontname": "DCLTEC+Helvetica-Bold",
+              "height": 6.96,
+              "mcid": null,
+              "non_stroking_color": [
+                0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 6.96,
+              "stroking_color": [
+                0
+              ],
+              "tag": null,
+              "text": "e",
+              "top": 71.9408,
+              "upright": true,
+              "width": 3.86976,
+              "x0": 60.2292,
+              "x1": 64.09896,
+              "y0": 533.0992,
+              "y1": 540.0592
+            },
+            {
+              "adv": 0.278,
+              "bottom": 78.9008,
+              "doctop": 71.9408,
+              "fontname": "DCLTEC+Helvetica-Bold",
+              "height": 6.96,
+              "mcid": null,
+              "non_stroking_color": [
+                0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 6.96,
+              "stroking_color": [
+                0
+              ],
+              "tag": null,
+              "text": " ",
+              "top": 71.9408,
+              "upright": true,
+              "width": 1.93488,
+              "x0": 64.07112,
+              "x1": 66.006,
+              "y0": 533.0992,
+              "y1": 540.0592
+            },
+            {
+              "adv": 0.278,
+              "bottom": 78.9008,
+              "doctop": 71.9408,
+              "fontname": "DCLTEC+Helvetica-Bold",
+              "height": 6.96,
+              "mcid": null,
+              "non_stroking_color": [
+                0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 6.96,
+              "stroking_color": [
+                0
+              ],
+              "tag": null,
+              "text": "/",
+              "top": 71.9408,
+              "upright": true,
+              "width": 1.93488,
+              "x0": 66.006,
+              "x1": 67.94088,
+              "y0": 533.0992,
+              "y1": 540.0592
+            },
+            {
+              "adv": 0.278,
+              "bottom": 78.9008,
+              "doctop": 71.9408,
+              "fontname": "DCLTEC+Helvetica-Bold",
+              "height": 6.96,
+              "mcid": null,
+              "non_stroking_color": [
+                0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 6.96,
+              "stroking_color": [
+                0
+              ],
+              "tag": null,
+              "text": " ",
+              "top": 71.9408,
+              "upright": true,
+              "width": 1.93488,
+              "x0": 67.91304,
+              "x1": 69.84792,
+              "y0": 533.0992,
+              "y1": 540.0592
+            }
+          ],
+          "page": 0,
+          "type": "page.chars.sample"
+        },
+        {
+          "expected": "NICS Firearm Background Checks\nNovember - 2015\nPre-Pawn Redemption Returned/Disposition Rentals Private Sale Return to Seller - Private Sale\nState / Territory Permit Handgun Long Gun *Other **Multiple Admin Handgun Long Gun *Other Handgun Long Gun *Other Handgun Long Gun *Other Handgun Long Gun Handgun Long Gun *Other Handgun Long Gun *Other Totals\nAlabama 18,870 23,022 22,650 859 1,178 0 14 15 0 2,179 2,307 11 0 0 0 13 14 0 3 2 0 71,137\nAlaska 209 3,062 3,209 191 184 0 9 3 0 100 100 0 18 9 1 0 0 0 0 0 0 7,095\nArizona 2,303 12,382 9,041 707 618 0 5 3 0 1,273 648 4 76 8 1 9 6 1 1 1 0 27,087\nArkansas 3,298 6,359 11,611 168 376 0 12 6 1 922 2,275 1 0 0 0 6 12 1 0 0 0 25,048\nCalifornia 98452 41181 35007 4559 0 0 0 0 0 480 433 4 0 0 0 0 0 0 0 0 0 180116\nColorado 4,144 19,784 16,082 932 1,151 0 0 0 0 0 0 0 144 34 0 0 0 0 0 0 0 42,271\nConnecticut 9,631 11,594 5,072 134 0 7 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 26,438\nDelaware 204 2,152 2,424 65 72 0 3 4 0 17 12 0 0 0 0 59 24 0 4 0 0 5,040\nDistrict of Columbia 8 54 2 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 64\nFlorida 15,907 50,796 28,981 2,268 1,957 121 8 9 0 2,248 1,135 2 40 5 0 36 19 0 0 0 0 103,532\nGeorgia 14,111 16,635 15,227 448 758 0 10 14 0 1,772 1,796 4 0 0 0 10 9 1 0 0 0 50,795\nGuam 0 100 55 12 3 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 171\nHawaii 1,248 0 0 0 0 0 0 0 0 0 0 0 1 3 0 0 0 0 0 0 0 1,252\nIdaho 1,944 3,609 5,227 190 189 0 0 4 0 273 455 1 22 4 1 1 2 0 0 3 0 11,925\nIllinois 87,190 24,412 17,227 0 1,032 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 129,861\nIndiana 81,935 25,519 20,227 1,113 808 0 2 3 0 13 629 5 28 0 0 31 13 1 2 4 0 130,333\nIowa 8,785 267 4,596 27 4 37 0 1 0 0 71 0 4 2 0 0 0 0 0 0 0 13,794\nKansas 894 7,086 8,702 311 396 3 1 3 1 486 530 2 2 0 0 6 10 0 0 0 0 18,433\nKentucky 264,140 12,155 14,847 254 648 1 9 11 0 1,491 2,315 2 2 2 0 6 8 0 0 0 0 295,891\nLouisiana 1,945 14,708 17,368 697 793 0 5 11 2 884 1,323 3 0 0 0 1 10 1 0 1 0 37,752\nMaine 299 4,048 4,387 135 171 2 0 0 0 70 165 0 6 7 0 4 3 0 0 0 0 9,297\nMariana Islands 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\nMaryland 1,512 3,220 8,310 96 9 0 0 3 0 72 213 2 14 3 1 1 6 1 0 0 0 13,463\nMassachusetts 5,214 6,083 3,931 402 175 0 0 1 0 2 5 0 1 0 1 42 23 5 0 0 0 15,885\nMichigan 16,786 13,634 17,604 385 238 1,025 1 4 0 5 489 2 69 24 0 4 1 1 2 3 1 50,278\nMinnesota 18,939 9,373 14,173 486 330 0 1 2 0 176 512 0 8 11 0 2 6 0 0 2 2 44,023\nMississippi 618 9,785 13,191 267 523 9 28 20 0 1,171 1,874 1 0 0 0 6 6 3 2 0 0 27,504\nMissouri 5,884 21,135 22,852 1,004 1,060 0 11 16 0 1,131 1,754 3 99 11 4 33 25 6 0 3 0 55,031\nMontana 852 2,848 5,170 90 197 10 1 4 6 391 828 1 11 4 0 0 2 0 0 0 0 10,415\nNebraska 4,258 173 3,724 23 10 0 1 0 0 5 96 1 7 0 0 0 0 1 0 0 0 8,299\nNevada 1,543 4,889 3,272 193 287 0 0 0 0 284 163 0 1 0 0 0 0 0 0 0 0 10,632\nNew Hampshire 3,630 4,847 4,165 95 2 1 0 0 0 0 23 1 69 11 1 2 2 0 0 1 0 12,850\nNew Jersey 0 3,462 4,704 147 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 8,313\nNew Mexico 829 5,247 4,974 334 277 0 2 3 1 397 618 1 33 0 0 0 4 0 1 0 0 12,721\nNew York 2,906 8,650 23,519 665 149 0 0 3 0 16 25 0 0 0 0 243 220 16 5 4 0 36,421\nNorth Carolina 22,469 1,370 20,107 576 202 0 16 25 0 1,771 2,644 7 0 0 0 2 26 1 1 0 0 49,217\nNorth Dakota 453 1,720 3,744 65 79 0 0 3 0 65 157 0 0 0 0 1 1 0 0 0 0 6,288\nOhio 9,338 34,878 31,817 1,392 1,483 0 24 16 1 1,228 1,389 4 0 0 0 21 22 1 1 0 1 81,616\nOklahoma 0 15,005 14,753 778 998 0 11 7 1 1,639 2,226 6 0 0 0 11 21 0 0 1 0 35,457\nOregon 35 13,586 11,832 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 25,453\nPennsylvania 24,136 62,752 16,297 0 0 58 0 0 0 0 0 0 446 147 0 0 0 0 0 0 0 103,836\nPuerto Rico 0 1,033 170 11 20 0 0 0 0 6 1 0 0 0 0 0 0 0 0 1 0 1,242\nRhode Island 0 954 932 57 135 0 0 0 0 3 4 0 0 0 0 12 2 1 1 0 0 2,101\nSouth Carolina 7,284 11,452 10,393 561 438 0 3 8 0 979 912 3 16 4 0 4 6 0 1 0 0 32,064\nSouth Dakota 819 2,765 5,484 143 151 0 0 1 0 123 239 0 0 0 0 1 1 0 0 0 0 9,727\nTennessee 9,509 28,815 24,023 0 1,300 0 0 0 0 0 0 0 17 1 5 0 0 0 0 0 0 63,670\nTexas 21,550 56,941 51,670 2,532 3,048 0 29 20 0 5,748 5,331 21 1 2 1 42 36 4 1 5 0 146,982\nUtah 10,429 4,314 5,857 195 262 0 0 1 0 209 285 1 140 58 21 0 0 0 0 0 0 21,772\nVermont 0 1,189 1,826 49 70 0 0 1 0 0 1 0 0 0 0 0 0 0 0 0 0 3,136\nVirgin Islands 93 13 2 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 109\nVirginia 622 24,052 22,348 974 0 0 0 0 0 0 0 0 10 4 0 0 0 0 0 0 0 48,010\nWashington 10,314 15,822 12,425 1,238 606 4 8 8 0 1,096 1,129 3 356 159 3 444 340 19 6 9 0 43,989\nWest Virginia 2,217 6,953 11,561 224 478 2 4 9 0 923 2,678 3 0 0 0 3 8 0 0 0 0 25,063\nWisconsin 5,867 13,700 17,759 458 45 0 0 3 0 124 513 3 15 20 4 10 15 1 0 3 1 38,541\nWyoming 383 1,745 2,372 87 104 1 0 4 0 132 184 0 0 0 0 1 2 0 0 2 0 5,017\nTotals 804,006 671,330 636,903 26,597 23,015 1,281 218 249 13 29,905 38,487 102 1,656 533 44 0 0 1,067 905 65 31 45 5 2,236,457\n*Refers to frames, receivers and other firearms that are not either handguns or long guns (rifles or shotguns), such as firearms having a pistol grip that expel a shotgun shell\nNOTES:\n**Multiple (multiple types of firearms selected)\nSome states may reflect lower than expected numbers for handgun checks based on varying state laws pertaining to handgun permits Since the permit check is done in place of the NICS check in most of the affected states, the low handgun statistics are often balanced out by a higher number of handgun permit checks\nDISCLAIMERS:\nThese statistics represent the number of firearm background checks initiated through the NICS They do not represent the number of firearms sold Based on varying state laws and purchase scenarios, a one-to-one correlation cannot be made between a firearm background check and a firearm sale\nPage 1 of 205",
+          "page": 0,
+          "type": "page.extractText"
+        },
+        {
+          "args": {
+            "limit": 20
+          },
+          "expected": [
+            {
+              "bottom": 41.60544,
+              "direction": "ltr",
+              "doctop": 26.48544,
+              "height": 15.12,
+              "text": "NICS",
+              "top": 26.48544,
+              "upright": true,
+              "width": 35.9856,
+              "x0": 408.1,
+              "x1": 444.0856
+            },
+            {
+              "bottom": 41.60544,
+              "direction": "ltr",
+              "doctop": 26.48544,
+              "height": 15.12,
+              "text": "Firearm",
+              "top": 26.48544,
+              "upright": true,
+              "width": 51.95232,
+              "x0": 448.37968,
+              "x1": 500.332
+            },
+            {
+              "bottom": 41.60544,
+              "direction": "ltr",
+              "doctop": 26.48544,
+              "height": 15.12,
+              "text": "Background",
+              "top": 26.48544,
+              "upright": true,
+              "width": 80.87688,
+              "x0": 504.74704,
+              "x1": 585.62392
+            },
+            {
+              "bottom": 41.60544,
+              "direction": "ltr",
+              "doctop": 26.48544,
+              "height": 15.12,
+              "text": "Checks",
+              "top": 26.48544,
+              "upright": true,
+              "width": 50.48568,
+              "x0": 589.90288,
+              "x1": 640.38856
+            },
+            {
+              "bottom": 60.08544,
+              "direction": "ltr",
+              "doctop": 44.96544,
+              "height": 15.12,
+              "text": "November",
+              "top": 44.96544,
+              "upright": true,
+              "width": 70.05096,
+              "x0": 465.94,
+              "x1": 535.99096
+            },
+            {
+              "bottom": 60.08544,
+              "direction": "ltr",
+              "doctop": 44.96544,
+              "height": 15.12,
+              "text": "-",
+              "top": 44.96544,
+              "upright": true,
+              "width": 5.03496,
+              "x0": 540.28504,
+              "x1": 545.32
+            },
+            {
+              "bottom": 60.08544,
+              "direction": "ltr",
+              "doctop": 44.96544,
+              "height": 15.12,
+              "text": "2015",
+              "top": 44.96544,
+              "upright": true,
+              "width": 33.62688,
+              "x0": 549.6292,
+              "x1": 583.25608
+            },
+            {
+              "bottom": 69.7448,
+              "direction": "ltr",
+              "doctop": 63.9848,
+              "height": 5.76,
+              "text": "Pre-Pawn",
+              "top": 63.9848,
+              "upright": true,
+              "width": 26.08128,
+              "x0": 336.55,
+              "x1": 362.63128
+            },
+            {
+              "bottom": 69.7448,
+              "direction": "ltr",
+              "doctop": 63.9848,
+              "height": 5.76,
+              "text": "Redemption",
+              "top": 63.9848,
+              "upright": true,
+              "width": 33.25824,
+              "x0": 446.74,
+              "x1": 479.99824
+            },
+            {
+              "bottom": 69.7448,
+              "direction": "ltr",
+              "doctop": 63.9848,
+              "height": 5.76,
+              "text": "Returned/Disposition",
+              "top": 63.9848,
+              "upright": true,
+              "width": 58.42944,
+              "x0": 548.04,
+              "x1": 606.46944
+            },
+            {
+              "bottom": 69.7448,
+              "direction": "ltr",
+              "doctop": 63.9848,
+              "height": 5.76,
+              "text": "Rentals",
+              "top": 63.9848,
+              "upright": true,
+              "width": 20.71296,
+              "x0": 661.82,
+              "x1": 682.53296
+            },
+            {
+              "bottom": 69.7448,
+              "direction": "ltr",
+              "doctop": 63.9848,
+              "height": 5.76,
+              "text": "Private",
+              "top": 63.9848,
+              "upright": true,
+              "width": 19.04256,
+              "x0": 750.65,
+              "x1": 769.69256
+            },
+            {
+              "bottom": 69.7448,
+              "direction": "ltr",
+              "doctop": 63.9848,
+              "height": 5.76,
+              "text": "Sale",
+              "top": 63.9848,
+              "upright": true,
+              "width": 11.8368,
+              "x0": 771.28808,
+              "x1": 783.12488
+            },
+            {
+              "bottom": 69.7448,
+              "direction": "ltr",
+              "doctop": 63.9848,
+              "height": 5.76,
+              "text": "Return",
+              "top": 63.9848,
+              "upright": true,
+              "width": 18.39168,
+              "x0": 840.43,
+              "x1": 858.82168
+            },
+            {
+              "bottom": 69.7448,
+              "direction": "ltr",
+              "doctop": 63.9848,
+              "height": 5.76,
+              "text": "to",
+              "top": 63.9848,
+              "upright": true,
+              "width": 5.43744,
+              "x0": 860.57272,
+              "x1": 866.01016
+            },
+            {
+              "bottom": 69.7448,
+              "direction": "ltr",
+              "doctop": 63.9848,
+              "height": 5.76,
+              "text": "Seller",
+              "top": 63.9848,
+              "upright": true,
+              "width": 15.67296,
+              "x0": 867.7612,
+              "x1": 883.43416
+            },
+            {
+              "bottom": 69.7448,
+              "direction": "ltr",
+              "doctop": 63.9848,
+              "height": 5.76,
+              "text": "-",
+              "top": 63.9848,
+              "upright": true,
+              "width": 1.91808,
+              "x0": 885.02968,
+              "x1": 886.94776
+            },
+            {
+              "bottom": 69.7448,
+              "direction": "ltr",
+              "doctop": 63.9848,
+              "height": 5.76,
+              "text": "Private",
+              "top": 63.9848,
+              "upright": true,
+              "width": 19.04256,
+              "x0": 888.62392,
+              "x1": 907.66648
+            },
+            {
+              "bottom": 69.7448,
+              "direction": "ltr",
+              "doctop": 63.9848,
+              "height": 5.76,
+              "text": "Sale",
+              "top": 63.9848,
+              "upright": true,
+              "width": 11.8368,
+              "x0": 909.262,
+              "x1": 921.0988
+            },
+            {
+              "bottom": 78.9008,
+              "direction": "ltr",
+              "doctop": 71.9408,
+              "height": 6.96,
+              "text": "State",
+              "top": 71.9408,
+              "upright": true,
+              "width": 17.05896,
+              "x0": 47.04,
+              "x1": 64.09896
+            }
+          ],
+          "page": 0,
+          "type": "page.extractWords"
+        },
+        {
+          "expected": [
+            [
+              "NICS Firearm Background Checks\nNovember - 2015",
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            [
+              "State / Territory",
+              "Permit Handgun Long Gun *Other **Multiple Admin",
+              null,
+              null,
+              null,
+              null,
+              null,
+              "Pre-Pawn\nHandgun Long Gun *Other",
+              null,
+              null,
+              "Redemption\nHandgun Long Gun *Other",
+              null,
+              null,
+              "Returned/Disposition\nHandgun Long Gun *Other",
+              null,
+              null,
+              "Rentals\nHandgun Long Gun",
+              null,
+              "Private Sale\nHandgun Long Gun *Other",
+              null,
+              null,
+              "Return to Seller - Private Sale\nHandgun Long Gun *Other",
+              null,
+              null,
+              "Totals"
+            ],
+            [
+              "Alabama\nAlaska\nArizona\nArkansas\nCalifornia",
+              "18,870\n209\n2,303\n3,298\n98452",
+              "23,022\n3,062\n12,382\n6,359\n41181",
+              "22,650\n3,209\n9,041\n11,611\n35007",
+              "859\n191\n707\n168\n4559",
+              "1,178\n184\n618\n376\n0",
+              "0\n0\n0\n0\n0",
+              "14\n9\n5\n12\n0",
+              "15\n3\n3\n6\n0",
+              "0\n0\n0\n1\n0",
+              "2,179\n100\n1,273\n922\n480",
+              "2,307\n100\n648\n2,275\n433",
+              "11\n0\n4\n1\n4",
+              "0\n18\n76\n0\n0",
+              "0\n9\n8\n0\n0",
+              "0\n1\n1\n0\n0",
+              "",
+              "",
+              "13\n0\n9\n6\n0",
+              "14\n0\n6\n12\n0",
+              "0\n0\n1\n1\n0",
+              "3\n0\n1\n0\n0",
+              "2\n0\n1\n0\n0",
+              "0\n0\n0\n0\n0",
+              "71,137\n7,095\n27,087\n25,048\n180116"
+            ],
+            [
+              "Colorado\nConnecticut\nDelaware\nDistrict of Columbia\nFlorida",
+              "4,144\n9,631\n204\n8\n15,907",
+              "19,784\n11,594\n2,152\n54\n50,796",
+              "16,082\n5,072\n2,424\n2\n28,981",
+              "932\n134\n65\n0\n2,268",
+              "1,151\n0\n72\n0\n1,957",
+              "0\n7\n0\n0\n121",
+              "0\n0\n3\n0\n8",
+              "0\n0\n4\n0\n9",
+              "0\n0\n0\n0\n0",
+              "0\n0\n17\n0\n2,248",
+              "0\n0\n12\n0\n1,135",
+              "0\n0\n0\n0\n2",
+              "144\n0\n0\n0\n40",
+              "34\n0\n0\n0\n5",
+              "0\n0\n0\n0\n0",
+              "",
+              "",
+              "0\n0\n59\n0\n36",
+              "0\n0\n24\n0\n19",
+              "0\n0\n0\n0\n0",
+              "0\n0\n4\n0\n0",
+              "0\n0\n0\n0\n0",
+              "0\n0\n0\n0\n0",
+              "42,271\n26,438\n5,040\n64\n103,532"
+            ],
+            [
+              "Georgia\nGuam\nHawaii\nIdaho\nIllinois",
+              "14,111\n0\n1,248\n1,944\n87,190",
+              "16,635\n100\n0\n3,609\n24,412",
+              "15,227\n55\n0\n5,227\n17,227",
+              "448\n12\n0\n190\n0",
+              "758\n3\n0\n189\n1,032",
+              "0\n0\n0\n0\n0",
+              "10\n0\n0\n0\n0",
+              "14\n0\n0\n4\n0",
+              "0\n0\n0\n0\n0",
+              "1,772\n1\n0\n273\n0",
+              "1,796\n0\n0\n455\n0",
+              "4\n0\n0\n1\n0",
+              "0\n0\n1\n22\n0",
+              "0\n0\n3\n4\n0",
+              "0\n0\n0\n1\n0",
+              "",
+              "",
+              "10\n0\n0\n1\n0",
+              "9\n0\n0\n2\n0",
+              "1\n0\n0\n0\n0",
+              "0\n0\n0\n0\n0",
+              "0\n0\n0\n3\n0",
+              "0\n0\n0\n0\n0",
+              "50,795\n171\n1,252\n11,925\n129,861"
+            ],
+            [
+              "Indiana\nIowa\nKansas\nKentucky\nLouisiana",
+              "81,935\n8,785\n894\n264,140\n1,945",
+              "25,519\n267\n7,086\n12,155\n14,708",
+              "20,227\n4,596\n8,702\n14,847\n17,368",
+              "1,113\n27\n311\n254\n697",
+              "808\n4\n396\n648\n793",
+              "0\n37\n3\n1\n0",
+              "2\n0\n1\n9\n5",
+              "3\n1\n3\n11\n11",
+              "0\n0\n1\n0\n2",
+              "13\n0\n486\n1,491\n884",
+              "629\n71\n530\n2,315\n1,323",
+              "5\n0\n2\n2\n3",
+              "28\n4\n2\n2\n0",
+              "0\n2\n0\n2\n0",
+              "0\n0\n0\n0\n0",
+              "",
+              "",
+              "31\n0\n6\n6\n1",
+              "13\n0\n10\n8\n10",
+              "1\n0\n0\n0\n1",
+              "2\n0\n0\n0\n0",
+              "4\n0\n0\n0\n1",
+              "0\n0\n0\n0\n0",
+              "130,333\n13,794\n18,433\n295,891\n37,752"
+            ],
+            [
+              "Maine\nMariana Islands\nMaryland\nMassachusetts\nMichigan",
+              "299\n0\n1,512\n5,214\n16,786",
+              "4,048\n0\n3,220\n6,083\n13,634",
+              "4,387\n0\n8,310\n3,931\n17,604",
+              "135\n0\n96\n402\n385",
+              "171\n0\n9\n175\n238",
+              "2\n0\n0\n0\n1,025",
+              "0\n0\n0\n0\n1",
+              "0\n0\n3\n1\n4",
+              "0\n0\n0\n0\n0",
+              "70\n0\n72\n2\n5",
+              "165\n0\n213\n5\n489",
+              "0\n0\n2\n0\n2",
+              "6\n0\n14\n1\n69",
+              "7\n0\n3\n0\n24",
+              "0\n0\n1\n1\n0",
+              "",
+              "",
+              "4\n0\n1\n42\n4",
+              "3\n0\n6\n23\n1",
+              "0\n0\n1\n5\n1",
+              "0\n0\n0\n0\n2",
+              "0\n0\n0\n0\n3",
+              "0\n0\n0\n0\n1",
+              "9,297\n0\n13,463\n15,885\n50,278"
+            ],
+            [
+              "Minnesota\nMississippi\nMissouri\nMontana\nNebraska",
+              "18,939\n618\n5,884\n852\n4,258",
+              "9,373\n9,785\n21,135\n2,848\n173",
+              "14,173\n13,191\n22,852\n5,170\n3,724",
+              "486\n267\n1,004\n90\n23",
+              "330\n523\n1,060\n197\n10",
+              "0\n9\n0\n10\n0",
+              "1\n28\n11\n1\n1",
+              "2\n20\n16\n4\n0",
+              "0\n0\n0\n6\n0",
+              "176\n1,171\n1,131\n391\n5",
+              "512\n1,874\n1,754\n828\n96",
+              "0\n1\n3\n1\n1",
+              "8\n0\n99\n11\n7",
+              "11\n0\n11\n4\n0",
+              "0\n0\n4\n0\n0",
+              "",
+              "",
+              "2\n6\n33\n0\n0",
+              "6\n6\n25\n2\n0",
+              "0\n3\n6\n0\n1",
+              "0\n2\n0\n0\n0",
+              "2\n0\n3\n0\n0",
+              "2\n0\n0\n0\n0",
+              "44,023\n27,504\n55,031\n10,415\n8,299"
+            ],
+            [
+              "Nevada\nNew Hampshire\nNew Jersey\nNew Mexico\nNew York",
+              "1,543\n3,630\n0\n829\n2,906",
+              "4,889\n4,847\n3,462\n5,247\n8,650",
+              "3,272\n4,165\n4,704\n4,974\n23,519",
+              "193\n95\n147\n334\n665",
+              "287\n2\n0\n277\n149",
+              "0\n1\n0\n0\n0",
+              "0\n0\n0\n2\n0",
+              "0\n0\n0\n3\n3",
+              "0\n0\n0\n1\n0",
+              "284\n0\n0\n397\n16",
+              "163\n23\n0\n618\n25",
+              "0\n1\n0\n1\n0",
+              "1\n69\n0\n33\n0",
+              "0\n11\n0\n0\n0",
+              "0\n1\n0\n0\n0",
+              "",
+              "",
+              "0\n2\n0\n0\n243",
+              "0\n2\n0\n4\n220",
+              "0\n0\n0\n0\n16",
+              "0\n0\n0\n1\n5",
+              "0\n1\n0\n0\n4",
+              "0\n0\n0\n0\n0",
+              "10,632\n12,850\n8,313\n12,721\n36,421"
+            ],
+            [
+              "North Carolina\nNorth Dakota\nOhio\nOklahoma\nOregon",
+              "22,469\n453\n9,338\n0\n35",
+              "1,370\n1,720\n34,878\n15,005\n13,586",
+              "20,107\n3,744\n31,817\n14,753\n11,832",
+              "576\n65\n1,392\n778\n0",
+              "202\n79\n1,483\n998\n0",
+              "0\n0\n0\n0\n0",
+              "16\n0\n24\n11\n0",
+              "25\n3\n16\n7\n0",
+              "0\n0\n1\n1\n0",
+              "1,771\n65\n1,228\n1,639\n0",
+              "2,644\n157\n1,389\n2,226\n0",
+              "7\n0\n4\n6\n0",
+              "0\n0\n0\n0\n0",
+              "0\n0\n0\n0\n0",
+              "0\n0\n0\n0\n0",
+              "",
+              "",
+              "2\n1\n21\n11\n0",
+              "26\n1\n22\n21\n0",
+              "1\n0\n1\n0\n0",
+              "1\n0\n1\n0\n0",
+              "0\n0\n0\n1\n0",
+              "0\n0\n1\n0\n0",
+              "49,217\n6,288\n81,616\n35,457\n25,453"
+            ],
+            [
+              "Pennsylvania\nPuerto Rico\nRhode Island\nSouth Carolina\nSouth Dakota",
+              "24,136\n0\n0\n7,284\n819",
+              "62,752\n1,033\n954\n11,452\n2,765",
+              "16,297\n170\n932\n10,393\n5,484",
+              "0\n11\n57\n561\n143",
+              "0\n20\n135\n438\n151",
+              "58\n0\n0\n0\n0",
+              "0\n0\n0\n3\n0",
+              "0\n0\n0\n8\n1",
+              "0\n0\n0\n0\n0",
+              "0\n6\n3\n979\n123",
+              "0\n1\n4\n912\n239",
+              "0\n0\n0\n3\n0",
+              "446\n0\n0\n16\n0",
+              "147\n0\n0\n4\n0",
+              "0\n0\n0\n0\n0",
+              "",
+              "",
+              "0\n0\n12\n4\n1",
+              "0\n0\n2\n6\n1",
+              "0\n0\n1\n0\n0",
+              "0\n0\n1\n1\n0",
+              "0\n1\n0\n0\n0",
+              "0\n0\n0\n0\n0",
+              "103,836\n1,242\n2,101\n32,064\n9,727"
+            ],
+            [
+              "Tennessee\nTexas\nUtah\nVermont\nVirgin Islands",
+              "9,509\n21,550\n10,429\n0\n93",
+              "28,815\n56,941\n4,314\n1,189\n13",
+              "24,023\n51,670\n5,857\n1,826\n2",
+              "0\n2,532\n195\n49\n0",
+              "1,300\n3,048\n262\n70\n1",
+              "0\n0\n0\n0\n0",
+              "0\n29\n0\n0\n0",
+              "0\n20\n1\n1\n0",
+              "0\n0\n0\n0\n0",
+              "0\n5,748\n209\n0\n0",
+              "0\n5,331\n285\n1\n0",
+              "0\n21\n1\n0\n0",
+              "17\n1\n140\n0\n0",
+              "1\n2\n58\n0\n0",
+              "5\n1\n21\n0\n0",
+              "",
+              "",
+              "0\n42\n0\n0\n0",
+              "0\n36\n0\n0\n0",
+              "0\n4\n0\n0\n0",
+              "0\n1\n0\n0\n0",
+              "0\n5\n0\n0\n0",
+              "0\n0\n0\n0\n0",
+              "63,670\n146,982\n21,772\n3,136\n109"
+            ],
+            [
+              "Virginia\nWashington\nWest Virginia\nWisconsin\nWyoming",
+              "622\n10,314\n2,217\n5,867\n383",
+              "24,052\n15,822\n6,953\n13,700\n1,745",
+              "22,348\n12,425\n11,561\n17,759\n2,372",
+              "974\n1,238\n224\n458\n87",
+              "0\n606\n478\n45\n104",
+              "0\n4\n2\n0\n1",
+              "0\n8\n4\n0\n0",
+              "0\n8\n9\n3\n4",
+              "0\n0\n0\n0\n0",
+              "0\n1,096\n923\n124\n132",
+              "0\n1,129\n2,678\n513\n184",
+              "0\n3\n3\n3\n0",
+              "10\n356\n0\n15\n0",
+              "4\n159\n0\n20\n0",
+              "0\n3\n0\n4\n0",
+              "",
+              "",
+              "0\n444\n3\n10\n1",
+              "0\n340\n8\n15\n2",
+              "0\n19\n0\n1\n0",
+              "0\n6\n0\n0\n0",
+              "0\n9\n0\n3\n2",
+              "0\n0\n0\n1\n0",
+              "48,010\n43,989\n25,063\n38,541\n5,017"
+            ],
+            [
+              "Totals",
+              "804,006",
+              "671,330",
+              "636,903",
+              "26,597",
+              "23,015",
+              "1,281",
+              "218",
+              "249",
+              "13",
+              "29,905",
+              "38,487",
+              "102",
+              "1,656",
+              "533",
+              "44",
+              "0",
+              "0",
+              "1,067",
+              "905",
+              "65",
+              "31",
+              "45",
+              "5",
+              "2,236,457"
+            ],
+            [
+              "",
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            [
+              "*Refers to frames, receivers and other firearms that are not either handguns or long guns (rifles or shotguns), such as firearms having a pistol grip that expel a shotgun shell\nNOTES:\n**Multiple (multiple types of firearms selected)\nSome states may reflect lower than expected numbers for handgun checks based on varying state laws pertaining to handgun permits Since the permit check is done in place of the NICS check in most of the affected states, the low handgun statistics are often balanced out by a higher number of handgun permit checks\nDISCLAIMERS:\nThese statistics represent the number of firearm background checks initiated through the NICS They do not represent the number of firearms sold Based on varying state laws and purchase scenarios, a one-to-one correlation cannot be made between a firearm background check and a firearm sale",
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            [
+              "",
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ]
+          ],
+          "page": 0,
+          "type": "page.extractTable"
+        },
+        {
+          "bbox": [
+            33.12,
+            23.998666666666697,
+            975.3009999999999,
+            569.2560000000001
+          ],
+          "expected": "Page 1 of 205",
+          "page": 0,
+          "type": "page.outsideBbox.extractText"
+        }
+      ],
+      "id": "open-basic-objects-text-and-edges",
+      "pdf": "nics-background-checks-2015-11.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": 1,
+          "type": "pdf.pageCount"
+        },
+        {
+          "expected": {
+            "bbox": [
+              0,
+              0,
+              612,
+              1008
+            ],
+            "cropbox": [
+              0,
+              0,
+              612,
+              1008
+            ],
+            "height": 1008,
+            "mediabox": [
+              0,
+              0,
+              612,
+              1008
+            ],
+            "page_number": 1,
+            "width": 612
+          },
+          "page": 0,
+          "type": "page.geometry"
+        },
+        {
+          "expected": {
+            "char": 4319,
+            "line": 192,
+            "rect": 254
+          },
+          "page": 0,
+          "type": "page.objectCounts"
+        }
+      ],
+      "id": "rotation-page-boxes",
+      "pdf": "nics-background-checks-2015-11-rotated.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": 54,
+          "type": "pdf.annots.count"
+        },
+        {
+          "expected": 17,
+          "type": "pdf.hyperlinks.count"
+        },
+        {
+          "expected": [
+            {
+              "bottom": 233.23,
+              "contents": null,
+              "doctop": 213.3,
+              "height": 19.93,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 213.3,
+              "uri": null,
+              "width": 169.83,
+              "x0": 45.83,
+              "x1": 215.66,
+              "y0": 558.77,
+              "y1": 578.7
+            },
+            {
+              "bottom": 261.98,
+              "contents": null,
+              "doctop": 242.04,
+              "height": 19.94,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 242.04,
+              "uri": null,
+              "width": 183.87,
+              "x0": 45.83,
+              "x1": 229.7,
+              "y0": 530.02,
+              "y1": 549.96
+            },
+            {
+              "bottom": 290.72,
+              "contents": null,
+              "doctop": 270.79,
+              "height": 19.93,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 270.79,
+              "uri": null,
+              "width": 447.57,
+              "x0": 45.83,
+              "x1": 493.4,
+              "y0": 501.28,
+              "y1": 521.21
+            },
+            {
+              "bottom": 39.89,
+              "contents": null,
+              "doctop": 19.96,
+              "height": 19.93,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 19.96,
+              "uri": null,
+              "width": 72.43,
+              "x0": 60.09,
+              "x1": 132.52,
+              "y0": 752.11,
+              "y1": 772.04
+            },
+            {
+              "bottom": 39.89,
+              "contents": null,
+              "doctop": 19.96,
+              "height": 19.93,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 19.96,
+              "uri": null,
+              "width": 102.42,
+              "x0": 189.86,
+              "x1": 292.28,
+              "y0": 752.11,
+              "y1": 772.04
+            }
+          ],
+          "page": 0,
+          "type": "page.annots"
+        },
+        {
+          "expected": [
+            {
+              "bottom": 153.99,
+              "contents": null,
+              "doctop": 115.87,
+              "height": 38.12,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 115.87,
+              "uri": "http://www.pdfill.com/pdf_drawing.html",
+              "width": 100.93,
+              "x0": 504.34,
+              "x1": 605.27,
+              "y0": 638.01,
+              "y1": 676.13
+            }
+          ],
+          "page": 0,
+          "type": "page.hyperlinks"
+        },
+        {
+          "expected": {
+            "curve_edges": 0,
+            "edges": 32,
+            "rect_edges": 24
+          },
+          "page": 0,
+          "type": "page.edgeCounts"
+        }
+      ],
+      "id": "annotations-and-hyperlinks",
+      "pdf": "pdffill-demo.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": 4,
+          "type": "pdf.pageCount"
+        },
+        {
+          "expected": "Backup4all –backup solution for network environments\nStarting from version 2 it is easier to install Backup4all in a network environment.\nNetwork administrators can install Backup4all on a single computer and enter a single\nnetwork registration key. All workstations can run the application from there.\nFor example if you have 25 users in a network environment, you will pay for 25 licenses\nand you will receive a single registration key valid for all 25 users.\nRecommended solution for:\n Home users (2+ computers in a network environment, i.e. using the laptop to\nbackup onto desktop or vice-versa)\n Professional Services\n Service Industries\n Telecommunications\n Education\n Government\nSummary:\nBackup4all’s network licensing provides a solution for large computer\nenvironments with a special focus on the network environment. Backup4all is designed to\nbe reliable, easy-to-use and affordable. It can be used as a reliable backup solution in\nnetworks with hundreds of computers connected.\nMajor features and Benefits:\n Powerful – Through its technology, Backup4all speeds up the backup\nprocess in a network environment giving you the benefit of having a\nreliable backup performed in a reduced amount of time. Its “multi-\nthreaded” feature allows multiple backups and restores to be performed\nsimultaneously, while maintaining your data integrity.\n Trustworthy – Backup4all makes the backup process more reliable by\nrecording the settings used for the each backup process in .ini files that are\nstored on the computer where it is installed and also creates catalog files to\nkeep track of modified/removed files. After each backup, by default,\nBackup4all also verifies the resulted zip files to ensure that the process\nwas successful.\n Easy installation and administration – Installing Backup4all is very easy\nand the administration process resumes itself to verifying the log files\nstored by Backup4all to see the status of the backup (successful/failed).\nThe installation/administration process is easy both for network\nadministrators and users. For example, in case of a network with several\ncomputers connected to a server, even if the configuration is done\nindividually and saved on each of the user’s computer, Backup4all can be\nCreate PDF files without this message by purchasing novaPDF printer (http://www.novapdf.com)",
+          "page": 0,
+          "type": "page.extractText"
+        },
+        {
+          "expected": {
+            "char": 2355,
+            "line": 2,
+            "rect": 1
+          },
+          "page": 0,
+          "type": "page.objectCounts"
+        }
+      ],
+      "id": "password-open",
+      "openOptions": {
+        "password": "test"
+      },
+      "pdf": "password-example.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": ";;",
+          "page": 0,
+          "type": "page.extractText"
+        },
+        {
+          "args": {
+            "count": 2
+          },
+          "expected": [
+            {
+              "adv": 0.602,
+              "bottom": 84.332485,
+              "doctop": 73.562611,
+              "fontname": "AAAAAC+Menlo-Regular",
+              "height": 10.769874,
+              "mcid": null,
+              "non_stroking_color": [
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 10.769874,
+              "stroking_color": [
+                0
+              ],
+              "tag": null,
+              "text": ";",
+              "top": 73.562611,
+              "upright": true,
+              "width": 6.483464,
+              "x0": 76.895398,
+              "x1": 83.378862,
+              "y0": 707.667515,
+              "y1": 718.437389
+            },
+            {
+              "adv": 0.602,
+              "bottom": 84.332485,
+              "doctop": 73.562611,
+              "fontname": "AAAAAB+Menlo-Regular",
+              "height": 10.769874,
+              "mcid": null,
+              "non_stroking_color": [
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 10.769874,
+              "stroking_color": [
+                0
+              ],
+              "tag": null,
+              "text": ";",
+              "top": 73.562611,
+              "upright": true,
+              "width": 6.483464,
+              "x0": 83.378862,
+              "x1": 89.862326,
+              "y0": 707.667515,
+              "y1": 718.437389
+            }
+          ],
+          "page": 0,
+          "type": "page.chars.sample"
+        }
+      ],
+      "id": "unicode-normalization",
+      "openOptions": {
+        "unicode_norm": "NFC"
+      },
+      "pdf": "issue-905.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "artbox": [
+              42.51969,
+              70.86614,
+              552.75591,
+              827.71653
+            ],
+            "bbox": [
+              0,
+              0.0,
+              623.62205,
+              870.23622
+            ],
+            "bleedbox": [
+              0,
+              0.0,
+              623.62205,
+              870.23622
+            ],
+            "cropbox": [
+              14.17323,
+              42.51968,
+              581.10236,
+              856.06299
+            ],
+            "height": 870.23622,
+            "mediabox": [
+              0,
+              0.0,
+              623.62205,
+              870.23622
+            ],
+            "page_number": 1,
+            "trimbox": [
+              28.34646,
+              56.69291,
+              566.92913,
+              841.88976
+            ],
+            "width": 623.62205
+          },
+          "page": 0,
+          "type": "page.geometry"
+        }
+      ],
+      "id": "uncommon-page-boxes",
+      "pdf": "page-boxes-example.pdf"
+    },
+    {
+      "checks": [
+        {
+          "args": {
+            "count": 5
+          },
+          "expected": [
+            {
+              "adv": 0.722,
+              "bottom": 78.384,
+              "doctop": 66.384,
+              "fontname": "XYMCPP+Arial-BoldMT",
+              "height": 12.0,
+              "mcid": null,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 12.0,
+              "stroking_color": [
+                0
+              ],
+              "tag": null,
+              "text": "C",
+              "top": 66.384,
+              "upright": true,
+              "width": 8.664,
+              "x0": 195.3003,
+              "x1": 203.9643,
+              "y0": 713.616,
+              "y1": 725.616
+            },
+            {
+              "adv": 0.722,
+              "bottom": 78.384,
+              "doctop": 66.384,
+              "fontname": "XYMCPP+Arial-BoldMT",
+              "height": 12.0,
+              "mcid": null,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 12.0,
+              "stroking_color": [
+                0
+              ],
+              "tag": null,
+              "text": "U",
+              "top": 66.384,
+              "upright": true,
+              "width": 8.664,
+              "x0": 203.9667,
+              "x1": 212.6307,
+              "y0": 713.616,
+              "y1": 725.616
+            },
+            {
+              "adv": 0.667,
+              "bottom": 78.384,
+              "doctop": 66.384,
+              "fontname": "XYMCPP+Arial-BoldMT",
+              "height": 12.0,
+              "mcid": null,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 12.0,
+              "stroking_color": [
+                0
+              ],
+              "tag": null,
+              "text": "P",
+              "top": 66.384,
+              "upright": true,
+              "width": 8.004,
+              "x0": 212.6331,
+              "x1": 220.6371,
+              "y0": 713.616,
+              "y1": 725.616
+            },
+            {
+              "adv": 0.667,
+              "bottom": 78.384,
+              "doctop": 66.384,
+              "fontname": "XYMCPP+Arial-BoldMT",
+              "height": 12.0,
+              "mcid": null,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 12.0,
+              "stroking_color": [
+                0
+              ],
+              "tag": null,
+              "text": "E",
+              "top": 66.384,
+              "upright": true,
+              "width": 8.004,
+              "x0": 220.6371,
+              "x1": 228.6411,
+              "y0": 713.616,
+              "y1": 725.616
+            },
+            {
+              "adv": 0.722,
+              "bottom": 78.384,
+              "doctop": 66.384,
+              "fontname": "XYMCPP+Arial-BoldMT",
+              "height": 12.0,
+              "mcid": null,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 12.0,
+              "stroking_color": [
+                0
+              ],
+              "tag": null,
+              "text": "R",
+              "top": 66.384,
+              "upright": true,
+              "width": 8.664,
+              "x0": 228.6411,
+              "x1": 237.3051,
+              "y0": 713.616,
+              "y1": 725.616
+            }
+          ],
+          "page": 0,
+          "type": "page.chars.sample"
+        },
+        {
+          "expected": {
+            "char": 3252,
+            "figure": 1,
+            "image": 1,
+            "rect": 3,
+            "textboxhorizontal": 12,
+            "textlinehorizontal": 59
+          },
+          "page": 0,
+          "type": "page.objectCounts"
+        }
+      ],
+      "id": "laparams-custom-layout",
+      "openOptions": {
+        "laparams": {
+          "line_margin": 0.2
+        }
+      },
+      "pdf": "cupertino_usd_4-6-16.pdf"
+    },
+    {
+      "checks": [
+        {
+          "args": {
+            "limit": 30,
+            "vertical_ttb": false
+          },
+          "expected": [
+            {
+              "bottom": 59.39136,
+              "direction": "ltr",
+              "doctop": 49.43136,
+              "height": 9.96,
+              "text": "Agaaaaa:",
+              "top": 49.43136,
+              "upright": true,
+              "width": 40.5068,
+              "x0": 28.08,
+              "x1": 68.5868
+            },
+            {
+              "bottom": 59.39136,
+              "direction": "ltr",
+              "doctop": 49.43136,
+              "height": 9.96,
+              "text": "AAAA",
+              "top": 49.43136,
+              "upright": true,
+              "width": 28.81548,
+              "x0": 71.1108,
+              "x1": 99.92628
+            },
+            {
+              "bottom": 59.39136,
+              "direction": "ltr",
+              "doctop": 49.43136,
+              "height": 9.96,
+              "text": "AAA/Aaabaaab",
+              "top": 49.43136,
+              "upright": true,
+              "width": 63.82456,
+              "x0": 650.52,
+              "x1": 714.34456
+            },
+            {
+              "bottom": 59.39136,
+              "direction": "ltr",
+              "doctop": 49.43136,
+              "height": 9.96,
+              "text": "77-2A8A-2076",
+              "top": 49.43136,
+              "upright": true,
+              "width": 48.30544,
+              "x0": 716.87456,
+              "x1": 765.18
+            },
+            {
+              "bottom": 70.79136,
+              "direction": "ltr",
+              "doctop": 60.83136,
+              "height": 9.96,
+              "text": "AabaaAA",
+              "top": 60.83136,
+              "upright": true,
+              "width": 39.89208,
+              "x0": 28.08,
+              "x1": 67.97208
+            },
+            {
+              "bottom": 70.79136,
+              "direction": "ltr",
+              "doctop": 60.83136,
+              "height": 9.96,
+              "text": "aambaa6",
+              "top": 60.83136,
+              "upright": true,
+              "width": 34.69392,
+              "x0": 70.48608,
+              "x1": 105.18
+            },
+            {
+              "bottom": 70.79136,
+              "direction": "ltr",
+              "doctop": 60.83136,
+              "height": 9.96,
+              "text": "618-647173-54",
+              "top": 60.83136,
+              "upright": true,
+              "width": 61.74,
+              "x0": 105.24,
+              "x1": 166.98
+            },
+            {
+              "bottom": 82.31136,
+              "direction": "ltr",
+              "doctop": 72.35136,
+              "height": 9.96,
+              "text": "-AOAAAAAAAAA-A",
+              "top": 72.35136,
+              "upright": true,
+              "width": 92.30644,
+              "x0": 28.08,
+              "x1": 120.38644
+            },
+            {
+              "bottom": 112.992,
+              "direction": "ltr",
+              "doctop": 100.992,
+              "height": 12.0,
+              "text": "Aabba7",
+              "top": 100.992,
+              "upright": true,
+              "width": 38.4,
+              "x0": 28.08,
+              "x1": 66.48
+            },
+            {
+              "bottom": 112.992,
+              "direction": "ltr",
+              "doctop": 100.992,
+              "height": 12.0,
+              "text": "Aabababa",
+              "top": 100.992,
+              "upright": true,
+              "width": 52.694,
+              "x0": 98.64,
+              "x1": 151.334
+            },
+            {
+              "bottom": 112.992,
+              "direction": "ltr",
+              "doctop": 100.992,
+              "height": 12.0,
+              "text": "ab",
+              "top": 100.992,
+              "upright": true,
+              "width": 12.674,
+              "x0": 154.338,
+              "x1": 167.012
+            },
+            {
+              "bottom": 112.992,
+              "direction": "ltr",
+              "doctop": 100.992,
+              "height": 12.0,
+              "text": "Aaaaaamaaba",
+              "top": 100.992,
+              "upright": true,
+              "width": 73.352,
+              "x0": 170.016,
+              "x1": 243.368
+            },
+            {
+              "bottom": 169.584,
+              "direction": "ltr",
+              "doctop": 160.584,
+              "height": 9.0,
+              "text": "AAAAA",
+              "top": 160.584,
+              "upright": true,
+              "width": 32.342,
+              "x0": 213.96,
+              "x1": 246.302
+            },
+            {
+              "bottom": 552.11136,
+              "direction": "ltr",
+              "doctop": 542.15136,
+              "height": 9.96,
+              "text": "20Aab",
+              "top": 542.15136,
+              "upright": true,
+              "width": 29.22336,
+              "x0": 28.08,
+              "x1": 57.30336
+            },
+            {
+              "bottom": 552.11136,
+              "direction": "ltr",
+              "doctop": 542.15136,
+              "height": 9.96,
+              "text": "3123",
+              "top": 542.15136,
+              "upright": true,
+              "width": 19.965,
+              "x0": 59.82336,
+              "x1": 79.78836
+            },
+            {
+              "bottom": 552.11136,
+              "direction": "ltr",
+              "doctop": 542.15136,
+              "height": 9.96,
+              "text": "Aababbaa",
+              "top": 542.15136,
+              "upright": true,
+              "width": 39.81308,
+              "x0": 380.52,
+              "x1": 420.33308
+            },
+            {
+              "bottom": 552.11136,
+              "direction": "ltr",
+              "doctop": 542.15136,
+              "height": 9.96,
+              "text": "Aaga",
+              "top": 542.15136,
+              "upright": true,
+              "width": 21.0726,
+              "x0": 705.0,
+              "x1": 726.0726
+            },
+            {
+              "bottom": 552.11136,
+              "direction": "ltr",
+              "doctop": 542.15136,
+              "height": 9.96,
+              "text": "09ab",
+              "top": 542.15136,
+              "upright": true,
+              "width": 21.99424,
+              "x0": 726.96,
+              "x1": 748.95424
+            },
+            {
+              "bottom": 552.11136,
+              "direction": "ltr",
+              "doctop": 542.15136,
+              "height": 9.96,
+              "text": "101",
+              "top": 542.15136,
+              "upright": true,
+              "width": 14.94,
+              "x0": 750.36,
+              "x1": 765.3
+            },
+            {
+              "bottom": 563.51136,
+              "direction": "ltr",
+              "doctop": 553.55136,
+              "height": 9.96,
+              "text": "Aaaabaa",
+              "top": 553.55136,
+              "upright": true,
+              "width": 34.36632,
+              "x0": 28.08,
+              "x1": 62.44632
+            },
+            {
+              "bottom": 563.51136,
+              "direction": "ltr",
+              "doctop": 553.55136,
+              "height": 9.96,
+              "text": "8.8",
+              "top": 553.55136,
+              "upright": true,
+              "width": 12.478,
+              "x0": 64.96432,
+              "x1": 77.44232
+            },
+            {
+              "bottom": 563.51136,
+              "direction": "ltr",
+              "doctop": 553.55136,
+              "height": 9.96,
+              "text": "Aaaaagaaabab",
+              "top": 553.55136,
+              "upright": true,
+              "width": 57.66304,
+              "x0": 79.96032,
+              "x1": 137.62336
+            },
+            {
+              "bottom": 563.51136,
+              "direction": "ltr",
+              "doctop": 553.55136,
+              "height": 9.96,
+              "text": "Aababaabbab",
+              "top": 553.55136,
+              "upright": true,
+              "width": 54.34232,
+              "x0": 140.14136,
+              "x1": 194.48368
+            },
+            {
+              "bottom": 563.51136,
+              "direction": "ltr",
+              "doctop": 553.55136,
+              "height": 9.96,
+              "text": "Amaabmaab",
+              "top": 553.55136,
+              "upright": true,
+              "width": 50.44984,
+              "x0": 197.00168,
+              "x1": 247.45152
+            },
+            {
+              "bottom": 563.51136,
+              "direction": "ltr",
+              "doctop": 553.55136,
+              "height": 9.96,
+              "text": "5",
+              "top": 553.55136,
+              "upright": true,
+              "width": 4.98,
+              "x0": 249.96952,
+              "x1": 254.94952
+            },
+            {
+              "bottom": 206.16,
+              "direction": "btt",
+              "doctop": 162.84,
+              "height": 43.32,
+              "text": "Aaaaaabag8",
+              "top": 162.84,
+              "upright": false,
+              "width": 10.615776,
+              "x0": 260.136,
+              "x1": 270.751776
+            },
+            {
+              "bottom": 133.104,
+              "direction": "ltr",
+              "doctop": 124.104,
+              "height": 9.0,
+              "text": "Ababg",
+              "top": 124.104,
+              "upright": true,
+              "width": 25.438,
+              "x0": 345.48,
+              "x1": 370.918
+            },
+            {
+              "bottom": 133.104,
+              "direction": "ltr",
+              "doctop": 124.104,
+              "height": 9.0,
+              "text": "Aaaambaab",
+              "top": 124.104,
+              "upright": true,
+              "width": 39.572,
+              "x0": 373.134,
+              "x1": 412.706
+            },
+            {
+              "bottom": 133.104,
+              "direction": "ltr",
+              "doctop": 124.104,
+              "height": 9.0,
+              "text": "Aaabab",
+              "top": 124.104,
+              "upright": true,
+              "width": 30.016,
+              "x0": 414.96,
+              "x1": 444.976
+            },
+            {
+              "bottom": 133.104,
+              "direction": "ltr",
+              "doctop": 124.104,
+              "height": 9.0,
+              "text": "(Aaab",
+              "top": 124.104,
+              "upright": true,
+              "width": 23.507,
+              "x0": 447.23,
+              "x1": 470.737
+            }
+          ],
+          "page": 0,
+          "type": "page.extractWords"
+        },
+        {
+          "args": {
+            "extra_attrs": [
+              "size"
+            ],
+            "limit": 30,
+            "vertical_ttb": false
+          },
+          "expected": [
+            {
+              "bottom": 59.39136,
+              "direction": "ltr",
+              "doctop": 49.43136,
+              "height": 9.96,
+              "size": 9.96,
+              "text": "Agaaaaa:",
+              "top": 49.43136,
+              "upright": true,
+              "width": 40.5068,
+              "x0": 28.08,
+              "x1": 68.5868
+            },
+            {
+              "bottom": 59.39136,
+              "direction": "ltr",
+              "doctop": 49.43136,
+              "height": 9.96,
+              "size": 9.96,
+              "text": "AAAA",
+              "top": 49.43136,
+              "upright": true,
+              "width": 28.81548,
+              "x0": 71.1108,
+              "x1": 99.92628
+            },
+            {
+              "bottom": 59.39136,
+              "direction": "ltr",
+              "doctop": 49.43136,
+              "height": 9.96,
+              "size": 9.96,
+              "text": "AAA/Aaabaaab",
+              "top": 49.43136,
+              "upright": true,
+              "width": 63.82456,
+              "x0": 650.52,
+              "x1": 714.34456
+            },
+            {
+              "bottom": 59.39136,
+              "direction": "ltr",
+              "doctop": 49.43136,
+              "height": 9.96,
+              "size": 9.96,
+              "text": "77-2A8A-2076",
+              "top": 49.43136,
+              "upright": true,
+              "width": 48.30544,
+              "x0": 716.87456,
+              "x1": 765.18
+            },
+            {
+              "bottom": 70.79136,
+              "direction": "ltr",
+              "doctop": 60.83136,
+              "height": 9.96,
+              "size": 9.96,
+              "text": "AabaaAA",
+              "top": 60.83136,
+              "upright": true,
+              "width": 39.89208,
+              "x0": 28.08,
+              "x1": 67.97208
+            },
+            {
+              "bottom": 70.79136,
+              "direction": "ltr",
+              "doctop": 60.83136,
+              "height": 9.96,
+              "size": 9.96,
+              "text": "aambaa6",
+              "top": 60.83136,
+              "upright": true,
+              "width": 34.69392,
+              "x0": 70.48608,
+              "x1": 105.18
+            },
+            {
+              "bottom": 70.79136,
+              "direction": "ltr",
+              "doctop": 60.83136,
+              "height": 9.96,
+              "size": 9.96,
+              "text": "618-647173-54",
+              "top": 60.83136,
+              "upright": true,
+              "width": 61.74,
+              "x0": 105.24,
+              "x1": 166.98
+            },
+            {
+              "bottom": 82.31136,
+              "direction": "ltr",
+              "doctop": 72.35136,
+              "height": 9.96,
+              "size": 9.96,
+              "text": "-AOAAAAAAAAA-A",
+              "top": 72.35136,
+              "upright": true,
+              "width": 92.30644,
+              "x0": 28.08,
+              "x1": 120.38644
+            },
+            {
+              "bottom": 552.11136,
+              "direction": "ltr",
+              "doctop": 542.15136,
+              "height": 9.96,
+              "size": 9.96,
+              "text": "20Aab",
+              "top": 542.15136,
+              "upright": true,
+              "width": 29.22336,
+              "x0": 28.08,
+              "x1": 57.30336
+            },
+            {
+              "bottom": 552.11136,
+              "direction": "ltr",
+              "doctop": 542.15136,
+              "height": 9.96,
+              "size": 9.96,
+              "text": "3123",
+              "top": 542.15136,
+              "upright": true,
+              "width": 19.965,
+              "x0": 59.82336,
+              "x1": 79.78836
+            },
+            {
+              "bottom": 552.11136,
+              "direction": "ltr",
+              "doctop": 542.15136,
+              "height": 9.96,
+              "size": 9.96,
+              "text": "Aababbaa",
+              "top": 542.15136,
+              "upright": true,
+              "width": 39.81308,
+              "x0": 380.52,
+              "x1": 420.33308
+            },
+            {
+              "bottom": 552.11136,
+              "direction": "ltr",
+              "doctop": 542.15136,
+              "height": 9.96,
+              "size": 9.96,
+              "text": "Aaga",
+              "top": 542.15136,
+              "upright": true,
+              "width": 21.0726,
+              "x0": 705.0,
+              "x1": 726.0726
+            },
+            {
+              "bottom": 552.11136,
+              "direction": "ltr",
+              "doctop": 542.15136,
+              "height": 9.96,
+              "size": 9.96,
+              "text": "09ab",
+              "top": 542.15136,
+              "upright": true,
+              "width": 21.99424,
+              "x0": 726.96,
+              "x1": 748.95424
+            },
+            {
+              "bottom": 552.11136,
+              "direction": "ltr",
+              "doctop": 542.15136,
+              "height": 9.96,
+              "size": 9.96,
+              "text": "101",
+              "top": 542.15136,
+              "upright": true,
+              "width": 14.94,
+              "x0": 750.36,
+              "x1": 765.3
+            },
+            {
+              "bottom": 563.51136,
+              "direction": "ltr",
+              "doctop": 553.55136,
+              "height": 9.96,
+              "size": 9.96,
+              "text": "Aaaabaa",
+              "top": 553.55136,
+              "upright": true,
+              "width": 34.36632,
+              "x0": 28.08,
+              "x1": 62.44632
+            },
+            {
+              "bottom": 563.51136,
+              "direction": "ltr",
+              "doctop": 553.55136,
+              "height": 9.96,
+              "size": 9.96,
+              "text": "8.8",
+              "top": 553.55136,
+              "upright": true,
+              "width": 12.478,
+              "x0": 64.96432,
+              "x1": 77.44232
+            },
+            {
+              "bottom": 563.51136,
+              "direction": "ltr",
+              "doctop": 553.55136,
+              "height": 9.96,
+              "size": 9.96,
+              "text": "Aaaaagaaabab",
+              "top": 553.55136,
+              "upright": true,
+              "width": 57.66304,
+              "x0": 79.96032,
+              "x1": 137.62336
+            },
+            {
+              "bottom": 563.51136,
+              "direction": "ltr",
+              "doctop": 553.55136,
+              "height": 9.96,
+              "size": 9.96,
+              "text": "Aababaabbab",
+              "top": 553.55136,
+              "upright": true,
+              "width": 54.34232,
+              "x0": 140.14136,
+              "x1": 194.48368
+            },
+            {
+              "bottom": 563.51136,
+              "direction": "ltr",
+              "doctop": 553.55136,
+              "height": 9.96,
+              "size": 9.96,
+              "text": "Amaabmaab",
+              "top": 553.55136,
+              "upright": true,
+              "width": 50.44984,
+              "x0": 197.00168,
+              "x1": 247.45152
+            },
+            {
+              "bottom": 563.51136,
+              "direction": "ltr",
+              "doctop": 553.55136,
+              "height": 9.96,
+              "size": 9.96,
+              "text": "5",
+              "top": 553.55136,
+              "upright": true,
+              "width": 4.98,
+              "x0": 249.96952,
+              "x1": 254.94952
+            },
+            {
+              "bottom": 112.992,
+              "direction": "ltr",
+              "doctop": 100.992,
+              "height": 12.0,
+              "size": 12.0,
+              "text": "Aabba7",
+              "top": 100.992,
+              "upright": true,
+              "width": 38.4,
+              "x0": 28.08,
+              "x1": 66.48
+            },
+            {
+              "bottom": 112.992,
+              "direction": "ltr",
+              "doctop": 100.992,
+              "height": 12.0,
+              "size": 12.0,
+              "text": "Aabababa",
+              "top": 100.992,
+              "upright": true,
+              "width": 52.694,
+              "x0": 98.64,
+              "x1": 151.334
+            },
+            {
+              "bottom": 112.992,
+              "direction": "ltr",
+              "doctop": 100.992,
+              "height": 12.0,
+              "size": 12.0,
+              "text": "ab",
+              "top": 100.992,
+              "upright": true,
+              "width": 12.674,
+              "x0": 154.338,
+              "x1": 167.012
+            },
+            {
+              "bottom": 112.992,
+              "direction": "ltr",
+              "doctop": 100.992,
+              "height": 12.0,
+              "size": 12.0,
+              "text": "Aaaaaamaaba",
+              "top": 100.992,
+              "upright": true,
+              "width": 73.352,
+              "x0": 170.016,
+              "x1": 243.368
+            },
+            {
+              "bottom": 169.584,
+              "direction": "ltr",
+              "doctop": 160.584,
+              "height": 9.0,
+              "size": 9.0,
+              "text": "AAAAA",
+              "top": 160.584,
+              "upright": true,
+              "width": 32.342,
+              "x0": 213.96,
+              "x1": 246.302
+            },
+            {
+              "bottom": 206.16,
+              "direction": "btt",
+              "doctop": 199.636008,
+              "height": 6.523992,
+              "size": 6.523992,
+              "text": "A",
+              "top": 199.636008,
+              "upright": false,
+              "width": 9.036,
+              "x0": 261.715776,
+              "x1": 270.751776
+            },
+            {
+              "bottom": 201.12,
+              "direction": "btt",
+              "doctop": 180.762,
+              "height": 20.358,
+              "size": 4.518,
+              "text": "aaaaa",
+              "top": 180.762,
+              "upright": false,
+              "width": 9.036,
+              "x0": 261.715776,
+              "x1": 270.751776
+            },
+            {
+              "bottom": 180.24,
+              "direction": "btt",
+              "doctop": 175.215984,
+              "height": 5.024016,
+              "size": 5.024016,
+              "text": "b",
+              "top": 175.215984,
+              "upright": false,
+              "width": 9.036,
+              "x0": 261.715776,
+              "x1": 270.751776
+            },
+            {
+              "bottom": 177.72,
+              "direction": "btt",
+              "doctop": 168.162,
+              "height": 9.558,
+              "size": 4.518,
+              "text": "ag",
+              "top": 168.162,
+              "upright": false,
+              "width": 9.036,
+              "x0": 261.715776,
+              "x1": 270.751776
+            },
+            {
+              "bottom": 165.84,
+              "direction": "btt",
+              "doctop": 162.84,
+              "height": 3.0,
+              "size": 3.0,
+              "text": "8",
+              "top": 162.84,
+              "upright": false,
+              "width": 6.0,
+              "x0": 260.136,
+              "x1": 266.136
+            }
+          ],
+          "page": 0,
+          "type": "page.extractWords"
+        },
+        {
+          "args": {
+            "horizontal_ltr": false,
+            "limit": 30
+          },
+          "expected": [
+            {
+              "bottom": 59.39136,
+              "direction": "rtl",
+              "doctop": 49.43136,
+              "height": 9.96,
+              "text": "6702-A8A2-77",
+              "top": 49.43136,
+              "upright": true,
+              "width": 48.30544,
+              "x0": 716.87456,
+              "x1": 765.18
+            },
+            {
+              "bottom": 59.39136,
+              "direction": "rtl",
+              "doctop": 49.43136,
+              "height": 9.96,
+              "text": "baaabaaA/AAA",
+              "top": 49.43136,
+              "upright": true,
+              "width": 63.82456,
+              "x0": 650.52,
+              "x1": 714.34456
+            },
+            {
+              "bottom": 59.39136,
+              "direction": "rtl",
+              "doctop": 49.43136,
+              "height": 9.96,
+              "text": "AAAA",
+              "top": 49.43136,
+              "upright": true,
+              "width": 28.81548,
+              "x0": 71.1108,
+              "x1": 99.92628
+            },
+            {
+              "bottom": 59.39136,
+              "direction": "rtl",
+              "doctop": 49.43136,
+              "height": 9.96,
+              "text": ":aaaaagA",
+              "top": 49.43136,
+              "upright": true,
+              "width": 40.5068,
+              "x0": 28.08,
+              "x1": 68.5868
+            },
+            {
+              "bottom": 70.79136,
+              "direction": "rtl",
+              "doctop": 60.83136,
+              "height": 9.96,
+              "text": "45-371746-8166",
+              "top": 60.83136,
+              "upright": true,
+              "width": 66.78,
+              "x0": 100.2,
+              "x1": 166.98
+            },
+            {
+              "bottom": 70.79136,
+              "direction": "rtl",
+              "doctop": 60.83136,
+              "height": 9.96,
+              "text": "aabmaa",
+              "top": 60.83136,
+              "upright": true,
+              "width": 30.47784,
+              "x0": 70.48608,
+              "x1": 100.96392
+            },
+            {
+              "bottom": 70.79136,
+              "direction": "rtl",
+              "doctop": 60.83136,
+              "height": 9.96,
+              "text": "AAaabaA",
+              "top": 60.83136,
+              "upright": true,
+              "width": 39.89208,
+              "x0": 28.08,
+              "x1": 67.97208
+            },
+            {
+              "bottom": 82.31136,
+              "direction": "rtl",
+              "doctop": 72.35136,
+              "height": 9.96,
+              "text": "AA-",
+              "top": 72.35136,
+              "upright": true,
+              "width": 14.40524,
+              "x0": 105.9812,
+              "x1": 120.38644
+            },
+            {
+              "bottom": 82.31136,
+              "direction": "rtl",
+              "doctop": 72.35136,
+              "height": 9.96,
+              "text": "AAAAAAAAOA-",
+              "top": 72.35136,
+              "upright": true,
+              "width": 77.8782,
+              "x0": 28.08,
+              "x1": 105.9582
+            },
+            {
+              "bottom": 112.992,
+              "direction": "rtl",
+              "doctop": 100.992,
+              "height": 12.0,
+              "text": "abaamaaaaaA",
+              "top": 100.992,
+              "upright": true,
+              "width": 73.352,
+              "x0": 170.016,
+              "x1": 243.368
+            },
+            {
+              "bottom": 112.992,
+              "direction": "rtl",
+              "doctop": 100.992,
+              "height": 12.0,
+              "text": "ba",
+              "top": 100.992,
+              "upright": true,
+              "width": 12.674,
+              "x0": 154.338,
+              "x1": 167.012
+            },
+            {
+              "bottom": 112.992,
+              "direction": "rtl",
+              "doctop": 100.992,
+              "height": 12.0,
+              "text": "abababaA",
+              "top": 100.992,
+              "upright": true,
+              "width": 52.694,
+              "x0": 98.64,
+              "x1": 151.334
+            },
+            {
+              "bottom": 112.992,
+              "direction": "rtl",
+              "doctop": 100.992,
+              "height": 12.0,
+              "text": "7abbaA",
+              "top": 100.992,
+              "upright": true,
+              "width": 38.4,
+              "x0": 28.08,
+              "x1": 66.48
+            },
+            {
+              "bottom": 169.584,
+              "direction": "rtl",
+              "doctop": 160.584,
+              "height": 9.0,
+              "text": "AAAAA",
+              "top": 160.584,
+              "upright": true,
+              "width": 32.342,
+              "x0": 213.96,
+              "x1": 246.302
+            },
+            {
+              "bottom": 552.11136,
+              "direction": "rtl",
+              "doctop": 542.15136,
+              "height": 9.96,
+              "text": "101",
+              "top": 542.15136,
+              "upright": true,
+              "width": 14.94,
+              "x0": 750.36,
+              "x1": 765.3
+            },
+            {
+              "bottom": 552.11136,
+              "direction": "rtl",
+              "doctop": 542.15136,
+              "height": 9.96,
+              "text": "ba90",
+              "top": 542.15136,
+              "upright": true,
+              "width": 21.99424,
+              "x0": 726.96,
+              "x1": 748.95424
+            },
+            {
+              "bottom": 552.11136,
+              "direction": "rtl",
+              "doctop": 542.15136,
+              "height": 9.96,
+              "text": "agaA",
+              "top": 542.15136,
+              "upright": true,
+              "width": 21.0726,
+              "x0": 705.0,
+              "x1": 726.0726
+            },
+            {
+              "bottom": 552.11136,
+              "direction": "rtl",
+              "doctop": 542.15136,
+              "height": 9.96,
+              "text": "aabbabaA",
+              "top": 542.15136,
+              "upright": true,
+              "width": 39.81308,
+              "x0": 380.52,
+              "x1": 420.33308
+            },
+            {
+              "bottom": 552.11136,
+              "direction": "rtl",
+              "doctop": 542.15136,
+              "height": 9.96,
+              "text": "3213",
+              "top": 542.15136,
+              "upright": true,
+              "width": 19.965,
+              "x0": 59.82336,
+              "x1": 79.78836
+            },
+            {
+              "bottom": 552.11136,
+              "direction": "rtl",
+              "doctop": 542.15136,
+              "height": 9.96,
+              "text": "baA02",
+              "top": 542.15136,
+              "upright": true,
+              "width": 29.22336,
+              "x0": 28.08,
+              "x1": 57.30336
+            },
+            {
+              "bottom": 563.51136,
+              "direction": "rtl",
+              "doctop": 553.55136,
+              "height": 9.96,
+              "text": "5",
+              "top": 553.55136,
+              "upright": true,
+              "width": 4.98,
+              "x0": 249.96952,
+              "x1": 254.94952
+            },
+            {
+              "bottom": 563.51136,
+              "direction": "rtl",
+              "doctop": 553.55136,
+              "height": 9.96,
+              "text": "baambaamA",
+              "top": 553.55136,
+              "upright": true,
+              "width": 50.44984,
+              "x0": 197.00168,
+              "x1": 247.45152
+            },
+            {
+              "bottom": 563.51136,
+              "direction": "rtl",
+              "doctop": 553.55136,
+              "height": 9.96,
+              "text": "babbaababaA",
+              "top": 553.55136,
+              "upright": true,
+              "width": 54.34232,
+              "x0": 140.14136,
+              "x1": 194.48368
+            },
+            {
+              "bottom": 563.51136,
+              "direction": "rtl",
+              "doctop": 553.55136,
+              "height": 9.96,
+              "text": "babaaagaaaaA",
+              "top": 553.55136,
+              "upright": true,
+              "width": 57.66304,
+              "x0": 79.96032,
+              "x1": 137.62336
+            },
+            {
+              "bottom": 563.51136,
+              "direction": "rtl",
+              "doctop": 553.55136,
+              "height": 9.96,
+              "text": "8.8",
+              "top": 553.55136,
+              "upright": true,
+              "width": 12.478,
+              "x0": 64.96432,
+              "x1": 77.44232
+            },
+            {
+              "bottom": 563.51136,
+              "direction": "rtl",
+              "doctop": 553.55136,
+              "height": 9.96,
+              "text": "aabaaaA",
+              "top": 553.55136,
+              "upright": true,
+              "width": 34.36632,
+              "x0": 28.08,
+              "x1": 62.44632
+            },
+            {
+              "bottom": 206.16,
+              "direction": "ttb",
+              "doctop": 162.84,
+              "height": 43.32,
+              "text": "8gabaaaaaA",
+              "top": 162.84,
+              "upright": false,
+              "width": 10.615776,
+              "x0": 260.136,
+              "x1": 270.751776
+            },
+            {
+              "bottom": 133.104,
+              "direction": "rtl",
+              "doctop": 124.104,
+              "height": 9.0,
+              "text": "babaaA",
+              "top": 124.104,
+              "upright": true,
+              "width": 29.866,
+              "x0": 686.406,
+              "x1": 716.272
+            },
+            {
+              "bottom": 133.104,
+              "direction": "rtl",
+              "doctop": 124.104,
+              "height": 9.0,
+              "text": "gaw-abbaA",
+              "top": 124.104,
+              "upright": true,
+              "width": 38.132,
+              "x0": 646.08,
+              "x1": 684.212
+            },
+            {
+              "bottom": 133.104,
+              "direction": "rtl",
+              "doctop": 124.104,
+              "height": 9.0,
+              "text": ")agaA",
+              "top": 124.104,
+              "upright": true,
+              "width": 23.003,
+              "x0": 518.895,
+              "x1": 541.898
+            }
+          ],
+          "page": 0,
+          "type": "page.extractWords"
+        }
+      ],
+      "id": "words-directions-and-extra-attrs",
+      "pdf": "issue-192-example.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": "Big Te xt\nSmall Text",
+          "page": 0,
+          "type": "page.extractText"
+        },
+        {
+          "args": {
+            "x_tolerance": 4
+          },
+          "expected": "Big Te xt\nSmallText",
+          "page": 0,
+          "type": "page.extractText"
+        },
+        {
+          "args": {
+            "x_tolerance_ratio": 0.15
+          },
+          "expected": "Big Text\nSmall Text",
+          "page": 0,
+          "type": "page.extractText"
+        },
+        {
+          "args": {
+            "x_tolerance_ratio": 0.15
+          },
+          "expected": [
+            {
+              "bottom": 564.3909,
+              "direction": "ltr",
+              "doctop": 448.3909,
+              "height": 116.0,
+              "text": "Big",
+              "top": 448.3909,
+              "upright": true,
+              "width": 177.828,
+              "x0": 98.99976,
+              "x1": 276.82776
+            },
+            {
+              "bottom": 564.3909,
+              "direction": "ltr",
+              "doctop": 448.3909,
+              "height": 116.0,
+              "text": "Text",
+              "top": 448.3909,
+              "upright": true,
+              "width": 229.804,
+              "x0": 301.1863,
+              "x1": 530.9903
+            },
+            {
+              "bottom": 587.4072,
+              "direction": "ltr",
+              "doctop": 575.4072,
+              "height": 12.0,
+              "text": "Small",
+              "top": 575.4072,
+              "upright": true,
+              "width": 31.74,
+              "x0": 98.59393,
+              "x1": 130.33393
+            },
+            {
+              "bottom": 587.4072,
+              "direction": "ltr",
+              "doctop": 575.4072,
+              "height": 12.0,
+              "text": "Text",
+              "top": 575.4072,
+              "upright": true,
+              "width": 23.668,
+              "x0": 133.5939,
+              "x1": 157.2619
+            }
+          ],
+          "page": 0,
+          "type": "page.extractWords"
+        }
+      ],
+      "id": "x-tolerance-ratio",
+      "pdf": "issue-987-test.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": "Chapter 1\nWhat is Earth Science?\n1.1 Nature of Science\nLesson Objectives\n• Explain the importance of asking questions.\n• State the steps of the scientific method.\n• Describe the three major types of scientific models.\n• Use appropriate safety precautions inside and outside the science laboratory.\nIntroduction\nThink of your favorite science fiction movie. What is it about? Maybe it’s about spaceships\ngoing to distant planets, or people being cloned in laboratories, or undersea civilizations, or\nrobots that walk among us. These entertaining imaginings are make-believe fantasies, that’s\nwhy they’re called science “fiction.” They are not real. But why are they called “science”\nfiction?\nThe answer is that science uses a disciplined process to answer questions. In science, “disci-\nplined” does not mean well-behaved. It means following orderly steps in order to come up\nwith the best answers. Science involves observing, wondering, categorizing, communicating,\ncalculating, analyzing, and much more. In order to convert creativity into reality, we need\nscience. In order to travel beyond where anyone has gone before, we need science. In order\nto understand the world, make sense of it, and conserve it, we need science. In order to\nconfirm our best guesses about the universe and the things in it, we need science. Science\nfiction stories extend and expand on all the ideas of science and technology in creative ways.\n1\nwww.ck12.org",
+          "page": 0,
+          "type": "page.extractText"
+        },
+        {
+          "args": {
+            "expand_ligatures": false
+          },
+          "expected": "Chapter 1\nWhat is Earth Science?\n1.1 Nature of Science\nLesson Objectives\n• Explain the importance of asking questions.\n• State the steps of the scientiﬁc method.\n• Describe the three major types of scientiﬁc models.\n• Use appropriate safety precautions inside and outside the science laboratory.\nIntroduction\nThink of your favorite science ﬁction movie. What is it about? Maybe it’s about spaceships\ngoing to distant planets, or people being cloned in laboratories, or undersea civilizations, or\nrobots that walk among us. These entertaining imaginings are make-believe fantasies, that’s\nwhy they’re called science “ﬁction.” They are not real. But why are they called “science”\nﬁction?\nThe answer is that science uses a disciplined process to answer questions. In science, “disci-\nplined” does not mean well-behaved. It means following orderly steps in order to come up\nwith the best answers. Science involves observing, wondering, categorizing, communicating,\ncalculating, analyzing, and much more. In order to convert creativity into reality, we need\nscience. In order to travel beyond where anyone has gone before, we need science. In order\nto understand the world, make sense of it, and conserve it, we need science. In order to\nconﬁrm our best guesses about the universe and the things in it, we need science. Science\nﬁction stories extend and expand on all the ideas of science and technology in creative ways.\n1\nwww.ck12.org",
+          "page": 0,
+          "type": "page.extractText"
+        },
+        {
+          "args": {
+            "slice": [
+              50,
+              56
+            ]
+          },
+          "expected": [
+            {
+              "bottom": 512.10927,
+              "direction": "ltr",
+              "doctop": 500.15427,
+              "height": 11.955,
+              "text": "your",
+              "top": 500.15427,
+              "upright": true,
+              "width": 22.78623,
+              "x0": 119.60481,
+              "x1": 142.39104
+            },
+            {
+              "bottom": 512.10927,
+              "direction": "ltr",
+              "doctop": 500.15427,
+              "height": 11.955,
+              "text": "favorite",
+              "top": 500.15427,
+              "upright": true,
+              "width": 38.39946,
+              "x0": 146.02536,
+              "x1": 184.42482
+            },
+            {
+              "bottom": 512.10927,
+              "direction": "ltr",
+              "doctop": 500.15427,
+              "height": 11.955,
+              "text": "science",
+              "top": 500.15427,
+              "upright": true,
+              "width": 35.17161,
+              "x0": 188.05914,
+              "x1": 223.23075
+            },
+            {
+              "bottom": 512.10927,
+              "direction": "ltr",
+              "doctop": 500.15427,
+              "height": 11.955,
+              "text": "fiction",
+              "top": 500.15427,
+              "upright": true,
+              "width": 31.87203,
+              "x0": 226.86507,
+              "x1": 258.7371
+            },
+            {
+              "bottom": 512.10927,
+              "direction": "ltr",
+              "doctop": 500.15427,
+              "height": 11.955,
+              "text": "movie.",
+              "top": 500.15427,
+              "upright": true,
+              "width": 33.18708,
+              "x0": 262.383375,
+              "x1": 295.570455
+            },
+            {
+              "bottom": 512.10927,
+              "direction": "ltr",
+              "doctop": 500.15427,
+              "height": 11.955,
+              "text": "What",
+              "top": 500.15427,
+              "upright": true,
+              "width": 28.943055,
+              "x0": 300.67524,
+              "x1": 329.618295
+            }
+          ],
+          "page": 0,
+          "type": "page.extractWords"
+        },
+        {
+          "args": {
+            "expand_ligatures": false,
+            "slice": [
+              50,
+              56
+            ]
+          },
+          "expected": [
+            {
+              "bottom": 512.10927,
+              "direction": "ltr",
+              "doctop": 500.15427,
+              "height": 11.955,
+              "text": "your",
+              "top": 500.15427,
+              "upright": true,
+              "width": 22.78623,
+              "x0": 119.60481,
+              "x1": 142.39104
+            },
+            {
+              "bottom": 512.10927,
+              "direction": "ltr",
+              "doctop": 500.15427,
+              "height": 11.955,
+              "text": "favorite",
+              "top": 500.15427,
+              "upright": true,
+              "width": 38.39946,
+              "x0": 146.02536,
+              "x1": 184.42482
+            },
+            {
+              "bottom": 512.10927,
+              "direction": "ltr",
+              "doctop": 500.15427,
+              "height": 11.955,
+              "text": "science",
+              "top": 500.15427,
+              "upright": true,
+              "width": 35.17161,
+              "x0": 188.05914,
+              "x1": 223.23075
+            },
+            {
+              "bottom": 512.10927,
+              "direction": "ltr",
+              "doctop": 500.15427,
+              "height": 11.955,
+              "text": "ﬁction",
+              "top": 500.15427,
+              "upright": true,
+              "width": 31.87203,
+              "x0": 226.86507,
+              "x1": 258.7371
+            },
+            {
+              "bottom": 512.10927,
+              "direction": "ltr",
+              "doctop": 500.15427,
+              "height": 11.955,
+              "text": "movie.",
+              "top": 500.15427,
+              "upright": true,
+              "width": 33.18708,
+              "x0": 262.383375,
+              "x1": 295.570455
+            },
+            {
+              "bottom": 512.10927,
+              "direction": "ltr",
+              "doctop": 500.15427,
+              "height": 11.955,
+              "text": "What",
+              "top": 500.15427,
+              "upright": true,
+              "width": 28.943055,
+              "x0": 300.67524,
+              "x1": 329.618295
+            }
+          ],
+          "page": 0,
+          "type": "page.extractWords"
+        }
+      ],
+      "id": "ligatures",
+      "pdf": "issue-598-example.pdf"
+    },
+    {
+      "checks": [
+        {
+          "args": {
+            "limit": 12,
+            "split_at_punctuation": true
+          },
+          "expected": [
+            {
+              "bottom": 83.692,
+              "direction": "ltr",
+              "doctop": 72.692,
+              "height": 11.0,
+              "text": "https",
+              "top": 72.692,
+              "upright": true,
+              "width": 25.069,
+              "x0": 72.0,
+              "x1": 97.069
+            },
+            {
+              "bottom": 83.692,
+              "direction": "ltr",
+              "doctop": 72.692,
+              "height": 11.0,
+              "text": ":",
+              "top": 72.692,
+              "upright": true,
+              "width": 3.058,
+              "x0": 97.069,
+              "x1": 100.127
+            },
+            {
+              "bottom": 83.692,
+              "direction": "ltr",
+              "doctop": 72.692,
+              "height": 11.0,
+              "text": "/",
+              "top": 72.692,
+              "upright": true,
+              "width": 3.663,
+              "x0": 100.127,
+              "x1": 103.79
+            },
+            {
+              "bottom": 83.692,
+              "direction": "ltr",
+              "doctop": 72.692,
+              "height": 11.0,
+              "text": "/",
+              "top": 72.692,
+              "upright": true,
+              "width": 3.663,
+              "x0": 103.79,
+              "x1": 107.453
+            },
+            {
+              "bottom": 83.692,
+              "direction": "ltr",
+              "doctop": 72.692,
+              "height": 11.0,
+              "text": "dell",
+              "top": 72.692,
+              "upright": true,
+              "width": 17.314,
+              "x0": 107.453,
+              "x1": 124.767
+            },
+            {
+              "bottom": 83.692,
+              "direction": "ltr",
+              "doctop": 72.692,
+              "height": 11.0,
+              "text": "-",
+              "top": 72.692,
+              "upright": true,
+              "width": 4.279,
+              "x0": 124.767,
+              "x1": 129.046
+            },
+            {
+              "bottom": 83.692,
+              "direction": "ltr",
+              "doctop": 72.692,
+              "height": 11.0,
+              "text": "research",
+              "top": 72.692,
+              "upright": true,
+              "width": 42.174,
+              "x0": 129.046,
+              "x1": 171.22
+            },
+            {
+              "bottom": 83.692,
+              "direction": "ltr",
+              "doctop": 72.692,
+              "height": 11.0,
+              "text": "-",
+              "top": 72.692,
+              "upright": true,
+              "width": 4.279,
+              "x0": 171.22,
+              "x1": 175.499
+            },
+            {
+              "bottom": 83.692,
+              "direction": "ltr",
+              "doctop": 72.692,
+              "height": 11.0,
+              "text": "harvard",
+              "top": 72.692,
+              "upright": true,
+              "width": 37.081,
+              "x0": 175.499,
+              "x1": 212.58
+            },
+            {
+              "bottom": 83.692,
+              "direction": "ltr",
+              "doctop": 72.692,
+              "height": 11.0,
+              "text": ".",
+              "top": 72.692,
+              "upright": true,
+              "width": 3.058,
+              "x0": 212.58,
+              "x1": 215.638
+            },
+            {
+              "bottom": 83.692,
+              "direction": "ltr",
+              "doctop": 72.692,
+              "height": 11.0,
+              "text": "github",
+              "top": 72.692,
+              "upright": true,
+              "width": 30.976,
+              "x0": 215.638,
+              "x1": 246.614
+            },
+            {
+              "bottom": 83.692,
+              "direction": "ltr",
+              "doctop": 72.692,
+              "height": 11.0,
+              "text": ".",
+              "top": 72.692,
+              "upright": true,
+              "width": 3.058,
+              "x0": 246.614,
+              "x1": 249.672
+            }
+          ],
+          "page": 0,
+          "type": "page.extractWords"
+        },
+        {
+          "args": {
+            "limit": 12,
+            "split_at_punctuation": false
+          },
+          "expected": [
+            {
+              "bottom": 83.692,
+              "direction": "ltr",
+              "doctop": 72.692,
+              "height": 11.0,
+              "text": "https://dell-research-harvard.github.io/HJDataset/",
+              "top": 72.692,
+              "upright": true,
+              "width": 245.3,
+              "x0": 72.0,
+              "x1": 317.3
+            }
+          ],
+          "page": 0,
+          "type": "page.extractWords"
+        },
+        {
+          "args": {
+            "layout": true,
+            "split_at_punctuation": true
+          },
+          "expected": "                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n          https : / / dell - research - harvard . github . io / HJDataset /         \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    \n                                                                                    ",
+          "page": 0,
+          "type": "page.extractText"
+        }
+      ],
+      "id": "punctuation-splitting",
+      "pdf": "test-punkt.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": "Official - Subject to Final Review\n1 IN THE SUPREME COURT OF THE UNITED STATES\n2 - - - - - - - - - - - - - - - - - x\n3 MICHAEL A. KNOWLES, :\n4 WARDEN, :\n5 Petitioner :\n6 v. : No. 07-1315\n7 ALEXANDRE MIRZAYANCE. :\n8 - - - - - - - - - - - - - - - - - x\n9 Washington, D.C.\n10 Tuesday, January 13, 2009\n11\n12 The above-entitled matter came on for oral\n13 argument before the Supreme Court of the United States\n14 at 1:01 p.m.\n15 APPEARANCES:\n16 STEVEN E. MERCER, ESQ., Deputy Attorney General, Los\n17 Angeles, Cal.; on behalf of the Petitioner.\n18 CHARLES M. SEVILLA, ESQ., San Diego, Cal.; on behalf\n19 of the Respondent.\n20\n21\n22\n23\n24\n25\n1\nAlderson Reporting Company",
+          "page": 0,
+          "type": "page.extractText"
+        },
+        {
+          "args": {
+            "pattern": "Roberts",
+            "regex": false
+          },
+          "expected": [],
+          "page": 0,
+          "type": "page.search"
+        },
+        {
+          "bbox": [
+            0,
+            0,
+            612,
+            120
+          ],
+          "expected": "Official - Subject to Final Review\n1 IN THE SUPREME COURT OF THE UNITED STATES\n2 - - - - - - - - - - - - - - - - - x\n3 MICHAEL A. KNOWLES, :",
+          "page": 0,
+          "type": "page.crop.extractText"
+        }
+      ],
+      "id": "search-and-text-lines",
+      "pdf": "scotus-transcript-p1.pdf"
+    },
+    {
+      "checks": [
+        {
+          "args": {
+            "horizontal_strategy": "lines_strict",
+            "vertical_strategy": "lines_strict"
+          },
+          "expected": [
+            [
+              "Line no",
+              "UPC code",
+              "Location",
+              "Item Description",
+              "Item Quantity",
+              "Bill Amount",
+              "Accrued Amount",
+              "Handling Rate",
+              "PO number"
+            ],
+            [
+              "",
+              "0085648100305",
+              "CENTRAL KMA",
+              "LILYS 40% SLTD ALMND CHOC",
+              "637",
+              "$ 0.61",
+              "$ 388.57",
+              "0.0000",
+              ""
+            ],
+            [
+              "",
+              "0085648100380",
+              "CENTRAL KMA",
+              "LILYS DRK CHC CRMLZD SLTD",
+              "688",
+              "$ 0.61",
+              "$ 419.68",
+              "0.0000",
+              ""
+            ],
+            [
+              "",
+              "0085648100303",
+              "CENTRAL KMA",
+              "LILYS ALMND 55% DARK CHOC",
+              "560",
+              "$ 0.61",
+              "$ 341.60",
+              "0.0000",
+              ""
+            ],
+            [
+              "",
+              "0085648100300",
+              "CENTRAL KMA",
+              "LILYS 55% DARK CHOC BAR",
+              "415",
+              "$ 0.61",
+              "$ 253.15",
+              "0.0000",
+              ""
+            ]
+          ],
+          "page": 0,
+          "type": "page.extractTable"
+        },
+        {
+          "bbox": [
+            0,
+            0,
+            842,
+            122
+          ],
+          "expected": [
+            [
+              "Line no",
+              "UPC code",
+              "Location",
+              "Item Description",
+              "Item Quantity",
+              "Bill Amount",
+              "Accrued Amount",
+              "Handling Rate",
+              "PO number"
+            ],
+            [
+              "",
+              "0085648100305",
+              "CENTRAL KMA",
+              "LILYS 40% SLTD ALMND CHOC",
+              "637",
+              "$ 0.61",
+              "$ 388.57",
+              "0.0000",
+              ""
+            ],
+            [
+              "",
+              "0085648100380",
+              "CENTRAL KMA",
+              "LILYS DRK CHC CRMLZD SLTD",
+              "688",
+              "$ 0.61",
+              "$ 419.68",
+              "0.0000",
+              ""
+            ],
+            [
+              "",
+              "0085648100303",
+              "CENTRAL KMA",
+              "LILYS ALMND 55% DARK CHOC",
+              "560",
+              "$ 0.61",
+              "$ 341.60",
+              "0.0000",
+              ""
+            ],
+            [
+              "",
+              "0085648100300",
+              "CENTRAL KMA",
+              "LILYS 55% DARK CHOC BAR",
+              "415",
+              "$ 0.61",
+              "$ 253.15",
+              "0.0000",
+              ""
+            ]
+          ],
+          "page": 0,
+          "type": "page.crop.extractTable"
+        }
+      ],
+      "id": "table-lines-strict",
+      "pdf": "issue-140-example.pdf"
+    },
+    {
+      "checks": [
+        {
+          "args": {
+            "horizontal_strategy": "text",
+            "min_words_vertical": 20,
+            "vertical_strategy": "text"
+          },
+          "bbox": [
+            70.332,
+            130.986,
+            420,
+            509.106
+          ],
+          "expected": [
+            [
+              "",
+              "",
+              "BAIN,JMATTHEW",
+              "",
+              ""
+            ],
+            [
+              "",
+              "",
+              "SMITH,ALVAROR",
+              "",
+              ""
+            ],
+            [
+              "",
+              "",
+              "ARMER,DEREKA",
+              "",
+              ""
+            ],
+            [
+              "",
+              "",
+              "ENGLERT,PAYTONA",
+              "",
+              ""
+            ],
+            [
+              "",
+              "",
+              "CAMPBELL,CLAYTOND",
+              "",
+              ""
+            ],
+            [
+              "",
+              "",
+              "VELEZ-GREEN,ALEXANDERJ",
+              "",
+              ""
+            ],
+            [
+              "",
+              "",
+              "BOLLINGER,ERINS",
+              "",
+              ""
+            ],
+            [
+              "",
+              "",
+              "KISHI,DANIELM",
+              "",
+              ""
+            ],
+            [
+              "",
+              "",
+              "LAVALLEY,ROBERTCLINTON",
+              "",
+              ""
+            ],
+            [
+              "",
+              "",
+              "GRUENDER,BENJAMINL",
+              "",
+              ""
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190001",
+              "05/03/2019",
+              "CITIBANK-TRAVELCBACARD",
+              "03/04/2019",
+              "03/06/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190002",
+              "05/24/2019",
+              "CITIBANK-TRAVELCBACARD",
+              "03/10/2019",
+              "05/15/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190003",
+              "05/03/2019",
+              "CITIBANK-TRAVELCBACARD",
+              "03/01/2019",
+              "03/02/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190004",
+              "04/03/2019",
+              "CITIBANK-TRAVELCBACARD",
+              "03/21/2019",
+              "03/24/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190005",
+              "05/28/2019",
+              "CITIBANK-TRAVELCBACARD",
+              "03/21/2019",
+              "03/24/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190026",
+              "05/03/2019",
+              "CITIBANK-TRAVELCBACARD",
+              "04/16/2019",
+              "04/17/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190027",
+              "05/02/2019",
+              "CITIBANK-TRAVELCBACARD",
+              "04/15/2019",
+              "04/18/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190029",
+              "05/16/2019",
+              "CITIBANK-TRAVELCBACARD",
+              "05/07/2019",
+              "05/09/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190031",
+              "05/28/2019",
+              "CITIBANK-SENATORIBACARD",
+              "05/10/2019",
+              "05/11/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190032",
+              "06/13/2019",
+              "CITIBANK-SENATORIBACARD",
+              "05/24/2019",
+              "05/25/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190033",
+              "06/04/2019",
+              "CITIBANK-TRAVELCBACARD",
+              "05/24/2019",
+              "05/25/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190034",
+              "06/04/2019",
+              "CITIBANK-TRAVELCBACARD",
+              "05/24/2019",
+              "05/25/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190040",
+              "06/04/2019",
+              "CITIBANK-TRAVELCBACARD",
+              "05/29/2019",
+              "05/31/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190041",
+              "06/13/2019",
+              "CITIBANK-TRAVELCBACARD",
+              "04/13/2019",
+              "04/27/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190045",
+              "07/10/2019",
+              "CITIBANK-SENATORIBACARD",
+              "06/29/2019",
+              "07/07/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190046",
+              "07/11/2019",
+              "CITIBANK-TRAVELCBACARD",
+              "07/01/2019",
+              "07/07/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190047",
+              "07/12/2019",
+              "CITIBANK-TRAVELCBACARD",
+              "07/01/2019",
+              "07/03/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190049",
+              "07/25/2019",
+              "CITIBANK-SENATORIBACARD",
+              "07/07/2019",
+              "07/07/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190067",
+              "09/04/2019",
+              "CITIBANK-TRAVELCBACARD",
+              "08/17/2019",
+              "08/25/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190068",
+              "09/04/2019",
+              "CITIBANK-TRAVELCBACARD",
+              "08/12/2019",
+              "08/14/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190069",
+              "09/09/2019",
+              "CITIBANK-TRAVELCBACARD",
+              "08/12/2019",
+              "08/14/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190070",
+              "09/09/2019",
+              "CITIBANK-TRAVELCBACARD",
+              "08/12/2019",
+              "08/14/2019"
+            ]
+          ],
+          "page": 0,
+          "type": "page.crop.extractTable"
+        },
+        {
+          "args": {
+            "horizontal_strategy": "text",
+            "min_words_vertical": 20,
+            "text_x_tolerance": 1,
+            "vertical_strategy": "text"
+          },
+          "bbox": [
+            70.332,
+            130.986,
+            420,
+            509.106
+          ],
+          "expected": [
+            [
+              "",
+              "",
+              "BAIN, J MATTHEW",
+              "",
+              ""
+            ],
+            [
+              "",
+              "",
+              "SMITH, ALVARO R",
+              "",
+              ""
+            ],
+            [
+              "",
+              "",
+              "ARMER, DEREK A",
+              "",
+              ""
+            ],
+            [
+              "",
+              "",
+              "ENGLERT, PAYTON A",
+              "",
+              ""
+            ],
+            [
+              "",
+              "",
+              "CAMPBELL, CLAYTON D",
+              "",
+              ""
+            ],
+            [
+              "",
+              "",
+              "VELEZ-GREEN, ALEXANDER J",
+              "",
+              ""
+            ],
+            [
+              "",
+              "",
+              "BOLLINGER, ERIN S",
+              "",
+              ""
+            ],
+            [
+              "",
+              "",
+              "KISHI, DANIEL M",
+              "",
+              ""
+            ],
+            [
+              "",
+              "",
+              "LAVALLEY, ROBERT CLINTON",
+              "",
+              ""
+            ],
+            [
+              "",
+              "",
+              "GRUENDER, BENJAMIN L",
+              "",
+              ""
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190001",
+              "05/03/2019",
+              "CITIBANK - TRAVEL CBA CARD",
+              "03/04/2019",
+              "03/06/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190002",
+              "05/24/2019",
+              "CITIBANK - TRAVEL CBA CARD",
+              "03/10/2019",
+              "05/15/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190003",
+              "05/03/2019",
+              "CITIBANK - TRAVEL CBA CARD",
+              "03/01/2019",
+              "03/02/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190004",
+              "04/03/2019",
+              "CITIBANK - TRAVEL CBA CARD",
+              "03/21/2019",
+              "03/24/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190005",
+              "05/28/2019",
+              "CITIBANK - TRAVEL CBA CARD",
+              "03/21/2019",
+              "03/24/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190026",
+              "05/03/2019",
+              "CITIBANK - TRAVEL CBA CARD",
+              "04/16/2019",
+              "04/17/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190027",
+              "05/02/2019",
+              "CITIBANK - TRAVEL CBA CARD",
+              "04/15/2019",
+              "04/18/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190029",
+              "05/16/2019",
+              "CITIBANK - TRAVEL CBA CARD",
+              "05/07/2019",
+              "05/09/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190031",
+              "05/28/2019",
+              "CITIBANK - SENATOR IBA CARD",
+              "05/10/2019",
+              "05/11/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190032",
+              "06/13/2019",
+              "CITIBANK - SENATOR IBA CARD",
+              "05/24/2019",
+              "05/25/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190033",
+              "06/04/2019",
+              "CITIBANK - TRAVEL CBA CARD",
+              "05/24/2019",
+              "05/25/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190034",
+              "06/04/2019",
+              "CITIBANK - TRAVEL CBA CARD",
+              "05/24/2019",
+              "05/25/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190040",
+              "06/04/2019",
+              "CITIBANK - TRAVEL CBA CARD",
+              "05/29/2019",
+              "05/31/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190041",
+              "06/13/2019",
+              "CITIBANK - TRAVEL CBA CARD",
+              "04/13/2019",
+              "04/27/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190045",
+              "07/10/2019",
+              "CITIBANK - SENATOR IBA CARD",
+              "06/29/2019",
+              "07/07/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190046",
+              "07/11/2019",
+              "CITIBANK - TRAVEL CBA CARD",
+              "07/01/2019",
+              "07/07/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190047",
+              "07/12/2019",
+              "CITIBANK - TRAVEL CBA CARD",
+              "07/01/2019",
+              "07/03/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190049",
+              "07/25/2019",
+              "CITIBANK - SENATOR IBA CARD",
+              "07/07/2019",
+              "07/07/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190067",
+              "09/04/2019",
+              "CITIBANK - TRAVEL CBA CARD",
+              "08/17/2019",
+              "08/25/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190068",
+              "09/04/2019",
+              "CITIBANK - TRAVEL CBA CARD",
+              "08/12/2019",
+              "08/14/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190069",
+              "09/09/2019",
+              "CITIBANK - TRAVEL CBA CARD",
+              "08/12/2019",
+              "08/14/2019"
+            ],
+            [
+              "",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "DHAW20190070",
+              "09/09/2019",
+              "CITIBANK - TRAVEL CBA CARD",
+              "08/12/2019",
+              "08/14/2019"
+            ]
+          ],
+          "page": 0,
+          "type": "page.crop.extractTable"
+        }
+      ],
+      "id": "table-text-strategy-and-tolerance",
+      "pdf": "senate-expenditures.pdf"
+    },
+    {
+      "checks": [
+        {
+          "args": {
+            "text_layout": true
+          },
+          "expected": [
+            [
+              "                                                                    \n1.1 JAL Group  International Passenger Traffic Data                 \n                                                                    \n                                                                    ",
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            [
+              "",
+              "                                                        \n                     Intl Pax Traffic                   ",
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            [
+              null,
+              "   Pax   ",
+              " y.o.y(%)",
+              " RPK（000's）",
+              " y.o.y(%)",
+              " ASK（000's)",
+              " y.o.y(%)",
+              "  L/F(%)"
+            ],
+            [
+              "   FY2013   \n   FY2014   ",
+              "  7,723,293\n         \n  7,793,704",
+              "   102.6\n       \n   100.9",
+              "  35,390,384\n         \n  36,109,588",
+              "   104.0\n       \n   102.0",
+              "  46,235,058\n         \n  47,696,816",
+              "   103.3\n       \n   103.2",
+              "     76.5\n        \n     75.7"
+            ],
+            [
+              "     Apr-2015\n     May-2015\n            \n     Jun-2015",
+              "    653,278\n    686,908\n         \n    667,181",
+              "   107.5\n   110.9\n       \n   108.0",
+              "  2,958,643\n  3,201,403\n         \n  3,198,199",
+              "   108.7\n   110.0\n       \n   107.9",
+              "  3,951,483\n  4,118,309\n         \n  3,938,037",
+              "   103.0\n   103.8\n       \n   100.4",
+              "     74.9\n     77.7\n        \n     81.2"
+            ],
+            [
+              "FY15 1st Q TTL",
+              "  2,007,367",
+              "   108.8",
+              "  9,358,245",
+              "   108.9",
+              "  12,008,829",
+              "   102.4",
+              "     77.9"
+            ],
+            [
+              "      Jul-2015\n     Aug-2015\n            \n     Sep-2015",
+              "    698,352\n    721,817\n         \n    665,754",
+              "   104.5\n    99.7\n       \n   101.1",
+              "  3,297,825\n  3,386,829\n         \n  3,266,736",
+              "   105.7\n   101.2\n       \n   104.6",
+              "  4,056,445\n  4,104,459\n         \n  4,070,863",
+              "    99.0\n    99.1\n       \n   101.2",
+              "     81.3\n     82.5\n        \n     80.2"
+            ],
+            [
+              "FY15 2nd Q TTL",
+              "  2,085,923",
+              "   101.7",
+              "  9,951,390",
+              "   103.8",
+              "  12,231,767",
+              "   99.8",
+              "     81.4"
+            ],
+            [
+              "     Oct-2015\n     Nov-2015\n            \n     Dec-2015",
+              "    684,283\n    642,168\n         \n    647,152",
+              "   104.9\n   102.9\n       \n   101.6",
+              "  3,328,350\n  3,079,143\n         \n  3,033,780",
+              "   108.3\n   106.3\n       \n   102.9",
+              "  4,101,669\n  3,934,714\n         \n  4,071,823",
+              "   100.9\n   101.7\n       \n   101.2",
+              "     81.1\n     78.3\n        \n     74.5"
+            ],
+            [
+              "FY15 3rd Q TTL",
+              "  1,973,603",
+              "   103.2",
+              "  9,441,273",
+              "   105.9",
+              "  12,108,205",
+              "   101.3",
+              "     78.0"
+            ],
+            [
+              " FY2015 TTL ",
+              "  6,066,893",
+              "   104.5",
+              "  28,750,907",
+              "   106.1",
+              "  36,347,802",
+              "   101.1",
+              "     79.1"
+            ],
+            [
+              "                                                                    \nKey                                                                 \nFY = Financial Year ending March 31                                 \nRPK = revenue passenger kilometers                                  \nASK = available seat kilometers                                     \nL/F = load factor = RPK÷ASK                                         ",
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ]
+          ],
+          "page": 0,
+          "type": "page.extractTable"
+        }
+      ],
+      "id": "table-text-layout",
+      "pdf": "issue-53-example.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "char": 1992,
+            "curve": 33,
+            "rect": 208
+          },
+          "page": 0,
+          "type": "page.objectCounts"
+        },
+        {
+          "expected": [
+            [
+              [
+                "System organ class",
+                "Prevention of\nVTE in adult\npatients who\nhave undergone\nelective hip or\nknee replacement\nsurgery (VTEp)",
+                "Prevention of\nstroke and\nsystemic\nembolism in\nadult patients\nwith NVAF, with\none or more risk\nfactors (NVAF)",
+                "Treatment of DVT\nand PE, and\nprevention of\nrecurrent DVT and\nPE (VTEt)"
+              ],
+              [
+                "Blood and lymphatic system disorders",
+                null,
+                null,
+                null
+              ],
+              [
+                "Anaemia",
+                "Common",
+                "Common",
+                "Common"
+              ],
+              [
+                "Thrombocytopenia",
+                "Uncommon",
+                "Uncommon",
+                "Common"
+              ],
+              [
+                "Immune system disorders",
+                null,
+                null,
+                null
+              ],
+              [
+                "Hypersensitivity, allergic oedema and\nAnaphylaxis",
+                "Rare",
+                "Uncommon",
+                "Uncommon"
+              ],
+              [
+                "Pruritus",
+                "Uncommon",
+                "Uncommon",
+                "Uncommon*"
+              ],
+              [
+                "Angioedema",
+                "Not known",
+                "Not known",
+                "Not known"
+              ],
+              [
+                "Nervous system disorders",
+                null,
+                null,
+                null
+              ],
+              [
+                "†\nBrain haemorrhage",
+                "Not known",
+                "Uncommon",
+                "Rare"
+              ],
+              [
+                "Eye disorders",
+                null,
+                null,
+                null
+              ],
+              [
+                "Eye haemorrhage (including\nconjunctival haemorrhage)",
+                "Rare",
+                "Common",
+                "Uncommon"
+              ],
+              [
+                "Vascular disorders",
+                null,
+                null,
+                null
+              ],
+              [
+                "Haemorrhage, haematoma",
+                "Common",
+                "Common",
+                "Common"
+              ],
+              [
+                "Hypotension (including procedural\nhypotension)",
+                "Uncommon",
+                "Common",
+                "Uncommon"
+              ],
+              [
+                "Intra-abdominal haemorrhage",
+                "Not known",
+                "Uncommon",
+                "Not known"
+              ],
+              [
+                "Respiratory, thoracic and mediastinal disorders",
+                null,
+                null,
+                null
+              ],
+              [
+                "Epistaxis",
+                "Uncommon",
+                "Common",
+                "Common"
+              ],
+              [
+                "Haemoptysis",
+                "Rare",
+                "Uncommon",
+                "Uncommon"
+              ],
+              [
+                "Respiratory tract haemorrhage",
+                "Not known",
+                "Rare",
+                "Rare"
+              ],
+              [
+                "Gastrointestinal disorders",
+                null,
+                null,
+                null
+              ],
+              [
+                "Nausea",
+                "Common",
+                "Common",
+                "Common"
+              ],
+              [
+                "Gastrointestinal haemorrhage",
+                "Uncommon",
+                "Common",
+                "Common"
+              ],
+              [
+                "Haemorrhoidal haemorrhage",
+                "Not known",
+                "Uncommon",
+                "Uncommon"
+              ],
+              [
+                "Mouth haemorrhage",
+                "Not known",
+                "Uncommon",
+                "Common"
+              ],
+              [
+                "Haematochezia",
+                "Uncommon",
+                "Uncommon",
+                "Uncommon"
+              ],
+              [
+                "Rectal haemorrhage, gingival\nbleeding",
+                "Rare",
+                "Common",
+                "Common"
+              ],
+              [
+                "Retroperitoneal haemorrhage",
+                "Not known",
+                "Rare",
+                "Not known"
+              ],
+              [
+                "Hepatobiliary disorders",
+                null,
+                null,
+                null
+              ],
+              [
+                "Liver function test abnormal, asparate\naminotransferase increased, blood\nalkaline phosphatase increased, blood\nbilirubin increased",
+                "Uncommon",
+                "Uncommon",
+                "Uncommon"
+              ],
+              [
+                "Gamma-glutamyltransferase\nincreased",
+                "Uncommon",
+                "Common",
+                "Common"
+              ],
+              [
+                "Alanine aminotransferase increased",
+                "Uncommon",
+                "Uncommon",
+                "Common"
+              ],
+              [
+                "Skin and subcutaneous tissue disorders",
+                null,
+                null,
+                null
+              ]
+            ]
+          ],
+          "page": 0,
+          "type": "page.extractTables"
+        },
+        {
+          "args": {
+            "vertical_strategy": "lines_strict"
+          },
+          "expected": [],
+          "page": 0,
+          "type": "page.extractTables"
+        }
+      ],
+      "id": "table-curves",
+      "pdf": "table-curves-example.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "bbox": [
+              0,
+              -200.0,
+              420.9449,
+              185.2756
+            ],
+            "cropbox": [
+              0,
+              -200.0,
+              420.9449,
+              185.2756
+            ],
+            "height": 385.2756,
+            "mediabox": [
+              0,
+              -200.0,
+              420.9449,
+              185.2756
+            ],
+            "page_number": 1,
+            "width": 420.9449
+          },
+          "page": 0,
+          "type": "page.geometry"
+        },
+        {
+          "expected": {
+            "bbox": [
+              420.9449,
+              0.0,
+              841.8898,
+              595.2756
+            ],
+            "cropbox": [
+              420.9449,
+              0.0,
+              841.8898,
+              595.2756
+            ],
+            "height": 595.2756,
+            "mediabox": [
+              420.9449,
+              0.0,
+              841.8898,
+              595.2756
+            ],
+            "page_number": 2,
+            "width": 420.9449
+          },
+          "page": 1,
+          "type": "page.geometry"
+        },
+        {
+          "bbox": [
+            0,
+            -200.0,
+            420.9449,
+            185.27560000000005
+          ],
+          "expected": [
+            [
+              "FooCol1",
+              "FooCol2",
+              "FooCol3"
+            ],
+            [
+              "Foo4",
+              "Foo5",
+              "Foo6"
+            ],
+            [
+              "Foo7",
+              "Foo8",
+              "Foo9"
+            ],
+            [
+              "Foo10",
+              "Foo11",
+              "Foo12"
+            ],
+            [
+              "",
+              "",
+              ""
+            ]
+          ],
+          "page": 0,
+          "type": "page.crop.extractTable"
+        },
+        {
+          "bbox": [
+            420.9449,
+            0.0,
+            841.8898,
+            595.2756
+          ],
+          "expected": [
+            [
+              "BarCol1",
+              "BarCol2",
+              "BarCol3"
+            ],
+            [
+              "Bar4",
+              "Bar5",
+              "Bar6"
+            ],
+            [
+              "Bar7",
+              "Bar8",
+              "Bar9"
+            ],
+            [
+              "Bar10",
+              "Bar11",
+              "Bar12"
+            ],
+            [
+              "",
+              "",
+              ""
+            ]
+          ],
+          "page": 1,
+          "type": "page.crop.extractTable"
+        }
+      ],
+      "id": "mediabox-offset-table-coordinates",
+      "pdf": "issue-1181.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "char": 2703,
+            "curve": 69,
+            "image": 2,
+            "line": 33,
+            "rect": 66
+          },
+          "page": 0,
+          "type": "page.objectCounts"
+        },
+        {
+          "expected": "Chapitre 5\nItem 265\nDÉSORDRES\nDE L’ÉQUILIBRE ACIDE-BASE\nUUEE 88.. CCiirrccuullaattiioonn -- MMééttaabboolliissmmeess\nNN°°226655.. TTrroouubblleess ddee ll’’ééqquuiilliibbrree aacciiddoo--bbaassiiqquuee eett ddééssoorrddrreess hhyyddrroo--éélleeccttrroollyyttiiqquueess..\nOOBBJJEECCTTIIFFSS\nyy PPrreessccrriirree eett iinntteerrpprréétteerr uunn eexxaammeenn ddeess ggaazz dduu ssaanngg eett uunn iioonnooggrraammmmee ssaanngguuiinn eenn\nffoonnccttiioonn dd’’uunnee ssiittuuaattiioonn cclliinniiqquuee ddoonnnnééee..\nyy SSaavvooiirr ddiiaaggnnoossttiiqquueerr eett ttrraaiitteerr :: uunnee aacciiddoossee mmééttaabboolliiqquuee,, uunnee aacciiddoossee vveennttiillaattooiirree..\nAAcciiddoosseess\nÊÊ SSaavvooiirr ddééfifi nniirr ll’’aacciiddoossee,, ssoonn ccaarraaccttèèrree mmééttaabboolliiqquuee oouu vveennttiillaattooiirree,, eett ssoonn ccaarraaccttèèrree iissoolléé oouu mmiixxttee,,\naaiigguu oouu cchhrroonniiqquuee..\nÊÊ SSaavvooiirr ccoonndduuiirree llee ddiiaaggnnoossttiicc ééttiioollooggiiqquuee dd’’uunnee aacciiddoossee mmééttaabboolliiqquuee..\nÊÊ CCoonnnnaaîîttrree lleess pprriinncciippaalleess ccaauusseess dd’’aacciiddoossee mmééttaabboolliiqquuee eett rreessppiirraattooiirree,, lleeuurrss ccaarraaccttéérriissttiiqquueess\nddiiaaggnnoossttiiqquueess eett ssaavvooiirr aapppplliiqquueerr llaa ccoonndduuiittee tthhéérraappeeuuttiiqquuee eenn uurrggeennccee..\nAAllccaalloosseess ((nnnnoooonnnn iiiinnnncccclllluuuusssseeeessss ddddaaaannnnssss lllleeee pppprrrrooooggggrrrraaaammmmmmmmeeee ddddeeee llll’’’’EEEECCCCNNNN mmmmaaaaiiiissss ttttrrrraaaaiiiittttééééeeeessss àààà ttttiiiittttrrrreeee iiiinnnnddddiiiiccccaaaattttiiiiffff)))\nÊÊ SSaavvooiirr ddééfifi nniirr ll’’aallccaalloossee mmééttaabboolliiqquuee eett ééttaabblliirr ssoonn ccaarraaccttèèrree iissoolléé oouu mmiixxttee..\nÊÊ SSaavvooiirr ccoonndduuiirree llee ddiiaaggnnoossttiicc ééttiioollooggiiqquuee dd’’uunnee aallccaalloossee mmééttaabboolliiqquuee..\nÊÊ CCoonnnnaaîîttrree lleess pprriinncciippaalleess ccaauusseess dd’’aallccaalloossee mmééttaabboolliiqquuee eett lleeuurrss ccaarraaccttéérriissttiiqquueess\nddiiaaggnnoossttiiqquueess..\nI. GAZ DU SANG ARTÉRIEL ET INTERPRÉTATION\nA. Mesure du pH et de la gazométrie circulante sanguine\n¢ Sang prélevé sans air dans une seringue héparinée (seringue à gaz du sang)\n¢ Dans une artère plutôt qu’une veine pour mesurer le pH extracellulaire (le plus commun étant l’artère\nradiale au poignet)\n¢ Mesure de la pression partielle en O et en CO total, à partir duquel est calculée la bicarbonatémie\n2 2\n(HCO –)\n3\n9782340-025998_Nephrologie.indb 71 14/09/2018 10:37",
+          "page": 0,
+          "type": "page.extractText"
+        },
+        {
+          "args": {
+            "dedupe_chars": true
+          },
+          "expected": "Chapitre 5\nItem 265\nDÉSORDRES\nDE L’ÉQUILIBRE ACIDE-BASE\nUE 8. Circulation - Métabolismes\nN°265. Troubles de l’équilibre acido-basique et désordres hydro-électrolytiques.\nOBJECTIFS\ny Prescrire et interpréter un examen des gaz du sang et un ionogramme sanguin en\nfonction d’une situation clinique donnée.\ny Savoir diagnostiquer et traiter : une acidose métabolique, une acidose ventilatoire.\nAcidoses\nÊ Savoir défi nir l’acidose, son caractère métabolique ou ventilatoire, et son caractère isolé ou mixte,\naigu ou chronique.\nÊ Savoir conduire le diagnostic étiologique d’une acidose métabolique.\nÊ Connaître les principales causes d’acidose métabolique et respiratoire, leurs caractéristiques\ndiagnostiques et savoir appliquer la conduite thérapeutique en urgence.\nAlcaloses (non incluses dans le programme de l’ECN mais traitées à titre indicatif)\nÊ Savoir défi nir l’alcalose métabolique et établir son caractère isolé ou mixte.\nÊ Savoir conduire le diagnostic étiologique d’une alcalose métabolique.\nÊ Connaître les principales causes d’alcalose métabolique et leurs caractéristiques\ndiagnostiques.\nI. GAZ DU SANG ARTÉRIEL ET INTERPRÉTATION\nA. Mesure du pH et de la gazométrie circulante sanguine\n¢ Sang prélevé sans air dans une seringue héparinée (seringue à gaz du sang)\n¢ Dans une artère plutôt qu’une veine pour mesurer le pH extracellulaire (le plus commun étant l’artère\nradiale au poignet)\n¢ Mesure de la pression partielle en O et en CO total, à partir duquel est calculée la bicarbonatémie\n2 2\n(HCO –)\n3\n9782340-025998_Nephrologie.indb 71 14/09/2018 10:37",
+          "page": 0,
+          "type": "page.extractText"
+        },
+        {
+          "args": {
+            "pattern": "\\\\d+",
+            "regex": true
+          },
+          "expected": [],
+          "page": 0,
+          "type": "page.search"
+        }
+      ],
+      "id": "dedupe-chars",
+      "pdf": "issue-71-duplicate-chars-2.pdf"
+    },
+    {
+      "checks": [
+        {
+          "args": {
+            "count": 20
+          },
+          "expected": [
+            {
+              "adv": 7.32,
+              "bottom": 67.9,
+              "doctop": 55.9,
+              "fontname": "BAAAAA+LiberationSerif",
+              "height": 12.0,
+              "mcid": 0,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 12.0,
+              "stroking_color": [
+                0
+              ],
+              "tag": "Standard",
+              "text": "T",
+              "top": 55.9,
+              "upright": true,
+              "width": 7.32,
+              "x0": 56.8,
+              "x1": 64.12,
+              "y0": 724.1,
+              "y1": 736.1
+            },
+            {
+              "adv": 5.316,
+              "bottom": 67.9,
+              "doctop": 55.9,
+              "fontname": "BAAAAA+LiberationSerif",
+              "height": 12.0,
+              "mcid": 0,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 12.0,
+              "stroking_color": [
+                0
+              ],
+              "tag": "Standard",
+              "text": "e",
+              "top": 55.9,
+              "upright": true,
+              "width": 5.316,
+              "x0": 63.304,
+              "x1": 68.62,
+              "y0": 724.1,
+              "y1": 736.1
+            },
+            {
+              "adv": 4.668,
+              "bottom": 67.9,
+              "doctop": 55.9,
+              "fontname": "BAAAAA+LiberationSerif",
+              "height": 12.0,
+              "mcid": 0,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 12.0,
+              "stroking_color": [
+                0
+              ],
+              "tag": "Standard",
+              "text": "s",
+              "top": 55.9,
+              "upright": true,
+              "width": 4.668,
+              "x0": 68.608,
+              "x1": 73.276,
+              "y0": 724.1,
+              "y1": 736.1
+            },
+            {
+              "adv": 3.324,
+              "bottom": 67.9,
+              "doctop": 55.9,
+              "fontname": "BAAAAA+LiberationSerif",
+              "height": 12.0,
+              "mcid": 0,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 12.0,
+              "stroking_color": [
+                0
+              ],
+              "tag": "Standard",
+              "text": "t",
+              "top": 55.9,
+              "upright": true,
+              "width": 3.324,
+              "x0": 73.3,
+              "x1": 76.624,
+              "y0": 724.1,
+              "y1": 736.1
+            },
+            {
+              "adv": 3.0,
+              "bottom": 67.9,
+              "doctop": 55.9,
+              "fontname": "BAAAAA+LiberationSerif",
+              "height": 12.0,
+              "mcid": 0,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 12.0,
+              "stroking_color": [
+                0
+              ],
+              "tag": "Standard",
+              "text": " ",
+              "top": 55.9,
+              "upright": true,
+              "width": 3.0,
+              "x0": 76.6,
+              "x1": 79.6,
+              "y0": 724.1,
+              "y1": 736.1
+            },
+            {
+              "adv": 6.0,
+              "bottom": 67.9,
+              "doctop": 55.9,
+              "fontname": "BAAAAA+LiberationSerif",
+              "height": 12.0,
+              "mcid": 0,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 12.0,
+              "stroking_color": [
+                0
+              ],
+              "tag": "Standard",
+              "text": "o",
+              "top": 55.9,
+              "upright": true,
+              "width": 6.0,
+              "x0": 79.6,
+              "x1": 85.6,
+              "y0": 724.1,
+              "y1": 736.1
+            },
+            {
+              "adv": 3.996,
+              "bottom": 67.9,
+              "doctop": 55.9,
+              "fontname": "BAAAAA+LiberationSerif",
+              "height": 12.0,
+              "mcid": 0,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 12.0,
+              "stroking_color": [
+                0
+              ],
+              "tag": "Standard",
+              "text": "f",
+              "top": 55.9,
+              "upright": true,
+              "width": 3.996,
+              "x0": 85.6,
+              "x1": 89.596,
+              "y0": 724.1,
+              "y1": 736.1
+            },
+            {
+              "adv": 3.0,
+              "bottom": 67.9,
+              "doctop": 55.9,
+              "fontname": "BAAAAA+LiberationSerif",
+              "height": 12.0,
+              "mcid": 0,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 12.0,
+              "stroking_color": [
+                0
+              ],
+              "tag": "Standard",
+              "text": " ",
+              "top": 55.9,
+              "upright": true,
+              "width": 3.0,
+              "x0": 89.596,
+              "x1": 92.596,
+              "y0": 724.1,
+              "y1": 736.1
+            },
+            {
+              "adv": 3.996,
+              "bottom": 67.9,
+              "doctop": 55.9,
+              "fontname": "BAAAAA+LiberationSerif",
+              "height": 12.0,
+              "mcid": 0,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 12.0,
+              "stroking_color": [
+                0
+              ],
+              "tag": "Standard",
+              "text": "f",
+              "top": 55.9,
+              "upright": true,
+              "width": 3.996,
+              "x0": 92.596,
+              "x1": 96.592,
+              "y0": 724.1,
+              "y1": 736.1
+            },
+            {
+              "adv": 3.324,
+              "bottom": 67.9,
+              "doctop": 55.9,
+              "fontname": "BAAAAA+LiberationSerif",
+              "height": 12.0,
+              "mcid": 0,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 12.0,
+              "stroking_color": [
+                0
+              ],
+              "tag": "Standard",
+              "text": "i",
+              "top": 55.9,
+              "upright": true,
+              "width": 3.324,
+              "x0": 96.592,
+              "x1": 99.916,
+              "y0": 724.1,
+              "y1": 736.1
+            },
+            {
+              "adv": 6.0,
+              "bottom": 67.9,
+              "doctop": 55.9,
+              "fontname": "BAAAAA+LiberationSerif",
+              "height": 12.0,
+              "mcid": 0,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 12.0,
+              "stroking_color": [
+                0
+              ],
+              "tag": "Standard",
+              "text": "g",
+              "top": 55.9,
+              "upright": true,
+              "width": 6.0,
+              "x0": 99.892,
+              "x1": 105.892,
+              "y0": 724.1,
+              "y1": 736.1
+            },
+            {
+              "adv": 6.0,
+              "bottom": 67.9,
+              "doctop": 55.9,
+              "fontname": "BAAAAA+LiberationSerif",
+              "height": 12.0,
+              "mcid": 0,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 12.0,
+              "stroking_color": [
+                0
+              ],
+              "tag": "Standard",
+              "text": "u",
+              "top": 55.9,
+              "upright": true,
+              "width": 6.0,
+              "x0": 105.892,
+              "x1": 111.892,
+              "y0": 724.1,
+              "y1": 736.1
+            },
+            {
+              "adv": 3.996,
+              "bottom": 67.9,
+              "doctop": 55.9,
+              "fontname": "BAAAAA+LiberationSerif",
+              "height": 12.0,
+              "mcid": 0,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 12.0,
+              "stroking_color": [
+                0
+              ],
+              "tag": "Standard",
+              "text": "r",
+              "top": 55.9,
+              "upright": true,
+              "width": 3.996,
+              "x0": 111.892,
+              "x1": 115.888,
+              "y0": 724.1,
+              "y1": 736.1
+            },
+            {
+              "adv": 5.316,
+              "bottom": 67.9,
+              "doctop": 55.9,
+              "fontname": "BAAAAA+LiberationSerif",
+              "height": 12.0,
+              "mcid": 0,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 12.0,
+              "stroking_color": [
+                0
+              ],
+              "tag": "Standard",
+              "text": "e",
+              "top": 55.9,
+              "upright": true,
+              "width": 5.316,
+              "x0": 115.888,
+              "x1": 121.204,
+              "y0": 724.1,
+              "y1": 736.1
+            },
+            {
+              "adv": 4.668,
+              "bottom": 67.9,
+              "doctop": 55.9,
+              "fontname": "BAAAAA+LiberationSerif",
+              "height": 12.0,
+              "mcid": 0,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 12.0,
+              "stroking_color": [
+                0
+              ],
+              "tag": "Standard",
+              "text": "s",
+              "top": 55.9,
+              "upright": true,
+              "width": 4.668,
+              "x0": 121.192,
+              "x1": 125.86,
+              "y0": 724.1,
+              "y1": 736.1
+            },
+            {
+              "adv": 5.56,
+              "bottom": 345.8,
+              "doctop": 335.8,
+              "fontname": "CAAAAA+LiberationSans",
+              "height": 10.0,
+              "mcid": 2,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 10.0,
+              "stroking_color": [
+                0.701961,
+                0.701961,
+                0.701961
+              ],
+              "tag": "P",
+              "text": "1",
+              "top": 335.8,
+              "upright": true,
+              "width": 5.56,
+              "x0": 136.0,
+              "x1": 141.56,
+              "y0": 446.2,
+              "y1": 456.2
+            },
+            {
+              "adv": 2.77,
+              "bottom": 345.8,
+              "doctop": 335.8,
+              "fontname": "CAAAAA+LiberationSans",
+              "height": 10.0,
+              "mcid": 2,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 10.0,
+              "stroking_color": [
+                0.701961,
+                0.701961,
+                0.701961
+              ],
+              "tag": "P",
+              "text": " ",
+              "top": 335.8,
+              "upright": true,
+              "width": 2.77,
+              "x0": 141.2,
+              "x1": 143.97,
+              "y0": 446.2,
+              "y1": 456.2
+            },
+            {
+              "adv": 2.22,
+              "bottom": 345.8,
+              "doctop": 335.8,
+              "fontname": "CAAAAA+LiberationSans",
+              "height": 10.0,
+              "mcid": 2,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 10.0,
+              "stroking_color": [
+                0.701961,
+                0.701961,
+                0.701961
+              ],
+              "tag": "P",
+              "text": "l",
+              "top": 335.8,
+              "upright": true,
+              "width": 2.22,
+              "x0": 144.19,
+              "x1": 146.41,
+              "y0": 446.2,
+              "y1": 456.2
+            },
+            {
+              "adv": 2.22,
+              "bottom": 345.8,
+              "doctop": 335.8,
+              "fontname": "CAAAAA+LiberationSans",
+              "height": 10.0,
+              "mcid": 2,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 10.0,
+              "stroking_color": [
+                0.701961,
+                0.701961,
+                0.701961
+              ],
+              "tag": "P",
+              "text": "i",
+              "top": 335.8,
+              "upright": true,
+              "width": 2.22,
+              "x0": 146.48,
+              "x1": 148.7,
+              "y0": 446.2,
+              "y1": 456.2
+            },
+            {
+              "adv": 5.56,
+              "bottom": 345.8,
+              "doctop": 335.8,
+              "fontname": "CAAAAA+LiberationSans",
+              "height": 10.0,
+              "mcid": 2,
+              "non_stroking_color": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "object_type": "char",
+              "page_number": 1,
+              "size": 10.0,
+              "stroking_color": [
+                0.701961,
+                0.701961,
+                0.701961
+              ],
+              "tag": "P",
+              "text": "g",
+              "top": 335.8,
+              "upright": true,
+              "width": 5.56,
+              "x0": 148.68,
+              "x1": 154.24,
+              "y0": 446.2,
+              "y1": 456.2
+            }
+          ],
+          "page": 0,
+          "type": "page.chars.sample"
+        },
+        {
+          "expected": {
+            "char": 94,
+            "curve": 4,
+            "line": 33,
+            "rect": 12
+          },
+          "page": 0,
+          "type": "page.objectCounts"
+        }
+      ],
+      "id": "marked-content-ids",
+      "pdf": "mcid_example.pdf"
+    }
+  ]
+}
