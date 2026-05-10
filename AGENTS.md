@@ -1,10 +1,4 @@
 # Agent Instructions
 
+- The goal is a robust pdfplumber port with browser-capable JavaScript parity, not just passing the current tests or committing to a specific PDF engine; when useful, refer to the Python sources, PDF.js, MuPDF.js, and focused terminal tests to understand behavior and guide the port.
 - Use `wsl_venv` for Python work in this repository.
-- Do not create or rely on a repo-local `.venv`; `npm run python:setup` is configured to create and update `wsl_venv`.
-- When running Python reference scripts directly, prefer `wsl_venv/bin/python`, for example:
-
-```bash
-wsl_venv/bin/python scripts/generate-goldens.py
-```
-
