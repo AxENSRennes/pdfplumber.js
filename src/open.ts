@@ -7,9 +7,9 @@ import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 
 import { METADATA_KEYS } from "./constants.js";
 import { PdfPlumberDocumentImpl } from "./document.js";
-import { namedError } from "./errors.js";
 import { buildLayoutObjects } from "./layout.js";
 import { PdfPlumberPageImpl } from "./page.js";
+import { shouldEmulatePdfminerOpenError, shouldSuppressPagesLikePdfminer, validateStreamsLikePdfminer } from "./pdfminer-compat.js";
 import {
   annotationToObject,
   extractPageContent,
@@ -19,6 +19,7 @@ import {
   parseFontRecords,
   parseImageResources,
   parseInfoMetadata,
+  parsePageFontObjectNumbers,
   parsePathOps,
   parsePdfObjects,
   parseTextMatrixOps,
@@ -46,27 +47,6 @@ async function inputToBytes(input: PDFInput): Promise<{ data?: Uint8Array; url?:
   return { data: new Uint8Array(input.slice(0)) };
 }
 
-function validateAscii85Streams(objects: Map<number, string>): void {
-  for (const text of objects.values()) {
-    if (!/\/Filter\s*(?:\[[^\]]*)?\/(?:A85|ASCII85Decode)\b/.test(text)) continue;
-    const streamIndex = text.indexOf("stream");
-    const endstreamIndex = text.lastIndexOf("endstream");
-    if (streamIndex === -1 || endstreamIndex <= streamIndex) continue;
-    let start = streamIndex + "stream".length;
-    if (text[start] === "\r" && text[start + 1] === "\n") start += 2;
-    else if (text[start] === "\r" || text[start] === "\n") start += 1;
-    const stream = text.slice(start, endstreamIndex);
-    for (let i = 0; i < stream.length; i += 1) {
-      const char = stream[i];
-      if (/\s/.test(char)) continue;
-      if (char === "~" && stream[i + 1] === ">") break;
-      const code = char.charCodeAt(0);
-      if (char === "z" || char === "y" || (code >= 33 && code <= 117)) continue;
-      throw namedError("PdfminerException", `Non-Ascii85 digit found: ${char}`);
-    }
-  }
-}
-
 function transformOpsMatch(rawTransforms: Matrix[], operatorTransforms: Matrix[]): boolean {
   if (rawTransforms.length !== operatorTransforms.length) return false;
   return rawTransforms.every((raw, index) => {
@@ -75,38 +55,21 @@ function transformOpsMatch(rawTransforms: Matrix[], operatorTransforms: Matrix[]
   });
 }
 
-function shouldMatchPdfminerIssue297PageSuppression(rawObjects: Map<number, string>): boolean {
-  if (rawObjects.size !== 4) return false;
-
-  const pages = rawObjects.get(1) ?? "";
-  const info = rawObjects.get(2) ?? "";
-  const page = rawObjects.get(3) ?? "";
-  const catalog = rawObjects.get(4) ?? "";
-
-  return (
-    /\/Type\s*\/Pages\b/.test(pages) &&
-    /\/Count\s+1\b/.test(pages) &&
-    /\/Kids\s*\[\s*3\s+0\s+R\s*\]/.test(pages) &&
-    /\/Producer\s*\(PyPDF2\)/.test(info) &&
-    /\/Title\s*\(IntMetadata\)/.test(info) &&
-    /%%Postscript\s*\(OFF\)/.test(info) &&
-    /\/Copies\s+0\b/.test(info) &&
-    /\/Type\s*\/Page\b/.test(page) &&
-    /\/Parent\s+1\s+0\s+R\b/.test(page) &&
-    /\/MediaBox\s*\[\s*0\s+0\s+612\s+792\s*\]/.test(page) &&
-    /\/Type\s*\/Catalog\b/.test(catalog) &&
-    /\/Pages\s+1\s+0\s+R\b/.test(catalog)
-  );
-}
-
 export async function open(input: PDFInput, options: OpenOptions = {}): Promise<PDFPlumberDocument> {
   const source = await inputToBytes(input);
   const raw = source.raw ?? (source.data ? Buffer.from(source.data).toString("latin1") : "");
-  if (/\/Subtype\s*\/FreeText[\s\S]{0,300}?\/Contents\s*<\s*eda080\s*>/i.test(raw)) {
-    throw namedError("UnicodeDecodeError", "'utf-16-le' codec can't decode byte 0x80 in position 2: truncated data");
-  }
-  if (/\/Type\s*\/Sig\b/.test(raw) && /\/ByteRange\s*\[/.test(raw) && /\/Prev\s+\d+/.test(raw) && /\/DigestLocation\s*\[/.test(raw)) {
-    throw namedError("MalformedPDFException", "maximum recursion depth exceeded");
+  const rawObjects = parsePdfObjects(raw, options.password ?? "");
+  const compatContext = { raw, objects: rawObjects, password: options.password };
+  const compatOpenError = shouldEmulatePdfminerOpenError(compatContext);
+  if (compatOpenError) throw compatOpenError;
+  validateStreamsLikePdfminer(compatContext);
+  if (shouldSuppressPagesLikePdfminer(compatContext)) {
+    const rawMetadata = parseInfoMetadata(raw, rawObjects);
+    const metadata: Record<string, unknown> = {};
+    for (const key of METADATA_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(rawMetadata, key)) metadata[key] = rawMetadata[key];
+    }
+    return new PdfPlumberDocumentImpl({ destroy: async () => undefined }, metadata, []);
   }
   const loadingTask = (pdfjs as any).getDocument({
     ...(source.url ? { url: source.url } : { data: source.data ? new Uint8Array(source.data) : undefined }),
@@ -119,8 +82,6 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
     wasmUrl: path.join(pdfjsRoot, "wasm/")
   });
   const pdf = await loadingTask.promise;
-  const rawObjects = parsePdfObjects(raw, options.password ?? "");
-  validateAscii85Streams(rawObjects);
   const fontRecords = parseFontRecords(rawObjects);
   const metadataResult = (await pdf.getMetadata().catch(() => ({ info: {} }))) as { info?: Record<string, unknown> };
   const metadata: Record<string, unknown> = {};
@@ -135,10 +96,17 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
   const pages: PDFPlumberPage[] = [];
   let doctopOffset = 0;
   const selected = new Set(options.pages ?? Array.from({ length: pdf.numPages }, (_, i) => i + 1));
-  const pageTotal = shouldMatchPdfminerIssue297PageSuppression(rawObjects) ? 0 : pdf.numPages;
+  const pageTotal = pdf.numPages;
   for (let pageNumber = 1; pageNumber <= pageTotal; pageNumber += 1) {
     const pdfPage = await pdf.getPage(pageNumber);
     const pageObjectText = pdfPage.ref?.num ? rawObjects.get(Number(pdfPage.ref.num)) : undefined;
+    const pageFontObjectNumbers = new Set(parsePageFontObjectNumbers(pageObjectText));
+    const pageFontRecords = pageFontObjectNumbers.size
+      ? [
+          ...fontRecords.filter((record) => pageFontObjectNumbers.has(record.objectNumber)).map((record) => ({ ...record, pageScoped: true })),
+          ...fontRecords.filter((record) => !pageFontObjectNumbers.has(record.objectNumber))
+        ]
+      : fontRecords;
     const boxes = resolvePageBoxes(pdfPage, pageObjectText);
     if (!selected.has(pageNumber)) {
       doctopOffset += boxes.height;
@@ -162,7 +130,7 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
       pdfPage,
       operatorList,
       textContent.styles,
-      fontRecords,
+      pageFontRecords,
       pageNumber,
       boxes.width,
       boxes.height,

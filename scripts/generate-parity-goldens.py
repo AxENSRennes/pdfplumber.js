@@ -324,18 +324,31 @@ def page_snapshot(page: Any) -> Dict[str, Any]:
     }
 
 
-def document_snapshot(pdf_path: pathlib.Path, open_options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def document_snapshot(
+    pdf_path: pathlib.Path,
+    open_options: Optional[Dict[str, Any]] = None,
+    page_indices: Optional[List[int]] = None,
+) -> Dict[str, Any]:
     try:
         with pdfplumber.open(pdf_path, **(open_options or {})) as pdf:
-            return {
+            selected_indices = page_indices if page_indices is not None else list(range(len(pdf.pages)))
+            pages = [page_snapshot(pdf.pages[index]) for index in selected_indices]
+            payload = {
                 "status": "ok",
                 "metadata": metadata_subset(pdf.metadata),
                 "pageCount": len(pdf.pages),
-                "objectCounts": object_counts(pdf.objects),
-                "annots": object_list_summary(pdf.annots),
-                "hyperlinks": object_list_summary(pdf.hyperlinks),
-                "pages": [page_snapshot(page) for page in pdf.pages],
+                **({"pageIndices": selected_indices} if page_indices is not None else {}),
+                "pages": pages,
             }
+            if page_indices is None:
+                payload.update(
+                    {
+                        "objectCounts": object_counts(pdf.objects),
+                        "annots": object_list_summary(pdf.annots),
+                        "hyperlinks": object_list_summary(pdf.hyperlinks),
+                    }
+                )
+            return payload
     except Exception as exc:
         return error_summary(exc)
 

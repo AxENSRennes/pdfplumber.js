@@ -1,0 +1,202 @@
+[
+  {
+    "id": "boeing-2024-ar",
+    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
+    "source": "Boeing annual reports",
+    "license": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "categories": ["public-company", "industrial", "financial-report", "annual-report", "tables", "long-document"],
+    "size": 6971675,
+    "sha256": "5e03ffd804b7dc9794de9a4be08e1db1263edbb27adb7791c6bf11b85fedc001"
+  },
+  {
+    "id": "caterpillar-2024-ar",
+    "localPath": "test/fixtures/external-holdout-pdfs/caterpillar-2024-ar.pdf",
+    "sourceUrl": "https://m.cat-cn.com/pdf/2024-annual-report.pdf",
+    "source": "Caterpillar annual reports",
+    "license": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "categories": ["public-company", "industrial", "financial-report", "annual-report", "tables", "long-document"],
+    "size": 22316473,
+    "sha256": "3a38651c724016bca792bef165fd42bb09d9b033d23718372a2599378768e925"
+  },
+  {
+    "id": "state-ds11",
+    "localPath": "test/fixtures/external-holdout-pdfs/state-ds11.pdf",
+    "sourceUrl": "https://eforms.state.gov/Forms/ds11_pdf.pdf",
+    "source": "U.S. Department of State eForms",
+    "license": "Public domain / U.S. government work",
+    "categories": ["government", "form", "acroform", "annotations"],
+    "size": 2568395,
+    "sha256": "6b30860f0b54cba9df1a54d4eb007dc93a6c785b5253516604530b1c1898e2f6"
+  },
+  {
+    "id": "va-21-526ez",
+    "localPath": "test/fixtures/external-holdout-pdfs/va-21-526ez.pdf",
+    "sourceUrl": "https://www.vba.va.gov/pubs/forms/VBA-21-526EZ-ARE.pdf",
+    "source": "U.S. Department of Veterans Affairs forms",
+    "license": "Public domain / U.S. government work",
+    "categories": ["government", "form", "acroform", "tables", "long-document"],
+    "size": 1927445,
+    "sha256": "48d87f2b679f61e4857b2cd1ad3354f46e68ed347897ff0a8fb7c23c5068a0e4"
+  },
+  {
+    "id": "uspto-sb17",
+    "localPath": "test/fixtures/external-holdout-pdfs/uspto-sb17.pdf",
+    "sourceUrl": "https://www.uspto.gov/sites/default/files/documents/sb0017.pdf",
+    "source": "USPTO patent form-fillable PDFs",
+    "license": "Public domain / U.S. government work",
+    "categories": ["government", "form", "acroform", "annotations"],
+    "size": 298188,
+    "sha256": "fe535e4d59823a2b398875dafa279f8cca050acef67f3734a0739c0b57de5a55"
+  },
+  {
+    "id": "uspto-sb38",
+    "localPath": "test/fixtures/external-holdout-pdfs/uspto-sb38.pdf",
+    "sourceUrl": "https://www.uspto.gov/sites/default/files/documents/sb0038.pdf",
+    "source": "USPTO patent form-fillable PDFs",
+    "license": "Public domain / U.S. government work",
+    "categories": ["government", "form", "acroform", "annotations"],
+    "size": 265942,
+    "sha256": "d060533335e2fa6a046776fcb9088d2a89299a501af5e81a3389f41884b65f3b"
+  },
+  {
+    "id": "fda-1572",
+    "localPath": "test/fixtures/external-holdout-pdfs/fda-1572.pdf",
+    "sourceUrl": "https://www.fda.gov/media/78830/download",
+    "source": "U.S. Food and Drug Administration forms and guidance",
+    "license": "Public domain / U.S. government work",
+    "categories": ["government", "form", "medical", "long-form-text"],
+    "size": 107719,
+    "sha256": "fb90945ef127c592b77506b0ea8ae6461d225aa58f70842de3c2cff36884bfb1"
+  },
+  {
+    "id": "cms-1500",
+    "localPath": "test/fixtures/external-holdout-pdfs/cms-1500.pdf",
+    "sourceUrl": "https://www.cms.gov/medicare/cms-forms/cms-forms/downloads/cms1500.pdf",
+    "source": "Centers for Medicare & Medicaid Services forms",
+    "license": "Public domain / U.S. government work",
+    "categories": ["government", "form", "medical", "image-heavy"],
+    "size": 2272067,
+    "sha256": "ef8ad08547816a73acfd1aa9aae6dbfb9ee8541f59b635a395cff9a228c12087"
+  },
+  {
+    "id": "arxiv-attention-1706-03762",
+    "localPath": "test/fixtures/external-holdout-pdfs/arxiv-attention-1706.03762.pdf",
+    "sourceUrl": "https://arxiv.org/pdf/1706.03762",
+    "source": "arXiv",
+    "license": "arXiv-hosted paper; check paper metadata before redistribution outside tests",
+    "categories": ["scientific-paper", "tables", "figures", "long-document"],
+    "size": 2215244,
+    "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+  },
+  {
+    "id": "arxiv-docling-2408-09869",
+    "localPath": "test/fixtures/external-holdout-pdfs/arxiv-docling-2408.09869.pdf",
+    "sourceUrl": "https://arxiv.org/pdf/2408.09869",
+    "source": "arXiv",
+    "license": "arXiv-hosted paper; check paper metadata before redistribution outside tests",
+    "categories": ["scientific-paper", "tables", "figures"],
+    "size": 5566575,
+    "sha256": "82dd470712ce8389f19f20eb9330475e2166a281f8c7990a9f1d0763d73b4d22"
+  },
+  {
+    "id": "federal-register-2024-07-01",
+    "localPath": "test/fixtures/external-holdout-pdfs/federal-register-2024-07-01.pdf",
+    "sourceUrl": "https://www.govinfo.gov/content/pkg/FR-2024-07-01/pdf/FR-2024-07-01.pdf",
+    "source": "GovInfo Federal Register",
+    "license": "Public domain / U.S. government work",
+    "categories": ["government", "legal", "multi-column", "tables", "long-document"],
+    "size": 8992888,
+    "sha256": "6e7e97e797025bf9724f743ba217d4364788e555677cb476f53f797cb68db58f"
+  },
+  {
+    "id": "govinfo-cfr12-2024-vol1",
+    "localPath": "test/fixtures/external-holdout-pdfs/govinfo-cfr12-2024-vol1.pdf",
+    "sourceUrl": "https://www.govinfo.gov/content/pkg/CFR-2024-title12-vol1/pdf/CFR-2024-title12-vol1.pdf",
+    "source": "GovInfo Code of Federal Regulations",
+    "license": "Public domain / U.S. government work",
+    "categories": ["government", "legal", "bank-regulatory", "multi-column", "long-document"],
+    "size": 5729499,
+    "sha256": "07c4609b90deeeac5406c23801f4cc0c9449c8d497e15fb5e782b1dadd9465ab"
+  },
+  {
+    "id": "govinfo-hr815-enr",
+    "localPath": "test/fixtures/external-holdout-pdfs/govinfo-hr815-enr.pdf",
+    "sourceUrl": "https://www.govinfo.gov/content/pkg/BILLS-118hr815enr/pdf/BILLS-118hr815enr.pdf",
+    "source": "GovInfo enrolled bills",
+    "license": "Public domain / U.S. government work",
+    "categories": ["government", "legal", "long-form-text"],
+    "size": 360076,
+    "sha256": "0ced1efb0610dbb34ab437f16c53362a847b4fb69b3025b1c876a872611b9939"
+  },
+  {
+    "id": "eba-2024-ar",
+    "localPath": "test/fixtures/external-holdout-pdfs/eba-2024-ar.pdf",
+    "sourceUrl": "https://www.eba.europa.eu/sites/default/files/2025-06/bee4e97f-91a9-43bd-abdb-bd774e0259bf/2024%20Annual%20Report.pdf",
+    "source": "European Banking Authority annual reports",
+    "license": "European Banking Authority publication; verify reuse terms before redistribution outside tests",
+    "categories": ["international-organization", "bank-regulatory", "financial-report", "annual-report", "tables", "long-document"],
+    "size": 3599453,
+    "sha256": "ca016d78e3a00b5ec0caaa6132a95901c401cd73c836da46f63d95b41765326a"
+  },
+  {
+    "id": "eba-2024-summary-de",
+    "localPath": "test/fixtures/external-holdout-pdfs/eba-2024-summary-de.pdf",
+    "sourceUrl": "https://www.eba.europa.eu/sites/default/files/2025-06/84030ead-a929-45fa-a03f-a4e252f7c3f0/Executive%20summary%20of%20the%202024%20Annual%20Report_DE_0.pdf",
+    "source": "European Banking Authority annual report summaries",
+    "license": "European Banking Authority publication; verify reuse terms before redistribution outside tests",
+    "categories": ["international-organization", "multilingual", "german", "financial-report"],
+    "size": 132862,
+    "sha256": "2d927fccf748d53b899f3448f0b29d7f1838cfa1a59966bd96cf6fadb176f301"
+  },
+  {
+    "id": "eba-2024-summary-fr",
+    "localPath": "test/fixtures/external-holdout-pdfs/eba-2024-summary-fr.pdf",
+    "sourceUrl": "https://www.eba.europa.eu/sites/default/files/2025-06/84030ead-a929-45fa-a03f-a4e252f7c3f0/Executive%20summary%20of%20the%202024%20Annual%20Report_FR_0.pdf",
+    "source": "European Banking Authority annual report summaries",
+    "license": "European Banking Authority publication; verify reuse terms before redistribution outside tests",
+    "categories": ["international-organization", "multilingual", "french", "financial-report"],
+    "size": 131457,
+    "sha256": "dd374465792139655b80ddcace7760020c4b03ff76fdeca551e305af4cdb2a5e"
+  },
+  {
+    "id": "boj-semiannual-2024-jp",
+    "localPath": "test/fixtures/external-holdout-pdfs/boj-semiannual-2024-jp.pdf",
+    "sourceUrl": "https://www.boj.or.jp/mopo/diet/d_report_2024/semi2412a.pdf",
+    "source": "Bank of Japan reports to the Diet",
+    "license": "Bank of Japan publication; verify reuse terms before redistribution outside tests",
+    "categories": ["international-organization", "japanese", "cjk", "financial-report", "long-document"],
+    "size": 2723665,
+    "sha256": "4d48fee868e10fa78d7fda46ce876e9026f78e27cfb0c4e18601675ece6e74cb"
+  },
+  {
+    "id": "pdfjs-annotation-square-circle",
+    "localPath": "test/fixtures/external-holdout-pdfs/pdfjs-annotation-square-circle.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/annotation-square-circle.pdf",
+    "source": "Mozilla PDF.js regression test suite",
+    "license": "Apache-2.0",
+    "categories": ["pdfjs-regression", "annotations", "geometry"],
+    "size": 88740,
+    "sha256": "88ed9ed813c3585b3098b9f4eef5107426f7829044117cd87f77bdc38a8e3f72"
+  },
+  {
+    "id": "pdfjs-issue6068",
+    "localPath": "test/fixtures/external-holdout-pdfs/pdfjs-issue6068.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/issue6068.pdf",
+    "source": "Mozilla PDF.js regression test suite",
+    "license": "Apache-2.0",
+    "categories": ["pdfjs-regression", "font", "text"],
+    "size": 432895,
+    "sha256": "7cfdedacb3caadfe7b3a3bb92c58231f9380cfebda9f3922fcb0eb9eaea3b56b"
+  },
+  {
+    "id": "scotus-23-175",
+    "localPath": "test/fixtures/external-holdout-pdfs/scotus-23-175.pdf",
+    "sourceUrl": "https://www.supremecourt.gov/opinions/23pdf/23-175_19m2.pdf",
+    "source": "Supreme Court of the United States opinions",
+    "license": "Public domain / U.S. government work",
+    "categories": ["legal", "opinion", "headers-footers", "long-form-text"],
+    "size": 359727,
+    "sha256": "b54153d97815dddc6723c1331f5ff4d498a87dee26b6e2111804b7e11dd6fe91"
+  }
+]

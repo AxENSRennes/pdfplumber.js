@@ -8,6 +8,7 @@ import { open, type BBox, type PDFObject, type PDFPlumberDocument, type PDFPlumb
 export interface ParityCheck {
   type: string;
   page?: number;
+  pageIndices?: number[];
   expected: unknown;
   options?: Record<string, unknown>;
   bbox?: BBox;
@@ -79,6 +80,17 @@ const HASH_NUMERIC_DIGITS = 3;
 
 export function readParityGoldens(): ParityGoldenFile {
   return JSON.parse(readFileSync(goldenPath, "utf8")) as ParityGoldenFile;
+}
+
+export function readParityGoldensAt(pathname: string): ParityGoldenFile {
+  return JSON.parse(readFileSync(pathname, "utf8")) as ParityGoldenFile;
+}
+
+function resolvePdfPath(scenario: ParityScenario): string {
+  if (scenario.pdf.includes("/") || scenario.pdf.includes("\\")) {
+    return path.resolve(repoRoot, scenario.pdf);
+  }
+  return path.join(repoRoot, "pdfplumber-python/tests/pdfs", scenario.pdf);
 }
 
 async function valueOf<T>(value: T | Promise<T>): Promise<T> {
@@ -377,7 +389,11 @@ async function pageSnapshot(page: PDFPlumberPage): Promise<Record<string, unknow
   };
 }
 
-async function documentSnapshot(pdfPath: string, openOptions: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+async function documentSnapshot(
+  pdfPath: string,
+  openOptions: Record<string, unknown> = {},
+  pageIndices?: number[]
+): Promise<Record<string, unknown>> {
   let document: PDFPlumberDocument;
   try {
     document = await open(pdfPath, openOptions);
@@ -390,19 +406,27 @@ async function documentSnapshot(pdfPath: string, openOptions: Record<string, unk
   }
 
   try {
+    const selectedIndices =
+      pageIndices ?? Array.from({ length: document.pages.length }, (_, index) => index);
     const pages = [];
-    for (const page of document.pages) {
+    for (const index of selectedIndices) {
+      const page = document.pages[index];
+      if (!page) throw new Error(`Missing page at index ${index}`);
       pages.push(await pageSnapshot(page));
     }
-    return {
+    const snapshot: Record<string, unknown> = {
       status: "ok",
       metadata: metadataSubset(document.metadata),
       pageCount: document.pages.length,
-      objectCounts: objectCounts(document.objects),
-      annots: objectListSummary(document.annots),
-      hyperlinks: objectListSummary(document.hyperlinks),
+      ...(pageIndices ? { pageIndices: selectedIndices } : {}),
       pages
     };
+    if (!pageIndices) {
+      snapshot.objectCounts = objectCounts(document.objects);
+      snapshot.annots = objectListSummary(document.annots);
+      snapshot.hyperlinks = objectListSummary(document.hyperlinks);
+    }
+    return snapshot;
   } finally {
     await document.close();
   }
@@ -432,26 +456,26 @@ function buildMcidText(page: PDFPlumberPage): Array<Record<string, unknown>> {
   return mcids.map((text, mcid) => ({ mcid, text }));
 }
 
-function expectClose(actual: unknown, expected: unknown, precision = 5): void {
+function expectClose(actual: unknown, expected: unknown, precision = 5, path = "$"): void {
   if (
     expected !== null &&
     typeof expected === "object" &&
     !Array.isArray(expected) &&
     (expected as Record<string, unknown>).status === "error"
   ) {
-    expect((actual as Record<string, unknown>).status).toBe("error");
+    expect((actual as Record<string, unknown>).status, path).toBe("error");
     return;
   }
 
   if (typeof actual === "number" && typeof expected === "number") {
-    expect(actual).toBeCloseTo(expected, precision);
+    expect(actual, path).toBeCloseTo(expected, precision);
     return;
   }
 
   if (Array.isArray(actual) && Array.isArray(expected)) {
-    expect(actual.length).toBe(expected.length);
+    expect(actual.length, `${path}.length`).toBe(expected.length);
     for (let i = 0; i < expected.length; i += 1) {
-      expectClose(actual[i], expected[i], precision);
+      expectClose(actual[i], expected[i], precision, `${path}[${i}]`);
     }
     return;
   }
@@ -466,18 +490,18 @@ function expectClose(actual: unknown, expected: unknown, precision = 5): void {
   ) {
     const actualObj = actual as Record<string, unknown>;
     const expectedObj = expected as Record<string, unknown>;
-    expect(Object.keys(actualObj).sort()).toEqual(Object.keys(expectedObj).sort());
+    expect(Object.keys(actualObj).sort(), `${path}.keys`).toEqual(Object.keys(expectedObj).sort());
     for (const key of Object.keys(expectedObj)) {
-      expectClose(actualObj[key], expectedObj[key], precision);
+      expectClose(actualObj[key], expectedObj[key], precision, `${path}.${key}`);
     }
     return;
   }
 
-  expect(actual).toEqual(expected);
+  expect(actual, path).toEqual(expected);
 }
 
 export async function runParityScenario(scenario: ParityScenario): Promise<void> {
-  const pdfPath = path.join(repoRoot, "pdfplumber-python/tests/pdfs", scenario.pdf);
+  const pdfPath = resolvePdfPath(scenario);
   let document: PDFPlumberDocument | null = null;
 
   const getDocument = async (): Promise<PDFPlumberDocument> => {
@@ -491,7 +515,7 @@ export async function runParityScenario(scenario: ParityScenario): Promise<void>
 
       switch (check.type) {
         case "document.snapshot":
-          actual = await documentSnapshot(pdfPath, scenario.openOptions ?? {});
+          actual = await documentSnapshot(pdfPath, scenario.openOptions ?? {}, check.pageIndices);
           break;
         case "page.textSummary": {
           const page = scenarioPage(await getDocument(), check);

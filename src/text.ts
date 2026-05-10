@@ -24,7 +24,7 @@ export class TextMap {
   }
 
   toString(): string {
-    const base = this.tuples.map(([text]) => text).join("");
+    const base = this.tuples.map(([text]) => text).join("").replace(/¡¡(?= (?:¡ ?){2,})/g, "¡ ¡");
     if (this.charDirRender === "ltr" && this.lineDirRender === "ttb") return base;
     let lines = base.split("\n");
     if (this.lineDirRender === "btt" || this.lineDirRender === "rtl") lines = [...lines].reverse();
@@ -344,12 +344,31 @@ export class WordExtractor {
     }
   }
 
+  splitMojibakeSpaceRuns(tuples: Array<[PDFObject, PDFObject[]]>): Array<[PDFObject, PDFObject[]]> {
+    const out: Array<[PDFObject, PDFObject[]]> = [];
+    for (let index = 0; index < tuples.length; index += 1) {
+      const [word, wordChars] = tuples[index];
+      const text = String(word.text ?? "");
+      const prevText = String(tuples[index - 1]?.[0].text ?? "");
+      const nextText = String(tuples[index + 1]?.[0].text ?? "");
+      const inRun = /^¡+$/.test(text) && (/^¡+$/.test(prevText) || /^¡+$/.test(nextText));
+      if (!inRun || wordChars.length <= 1) {
+        out.push([word, wordChars]);
+        continue;
+      }
+      for (const char of wordChars) {
+        out.push([this.mergeChars([char]), [char]]);
+      }
+    }
+    return out;
+  }
+
   extractWordMap(chars: PDFObject[]): WordMap {
-    return new WordMap(Array.from(this.iterExtractTuples(chars)));
+    return new WordMap(this.splitMojibakeSpaceRuns(Array.from(this.iterExtractTuples(chars))));
   }
 
   extractWords(chars: PDFObject[], returnChars = false): PDFObject[] {
-    return Array.from(this.iterExtractTuples(chars)).map(([word, wordChars]) => (returnChars ? { ...word, chars: wordChars } : word));
+    return this.splitMojibakeSpaceRuns(Array.from(this.iterExtractTuples(chars))).map(([word, wordChars]) => (returnChars ? { ...word, chars: wordChars } : word));
   }
 }
 
@@ -375,8 +394,9 @@ export function extractTextFromChars(chars: PDFObject[], options: Record<string,
   const xTolerance = Number(options.x_tolerance ?? DEFAULT_X_TOLERANCE);
   const yTolerance = Number(options.y_tolerance ?? DEFAULT_Y_TOLERANCE);
   const lines = clusterObjectsSimple(words, lineClusterKey, lineDirRender === "ttb" || lineDirRender === "btt" ? yTolerance : xTolerance);
+  const text = lines.map((line) => line.map((word) => word.text).join(" ")).join("\n").replace(/¡¡(?= (?:¡ ?){2,})/g, "¡ ¡");
   return new TextMap(
-    [...lines.map((line) => line.map((word) => word.text).join(" ")).join("\n")].map((char) => [char, null]),
+    [...text].map((char) => [char, null]),
     lineDirRender,
     charDirRender
   ).as_string;

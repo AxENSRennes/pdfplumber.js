@@ -1,0 +1,76 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<<  /Length 51 >>
+stream
+BT /F1 12 Tf 20 220 Td (Extended annotations) Tj ET
+endstream
+endobj
+2 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+3 0 obj
+<< /Type /EmbeddedFile /Subtype /text#2fplain /Length 10 >>
+stream
+attachment
+endstream
+endobj
+4 0 obj
+<< /Type /Filespec /F (note.txt) /EF << /F 3 0 R >> >>
+endobj
+5 0 obj
+<< /Type /Annot /Subtype /Square /Rect [20 170 60 210] /C [1 0 0] >>
+endobj
+6 0 obj
+<< /Type /Annot /Subtype /Circle /Rect [70 170 110 210] /C [0 1 0] >>
+endobj
+7 0 obj
+<< /Type /Annot /Subtype /FreeText /Rect [20 130 120 160] /Contents (Free text) >>
+endobj
+8 0 obj
+<< /Type /Annot /Subtype /FileAttachment /Rect [130 130 150 150] /FS 4 0 R /Contents (Attached) >>
+endobj
+9 0 obj
+<< /Type /Annot /Subtype /Popup /Rect [130 170 180 210] /Parent 7 0 R >>
+endobj
+10 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Btn /T (check) /V /Yes /AS /Yes /Rect [20 90 35 105] >>
+endobj
+11 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Btn /Ff 32768 /T (radio) /V /Choice1 /AS /Choice1 /Rect [45 90 60 105] >>
+endobj
+12 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Ch /T (choice) /V (B) /Opt [(A) (B)] /Rect [70 85 130 110] >>
+endobj
+13 0 obj
+<< /Type /Page /MediaBox [0 0 220 250] /Resources << /Font << /F1 2 0 R >> >> /Contents 1 0 R /Annots [5 0 R 6 0 R 7 0 R 8 0 R 9 0 R 10 0 R 11 0 R 12 0 R] >>
+endobj
+14 0 obj
+<< /Type /Pages /Kids [13 0 R] /Count 1 >>
+endobj
+15 0 obj
+<< /Type /Catalog /Pages 14 0 R /AcroForm << /Fields [10 0 R 11 0 R 12 0 R] >> >>
+endobj
+xref
+0 16
+0000000000 65535 f 
+0000000015 00000 n 
+0000000117 00000 n 
+0000000187 00000 n 
+0000000290 00000 n 
+0000000360 00000 n 
+0000000444 00000 n 
+0000000529 00000 n 
+0000000627 00000 n 
+0000000741 00000 n 
+0000000829 00000 n 
+0000000939 00000 n 
+0000001067 00000 n 
+0000001183 00000 n 
+0000001357 00000 n 
+0000001416 00000 n 
+trailer
+<< /Size 16 /Root 15 0 R >>
+startxref
+1514
+%%EOF

@@ -1,0 +1,532 @@
+[
+  {
+    "id": "pdfjs-arabic-cidtruetype",
+    "localPath": "test/fixtures/external-pdfs/pdfjs-arabic-cidtruetype.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/ArabicCIDTrueType.pdf",
+    "source": "Mozilla PDF.js regression test suite",
+    "license": "Apache-2.0",
+    "categories": ["pdfjs-regression", "cid-font", "unicode", "text"],
+    "size": 39370,
+    "sha256": "1cad1de912ba29f89a6d8b08bc5b0f84382874ffedab2c8f9e05ef608c265bb1"
+  },
+  {
+    "id": "pdfjs-acroform-calculation-order",
+    "localPath": "test/fixtures/external-pdfs/pdfjs-acroform-calculation-order.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/acroform_calculation_order.pdf",
+    "source": "Mozilla PDF.js regression test suite",
+    "license": "Apache-2.0",
+    "categories": ["pdfjs-regression", "acroform", "annotations"],
+    "size": 1041,
+    "sha256": "9081aad78cb6bb1871eb5c51addbe75ce73e4617a3e1fa15aa3da21232b6b755"
+  },
+  {
+    "id": "pdfjs-annotation-text-widget",
+    "localPath": "test/fixtures/external-pdfs/pdfjs-annotation-text-widget.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/annotation-text-widget.pdf",
+    "source": "Mozilla PDF.js regression test suite",
+    "license": "Apache-2.0",
+    "categories": ["pdfjs-regression", "annotations", "form-widget"],
+    "size": 93171,
+    "sha256": "9f091ceb368ad0406094efaa6c50d5033735ee52f383e0973dc53a7467089d7c"
+  },
+  {
+    "id": "pdfjs-annotation-choice-widget",
+    "localPath": "test/fixtures/external-pdfs/pdfjs-annotation-choice-widget.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/annotation-choice-widget.pdf",
+    "source": "Mozilla PDF.js regression test suite",
+    "license": "Apache-2.0",
+    "categories": ["pdfjs-regression", "annotations", "form-widget"],
+    "size": 91556,
+    "sha256": "2fcab2aed82afe9775359c1d166fb7aae77e99d25fe03be177e233d02d572538"
+  },
+  {
+    "id": "pdfjs-type3-word-spacing",
+    "localPath": "test/fixtures/external-pdfs/pdfjs-type3-word-spacing.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/Type3WordSpacing.pdf",
+    "source": "Mozilla PDF.js regression test suite",
+    "license": "Apache-2.0",
+    "categories": ["pdfjs-regression", "type3-font", "word-spacing", "text"],
+    "size": 2693,
+    "sha256": "8ac40dc49d40af8b5a50b442ced56b8db962c961a779a0284cd3a6207adc0bb7"
+  },
+  {
+    "id": "pdfjs-identity-to-unicode-map",
+    "localPath": "test/fixtures/external-pdfs/pdfjs-identity-to-unicode-map.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/IdentityToUnicodeMap_charCodeOf.pdf",
+    "source": "Mozilla PDF.js regression test suite",
+    "license": "Apache-2.0",
+    "categories": ["pdfjs-regression", "unicode", "cmap", "text"],
+    "size": 651,
+    "sha256": "81243ff4cca5f7898688008224247d88534cd03e76ac3cbbdc38f925cfbee18f"
+  },
+  {
+    "id": "pdfjs-pdfbox-3148-fuzzed",
+    "localPath": "test/fixtures/external-pdfs/pdfjs-pdfbox-3148-fuzzed.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/PDFBOX-3148-2-fuzzed.pdf",
+    "source": "Mozilla PDF.js regression test suite",
+    "license": "Apache-2.0",
+    "categories": ["pdfjs-regression", "malformed", "robustness"],
+    "size": 244351,
+    "sha256": "1c780335b494ac52eae9fa4d05f1bba88c18ca6b24e6e302b9f271de05e256aa"
+  },
+  {
+    "id": "pdfjs-bigboundingbox",
+    "localPath": "test/fixtures/external-pdfs/pdfjs-bigboundingbox.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/bigboundingbox.pdf",
+    "source": "Mozilla PDF.js regression test suite",
+    "license": "Apache-2.0",
+    "categories": ["pdfjs-regression", "geometry", "page-boxes"],
+    "size": 76044,
+    "sha256": "6cd3d57b85891021af2de75ac304a6efc2894793dab7594968b0b5efcd1d0013"
+  },
+  {
+    "id": "verapdf-pdfua-table-pass",
+    "localPath": "test/fixtures/external-pdfs/verapdf-pdfua-table-pass.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/veraPDF/veraPDF-corpus/staging/PDF_UA-1/7.5%20Tables/7.5-t01-pass-a.pdf",
+    "source": "veraPDF PDF/UA corpus",
+    "license": "CC-BY-4.0",
+    "categories": ["pdfua", "tagged-pdf", "tables"],
+    "size": 37174,
+    "sha256": "d91d6aeb4203b6852a20aebbb2d1399f72ad5527e7056a2577168a2fde60eb4f"
+  },
+  {
+    "id": "verapdf-pdfua-embedded-files-pass",
+    "localPath": "test/fixtures/external-pdfs/verapdf-pdfua-embedded-files-pass.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/veraPDF/veraPDF-corpus/staging/PDF_UA-1/7.11%20Embedded%20files/7.11-t01-pass-a.pdf",
+    "source": "veraPDF PDF/UA corpus",
+    "license": "CC-BY-4.0",
+    "categories": ["pdfua", "tagged-pdf", "embedded-files"],
+    "size": 92757,
+    "sha256": "7d4fe2837cb4d0451e5767c33d532cc427c0048886be5a02d8d9d3e2661e1a9b"
+  },
+  {
+    "id": "verapdf-pdfua-forms-pass",
+    "localPath": "test/fixtures/external-pdfs/verapdf-pdfua-forms-pass.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/veraPDF/veraPDF-corpus/staging/PDF_UA-1/7.18%20Annotations/7.18.4%20Forms/7.18.4-t01-pass-a.pdf",
+    "source": "veraPDF PDF/UA corpus",
+    "license": "CC-BY-4.0",
+    "categories": ["pdfua", "tagged-pdf", "forms", "annotations"],
+    "size": 29426,
+    "sha256": "eebd601e070cfa18b46837436149157036e44420d07e6c575120c5d22a2148c6"
+  },
+  {
+    "id": "verapdf-pdfua-links-pass",
+    "localPath": "test/fixtures/external-pdfs/verapdf-pdfua-links-pass.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/veraPDF/veraPDF-corpus/staging/PDF_UA-1/7.18%20Annotations/7.18.5%20Links/7.18.5-t01-pass-a.pdf",
+    "source": "veraPDF PDF/UA corpus",
+    "license": "CC-BY-4.0",
+    "categories": ["pdfua", "tagged-pdf", "links", "annotations"],
+    "size": 22935,
+    "sha256": "0168782a9b7162669f6785eb6dcb9accadaa8650de94b0e92951c5d08a2bff67"
+  },
+  {
+    "id": "verapdf-pdfua-unicode-cmap-pass",
+    "localPath": "test/fixtures/external-pdfs/verapdf-pdfua-unicode-cmap-pass.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/veraPDF/veraPDF-corpus/staging/PDF_UA-1/7.21%20Fonts/7.21.7%20Unicode%20character%20maps/7.21.7-t01-pass-a.pdf",
+    "source": "veraPDF PDF/UA corpus",
+    "license": "CC-BY-4.0",
+    "categories": ["pdfua", "font", "unicode", "cmap"],
+    "size": 22316,
+    "sha256": "a626d37abd1dc72cbc6e9839e270e63435b3ae4ed09bb718c5ab2821dbfc8039"
+  },
+  {
+    "id": "verapdf-pdfua-text-pass",
+    "localPath": "test/fixtures/external-pdfs/verapdf-pdfua-text-pass.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/veraPDF/veraPDF-corpus/staging/PDF_UA-1/7.2%20Text/7.2-t02-pass-a.pdf",
+    "source": "veraPDF PDF/UA corpus",
+    "license": "CC-BY-4.0",
+    "categories": ["pdfua", "tagged-pdf", "text"],
+    "size": 60259,
+    "sha256": "d23e975cd682506ff027f16a56ae00e19abbfce47083881def90c003bc1da000"
+  },
+  {
+    "id": "irs-f1040",
+    "localPath": "test/fixtures/external-pdfs/irs-f1040.pdf",
+    "sourceUrl": "https://www.irs.gov/pub/irs-pdf/f1040.pdf",
+    "source": "Internal Revenue Service forms and publications",
+    "license": "Public domain / U.S. government work",
+    "categories": ["government", "form", "acroform", "tables"],
+    "size": 220237,
+    "sha256": "3d31c226df0d189ced80e039d01cf0f8820c1019681a0f0ca6264de277b7e982"
+  },
+  {
+    "id": "irs-fw4",
+    "localPath": "test/fixtures/external-pdfs/irs-fw4.pdf",
+    "sourceUrl": "https://www.irs.gov/pub/irs-pdf/fw4.pdf",
+    "source": "Internal Revenue Service forms and publications",
+    "license": "Public domain / U.S. government work",
+    "categories": ["government", "form", "acroform", "tables"],
+    "size": 208845,
+    "sha256": "92444d8856ce55d9e25dca8b6d1420634fc68b11e1ab1f760916ea29ddd312b2"
+  },
+  {
+    "id": "irs-f941",
+    "localPath": "test/fixtures/external-pdfs/irs-f941.pdf",
+    "sourceUrl": "https://www.irs.gov/pub/irs-pdf/f941.pdf",
+    "source": "Internal Revenue Service forms and publications",
+    "license": "Public domain / U.S. government work",
+    "categories": ["government", "form", "acroform", "tables"],
+    "size": 841648,
+    "sha256": "38a3d8cf7a455101d52543c8c48e66202bc25c189ead878627e35c797c88e2ad"
+  },
+  {
+    "id": "arxiv-publaynet-1908.07836",
+    "localPath": "test/fixtures/external-pdfs/arxiv-publaynet-1908.07836.pdf",
+    "sourceUrl": "https://arxiv.org/pdf/1908.07836",
+    "source": "arXiv",
+    "license": "arXiv-hosted paper; check paper metadata before redistribution outside tests",
+    "categories": ["scientific-paper", "two-column", "tables", "figures"],
+    "size": 3731954,
+    "sha256": "f5b9bd0163a7703fa6c967a423e77364cf93c4c3d8f8b6a4fe0ce9b916e5098a"
+  },
+  {
+    "id": "arxiv-pubtables-2110.00061",
+    "localPath": "test/fixtures/external-pdfs/arxiv-pubtables-2110.00061.pdf",
+    "sourceUrl": "https://arxiv.org/pdf/2110.00061",
+    "source": "arXiv",
+    "license": "arXiv-hosted paper; check paper metadata before redistribution outside tests",
+    "categories": ["scientific-paper", "table-extraction", "two-column", "figures"],
+    "size": 2636957,
+    "sha256": "9ed56fdf6cdac02a1b559b59e787b18eb26bf67fbcc216f7d4ba33e72a83d593"
+  },
+  {
+    "id": "scotus-23-939",
+    "localPath": "test/fixtures/external-pdfs/scotus-23-939.pdf",
+    "sourceUrl": "https://www.supremecourt.gov/opinions/23pdf/23-939_e2pg.pdf",
+    "source": "Supreme Court of the United States opinions",
+    "license": "Public domain / U.S. government work",
+    "categories": ["legal", "opinion", "headers-footers", "long-form-text"],
+    "size": 531026,
+    "sha256": "4cbb9bd0c0f023cd0273826e9481f16edd2ca942e5b378123d2478b66ef31746"
+  },
+  {
+    "id": "federal-register-2024-01-02",
+    "localPath": "test/fixtures/external-pdfs/federal-register-2024-01-02.pdf",
+    "sourceUrl": "https://www.govinfo.gov/content/pkg/FR-2024-01-02/pdf/FR-2024-01-02.pdf",
+    "source": "GovInfo Federal Register",
+    "license": "Public domain / U.S. government work",
+    "categories": ["government", "legal", "multi-column", "tables", "long-document"],
+    "size": 13257131,
+    "sha256": "46b38e22fc0d71abc52428178620548fe7152e3ac1d099864a12965e7f39401b"
+  },
+  {
+    "id": "pdfjs-xiao-biao-song",
+    "localPath": "test/fixtures/external-pdfs/pdfjs-xiao-biao-song.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/XiaoBiaoSong.pdf",
+    "source": "Mozilla PDF.js regression test suite",
+    "license": "Apache-2.0",
+    "categories": ["pdfjs-regression", "cjk", "font", "unicode", "text"],
+    "size": 5652,
+    "sha256": "1ea20b84d94b90fa1ccb08bdd2e79e710071e0593fde6d547ab1cd4a3ebc0f88"
+  },
+  {
+    "id": "pdfjs-simfang-variant",
+    "localPath": "test/fixtures/external-pdfs/pdfjs-simfang-variant.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/SimFang-variant.pdf",
+    "source": "Mozilla PDF.js regression test suite",
+    "license": "Apache-2.0",
+    "categories": ["pdfjs-regression", "cjk", "font", "unicode", "text"],
+    "size": 4108,
+    "sha256": "e6c6e3fb472f06a3d812bef23afc026e90b33497408122b61d577e0f7df49418"
+  },
+  {
+    "id": "pdfjs-thuluth-features",
+    "localPath": "test/fixtures/external-pdfs/pdfjs-thuluth-features.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/ThuluthFeatures.pdf",
+    "source": "Mozilla PDF.js regression test suite",
+    "license": "Apache-2.0",
+    "categories": ["pdfjs-regression", "arabic", "rtl", "font", "unicode", "text"],
+    "size": 117677,
+    "sha256": "752304c24a50834d111793fc038cafc892c071d04f214072729c41a178c161e7"
+  },
+  {
+    "id": "pdfjs-truetype-without-cmap",
+    "localPath": "test/fixtures/external-pdfs/pdfjs-truetype-without-cmap.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/TrueType_without_cmap.pdf",
+    "source": "Mozilla PDF.js regression test suite",
+    "license": "Apache-2.0",
+    "categories": ["pdfjs-regression", "font", "missing-cmap", "text"],
+    "size": 3989,
+    "sha256": "3e111eef52ce9c0d0b1da043290df4b49a5670c89891fcb3db6962edb12e35aa"
+  },
+  {
+    "id": "pdfjs-annotation-fileattachment",
+    "localPath": "test/fixtures/external-pdfs/pdfjs-annotation-fileattachment.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/annotation-fileattachment.pdf",
+    "source": "Mozilla PDF.js regression test suite",
+    "license": "Apache-2.0",
+    "categories": ["pdfjs-regression", "annotations", "file-attachment", "embedded-files"],
+    "size": 93322,
+    "sha256": "b2f3751cd63e2402d95673f763e52fb105e6ce8e0b41406ca6d9965f5c894d43"
+  },
+  {
+    "id": "pdfjs-annotation-button-widget",
+    "localPath": "test/fixtures/external-pdfs/pdfjs-annotation-button-widget.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/annotation-button-widget.pdf",
+    "source": "Mozilla PDF.js regression test suite",
+    "license": "Apache-2.0",
+    "categories": ["pdfjs-regression", "annotations", "form-widget", "buttons"],
+    "size": 23785,
+    "sha256": "f7b1c9c7b2ecb909f6b168cc1b137230076533f977a205472b212b7f0d3a78d7"
+  },
+  {
+    "id": "pdfjs-annotation-highlight-without-appearance",
+    "localPath": "test/fixtures/external-pdfs/pdfjs-annotation-highlight-without-appearance.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/annotation-highlight-without-appearance.pdf",
+    "source": "Mozilla PDF.js regression test suite",
+    "license": "Apache-2.0",
+    "categories": ["pdfjs-regression", "annotations", "highlight", "missing-appearance"],
+    "size": 16302,
+    "sha256": "ea323f17899de03e7499d0e8531c49e873512a26b40058f357ca399312bf65d6"
+  },
+  {
+    "id": "pdfjs-attachment",
+    "localPath": "test/fixtures/external-pdfs/pdfjs-attachment.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/attachment.pdf",
+    "source": "Mozilla PDF.js regression test suite",
+    "license": "Apache-2.0",
+    "categories": ["pdfjs-regression", "embedded-files", "attachments"],
+    "size": 15299,
+    "sha256": "9acec9f83f1557183c83a87111b85141e657849ac2aa92864ffd63cc91572379"
+  },
+  {
+    "id": "pdfjs-bad-page-labels",
+    "localPath": "test/fixtures/external-pdfs/pdfjs-bad-page-labels.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/bad-PageLabels.pdf",
+    "source": "Mozilla PDF.js regression test suite",
+    "license": "Apache-2.0",
+    "categories": ["pdfjs-regression", "page-labels", "robustness"],
+    "size": 798,
+    "sha256": "eff0ee7d1cf2e1a7ccfb25a8fc4c2bbea0ec23c838b61a199a57dbb732ddeaad"
+  },
+  {
+    "id": "pdfjs-bitmap-mmr",
+    "localPath": "test/fixtures/external-pdfs/pdfjs-bitmap-mmr.pdf",
+    "sourceUrl": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/bitmap-mmr.pdf",
+    "source": "Mozilla PDF.js regression test suite",
+    "license": "Apache-2.0",
+    "categories": ["pdfjs-regression", "bitmap", "image", "ccitt"],
+    "size": 1122,
+    "sha256": "32b70aeb63ca60f60c25c2d797b8f5af16043d66dce1bcb0b0f08a78acee95ed"
+  },
+  {
+    "id": "dol-wh-380-e",
+    "localPath": "test/fixtures/external-pdfs/dol-wh-380-e.pdf",
+    "sourceUrl": "https://www.dol.gov/sites/dolgov/files/WHD/legacy/files/wh-380-e.pdf",
+    "source": "U.S. Department of Labor forms",
+    "license": "Public domain / U.S. government work",
+    "categories": ["government", "form", "medical-form", "tables"],
+    "size": 181019,
+    "sha256": "fbeab59d7b9a0928eb50c661f0e607d368d421ff661dde01f14ca1fff4e333da"
+  },
+  {
+    "id": "nasa-asap-2021",
+    "localPath": "test/fixtures/external-pdfs/nasa-asap-2021.pdf",
+    "sourceUrl": "https://www.nasa.gov/wp-content/uploads/2024/02/2021-asap-report-tagged.pdf",
+    "source": "NASA Aerospace Safety Advisory Panel annual reports",
+    "license": "Public domain / U.S. government work",
+    "categories": ["government", "annual-report", "tagged-pdf", "long-document", "figures"],
+    "size": 1278978,
+    "sha256": "c7ee3f03addd6c629a02dee7875f4fd498f5372947f451337f4020f01bfb0c21"
+  },
+  {
+    "id": "nasa-fy25-afr",
+    "localPath": "test/fixtures/external-pdfs/nasa-fy25-afr.pdf",
+    "sourceUrl": "https://www.nasa.gov/wp-content/uploads/2023/11/fy25-afr-final-tagged.pdf",
+    "source": "NASA Agency Financial Reports",
+    "license": "Public domain / U.S. government work",
+    "categories": ["government", "financial-report", "annual-report", "tables", "tagged-pdf", "long-document"],
+    "size": 5243440,
+    "sha256": "d09e430236bc55aa70654be8f301ce2061038cfc8028a740839f1852d5dd733e"
+  },
+  {
+    "id": "uspto-patent-10000000",
+    "localPath": "test/fixtures/external-pdfs/uspto-patent-10000000.pdf",
+    "sourceUrl": "https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/10000000",
+    "source": "USPTO Patent Public Search",
+    "license": "Public domain / U.S. government work",
+    "categories": ["government", "patent", "drawings", "technical-document", "long-form-text"],
+    "size": 713322,
+    "sha256": "36cbde77a2494339b5a87fcbc126b9049c7244eb4d6807536a39e2c4dfd54bbc"
+  },
+  {
+    "id": "un-a-64-95-en",
+    "localPath": "test/fixtures/external-pdfs/un-a-64-95-en.pdf",
+    "sourceUrl": "https://documents.un.org/api/symbol/access?l=en&s=A%2F64%2F95&t=pdf",
+    "source": "United Nations Official Document System",
+    "license": "United Nations official document; verify reuse terms before redistribution outside tests",
+    "categories": ["un", "multilingual", "english", "long-document", "tables"],
+    "size": 136854,
+    "sha256": "f8f0fbabdf36f565d3281b05554db60154be6560ae1a849f7ce1bd58f9305010"
+  },
+  {
+    "id": "un-a-64-95-ar",
+    "localPath": "test/fixtures/external-pdfs/un-a-64-95-ar.pdf",
+    "sourceUrl": "https://documents.un.org/api/symbol/access?l=ar&s=A%2F64%2F95&t=pdf",
+    "source": "United Nations Official Document System",
+    "license": "United Nations official document; verify reuse terms before redistribution outside tests",
+    "categories": ["un", "multilingual", "arabic", "rtl", "long-document", "tables"],
+    "size": 376956,
+    "sha256": "b26a4156ea957462219637aa23dea542dfc1d5022756ac28417675bf16b59446"
+  },
+  {
+    "id": "un-a-64-95-zh",
+    "localPath": "test/fixtures/external-pdfs/un-a-64-95-zh.pdf",
+    "sourceUrl": "https://documents.un.org/api/symbol/access?l=zh&s=A%2F64%2F95&t=pdf",
+    "source": "United Nations Official Document System",
+    "license": "United Nations official document; verify reuse terms before redistribution outside tests",
+    "categories": ["un", "multilingual", "chinese", "cjk", "long-document", "tables"],
+    "size": 448703,
+    "sha256": "4452e40928990f5da56157e53379323731f152b0c5391087f1d4257388aea480"
+  },
+  {
+    "id": "un-a-64-95-ru",
+    "localPath": "test/fixtures/external-pdfs/un-a-64-95-ru.pdf",
+    "sourceUrl": "https://documents.un.org/api/symbol/access?l=ru&s=A%2F64%2F95&t=pdf",
+    "source": "United Nations Official Document System",
+    "license": "United Nations official document; verify reuse terms before redistribution outside tests",
+    "categories": ["un", "multilingual", "russian", "cyrillic", "long-document", "tables"],
+    "size": 776880,
+    "sha256": "38f196159120624e4bb5a69b724e8bfbe13605f2104174d57fe54f36c3a3f038"
+  },
+  {
+    "id": "commons-alice-scan",
+    "localPath": "test/fixtures/external-pdfs/commons-alice-scan.pdf",
+    "sourceUrl": "https://upload.wikimedia.org/wikipedia/commons/0/0e/Alice%27s_adventures_in_Wonderland_-_%28IA_alicesadventures00carr_25%29.pdf",
+    "source": "Wikimedia Commons / Internet Archive scan",
+    "license": "Public domain",
+    "categories": ["book", "scan", "image-heavy", "long-document", "variable-page-boxes"],
+    "size": 10878800,
+    "sha256": "681883947de61fe9a8532b2aeef3364eb42f2b1668860318add37d4a555828b9"
+  },
+  {
+    "id": "berkshire-2024-ar",
+    "localPath": "test/fixtures/external-pdfs/berkshire-2024-ar.pdf",
+    "sourceUrl": "https://www.berkshirehathaway.com/2024ar/2024ar.pdf",
+    "source": "Berkshire Hathaway annual reports",
+    "license": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "categories": ["public-company", "financial-report", "annual-report", "tables", "long-document"],
+    "size": 1852116,
+    "sha256": "6aa0a501680c50a57e0a1a2e841b46800e1fed828a8a7889d83d8eae7953e4bb"
+  },
+  {
+    "id": "jpmorgan-2024-ar",
+    "localPath": "test/fixtures/external-pdfs/jpmorgan-2024-ar.pdf",
+    "sourceUrl": "https://www.jpmorganchase.com/content/dam/jpmc/jpmorgan-chase-and-co/investor-relations/documents/annualreport-2024.pdf",
+    "source": "JPMorgan Chase investor relations",
+    "license": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "categories": ["public-company", "bank", "financial-report", "annual-report", "tables", "long-document"],
+    "size": 17104906,
+    "sha256": "78443e60b3188a70673ca7042d0bf9e4dc596d04072af729242886d22bd0a4e3"
+  },
+  {
+    "id": "apple-2024-10k",
+    "localPath": "test/fixtures/external-pdfs/apple-2024-10k.pdf",
+    "sourceUrl": "https://s2.q4cdn.com/470004039/files/doc_earnings/2024/q4/filing/10-Q4-2024-As-Filed.pdf",
+    "source": "Apple investor relations SEC filing PDF",
+    "license": "Company investor-relations publication / SEC filing; verify reuse terms before redistribution outside tests",
+    "categories": ["public-company", "technology", "financial-report", "sec-filing", "tables", "long-document"],
+    "size": 963934,
+    "sha256": "319e1217afe72f194575e63350ea6c813eaf5caf0c24e59ce8b221fc1b3ea0d4"
+  },
+  {
+    "id": "federal-reserve-2024-ar",
+    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
+    "source": "Board of Governors of the Federal Reserve System publications",
+    "license": "Public domain / U.S. government work",
+    "categories": ["government", "bank-regulatory", "financial-report", "annual-report", "tables", "long-document"],
+    "size": 2170319,
+    "sha256": "fc5e7145447ad369398a7a8670967b5b29d26be589e74d13f5f6c573021857e9"
+  },
+  {
+    "id": "treasury-frusg-2024",
+    "localPath": "test/fixtures/external-pdfs/treasury-frusg-2024.pdf",
+    "sourceUrl": "https://fiscaldata.treasury.gov/static-data/published-reports/frusg/FRUSG_2024.pdf",
+    "source": "U.S. Department of the Treasury Financial Report of the U.S. Government",
+    "license": "Public domain / U.S. government work",
+    "categories": ["government", "financial-report", "annual-report", "tables", "image-heavy", "long-document"],
+    "size": 6856142,
+    "sha256": "bf9ee1d5129367977c0ef52ed5c243573df5f4b1a8e6b5a46f2696b1e8ab4404"
+  },
+  {
+    "id": "treasury-fsoc-2024-ar",
+    "localPath": "test/fixtures/external-pdfs/treasury-fsoc-2024-ar.pdf",
+    "sourceUrl": "https://home.treasury.gov/system/files/261/FSOC2024AnnualReport.pdf",
+    "source": "U.S. Treasury Financial Stability Oversight Council annual reports",
+    "license": "Public domain / U.S. government work",
+    "categories": ["government", "bank-regulatory", "financial-report", "annual-report", "tables", "long-document"],
+    "size": 4932978,
+    "sha256": "38fd9d65c05b6d5bc60d60062ddebe7328703b58f2db978d2f259ea6d7e16ba1"
+  },
+  {
+    "id": "fdic-2024-ar",
+    "localPath": "test/fixtures/external-pdfs/fdic-2024-ar.pdf",
+    "sourceUrl": "https://www.fdic.gov/financial-reports/2024-annual-report-full-report.pdf",
+    "source": "Federal Deposit Insurance Corporation annual reports",
+    "license": "Public domain / U.S. government work",
+    "categories": ["government", "bank-regulatory", "financial-report", "annual-report", "tables", "long-document"],
+    "size": 11266727,
+    "sha256": "0f31bc220f78ded5c1d312eaa547eff163843979cf3200aa7cfbe30622d66d77"
+  },
+  {
+    "id": "occ-2024-ar",
+    "localPath": "test/fixtures/external-pdfs/occ-2024-ar.pdf",
+    "sourceUrl": "https://www.occ.gov/publications-and-resources/publications/annual-report/files/2024-annual-report.pdf",
+    "source": "Office of the Comptroller of the Currency annual reports",
+    "license": "Public domain / U.S. government work",
+    "categories": ["government", "bank-regulatory", "financial-report", "annual-report", "tables", "long-document"],
+    "size": 13248483,
+    "sha256": "8e4855d78a4b682980de8c5484aabe2f671abef5fc7950807ef855ab9037c5bc"
+  },
+  {
+    "id": "walmart-2024-ar",
+    "localPath": "test/fixtures/external-pdfs/walmart-2024-ar.pdf",
+    "sourceUrl": "https://corporate.walmart.com/content/dam/corporate/documents/newsroom/2024/04/25/walmart-releases-2024-annual-report-and-proxy-statement/walmart-inc-2024-annual-report.pdf",
+    "source": "Walmart annual reports",
+    "license": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "categories": ["public-company", "retail", "financial-report", "annual-report", "tables", "long-document"],
+    "size": 4869782,
+    "sha256": "68ac2d343b54d80ebde1bc900dcfd6fbee3bc855a18dd0959d37c9592a5144a8"
+  },
+  {
+    "id": "target-2024-ar",
+    "localPath": "test/fixtures/external-pdfs/target-2024-ar.pdf",
+    "sourceUrl": "https://corporate.target.com/getmedia/c23bca62-1790-47bd-ad0e-6971aee4f78d/2024-Annual-Report-Target-Corporation.pdf",
+    "source": "Target annual reports",
+    "license": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "categories": ["public-company", "retail", "financial-report", "annual-report", "tables", "long-document"],
+    "size": 902389,
+    "sha256": "0ea59d72e596171693c01e46711ca63fd411da64d059f192a2e7dff2b6492271"
+  },
+  {
+    "id": "world-bank-2024-ar",
+    "localPath": "test/fixtures/external-pdfs/world-bank-2024-ar.pdf",
+    "sourceUrl": "https://openknowledge.worldbank.org/server/api/core/bitstreams/26af78ae-f32d-453a-a0a2-0a11054ef0ec/content",
+    "source": "World Bank Open Knowledge Repository",
+    "license": "World Bank Open Knowledge Repository publication; verify reuse terms before redistribution outside tests",
+    "categories": ["international-organization", "world-bank", "financial-report", "annual-report", "tables", "long-document"],
+    "size": 11289865,
+    "sha256": "4c4b484777eeb3f957165cb6aa9346bb9c092df34fb45c949b8ae80c4edeba89"
+  },
+  {
+    "id": "morgan-stanley-2024-10k",
+    "localPath": "test/fixtures/external-pdfs/morgan-stanley-2024-10k.pdf",
+    "sourceUrl": "https://www.morganstanley.com/content/dam/msdotcom/en/about-us-ir/shareholder/10k2024/10k1224.pdf",
+    "source": "Morgan Stanley investor relations",
+    "license": "Company investor-relations publication / SEC filing; verify reuse terms before redistribution outside tests",
+    "categories": ["public-company", "bank", "financial-report", "sec-filing", "tables", "long-document"],
+    "size": 2183994,
+    "sha256": "400b26c79a7f08665c1ff8ff7603b05123faad96f726908b37e8fc9af166c547"
+  },
+  {
+    "id": "citigroup-2024-ar",
+    "localPath": "test/fixtures/external-pdfs/citigroup-2024-ar.pdf",
+    "sourceUrl": "https://www.citigroup.com/rcs/citigpa/storage/public/citi-2024-annual-report.pdf",
+    "source": "Citigroup investor relations",
+    "license": "Company investor-relations publication / SEC filing; verify reuse terms before redistribution outside tests",
+    "categories": ["public-company", "bank", "financial-report", "annual-report", "sec-filing", "tables", "long-document"],
+    "size": 9582034,
+    "sha256": "c3aa3536367a3e00437303ba43bbb5785a63909348477a59aa5879b0f4ae440b"
+  }
+]

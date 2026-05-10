@@ -110,10 +110,13 @@ export interface FontRecord {
   hasToUnicode?: boolean;
   symbolic?: boolean;
   charSet?: string[];
+  encodingDifferences?: Record<number, string>;
+  pageScoped?: boolean;
   firstChar: number;
   widths: number[];
   ascent?: number;
   descent?: number;
+  vertical?: boolean;
 }
 
 export interface MappedFont {
@@ -123,6 +126,9 @@ export interface MappedFont {
   fontMatrix0: number;
   vertical: boolean;
   cidFallback: boolean;
+  fontRecord?: FontRecord;
+  hasToUnicode?: boolean;
+  missingFile?: boolean;
 }
 
 export interface PageBoxes {

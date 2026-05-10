@@ -3,6 +3,8 @@ import { inflateSync } from "node:zlib";
 import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 
 import { DEFAULT_FONT_ASCENT, DEFAULT_FONT_DESCENT, FONT_UNITS_PER_EM, METADATA_KEYS, STANDARD_FONT_METRICS } from "./constants.js";
+import { glyphTextFromPdfJsGlyph, glyphWidthLikePdfminer } from "./font-decoding.js";
+import { decodePdfLiteralBytesAsUtf8ThenUtf16, decodePdfStringLikePdfminer } from "./pdf-strings.js";
 import type {
   BBox,
   ColorOp,
@@ -343,8 +345,14 @@ export function parsePdfObjects(raw: string, password = ""): Map<number, string>
   let match: RegExpExecArray | null;
   while ((match = re.exec(raw))) {
     const start = match.index + (match[0].match(/^[\r\n]/) ? 1 : 0);
-    const end = raw.indexOf("endobj", re.lastIndex);
-    if (end === -1) continue;
+    const nextMatch = /(?:^|[\r\n])\d+\s+\d+\s+obj\b/g;
+    nextMatch.lastIndex = re.lastIndex;
+    const next = nextMatch.exec(raw);
+    const boundary = next?.index ?? raw.search(/\n\s*(?:xref|trailer|startxref)\b/);
+    const searchEnd = boundary >= 0 ? boundary : raw.length;
+    const relativeEnd = raw.slice(re.lastIndex, searchEnd).lastIndexOf("endobj");
+    if (relativeEnd === -1) continue;
+    const end = re.lastIndex + relativeEnd;
     objects.set(Number(match[1]), raw.slice(start, end + "endobj".length));
     re.lastIndex = end + "endobj".length;
   }
@@ -391,12 +399,18 @@ export function decodePdfStream(objectText: string | undefined): string {
   else if (objectText[end - 1] === "\r" || objectText[end - 1] === "\n") end -= 1;
 
   let bytes: Buffer<ArrayBufferLike> = Buffer.from(objectText.slice(start, end), "latin1");
-  if (/\/ASCII85Decode\b/.test(objectText)) bytes = ascii85Decode(bytes.toString("latin1"));
-  if (/\/FlateDecode\b/.test(objectText)) {
-    try {
-      return inflateSync(bytes).toString("latin1");
-    } catch {
-      return "";
+  const filters = Array.from(objectText.matchAll(/\/(ASCII85Decode|A85|FlateDecode|Fl|ASCIIHexDecode|AHx|RunLengthDecode|RL|LZWDecode|LZW)\b/g), (match) => match[1]);
+  for (const filter of filters) {
+    if (filter === "ASCII85Decode" || filter === "A85") bytes = ascii85Decode(bytes.toString("latin1"));
+    else if (filter === "ASCIIHexDecode" || filter === "AHx") bytes = asciiHexDecode(bytes.toString("latin1"));
+    else if (filter === "RunLengthDecode" || filter === "RL") bytes = runLengthDecode(bytes);
+    else if (filter === "LZWDecode" || filter === "LZW") bytes = lzwDecode(bytes);
+    else if (filter === "FlateDecode" || filter === "Fl") {
+      try {
+        bytes = inflateSync(bytes);
+      } catch {
+        return "";
+      }
     }
   }
   return bytes.toString("latin1");
@@ -436,6 +450,85 @@ function ascii85Decode(value: string): Buffer<ArrayBufferLike> {
   }
   flush(true);
   return Buffer.from(out);
+}
+
+function asciiHexDecode(value: string): Buffer<ArrayBufferLike> {
+  let clean = value.replace(/\s+/g, "");
+  const eod = clean.indexOf(">");
+  if (eod >= 0) clean = clean.slice(0, eod);
+  if (clean.length % 2) clean += "0";
+  return Buffer.from(clean, "hex");
+}
+
+function runLengthDecode(bytes: Buffer<ArrayBufferLike>): Buffer<ArrayBufferLike> {
+  const out: number[] = [];
+  for (let i = 0; i < bytes.length; i += 1) {
+    const length = bytes[i];
+    if (length === 128) break;
+    if (length <= 127) {
+      for (let j = 0; j < length + 1 && i + 1 + j < bytes.length; j += 1) out.push(bytes[i + 1 + j]);
+      i += length + 1;
+    } else {
+      const value = bytes[++i];
+      for (let j = 0; j < 257 - length; j += 1) out.push(value);
+    }
+  }
+  return Buffer.from(out);
+}
+
+function lzwDecode(bytes: Buffer<ArrayBufferLike>): Buffer<ArrayBufferLike> {
+  let bitPos = 0;
+  let nbits = 9;
+  let table: Array<Buffer<ArrayBufferLike> | null> = [];
+  let previous: Buffer<ArrayBufferLike> | null = null;
+  const out: Buffer<ArrayBufferLike>[] = [];
+  const reset = (): void => {
+    table = Array.from({ length: 256 }, (_unused, index) => Buffer.from([index]));
+    table[256] = null;
+    table[257] = null;
+    previous = Buffer.alloc(0);
+    nbits = 9;
+  };
+  const readBits = (bits: number): number | null => {
+    if (bitPos + bits > bytes.length * 8) return null;
+    let value = 0;
+    for (let i = 0; i < bits; i += 1) {
+      const absolute = bitPos + i;
+      value = (value << 1) | ((bytes[absolute >> 3] >> (7 - (absolute & 7))) & 1);
+    }
+    bitPos += bits;
+    return value;
+  };
+  reset();
+  while (true) {
+    const code = readBits(nbits);
+    if (code == null || code === 257) break;
+    if (code === 256) {
+      reset();
+      continue;
+    }
+    let chunk: Buffer<ArrayBufferLike>;
+    if (!previous?.length) {
+      const entry = table[code];
+      if (!entry) break;
+      chunk = entry;
+    } else if (code < table.length && table[code]) {
+      chunk = table[code] as Buffer<ArrayBufferLike>;
+      table.push(Buffer.concat([previous, chunk.subarray(0, 1)]));
+    } else if (code === table.length) {
+      chunk = Buffer.concat([previous, previous.subarray(0, 1)]);
+      table.push(chunk);
+    } else {
+      break;
+    }
+    const tableLength = table.length;
+    if (tableLength === 511) nbits = 10;
+    else if (tableLength === 1023) nbits = 11;
+    else if (tableLength === 2047) nbits = 12;
+    out.push(chunk);
+    previous = chunk;
+  }
+  return Buffer.concat(out);
 }
 
 function xObjectEntries(ownerText: string | undefined, objects: Map<number, string>): Array<{ name: string; objectNumber: number }> {
@@ -513,7 +606,7 @@ export function parseImageResources(pageObjectText: string | undefined, objects:
   const numberAttr = (objectText: string, name: string): number | undefined => {
     const indirect = objectText.match(new RegExp(`/${name}\\s+(\\d+)\\s+\\d+\\s+R`));
     if (indirect) {
-      const resolved = objects.get(Number(indirect[1]))?.match(/\bobj\s+([-+]?(?:\d+\.\d+|\d+|\.\d+))/);
+      const resolved = objects.get(Number(indirect[1]))?.match(/\bobj\s+([-+]?(?:\d+\.\d*|\.\d+|\d+))/);
       if (resolved) return Number(resolved[1]);
     }
     const direct = objectText.match(new RegExp(`/${name}\\s+([-+]?(?:\\d+\\.\\d+|\\d+|\\.\\d+))`));
@@ -529,6 +622,8 @@ export function parseImageResources(pageObjectText: string | undefined, objects:
   const pdfValueRepr = (objectText: string, name: string): string | number | undefined => {
     const ref = objectText.match(new RegExp(`/${name}\\s+(\\d+)\\s+\\d+\\s+R`))?.[1];
     if (ref) return `<PDFObjRef:${ref}>`;
+    const array = objectText.match(new RegExp(`/${name}\\s*\\[([^\\]]*)\\]`))?.[1];
+    if (array) return `[${parseNumbers(array).map((value) => value.toFixed(1)).join(", ")}]`;
     const number = objectText.match(new RegExp(`/${name}\\s+([-+]?(?:\\d+\\.\\d+|\\d+|\\.\\d+))`))?.[1];
     if (number) return Number(number);
     const named = objectText.match(new RegExp(`/${name}\\s*/([^\\s/<>[\\]()]+)`))?.[1];
@@ -539,7 +634,7 @@ export function parseImageResources(pageObjectText: string | undefined, objects:
     const raw = resolvedLength(objectText) ?? decodePdfStream(objectText).length;
     const attrs: string[] = [];
     const dictText = objectText.slice(0, objectText.search(/\bstream\b/));
-    const keys = Array.from(dictText.matchAll(/\/(Length|N|Alternate|Filter)\b/g), (match) => match[1])
+    const keys = Array.from(dictText.matchAll(/\/(Domain|Length|N|Alternate|Filter|FunctionType|Range)\b/g), (match) => match[1])
       .filter((key, index, all) => all.indexOf(key) === index);
     for (const key of keys) {
       const value = pdfValueRepr(objectText, key);
@@ -548,8 +643,12 @@ export function parseImageResources(pageObjectText: string | undefined, objects:
     return `<PDFStream(${objectNumber}): raw=${raw}, {${attrs.join(", ")}}>`;
   };
   const parseColorSpaceArray = (body: string): unknown[] => {
+    const deviceN = body.match(/^\s*\/DeviceN\s*\[([\s\S]*?)\]([\s\S]*)$/);
+    if (deviceN) {
+      return [`/'DeviceN'`, parseColorSpaceArray(deviceN[1]), ...parseColorSpaceArray(deviceN[2])];
+    }
     const values: unknown[] = [];
-    const tokenRe = /(\d+)\s+\d+\s+R|\/([^\s/<>[\]()]+)|<([0-9A-Fa-f\s]+)>|[-+]?(?:\d+\.\d+|\d+|\.\d+)/g;
+    const tokenRe = /(\d+)\s+\d+\s+R|\/([^\s/<>[\]()]+)|<([0-9A-Fa-f\s]+)>|[-+]?(?:\d+\.\d*|\.\d+|\d+)/g;
     let token: RegExpExecArray | null;
     while ((token = tokenRe.exec(body))) {
       if (token[1]) {
@@ -557,7 +656,18 @@ export function parseImageResources(pageObjectText: string | undefined, objects:
         const referenced = objects.get(objectNumber) ?? "";
         const body = referenced.replace(/^\d+\s+\d+\s+obj\s*/, "").replace(/\s*endobj$/, "").trim();
         const array = body.match(/^\[([\s\S]*)\]$/);
-        values.push(/\bstream\b/.test(referenced) ? pdfStreamRepr(objectNumber, referenced) : array ? parseColorSpaceArray(array[1]) : cleanObject({ value: body }).value);
+        const processRef = body.match(/\/Process\s+(\d+)\s+\d+\s+R/)?.[1];
+        const processText = processRef ? objects.get(Number(processRef)) ?? "" : "";
+        const components = processText.match(/\/Components\s*\[([\s\S]*?)\]/)?.[1];
+        values.push(
+          /\bstream\b/.test(referenced)
+            ? pdfStreamRepr(objectNumber, referenced)
+            : array
+              ? parseColorSpaceArray(array[1])
+              : components
+                ? { Process: { Components: parseColorSpaceArray(components) } }
+                : cleanObject({ value: body }).value
+        );
       } else if (token[2]) {
         values.push(`/'${token[2]}'`);
       } else if (token[3]) {
@@ -800,7 +910,7 @@ export function parseColorOps(content: string, colorSpaces: Record<string, strin
       index += 1;
       continue;
     }
-    if (/^[-+]?(?:\d+\.\d+|\d+|\.\d+)$/.test(token)) {
+    if (/^[-+]?(?:\d+\.\d*|\.\d+|\d+)$/.test(token)) {
       operands.push(Number(token));
       continue;
     }
@@ -923,7 +1033,7 @@ export function parseTextMatrixOps(content: string): Matrix[] {
       index += 1;
       continue;
     }
-    if (/^[-+]?(?:\d+\.\d+|\d+|\.\d+)$/.test(token)) {
+    if (/^[-+]?(?:\d+\.\d*|\.\d+|\d+)$/.test(token)) {
       operands.push(Number(token));
       continue;
     }
@@ -1022,7 +1132,7 @@ export function parseTextMoveOps(content: string): { move: Point[]; leadingMove:
       index += 1;
       continue;
     }
-    if (/^[-+]?(?:\d+\.\d+|\d+|\.\d+)$/.test(token)) {
+    if (/^[-+]?(?:\d+\.\d*|\.\d+|\d+)$/.test(token)) {
       operands.push(Number(token));
       continue;
     }
@@ -1124,7 +1234,7 @@ export function parseTransformOps(content: string): Matrix[] {
       index += 1;
       continue;
     }
-    if (/^[-+]?(?:\d+\.\d+|\d+|\.\d+)$/.test(token)) {
+    if (/^[-+]?(?:\d+\.\d*|\.\d+|\d+)$/.test(token)) {
       operands.push(Number(token));
       continue;
     }
@@ -1229,7 +1339,7 @@ export function parsePathOps(content: string): number[][] {
       index += 1;
       continue;
     }
-    if (/^[-+]?(?:\d+\.\d+|\d+|\.\d+)$/.test(token)) {
+    if (/^[-+]?(?:\d+\.\d*|\.\d+|\d+)$/.test(token)) {
       operands.push(Number(token));
       continue;
     }
@@ -1272,7 +1382,7 @@ export function parsePathOps(content: string): number[][] {
 }
 
 export function parseNumbers(value: string): number[] {
-  return Array.from(value.matchAll(/[-+]?(?:\d+\.\d+|\d+|\.\d+)/g)).map((m) => Number(m[0]));
+  return Array.from(value.matchAll(/[-+]?(?:\d+\.\d*|\.\d+|\d+)/g)).map((m) => Number(m[0]));
 }
 
 export function decodePdfName(value: string): string {
@@ -1320,7 +1430,7 @@ export function resolvePageBoxes(pdfPage: any, pageObjectText: string | undefine
     const box = cleanBBox([0, 0, width, height]);
     const rotatedBox = (rawBox: BBox): BBox => {
       if (rotate === 90) {
-        return cleanBBox([rawMedia[3] - rawBox[3], rawBox[0] - rawMedia[0], rawMedia[3] - rawBox[1], rawBox[2] - rawMedia[0]]);
+        return cleanBBox([rawBox[1] - rawMedia[1], rawBox[0] - rawMedia[0], rawBox[3] - rawMedia[1], rawBox[2] - rawMedia[0]]);
       }
       return cleanBBox([rawBox[1] - rawMedia[1], rawMedia[2] - rawBox[2], rawBox[3] - rawMedia[1], rawMedia[2] - rawBox[0]]);
     };
@@ -1358,6 +1468,9 @@ export function parseFontRecords(objects: Map<number, string>): FontRecord[] {
     const baseFont = decodePdfName(baseFontRaw);
     const subtype = text.match(/\/Subtype\s*\/([^\s/>]+)/)?.[1];
     const firstChar = Number(text.match(/\/FirstChar\s+(\d+)/)?.[1] ?? 0);
+    const encodingRef = text.match(/\/Encoding\s+(\d+)\s+\d+\s+R/)?.[1];
+    const encodingText = encodingRef ? objects.get(Number(encodingRef)) : text;
+    const encodingDifferences = parseEncodingDifferences(encodingText);
     const widthsRef = text.match(/\/Widths\s+(\d+)\s+\d+\s+R/)?.[1];
     const widthsText = widthsRef ? objects.get(Number(widthsRef)) : text;
     const widthsMatch = widthsText?.match(/\[([\s\S]*?)\]/);
@@ -1368,8 +1481,8 @@ export function parseFontRecords(objects: Map<number, string>): FontRecord[] {
     const descendant = nestedDescendantRef ? objects.get(Number(nestedDescendantRef)) : descendantContainer;
     const descriptorRef = text.match(/\/FontDescriptor\s+(\d+)\s+\d+\s+R/)?.[1] ?? descendant?.match(/\/FontDescriptor\s+(\d+)\s+\d+\s+R/)?.[1];
     const descriptor = descriptorRef ? objects.get(Number(descriptorRef)) : undefined;
-    const ascent = descriptor?.match(/\/Ascent\s+([-+]?(?:\d+\.\d+|\d+|\.\d+))/)?.[1];
-    const descent = descriptor?.match(/\/Descent\s+([-+]?(?:\d+\.\d+|\d+|\.\d+))/)?.[1];
+    const ascent = descriptor?.match(/\/Ascent\s+([-+]?(?:\d+\.\d*|\.\d+|\d+))/)?.[1];
+    const descent = descriptor?.match(/\/Descent\s+([-+]?(?:\d+\.\d*|\.\d+|\d+))/)?.[1];
     const flags = descriptor?.match(/\/Flags\s+(\d+)/)?.[1];
     const charSet = descriptor?.match(/\/CharSet\s*\(([^)]*)\)/)?.[1].match(/\/([^/\s()]+)/g)?.map((name) => name.slice(1));
     fonts.push({
@@ -1379,13 +1492,38 @@ export function parseFontRecords(objects: Map<number, string>): FontRecord[] {
       hasToUnicode: /\/ToUnicode\s+\d+\s+\d+\s+R\b/.test(text),
       symbolic: flags == null ? undefined : (Number(flags) & 4) !== 0,
       charSet,
+      encodingDifferences,
       firstChar,
       widths,
       ascent: ascent == null ? undefined : Number(ascent) / FONT_UNITS_PER_EM,
-      descent: descent == null ? undefined : -Math.abs(Number(descent) / FONT_UNITS_PER_EM)
+      descent: descent == null ? undefined : -Math.abs(Number(descent) / FONT_UNITS_PER_EM),
+      vertical: /\/Encoding\s*\/(?:Identity-V|DLIdent-V)\b/.test(text)
     });
   }
   return fonts;
+}
+
+export function parsePageFontObjectNumbers(pageObjectText: string | undefined): number[] {
+  const fontDict = pageObjectText?.match(/\/Font\s*<<([\s\S]*?)>>/)?.[1];
+  if (!fontDict) return [];
+  return Array.from(fontDict.matchAll(/\/[^\s/<>[\]()]+\s+(\d+)\s+\d+\s+R/g), (match) => Number(match[1]));
+}
+
+function parseEncodingDifferences(encodingText: string | undefined): Record<number, string> | undefined {
+  const body = encodingText?.match(/\/Differences\s*\[([\s\S]*?)\]/)?.[1];
+  if (!body) return undefined;
+  const differences: Record<number, string> = {};
+  let code: number | null = null;
+  for (const match of body.matchAll(/\/([^\s/[\]()<>]+)|(-?\d+)/g)) {
+    if (match[2] != null) {
+      code = Number(match[2]);
+      continue;
+    }
+    if (code == null) continue;
+    differences[code] = decodePdfName(match[1]);
+    code += 1;
+  }
+  return differences;
 }
 
 export function parseInfoMetadata(raw: string, objects: Map<number, string>): Record<string, unknown> {
@@ -1415,17 +1553,12 @@ export function parseInfoMetadata(raw: string, objects: Map<number, string>): Re
 }
 
 function decodePdfStringBytes(bytes: number[]): string {
-  if (bytes[0] === 0xfe && bytes[1] === 0xff) {
-    let out = "";
-    for (let i = 2; i < bytes.length - 1; i += 2) out += String.fromCharCode((bytes[i] << 8) | bytes[i + 1]);
-    return out;
-  }
   if (bytes[0] === 0xff && bytes[1] === 0xfe) {
     let out = "";
     for (let i = 2; i < bytes.length - 1; i += 2) out += String.fromCharCode(bytes[i] | (bytes[i + 1] << 8));
     return out;
   }
-  return String.fromCharCode(...bytes);
+  return decodePdfStringLikePdfminer(bytes);
 }
 
 function decodePdfLiteralValue(value: string): string {
@@ -1504,6 +1637,19 @@ function canonicalFontName(name: string | undefined): string | undefined {
   return standardFontMetrics(stripped)?.fontName ?? stripped;
 }
 
+function pdfminerCjkFontName(name: string | undefined): string | undefined {
+  if (!name || !/[^\x20-\x7e]/.test(name)) return undefined;
+  if (/^[A-Z]{6}\+/.test(name)) return undefined;
+  try {
+    const bytes = Uint8Array.from([...name].map((char) => char.charCodeAt(0) & 0xff));
+    const decoded = new TextDecoder("gb18030", { fatal: false }).decode(bytes);
+    if (decoded === "宋体") return "SimSun,Regular";
+  } catch {
+    // Fall back to pdfminer's byte-string representation below.
+  }
+  return pythonBytesName(name).slice(2, -1);
+}
+
 function fontFamilyName(name: string | undefined): string | undefined {
   return canonicalFontName(name)?.replace(/(?:[-,](?:Bold|Italic|Oblique|Roman))*$/i, "");
 }
@@ -1533,10 +1679,25 @@ function chooseFontRecord(fontRecords: FontRecord[], used: Set<number>, fontObjN
     const objectStandard = standardFontMetrics(fontObjName);
     return record.baseFont === fontObjName || (recordStandard != null && objectStandard != null && recordStandard.fontName === objectStandard.fontName);
   };
-  const exact =
-    fontRecords.find((record) => matchingName(record) && (record.ascent != null || record.descent != null)) ??
-    fontRecords.find(matchingName);
-  if (exact) return exact;
+  const exactMatches = fontRecords.filter(matchingName);
+  exactMatches.sort(
+    (a, b) =>
+      Number(Boolean(b.hasToUnicode)) - Number(Boolean(a.hasToUnicode)) ||
+      Number(Boolean(b.ascent != null || b.descent != null)) - Number(Boolean(a.ascent != null || a.descent != null)) ||
+      Number(b.subtype === "Type0") - Number(a.subtype === "Type0")
+  );
+  const exact = exactMatches[0];
+  if (exact) {
+    const parentType0 = fontRecords.find(
+      (record) =>
+        record.subtype === "Type0" &&
+        (record.baseFont === exact.baseFont || record.baseFont.startsWith(`${exact.baseFont}-`)) &&
+        (record.hasToUnicode || !exact.hasToUnicode)
+    );
+    return parentType0
+      ? { ...parentType0, widths: exact.widths, ascent: exact.ascent, descent: exact.descent, symbolic: exact.symbolic }
+      : exact;
+  }
 
   const available = fontRecords.filter((record) => !used.has(record.objectNumber));
   const scored = available.flatMap((record, index) => {
@@ -1553,23 +1714,25 @@ function chooseFontRecord(fontRecords: FontRecord[], used: Set<number>, fontObjN
 function resolveFontName(best: FontRecord | undefined, fontObjName: string | undefined, fallbackId: string): string {
   if (best?.subtype === "Type3" || fontObjName === "Type3") return "unknown";
   const standard = standardFontMetrics(best?.baseFont) ?? standardFontMetrics(fontObjName);
-  return pythonBytesName(standard?.fontName ?? fontObjName ?? best?.baseFont ?? fallbackId);
+  const rawName = fontObjName ?? best?.baseFont;
+  const cjkName = pdfminerCjkFontName(rawName);
+  if (cjkName) return cjkName;
+  return pythonBytesName(standard?.fontName ?? rawName ?? fallbackId);
 }
 
 function resolveFontMetrics(best: FontRecord | undefined, fontObj: any, style: Record<string, any>, fontname: string): Pick<MappedFont, "ascent" | "descent"> {
-  const standard = standardFontMetrics(best?.baseFont) ?? standardFontMetrics(fontname);
+  const standard = standardFontMetrics(best?.baseFont ? stripSubsetPrefix(best.baseFont) : undefined) ?? standardFontMetrics(stripSubsetPrefix(fontname));
+  const preferEmbeddedMetrics = Boolean(best?.subtype === "Type0" && !best.hasToUnicode && /TimesNewRoman/i.test(best.baseFont));
   const ascent = firstFinite(
     DEFAULT_FONT_ASCENT,
-    standard?.ascent,
-    best?.ascent,
+    ...(preferEmbeddedMetrics ? [best?.ascent, standard?.ascent] : [standard?.ascent, best?.ascent]),
     fontObj?.ascent,
     style.ascent,
     fontBBoxMetric(fontObj, 3)
   );
   const descent = firstFinite(
     DEFAULT_FONT_DESCENT,
-    standard?.descent,
-    best?.descent,
+    ...(preferEmbeddedMetrics ? [best?.descent, standard?.descent] : [standard?.descent, best?.descent]),
     fontObj?.descent,
     style.descent,
     fontBBoxMetric(fontObj, 1)
@@ -1579,7 +1742,7 @@ function resolveFontMetrics(best: FontRecord | undefined, fontObj: any, style: R
 
 function shouldUseCidFallback(record: FontRecord | undefined): boolean {
   if (!record?.symbolic || record.hasToUnicode) return false;
-  if (record.subtype !== "Type1" && record.subtype !== "TrueType") return false;
+  if (record.subtype !== "Type1" && record.subtype !== "TrueType" && record.subtype !== "CIDFontType2") return false;
   if (standardFontMetrics(stripSubsetPrefix(record.baseFont)) != null) return false;
   if (!record.charSet?.length) return false;
   const cidOnlyGlyphNames = new Set(["check", "checkmark", "summationtext"]);
@@ -1602,13 +1765,25 @@ function mapFonts(pdfPage: any, styles: Record<string, any>, fontRecords: FontRe
     const style = styles[id] ?? {};
     const fontname = resolveFontName(best, fontObjName, id);
     const metrics = resolveFontMetrics(best, fontObj, style, fontname);
+    const scopedRecords = fontRecords.filter((record) => record.pageScoped);
     mapped.set(id, {
       fontname,
       ascent: metrics.ascent,
       descent: metrics.descent,
       fontMatrix0: Number(fontObj?.fontMatrix?.[0] ?? 0.001),
-      vertical: Boolean(style.vertical ?? fontObj?.vertical),
-      cidFallback: shouldUseCidFallback(best)
+      vertical: Boolean(style.vertical ?? fontObj?.vertical ?? best?.vertical),
+      cidFallback:
+        shouldUseCidFallback(best) ||
+        Boolean(
+          fontObj?.composite &&
+            !fontObj?.missingFile &&
+            /TimesNewRoman/i.test(fontObjName ?? "") &&
+            scopedRecords.length > 0 &&
+            scopedRecords.every((record) => !record.hasToUnicode)
+        ),
+      fontRecord: best,
+      hasToUnicode: Boolean(fontObj?.toUnicode) || Boolean(best?.hasToUnicode),
+      missingFile: Boolean(fontObj?.missingFile)
     });
   }
   return mapped;
@@ -2041,52 +2216,69 @@ export function extractPageObjects(
           }
           if (!isGlyph(glyph)) continue;
           if (needCharSpacing) x += spacingDelta(state.charSpacing);
-          const rawText =
-            font.cidFallback && typeof glyph.originalCharCode === "number"
-              ? `(cid:${glyph.originalCharCode})`
-              : glyph.unicode && glyph.unicode.length === 1 && glyph.unicode.charCodeAt(0) < 32 && glyph.unicode !== "\r" && typeof glyph.originalCharCode === "number" && glyph.originalCharCode >= 32 && glyph.originalCharCode <= 126
-                ? String.fromCharCode(glyph.originalCharCode)
-              : glyph.unicode === "\r"
-                ? "(cid:13)"
-                : (glyph.unicode ?? "");
+          const rawText = glyphTextFromPdfJsGlyph(font, glyph);
           const text = unicodeNorm ? rawText.normalize(unicodeNorm) : rawText;
-          const advance = text === "\n" && Number(glyph.originalCharCode ?? 0) <= 2 ? 0 : Number(glyph.width ?? 0) * state.fontSize * font.fontMatrix0;
+          const glyphWidth = glyphWidthLikePdfminer(font, glyph);
           const verticalMetric = Array.isArray(glyph.vmetric) ? (glyph.vmetric as number[]) : null;
+          const advance =
+            text === "\n" && Number(glyph.originalCharCode ?? 0) <= 2
+              ? 0
+              : font.vertical && !verticalMetric
+                ? state.fontSize
+                : glyphWidth * state.fontSize * font.fontMatrix0;
           const verticalX = Number(verticalMetric?.[1] ?? 500) * state.fontSize * font.fontMatrix0;
           const verticalY = Number(verticalMetric?.[2] ?? 880) * state.fontSize * font.fontMatrix0;
-          const xStart = font.vertical ? state.x + x - verticalX : state.x + x * textHScale;
-          const xEnd = font.vertical ? xStart + advance : state.x + (x + advance) * textHScale;
-          const yStart = font.vertical ? state.y + state.textRise - verticalY : state.y + state.textRise + font.descent * state.fontSize;
-          const yEnd = yStart + state.fontSize;
-          const rawBBox = bboxFromPoints([
-            contentPoint(applyMatrix([xStart, yStart], matrix)),
-            contentPoint(applyMatrix([xStart, yEnd], matrix)),
-            contentPoint(applyMatrix([xEnd, yStart], matrix)),
-            contentPoint(applyMatrix([xEnd, yEnd], matrix))
-          ]);
-          const originX = font.vertical ? state.x + x : xStart;
-          const originY = state.y + state.textRise;
-          const [matrixE, matrixF] = contentPoint(applyMatrix([originX, originY], matrix));
-          const glyphMatrix = cleanMatrix(matrixToPageMatrix([matrix[0], matrix[1], matrix[2], matrix[3], matrixE, matrixF], pageWidth, pageHeight, pageRotate));
-          const upright =
-            pageRotate === 90 || pageRotate === 270
-              ? Math.abs(matrix[0]) < 1e-6 && Math.abs(matrix[3]) < 1e-6
-              : matrix[0] * matrix[3] * textHScale > 0 && matrix[1] * matrix[2] <= 0;
-          glyphMatrix[4] = cleanNumber(glyphMatrix[4] - pageX0);
-          glyphMatrix[5] = cleanNumber(glyphMatrix[5] + pageTop);
-          const obj = rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "char", doctopOffset, {
-            text,
-            fontname: font.fontname,
-            adv: font.vertical && verticalMetric ? cleanNumber(Number(verticalMetric[0]) * state.fontSize * font.fontMatrix0) : Math.abs(advance * textHScale),
-            upright,
-            matrix: glyphMatrix,
-            ncs: state.fillColorSpace,
-            non_stroking_color: colorValue(state.fillColor),
-            stroking_color: colorValue(state.strokeColor),
-            ...markedExtras()
-          }, coordOffset);
-          obj.size = font.vertical ? obj.width : obj.height;
-          chars.push(obj);
+          const originalCharCode = Number(glyph.originalCharCode ?? 0);
+          const splitChars =
+            !font.vertical && font.missingFile && originalCharCode > 0xff && !text.startsWith("(cid:") ? Array.from(text) : [text];
+          const metricParts =
+            !font.vertical &&
+            font.missingFile &&
+            ((text === " " && glyphWidth >= 900) ||
+              (originalCharCode > 0xff && splitChars.length === 1 && font.fontRecord?.subtype !== "Type0" && font.fontRecord?.subtype !== "CIDFontType2"))
+              ? 2
+              : splitChars.length;
+          for (let partIndex = 0; partIndex < splitChars.length; partIndex += 1) {
+            const partText = splitChars[partIndex];
+            const partStart = x + (advance * partIndex) / metricParts;
+            const partEnd = x + (advance * (partIndex + 1)) / metricParts;
+            const xStart = font.vertical ? state.x - verticalX : state.x + partStart * textHScale;
+            const xEnd = font.vertical ? xStart + state.fontSize : state.x + partEnd * textHScale;
+            const yStart = font.vertical ? state.y + state.textRise - verticalY - partStart : state.y + state.textRise + font.descent * state.fontSize;
+            const yEnd = font.vertical ? yStart + state.fontSize : yStart + state.fontSize;
+            const rawBBox = bboxFromPoints([
+              contentPoint(applyMatrix([xStart, yStart], matrix)),
+              contentPoint(applyMatrix([xStart, yEnd], matrix)),
+              contentPoint(applyMatrix([xEnd, yStart], matrix)),
+              contentPoint(applyMatrix([xEnd, yEnd], matrix))
+            ]);
+            const originX = font.vertical ? state.x + x : xStart;
+            const originY = state.y + state.textRise;
+            const [matrixE, matrixF] = contentPoint(applyMatrix([originX, originY], matrix));
+            const glyphMatrix = cleanMatrix(matrixToPageMatrix([matrix[0], matrix[1], matrix[2], matrix[3], matrixE, matrixF], pageWidth, pageHeight, pageRotate));
+            const upright =
+              pageRotate === 90 || pageRotate === 270
+                ? Math.abs(matrix[0]) < 1e-6 && Math.abs(matrix[3]) < 1e-6
+                : matrix[0] * matrix[3] * textHScale > 0 && matrix[1] * matrix[2] <= 0;
+            glyphMatrix[4] = cleanNumber(glyphMatrix[4] - pageX0);
+            glyphMatrix[5] = cleanNumber(glyphMatrix[5] + pageTop);
+            const obj = rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "char", doctopOffset, {
+              text: partText,
+              fontname: font.fontname,
+              adv:
+                font.vertical && verticalMetric
+                  ? cleanNumber(Number(verticalMetric[0]) * state.fontSize * font.fontMatrix0)
+                  : cleanNumber(Math.abs((advance * textHScale) / metricParts)),
+              upright,
+              matrix: glyphMatrix,
+              ncs: state.fillColorSpace,
+              non_stroking_color: colorValue(state.fillColor),
+              stroking_color: colorValue(state.strokeColor),
+              ...markedExtras()
+            }, coordOffset);
+            obj.size = font.vertical ? obj.width : obj.height;
+            chars.push(obj);
+          }
           x += advance;
           if (glyph.isSpace) x += spacingDelta(state.wordSpacing);
           needCharSpacing = true;
@@ -2163,7 +2355,7 @@ export function extractPageObjects(
                 );
               }
             } else {
-              if (transformed.length === 1) {
+              if (transformed.length === 1 && (state.dash != null || (transformed[0][0] === 0 && transformed[0][1] === 0))) {
                 const rawPointBBox = pathBBox(transformed);
                 curves.push(
                   rectFromPdfBBox(rawPointBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
@@ -2179,14 +2371,18 @@ export function extractPageObjects(
             }
           } else if (isFill) {
             const rawBBox = pathBBox(transformed);
-            if (isAxisAlignedRect({ ...path, points: transformed }, inferRectFromGeometry)) {
+            const lineEndpoints = !path.hasCurve ? collinearPathEndpoints(transformed) : null;
+            if (lineEndpoints && (rawBBox[0] === rawBBox[2] || rawBBox[1] === rawBBox[3])) {
+              const rawLineBBox = pathBBox(lineEndpoints);
+              lines.push(rectFromPdfBBox(rawLineBBox, pageWidth, pageHeight, pageRotate, pageNumber, "line", doctopOffset, vectorExtras, coordOffset));
+            } else if (isAxisAlignedRect({ ...path, points: transformed }, inferRectFromGeometry)) {
               rects.push(
                 rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "rect", doctopOffset, {
                   ...vectorExtras,
                   linewidth: isStroke || state.lineWidthSet ? linewidth : 0
                 }, coordOffset)
               );
-            } else if (transformed.length > 0) {
+            } else if (transformed.length > 1 && !(isStroke && (rawBBox[0] === rawBBox[2] || rawBBox[1] === rawBBox[3]))) {
               const curve = rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
                 pts: transformed.map((point) => pointToPageCoords(point, pageWidth, pageHeight, pageRotate).map(cleanNumber)),
                 ...vectorExtras,
@@ -2239,19 +2435,27 @@ export function annotationToObject(
   objects?: Map<number, string>
 ): PDFObject {
   const optionalString = (value: unknown): string | null => (typeof value === "string" && value.length > 0 ? value : null);
+  const pdfplumberContents = (value: unknown): string | null => (typeof value === "string" ? value : null);
   const objectNumber = Number.parseInt(String(annotation.id ?? ""), 10);
   const annotationObject = Number.isFinite(objectNumber) ? objects?.get(objectNumber) : undefined;
   const rawRect = annotation.subtype === "Text" ? extractRawBox(annotationObject, "Rect") : null;
   const rect = rawRect ?? (annotation.rect as number[]);
   const rawContents = annotation.contentsObj?.str ?? annotation.contents ?? null;
-  const rawTitle = annotationObject ? (readPdfLiteralString(annotationObject, "T") ?? readPdfHexString(annotationObject, "T")) : null;
+  const rawContentsFromObject = annotationObject ? readPdfDictStringLikePdfplumber(annotationObject, "Contents") : null;
+  const rawTitle = annotationObject ? readPdfDictStringLikePdfplumber(annotationObject, "T") : null;
   const isTinyPopup = annotation.subtype === "Popup" && Math.abs(Number(rect[2]) - Number(rect[0])) <= 2 && Math.abs(Number(rect[3]) - Number(rect[1])) <= 2;
   return rectFromPdfBBox([rect[0], rect[1], rect[2], rect[3]], pageWidth, pageHeight, pageRotate, pageNumber, "annot", doctopOffset, {
     uri: optionalString(annotation.unsafeUrl ?? annotation.url ?? null),
     title: annotation.subtype === "Popup" ? null : optionalString(annotation.titleObj?.str ?? annotation.title ?? rawTitle ?? null),
     contents:
-      (annotation.subtype === "Popup" && !isTinyPopup) || ((annotation.subtype === "Link" || (annotation.subtype === "Stamp" && pageRotate !== 0)) && rawContents === "")
+      (annotation.subtype === "Popup" && !isTinyPopup) ||
+      ((annotation.subtype === "Link" || annotation.subtype === "Widget" || (annotation.subtype === "Stamp" && pageRotate !== 0)) && (rawContentsFromObject ?? rawContents) === "")
         ? null
-        : optionalString(rawContents)
+        : pdfplumberContents(rawContentsFromObject ?? rawContents)
   });
+}
+
+function readPdfDictStringLikePdfplumber(objectText: string, key: string): string | null {
+  const bytes = parsePdfDictBytes(objectText, key);
+  return bytes ? decodePdfLiteralBytesAsUtf8ThenUtf16(bytes) : null;
 }
