@@ -26,7 +26,7 @@ import {
   parseTransformOps,
   resolvePageBoxes
 } from "./pdf.js";
-import type { OpenOptions, PDFInput, PDFPlumberDocument, PDFPlumberPage } from "./types.js";
+import type { Matrix, OpenOptions, PDFInput, PDFPlumberDocument, PDFPlumberPage } from "./types.js";
 
 const require = createRequire(import.meta.url);
 const pdfjsRoot = path.dirname(require.resolve("pdfjs-dist/package.json"));
@@ -44,6 +44,35 @@ async function inputToBytes(input: PDFInput): Promise<{ data?: Uint8Array; url?:
   if (input instanceof URL) return { url: input.href };
   if (input instanceof Uint8Array) return { data: new Uint8Array(input) };
   return { data: new Uint8Array(input.slice(0)) };
+}
+
+function validateAscii85Streams(objects: Map<number, string>): void {
+  for (const text of objects.values()) {
+    if (!/\/Filter\s*(?:\[[^\]]*)?\/(?:A85|ASCII85Decode)\b/.test(text)) continue;
+    const streamIndex = text.indexOf("stream");
+    const endstreamIndex = text.lastIndexOf("endstream");
+    if (streamIndex === -1 || endstreamIndex <= streamIndex) continue;
+    let start = streamIndex + "stream".length;
+    if (text[start] === "\r" && text[start + 1] === "\n") start += 2;
+    else if (text[start] === "\r" || text[start] === "\n") start += 1;
+    const stream = text.slice(start, endstreamIndex);
+    for (let i = 0; i < stream.length; i += 1) {
+      const char = stream[i];
+      if (/\s/.test(char)) continue;
+      if (char === "~" && stream[i + 1] === ">") break;
+      const code = char.charCodeAt(0);
+      if (char === "z" || char === "y" || (code >= 33 && code <= 117)) continue;
+      throw namedError("PdfminerException", `Non-Ascii85 digit found: ${char}`);
+    }
+  }
+}
+
+function transformOpsMatch(rawTransforms: Matrix[], operatorTransforms: Matrix[]): boolean {
+  if (rawTransforms.length !== operatorTransforms.length) return false;
+  return rawTransforms.every((raw, index) => {
+    const operator = operatorTransforms[index];
+    return raw.every((value, i) => Math.abs(value - Number(operator[i] ?? Number.NaN)) < 1e-6);
+  });
 }
 
 function shouldMatchPdfminerIssue297PageSuppression(rawObjects: Map<number, string>): boolean {
@@ -91,6 +120,7 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
   });
   const pdf = await loadingTask.promise;
   const rawObjects = parsePdfObjects(raw, options.password ?? "");
+  validateAscii85Streams(rawObjects);
   const fontRecords = parseFontRecords(rawObjects);
   const metadataResult = (await pdf.getMetadata().catch(() => ({ info: {} }))) as { info?: Record<string, unknown> };
   const metadata: Record<string, unknown> = {};
@@ -119,7 +149,7 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
     const pageContent = extractPageContent(pageObjectText, rawObjects);
     const colorOps = parseColorOps(pageContent, parseColorSpaceResources(pageObjectText, rawObjects));
     const rawTransformOps = parseTransformOps(pageContent);
-    const transformCount = operatorList.fnArray.filter((fn: number) => fn === pdfjs.OPS.transform).length;
+    const operatorTransformOps = operatorList.fnArray.flatMap((fn: number, i: number) => (fn === pdfjs.OPS.transform ? [operatorList.argsArray[i] as Matrix] : []));
     const rawTextMatrixOps = parseTextMatrixOps(pageContent);
     const setTextMatrixCount = operatorList.fnArray.filter((fn: number) => fn === pdfjs.OPS.setTextMatrix).length;
     const rawTextMoveOps = parseTextMoveOps(pageContent);
@@ -142,7 +172,7 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
       boxes.mediabox[0],
       boxes.mediabox[1],
       colorOps,
-      rawTransformOps.length === transformCount ? rawTransformOps : [],
+      transformOpsMatch(rawTransformOps, operatorTransformOps) ? rawTransformOps : [],
       rawTextMatrixOps.length === setTextMatrixCount ? rawTextMatrixOps : [],
       rawTextMoveOps.move.length === moveTextCount ? rawTextMoveOps.move : [],
       rawTextMoveOps.leadingMove.length === setLeadingMoveTextCount ? rawTextMoveOps.leadingMove : [],

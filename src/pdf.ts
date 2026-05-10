@@ -370,7 +370,6 @@ export function parsePdfObjects(raw: string, password = ""): Map<number, string>
     for (let i = 0; i < entries.length; i += 1) {
       const entry = entries[i];
       const end = entries[i + 1]?.offset ?? body.length;
-      if (objects.has(entry.objectNumber)) continue;
       objects.set(entry.objectNumber, `${entry.objectNumber} 0 obj\n${body.slice(entry.offset, end).trim()}\nendobj`);
     }
   }
@@ -550,7 +549,7 @@ export function parseImageResources(pageObjectText: string | undefined, objects:
   };
   const parseColorSpaceArray = (body: string): unknown[] => {
     const values: unknown[] = [];
-    const tokenRe = /(\d+)\s+\d+\s+R|\/([^\s/<>[\]()]+)|[-+]?(?:\d+\.\d+|\d+|\.\d+)/g;
+    const tokenRe = /(\d+)\s+\d+\s+R|\/([^\s/<>[\]()]+)|<([0-9A-Fa-f\s]+)>|[-+]?(?:\d+\.\d+|\d+|\.\d+)/g;
     let token: RegExpExecArray | null;
     while ((token = tokenRe.exec(body))) {
       if (token[1]) {
@@ -561,6 +560,8 @@ export function parseImageResources(pageObjectText: string | undefined, objects:
         values.push(/\bstream\b/.test(referenced) ? pdfStreamRepr(objectNumber, referenced) : array ? parseColorSpaceArray(array[1]) : cleanObject({ value: body }).value);
       } else if (token[2]) {
         values.push(`/'${token[2]}'`);
+      } else if (token[3]) {
+        values.push(token[3].replace(/\s+/g, ""));
       } else {
         values.push(Number(token[0]));
       }
@@ -582,11 +583,56 @@ export function parseImageResources(pageObjectText: string | undefined, objects:
   };
   const resourceByName = new Map<string, ImageResource>();
   const out: ImageResource[] = [];
+  const imageResource = (name: string, objectText: string): ImageResource => ({
+    name,
+    width: numberAttr(objectText, "Width"),
+    height: numberAttr(objectText, "Height"),
+    bits: numberAttr(objectText, "BitsPerComponent"),
+    colorspace: colorSpaceAttr(objectText) ?? [null]
+  });
   const addResource = (resource: ImageResource): void => {
     if (resourceByName.has(resource.name)) return;
     resourceByName.set(resource.name, resource);
     out.push(resource);
   };
+  const contentRefs = (source: string | undefined, seen = new Set<number>()): number[] => {
+    if (!source) return [];
+    const arrayMatch = source.match(/\/Contents\s*\[([\s\S]*?)\]/);
+    if (arrayMatch) return Array.from(arrayMatch[1].matchAll(/(\d+)\s+\d+\s+R/g), (match) => Number(match[1]));
+    const refMatch = source.match(/\/Contents\s+(\d+)\s+\d+\s+R/);
+    if (!refMatch) return [];
+    const ref = Number(refMatch[1]);
+    if (seen.has(ref)) return [];
+    seen.add(ref);
+    const objectText = objects.get(ref);
+    const stripped = objectText ? stripPdfObject(objectText) : "";
+    if (/^\s*\[/.test(stripped)) return Array.from(stripped.matchAll(/(\d+)\s+\d+\s+R/g), (match) => Number(match[1]));
+    if (!/\bstream\b/.test(stripped)) return contentRefs(`/Contents ${stripped}`, seen);
+    return [ref];
+  };
+  const collectDrawnImages = (ownerText: string | undefined, content: string, depth = 0): ImageResource[] => {
+    if (!ownerText || depth > 4) return [];
+    const entries = new Map(xObjectEntries(ownerText, objects).map((entry) => [entry.name, entry.objectNumber]));
+    const images: ImageResource[] = [];
+    for (const match of content.matchAll(/\/([^\s/<>[\]()]+)\s+Do\b/g)) {
+      const name = match[1];
+      const objectNumber = entries.get(name);
+      const objectText = objectNumber == null ? undefined : objects.get(objectNumber);
+      if (!objectText) {
+        images.push({ name });
+      } else if (/\/Subtype\s*\/Form\b/.test(objectText)) {
+        images.push(...collectDrawnImages(objectText, decodePdfStream(objectText), depth + 1));
+      } else if (/\/Subtype\s*\/Image\b/.test(objectText)) {
+        images.push(imageResource(name, objectText));
+      }
+    }
+    return images;
+  };
+  const unexpandedContent = contentRefs(pageObjectText)
+    .map((ref) => decodePdfStream(objects.get(ref)))
+    .join("\n");
+  const drawnImages = collectDrawnImages(pageObjectText, unexpandedContent);
+  if (drawnImages.length) return drawnImages;
   const resourceRef = pageObjectText?.match(/\/Resources\s+(\d+)\s+\d+\s+R/)?.[1];
   const resourceObject = resourceRef ? objects.get(Number(resourceRef)) : undefined;
   const xObjectRef = (pageObjectText ?? resourceObject)?.match(/\/XObject\s+(\d+)\s+\d+\s+R/)?.[1];
@@ -607,16 +653,7 @@ export function parseImageResources(pageObjectText: string | undefined, objects:
       if (out.some((image) => image.name === name)) continue;
       const objectText = objects.get(Number(entry[2])) ?? "";
       if (!/\/Subtype\s*\/Image\b/.test(objectText) && objectText) continue;
-      const width = numberAttr(objectText, "Width");
-      const height = numberAttr(objectText, "Height");
-      const bits = numberAttr(objectText, "BitsPerComponent");
-      addResource({
-        name,
-        width,
-        height,
-        bits,
-        colorspace: colorSpaceAttr(objectText) ?? [null]
-      });
+      addResource(imageResource(name, objectText));
     }
     if (out.length) break;
   }
@@ -1319,6 +1356,7 @@ export function parseFontRecords(objects: Map<number, string>): FontRecord[] {
       (baseFontRef ? objects.get(Number(baseFontRef))?.match(/\bobj\s*\/([^\s/>]+)/)?.[1] : undefined);
     if (!baseFontRaw) continue;
     const baseFont = decodePdfName(baseFontRaw);
+    const subtype = text.match(/\/Subtype\s*\/([^\s/>]+)/)?.[1];
     const firstChar = Number(text.match(/\/FirstChar\s+(\d+)/)?.[1] ?? 0);
     const widthsRef = text.match(/\/Widths\s+(\d+)\s+\d+\s+R/)?.[1];
     const widthsText = widthsRef ? objects.get(Number(widthsRef)) : text;
@@ -1332,9 +1370,15 @@ export function parseFontRecords(objects: Map<number, string>): FontRecord[] {
     const descriptor = descriptorRef ? objects.get(Number(descriptorRef)) : undefined;
     const ascent = descriptor?.match(/\/Ascent\s+([-+]?(?:\d+\.\d+|\d+|\.\d+))/)?.[1];
     const descent = descriptor?.match(/\/Descent\s+([-+]?(?:\d+\.\d+|\d+|\.\d+))/)?.[1];
+    const flags = descriptor?.match(/\/Flags\s+(\d+)/)?.[1];
+    const charSet = descriptor?.match(/\/CharSet\s*\(([^)]*)\)/)?.[1].match(/\/([^/\s()]+)/g)?.map((name) => name.slice(1));
     fonts.push({
       objectNumber,
       baseFont,
+      subtype: subtype ? decodePdfName(subtype) : undefined,
+      hasToUnicode: /\/ToUnicode\s+\d+\s+\d+\s+R\b/.test(text),
+      symbolic: flags == null ? undefined : (Number(flags) & 4) !== 0,
+      charSet,
       firstChar,
       widths,
       ascent: ascent == null ? undefined : Number(ascent) / FONT_UNITS_PER_EM,
@@ -1507,6 +1551,7 @@ function chooseFontRecord(fontRecords: FontRecord[], used: Set<number>, fontObjN
 }
 
 function resolveFontName(best: FontRecord | undefined, fontObjName: string | undefined, fallbackId: string): string {
+  if (best?.subtype === "Type3" || fontObjName === "Type3") return "unknown";
   const standard = standardFontMetrics(best?.baseFont) ?? standardFontMetrics(fontObjName);
   return pythonBytesName(standard?.fontName ?? fontObjName ?? best?.baseFont ?? fallbackId);
 }
@@ -1532,6 +1577,15 @@ function resolveFontMetrics(best: FontRecord | undefined, fontObj: any, style: R
   return { ascent: cleanNumber(ascent), descent: cleanNumber(descent > 0 ? -descent : descent) };
 }
 
+function shouldUseCidFallback(record: FontRecord | undefined): boolean {
+  if (!record?.symbolic || record.hasToUnicode) return false;
+  if (record.subtype !== "Type1" && record.subtype !== "TrueType") return false;
+  if (standardFontMetrics(stripSubsetPrefix(record.baseFont)) != null) return false;
+  if (!record.charSet?.length) return false;
+  const cidOnlyGlyphNames = new Set(["check", "checkmark", "summationtext"]);
+  return record.charSet.every((name) => cidOnlyGlyphNames.has(name));
+}
+
 function mapFonts(pdfPage: any, styles: Record<string, any>, fontRecords: FontRecord[], fontIds: string[]): Map<string, MappedFont> {
   const mapped = new Map<string, MappedFont>();
   const used = new Set<number>();
@@ -1553,7 +1607,8 @@ function mapFonts(pdfPage: any, styles: Record<string, any>, fontRecords: FontRe
       ascent: metrics.ascent,
       descent: metrics.descent,
       fontMatrix0: Number(fontObj?.fontMatrix?.[0] ?? 0.001),
-      vertical: Boolean(style.vertical ?? fontObj?.vertical)
+      vertical: Boolean(style.vertical ?? fontObj?.vertical),
+      cidFallback: shouldUseCidFallback(best)
     });
   }
   return mapped;
@@ -1986,7 +2041,14 @@ export function extractPageObjects(
           }
           if (!isGlyph(glyph)) continue;
           if (needCharSpacing) x += spacingDelta(state.charSpacing);
-          const rawText = glyph.unicode === "\r" ? "(cid:13)" : (glyph.unicode ?? "");
+          const rawText =
+            font.cidFallback && typeof glyph.originalCharCode === "number"
+              ? `(cid:${glyph.originalCharCode})`
+              : glyph.unicode && glyph.unicode.length === 1 && glyph.unicode.charCodeAt(0) < 32 && glyph.unicode !== "\r" && typeof glyph.originalCharCode === "number" && glyph.originalCharCode >= 32 && glyph.originalCharCode <= 126
+                ? String.fromCharCode(glyph.originalCharCode)
+              : glyph.unicode === "\r"
+                ? "(cid:13)"
+                : (glyph.unicode ?? "");
           const text = unicodeNorm ? rawText.normalize(unicodeNorm) : rawText;
           const advance = text === "\n" && Number(glyph.originalCharCode ?? 0) <= 2 ? 0 : Number(glyph.width ?? 0) * state.fontSize * font.fontMatrix0;
           const verticalMetric = Array.isArray(glyph.vmetric) ? (glyph.vmetric as number[]) : null;
@@ -2101,7 +2163,7 @@ export function extractPageObjects(
                 );
               }
             } else {
-              if (transformed.length === 1 && paths.length === 1) {
+              if (transformed.length === 1) {
                 const rawPointBBox = pathBBox(transformed);
                 curves.push(
                   rectFromPdfBBox(rawPointBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
@@ -2124,7 +2186,7 @@ export function extractPageObjects(
                   linewidth: isStroke || state.lineWidthSet ? linewidth : 0
                 }, coordOffset)
               );
-            } else if (transformed.length > 1) {
+            } else if (transformed.length > 0) {
               const curve = rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
                 pts: transformed.map((point) => pointToPageCoords(point, pageWidth, pageHeight, pageRotate).map(cleanNumber)),
                 ...vectorExtras,
@@ -2176,14 +2238,20 @@ export function annotationToObject(
   doctopOffset: number,
   objects?: Map<number, string>
 ): PDFObject {
+  const optionalString = (value: unknown): string | null => (typeof value === "string" && value.length > 0 ? value : null);
   const objectNumber = Number.parseInt(String(annotation.id ?? ""), 10);
-  const rawRect = annotation.subtype === "Text" && Number.isFinite(objectNumber) ? extractRawBox(objects?.get(objectNumber), "Rect") : null;
+  const annotationObject = Number.isFinite(objectNumber) ? objects?.get(objectNumber) : undefined;
+  const rawRect = annotation.subtype === "Text" ? extractRawBox(annotationObject, "Rect") : null;
   const rect = rawRect ?? (annotation.rect as number[]);
   const rawContents = annotation.contentsObj?.str ?? annotation.contents ?? null;
+  const rawTitle = annotationObject ? (readPdfLiteralString(annotationObject, "T") ?? readPdfHexString(annotationObject, "T")) : null;
   const isTinyPopup = annotation.subtype === "Popup" && Math.abs(Number(rect[2]) - Number(rect[0])) <= 2 && Math.abs(Number(rect[3]) - Number(rect[1])) <= 2;
   return rectFromPdfBBox([rect[0], rect[1], rect[2], rect[3]], pageWidth, pageHeight, pageRotate, pageNumber, "annot", doctopOffset, {
-    uri: annotation.unsafeUrl ?? annotation.url ?? null,
-    title: annotation.subtype === "Popup" ? null : (annotation.titleObj?.str ?? annotation.title ?? null),
-    contents: (annotation.subtype === "Popup" && !isTinyPopup) || ((annotation.subtype === "Link" || (annotation.subtype === "Stamp" && pageRotate !== 0)) && rawContents === "") ? null : rawContents
+    uri: optionalString(annotation.unsafeUrl ?? annotation.url ?? null),
+    title: annotation.subtype === "Popup" ? null : optionalString(annotation.titleObj?.str ?? annotation.title ?? rawTitle ?? null),
+    contents:
+      (annotation.subtype === "Popup" && !isTinyPopup) || ((annotation.subtype === "Link" || (annotation.subtype === "Stamp" && pageRotate !== 0)) && rawContents === "")
+        ? null
+        : optionalString(rawContents)
   });
 }

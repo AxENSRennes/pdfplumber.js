@@ -106,6 +106,10 @@ export interface PdfJsGlyph {
 export interface FontRecord {
   objectNumber: number;
   baseFont: string;
+  subtype?: string;
+  hasToUnicode?: boolean;
+  symbolic?: boolean;
+  charSet?: string[];
   firstChar: number;
   widths: number[];
   ascent?: number;
@@ -118,6 +122,7 @@ export interface MappedFont {
   descent: number;
   fontMatrix0: number;
   vertical: boolean;
+  cidFallback: boolean;
 }
 
 export interface PageBoxes {
