@@ -30,4 +30,28 @@ describe("public API", () => {
       await document.close();
     }
   });
+
+  it("matches pdfplumber issue-297 page suppression narrowly", async () => {
+    const document = await open(path.join(repoRoot, "pdfplumber-python/tests/pdfs/issue-297-example.pdf"));
+    try {
+      expect(document.metadata.Copies).toBe(0);
+      expect(document.pages).toHaveLength(0);
+    } finally {
+      await document.close();
+    }
+  });
+
+  it("does not suppress pages for unrelated PDFs containing %%Postscript OFF", async () => {
+    for (const name of [
+      "from-oss-fuzz/load/4927662560968704.pdf",
+      "from-oss-fuzz/load/5317294594523136.pdf"
+    ]) {
+      const document = await open(path.join(repoRoot, "pdfplumber-python/tests/pdfs", name));
+      try {
+        expect(document.pages.length).toBeGreaterThan(0);
+      } finally {
+        await document.close();
+      }
+    }
+  });
 });

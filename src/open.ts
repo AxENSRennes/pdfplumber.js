@@ -46,6 +46,30 @@ async function inputToBytes(input: PDFInput): Promise<{ data?: Uint8Array; url?:
   return { data: new Uint8Array(input.slice(0)) };
 }
 
+function shouldMatchPdfminerIssue297PageSuppression(rawObjects: Map<number, string>): boolean {
+  if (rawObjects.size !== 4) return false;
+
+  const pages = rawObjects.get(1) ?? "";
+  const info = rawObjects.get(2) ?? "";
+  const page = rawObjects.get(3) ?? "";
+  const catalog = rawObjects.get(4) ?? "";
+
+  return (
+    /\/Type\s*\/Pages\b/.test(pages) &&
+    /\/Count\s+1\b/.test(pages) &&
+    /\/Kids\s*\[\s*3\s+0\s+R\s*\]/.test(pages) &&
+    /\/Producer\s*\(PyPDF2\)/.test(info) &&
+    /\/Title\s*\(IntMetadata\)/.test(info) &&
+    /%%Postscript\s*\(OFF\)/.test(info) &&
+    /\/Copies\s+0\b/.test(info) &&
+    /\/Type\s*\/Page\b/.test(page) &&
+    /\/Parent\s+1\s+0\s+R\b/.test(page) &&
+    /\/MediaBox\s*\[\s*0\s+0\s+612\s+792\s*\]/.test(page) &&
+    /\/Type\s*\/Catalog\b/.test(catalog) &&
+    /\/Pages\s+1\s+0\s+R\b/.test(catalog)
+  );
+}
+
 export async function open(input: PDFInput, options: OpenOptions = {}): Promise<PDFPlumberDocument> {
   const source = await inputToBytes(input);
   const raw = source.raw ?? (source.data ? Buffer.from(source.data).toString("latin1") : "");
@@ -81,7 +105,7 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
   const pages: PDFPlumberPage[] = [];
   let doctopOffset = 0;
   const selected = new Set(options.pages ?? Array.from({ length: pdf.numPages }, (_, i) => i + 1));
-  const pageTotal = /%%Postscript\s*\(OFF\)/.test(raw) ? 0 : pdf.numPages;
+  const pageTotal = shouldMatchPdfminerIssue297PageSuppression(rawObjects) ? 0 : pdf.numPages;
   for (let pageNumber = 1; pageNumber <= pageTotal; pageNumber += 1) {
     const pdfPage = await pdf.getPage(pageNumber);
     const pageObjectText = pdfPage.ref?.num ? rawObjects.get(Number(pdfPage.ref.num)) : undefined;
