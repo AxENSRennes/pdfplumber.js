@@ -62,8 +62,10 @@ export function glyphTextLikePdfminer(input: GlyphTextInput): string {
   const { glyphUnicode, originalCharCode, font } = input;
   const fontRecord = input.fontRecord ?? font.fontRecord;
   if (typeof originalCharCode === "number") {
-    const encodingText = glyphNameText(fontRecord?.encodingDifferences?.[originalCharCode]);
-    if (encodingText != null) return encodingText;
+    if (fontRecord?.hasToUnicode !== true || !glyphUnicode) {
+      const encodingText = glyphNameText(fontRecord?.encodingDifferences?.[originalCharCode]);
+      if (encodingText != null) return encodingText;
+    }
     if (font.cidFallback) {
       return `(cid:${originalCharCode})`;
     }

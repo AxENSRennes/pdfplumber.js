@@ -280,6 +280,10 @@ function stripSubsetPrefix(name: string): string {
   return name.replace(/^[A-Z]{6}\+/, "");
 }
 
+function hasSubsetPrefix(name: string | undefined): boolean {
+  return /^[A-Z]{6}\+/.test(name ?? "");
+}
+
 function standardFontMetrics(name: string | undefined): typeof STANDARD_FONT_METRICS[string] | undefined {
   if (!name) return undefined;
   return STANDARD_FONT_METRICS[name];
@@ -293,15 +297,7 @@ function canonicalFontName(name: string | undefined): string | undefined {
 
 function pdfminerCjkFontName(name: string | undefined): string | undefined {
   if (!name || !/[^\x20-\x7e]/.test(name)) return undefined;
-  if (/^[A-Z]{6}\+/.test(name)) return undefined;
-  try {
-    const bytes = Uint8Array.from([...name].map((char) => char.charCodeAt(0) & 0xff));
-    const decoded = new TextDecoder("gb18030", { fatal: false }).decode(bytes);
-    if (decoded === "宋体") return "SimSun,Regular";
-  } catch {
-    // Fall back to pdfminer's byte-string representation below.
-  }
-  return pythonBytesName(name).slice(2, -1);
+  return pythonBytesName(name);
 }
 
 function fontFamilyName(name: string | undefined): string | undefined {
@@ -375,7 +371,13 @@ function resolveFontName(best: FontRecord | undefined, fontObjName: string | und
 }
 
 function resolveFontMetrics(best: FontRecord | undefined, fontObj: any, style: Record<string, any>, fontname: string): Pick<MappedFont, "ascent" | "descent"> {
-  const standard = standardFontMetrics(best?.baseFont ? stripSubsetPrefix(best.baseFont) : undefined) ?? standardFontMetrics(stripSubsetPrefix(fontname));
+  const mayUseStandardMetrics =
+    best == null
+      ? true
+      : (best.subtype === "Type1" || best.subtype === "TrueType") && !hasSubsetPrefix(best.baseFont);
+  const standard = mayUseStandardMetrics
+    ? standardFontMetrics(best?.baseFont) ?? standardFontMetrics(fontname)
+    : undefined;
   const preferEmbeddedMetrics = Boolean(best?.subtype === "Type0" && !best.hasToUnicode && /TimesNewRoman/i.test(best.baseFont));
   const ascent = firstFinite(
     DEFAULT_FONT_ASCENT,
