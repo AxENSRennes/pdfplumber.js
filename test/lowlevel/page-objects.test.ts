@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { parsePdfDocument } from "../../src/pdf/document.js";
+import { parseImageResources as parseStructuredImageResources, parsePageFontObjectNumbers as parseStructuredPageFontObjectNumbers } from "../../src/pdf/resources.js";
 import { extractPageContent, parseColorSpaceResources, parseImageResources, parsePdfObjects } from "../../src/pdf.js";
 
 describe("low-level PDF page object resolution", () => {
@@ -76,5 +78,34 @@ describe("low-level PDF page object resolution", () => {
     const objects = parsePdfObjects(raw);
 
     expect(parseColorSpaceResources(objects.get(1), objects)).toEqual({ CSPage: "DeviceCMYK", CSForm: "Indexed" });
+  });
+
+  it("inherits page-tree font resources on the structured resource path", () => {
+    const raw = [
+      "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
+      "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 /Resources << /Font << /F1 4 0 R >> >> >> endobj",
+      "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 5 0 R >> endobj",
+      "4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj",
+      "5 0 obj << /Length 0 >> stream\n\nendstream endobj"
+    ].join("\n");
+    const store = parsePdfDocument(raw);
+
+    expect(parseStructuredPageFontObjectNumbers(store.getPageModel(3), store)).toEqual([4]);
+  });
+
+  it("falls back to parent resources for Form XObjects without their own Resources", () => {
+    const raw = [
+      "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
+      "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
+      "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /XObject << /Fm1 4 0 R /Im1 5 0 R >> >> /Contents 6 0 R >> endobj",
+      "4 0 obj << /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Length 7 >> stream\n/Im1 Do\nendstream endobj",
+      "5 0 obj << /Type /XObject /Subtype /Image /Width 2 /Height 3 /BitsPerComponent 1 /ColorSpace /DeviceGray /Length 0 >> stream\n\nendstream endobj",
+      "6 0 obj << /Length 7 >> stream\n/Fm1 Do\nendstream endobj"
+    ].join("\n");
+    const store = parsePdfDocument(raw);
+
+    expect(parseStructuredImageResources(store.getPageModel(3), store).map((image) => [image.name, image.width, image.height, image.bits])).toEqual([
+      ["Im1", 2, 3, 1]
+    ]);
   });
 });

@@ -10,17 +10,19 @@ import { PdfPlumberDocumentImpl } from "./document.js";
 import { buildLayoutObjects } from "./layout.js";
 import { collectGraphicsHintsFromContent } from "./pdf/content.js";
 import { parsePdfDocument } from "./pdf/document.js";
+import {
+  extractPageContent,
+  parseColorSpaceResources,
+  parseFontRecords,
+  parseImageResources,
+  parsePageFontObjectNumbers
+} from "./pdf/resources.js";
 import { PdfPlumberPageImpl } from "./page.js";
 import { shouldEmulatePdfminerOpenError, shouldSuppressPagesLikePdfminer, validateStreamsLikePdfminer } from "./pdfminer-compat.js";
 import {
   annotationToObject,
-  extractPageContent,
   extractPageObjects,
-  parseColorSpaceResources,
-  parseFontRecords,
-  parseImageResources,
   parseInfoMetadata,
-  parsePageFontObjectNumbers,
   resolvePageBoxes
 } from "./pdf.js";
 import type { Matrix, OpenOptions, PDFInput, PDFPlumberDocument, PDFPlumberPage } from "./types.js";
@@ -79,7 +81,7 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
     wasmUrl: path.join(pdfjsRoot, "wasm/")
   });
   const pdf = await loadingTask.promise;
-  const fontRecords = parseFontRecords(rawObjects);
+  const fontRecords = parseFontRecords(store);
   const metadataResult = (await pdf.getMetadata().catch(() => ({ info: {} }))) as { info?: Record<string, unknown> };
   const metadata: Record<string, unknown> = {};
   const rawMetadata = options.password ? {} : parseInfoMetadata(raw, rawObjects);
@@ -98,7 +100,8 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
     const pdfPage = await pdf.getPage(pageNumber);
     const pageModel = store.getPageModel(pdfPage.ref?.num ? Number(pdfPage.ref.num) : undefined);
     const pageObjectText = pageModel?.raw ?? (pdfPage.ref?.num ? rawObjects.get(Number(pdfPage.ref.num)) : undefined);
-    const pageFontObjectNumbers = new Set(parsePageFontObjectNumbers(pageObjectText));
+    const pageOwner = pageModel ?? pageObjectText;
+    const pageFontObjectNumbers = new Set(parsePageFontObjectNumbers(pageOwner, store));
     const pageFontRecords = pageFontObjectNumbers.size
       ? [
           ...fontRecords.filter((record) => pageFontObjectNumbers.has(record.objectNumber)).map((record) => ({ ...record, pageScoped: true })),
@@ -112,8 +115,8 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
     }
     const textContent = await pdfPage.getTextContent({ includeMarkedContent: true, disableNormalization: true });
     const operatorList = await pdfPage.getOperatorList({ annotationMode: (pdfjs as any).AnnotationMode?.DISABLE ?? 0 });
-    const pageContent = extractPageContent(pageObjectText, rawObjects);
-    const graphicsHints = collectGraphicsHintsFromContent(pageContent, parseColorSpaceResources(pageObjectText, rawObjects));
+    const pageContent = extractPageContent(pageOwner, store);
+    const graphicsHints = collectGraphicsHintsFromContent(pageContent, parseColorSpaceResources(pageOwner, store));
     const colorOps = graphicsHints.colorOps;
     const rawTransformOps = graphicsHints.transforms;
     const operatorTransformOps = operatorList.fnArray.flatMap((fn: number, i: number) => (fn === pdfjs.OPS.transform ? [operatorList.argsArray[i] as Matrix] : []));
@@ -144,7 +147,7 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
       rawTextMoveOps.move.length === moveTextCount ? rawTextMoveOps.move : [],
       rawTextMoveOps.leadingMove.length === setLeadingMoveTextCount ? rawTextMoveOps.leadingMove : [],
       rawPathOps.length === constructPathCount ? rawPathOps : nonEmptyRawPathOps.length ? nonEmptyRawPathOps : [],
-      parseImageResources(pageObjectText, rawObjects, pageContent),
+      parseImageResources(pageOwner, store, pageContent),
       options.unicode_norm,
       Boolean(options.password)
     );

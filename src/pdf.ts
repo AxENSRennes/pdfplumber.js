@@ -4,7 +4,16 @@ import { DEFAULT_FONT_ASCENT, DEFAULT_FONT_DESCENT, FONT_UNITS_PER_EM, METADATA_
 import { glyphTextFromPdfJsGlyph, glyphWidthLikePdfminer } from "./font-decoding.js";
 import { collectGraphicsHintsFromContent } from "./pdf/content.js";
 import { parsePdfObjectsCompat } from "./pdf/document.js";
+import { decodePdfName as decodePdfNamePrimitive } from "./pdf/primitives.js";
+import {
+  extractPageContent as extractPageContentStructured,
+  parseColorSpaceResources as parseColorSpaceResourcesStructured,
+  parseFontRecords as parseFontRecordsStructured,
+  parseImageResources as parseImageResourcesStructured,
+  parsePageFontObjectNumbers as parsePageFontObjectNumbersStructured
+} from "./pdf/resources.js";
 import { decodePdfStreamText } from "./pdf/streams.js";
+import { pdfNumbersFromString } from "./pdf/tokenizer.js";
 import { decodePdfLiteralBytesAsUtf8ThenUtf16, decodePdfStringLikePdfminer, parsePdfDictBytes } from "./pdf-strings.js";
 import type {
   BBox,
@@ -28,7 +37,6 @@ import {
   cleanBBox,
   cleanMatrix,
   cleanNumber,
-  cleanObject,
   cloneMatrix,
   colorSpaceName,
   colorValue,
@@ -56,291 +64,16 @@ export function decodePdfStream(objectText: string | undefined): string {
   return decodePdfStreamText(objectText);
 }
 
-function stripPdfObject(text: string): string {
-  return text.replace(/^\s*\d+\s+\d+\s+obj\s*/, "").replace(/\s*endobj\s*$/, "").trim();
-}
-
-function xObjectEntries(ownerText: string | undefined, objects: Map<number, string>): Array<{ name: string; objectNumber: number }> {
-  if (!ownerText) return [];
-  const sources: string[] = [ownerText];
-  const resourceRef = ownerText.match(/\/Resources\s+(\d+)\s+\d+\s+R/)?.[1];
-  const resourceText = resourceRef ? objects.get(Number(resourceRef)) : undefined;
-  if (resourceText) sources.push(resourceText);
-
-  const xObjectRefs: string[] = [];
-  for (const source of sources) {
-    const ref = source.match(/\/XObject\s+(\d+)\s+\d+\s+R/)?.[1];
-    if (ref) xObjectRefs.push(ref);
-  }
-  for (const ref of xObjectRefs) {
-    const objectText = objects.get(Number(ref));
-    if (objectText) sources.push(stripPdfObject(objectText));
-  }
-
-  const entries: Array<{ name: string; objectNumber: number }> = [];
-  const addEntries = (body: string): void => {
-    const entryRe = /\/([^\s/<>[\]()]+)\s+(\d+)\s+\d+\s+R/g;
-    let entry: RegExpExecArray | null;
-    while ((entry = entryRe.exec(body))) entries.push({ name: entry[1], objectNumber: Number(entry[2]) });
-  };
-  for (const source of sources) {
-    const direct = source.match(/\/XObject\s*<<([\s\S]*?)>>/);
-    if (direct) addEntries(direct[1]);
-    else if (!/\/XObject\b/.test(source) && /^\s*<</.test(source)) addEntries(source);
-  }
-  return entries;
-}
-
-function expandFormXObjects(content: string, ownerText: string | undefined, objects: Map<number, string>, depth = 0): string {
-  if (!content || depth > 4) return content;
-  const forms = new Map<string, string>();
-  for (const entry of xObjectEntries(ownerText, objects)) {
-    const objectText = objects.get(entry.objectNumber);
-    if (objectText && /\/Subtype\s*\/Form\b/.test(objectText)) forms.set(entry.name, objectText);
-  }
-  if (!forms.size) return content;
-  return content.replace(/\/([^\s/<>[\]()]+)\s+Do\b/g, (match, name: string) => {
-    const form = forms.get(name);
-    if (!form) return match;
-    const formContent = expandFormXObjects(decodePdfStream(form), form, objects, depth + 1);
-    const matrix = form.match(/\/Matrix\s*\[([^\]]+)\]/)?.[1];
-    return matrix ? `q\n${matrix} cm\n${formContent}\nQ` : formContent;
-  });
-}
-
 export function extractPageContent(pageObjectText: string | undefined, objects: Map<number, string>): string {
-  if (!pageObjectText) return "";
-  const contentRefs = (source: string | undefined, seen = new Set<number>()): number[] => {
-    if (!source) return [];
-    const arrayMatch = source.match(/\/Contents\s*\[([\s\S]*?)\]/);
-    if (arrayMatch) return Array.from(arrayMatch[1].matchAll(/(\d+)\s+\d+\s+R/g), (match) => Number(match[1]));
-    const refMatch = source.match(/\/Contents\s+(\d+)\s+\d+\s+R/);
-    if (!refMatch) return [];
-    const ref = Number(refMatch[1]);
-    if (seen.has(ref)) return [];
-    seen.add(ref);
-    const objectText = objects.get(ref);
-    const stripped = objectText ? stripPdfObject(objectText) : "";
-    if (/^\s*\[/.test(stripped)) return Array.from(stripped.matchAll(/(\d+)\s+\d+\s+R/g), (match) => Number(match[1]));
-    if (!/\bstream\b/.test(stripped)) return contentRefs(`/Contents ${stripped}`, seen);
-    return [ref];
-  };
-  const content = contentRefs(pageObjectText)
-    .map((ref) => decodePdfStream(objects.get(ref)))
-    .join("\n");
-  return expandFormXObjects(content, pageObjectText, objects);
+  return extractPageContentStructured(pageObjectText, objects);
 }
 
 export function parseImageResources(pageObjectText: string | undefined, objects: Map<number, string>, pageContent = ""): ImageResource[] {
-  const numberAttr = (objectText: string, name: string): number | undefined => {
-    const indirect = objectText.match(new RegExp(`/${name}\\s+(\\d+)\\s+\\d+\\s+R`));
-    if (indirect) {
-      const resolved = objects.get(Number(indirect[1]))?.match(/\bobj\s+([-+]?(?:\d+\.\d*|\.\d+|\d+))/);
-      if (resolved) return Number(resolved[1]);
-    }
-    const direct = objectText.match(new RegExp(`/${name}\\s+([-+]?(?:\\d+\\.\\d+|\\d+|\\.\\d+))`));
-    return direct ? Number(direct[1]) : undefined;
-  };
-  const resolvedLength = (objectText: string): number | undefined => {
-    const direct = objectText.match(/\/Length\s+(\d+)\b(?!\s+\d+\s+R)/)?.[1];
-    if (direct) return Number(direct);
-    const ref = objectText.match(/\/Length\s+(\d+)\s+\d+\s+R/)?.[1];
-    const resolved = ref ? objects.get(Number(ref))?.match(/\bobj\s+(\d+)/)?.[1] : undefined;
-    return resolved ? Number(resolved) : undefined;
-  };
-  const pdfValueRepr = (objectText: string, name: string): string | number | undefined => {
-    const ref = objectText.match(new RegExp(`/${name}\\s+(\\d+)\\s+\\d+\\s+R`))?.[1];
-    if (ref) return `<PDFObjRef:${ref}>`;
-    const array = objectText.match(new RegExp(`/${name}\\s*\\[([^\\]]*)\\]`))?.[1];
-    if (array) return `[${parseNumbers(array).map((value) => value.toFixed(1)).join(", ")}]`;
-    const number = objectText.match(new RegExp(`/${name}\\s+([-+]?(?:\\d+\\.\\d+|\\d+|\\.\\d+))`))?.[1];
-    if (number) return Number(number);
-    const named = objectText.match(new RegExp(`/${name}\\s*/([^\\s/<>[\\]()]+)`))?.[1];
-    if (named) return `/'${named}'`;
-    return undefined;
-  };
-  const pdfStreamRepr = (objectNumber: number, objectText: string): string => {
-    const raw = resolvedLength(objectText) ?? decodePdfStream(objectText).length;
-    const attrs: string[] = [];
-    const dictText = objectText.slice(0, objectText.search(/\bstream\b/));
-    const keys = Array.from(dictText.matchAll(/\/(Domain|Length|N|Alternate|Filter|FunctionType|Range)\b/g), (match) => match[1])
-      .filter((key, index, all) => all.indexOf(key) === index);
-    for (const key of keys) {
-      const value = pdfValueRepr(objectText, key);
-      if (value !== undefined) attrs.push(`'${key}': ${typeof value === "string" ? value : String(value)}`);
-    }
-    return `<PDFStream(${objectNumber}): raw=${raw}, {${attrs.join(", ")}}>`;
-  };
-  const parseColorSpaceArray = (body: string): unknown[] => {
-    const deviceN = body.match(/^\s*\/DeviceN\s*\[([\s\S]*?)\]([\s\S]*)$/);
-    if (deviceN) {
-      return [`/'DeviceN'`, parseColorSpaceArray(deviceN[1]), ...parseColorSpaceArray(deviceN[2])];
-    }
-    const values: unknown[] = [];
-    const tokenRe = /(\d+)\s+\d+\s+R|\/([^\s/<>[\]()]+)|<([0-9A-Fa-f\s]+)>|[-+]?(?:\d+\.\d*|\.\d+|\d+)/g;
-    let token: RegExpExecArray | null;
-    while ((token = tokenRe.exec(body))) {
-      if (token[1]) {
-        const objectNumber = Number(token[1]);
-        const referenced = objects.get(objectNumber) ?? "";
-        const body = referenced.replace(/^\d+\s+\d+\s+obj\s*/, "").replace(/\s*endobj$/, "").trim();
-        const array = body.match(/^\[([\s\S]*)\]$/);
-        const processRef = body.match(/\/Process\s+(\d+)\s+\d+\s+R/)?.[1];
-        const processText = processRef ? objects.get(Number(processRef)) ?? "" : "";
-        const components = processText.match(/\/Components\s*\[([\s\S]*?)\]/)?.[1];
-        values.push(
-          /\bstream\b/.test(referenced)
-            ? pdfStreamRepr(objectNumber, referenced)
-            : array
-              ? parseColorSpaceArray(array[1])
-              : components
-                ? { Process: { Components: parseColorSpaceArray(components) } }
-                : cleanObject({ value: body }).value
-        );
-      } else if (token[2]) {
-        values.push(`/'${token[2]}'`);
-      } else if (token[3]) {
-        values.push(token[3].replace(/\s+/g, ""));
-      } else {
-        values.push(Number(token[0]));
-      }
-    }
-    return values;
-  };
-  const colorSpaceAttr = (objectText: string): unknown[] | undefined => {
-    const directArray = objectText.match(/\/ColorSpace\s*\[([\s\S]*?)\]/);
-    if (directArray) return parseColorSpaceArray(directArray[1]);
-    const directName = objectText.match(/\/ColorSpace\s*\/([^\s/<>[\]()]+)/)?.[1];
-    if (directName) return [`/'${directName}'`];
-    const colorspaceRef = objectText.match(/\/ColorSpace\s+(\d+)\s+\d+\s+R/)?.[1];
-    if (!colorspaceRef) return undefined;
-    const referenced = objects.get(Number(colorspaceRef)) ?? "";
-    const referencedArray = referenced.match(/\bobj\s*\[([\s\S]*?)\]\s*endobj/);
-    if (referencedArray) return [parseColorSpaceArray(referencedArray[1])];
-    const referencedName = referenced.match(/\bobj\s*\/([^\s/<>[\]()]+)/)?.[1] ?? referenced.match(/\/(DeviceRGB|DeviceGray|DeviceCMYK)\b/)?.[1];
-    return referencedName ? [`/'${referencedName}'`] : undefined;
-  };
-  const resourceByName = new Map<string, ImageResource>();
-  const out: ImageResource[] = [];
-  const imageResource = (name: string, objectText: string): ImageResource => ({
-    name,
-    width: numberAttr(objectText, "Width"),
-    height: numberAttr(objectText, "Height"),
-    bits: numberAttr(objectText, "BitsPerComponent"),
-    colorspace: colorSpaceAttr(objectText) ?? [null]
-  });
-  const addResource = (resource: ImageResource): void => {
-    if (resourceByName.has(resource.name)) return;
-    resourceByName.set(resource.name, resource);
-    out.push(resource);
-  };
-  const contentRefs = (source: string | undefined, seen = new Set<number>()): number[] => {
-    if (!source) return [];
-    const arrayMatch = source.match(/\/Contents\s*\[([\s\S]*?)\]/);
-    if (arrayMatch) return Array.from(arrayMatch[1].matchAll(/(\d+)\s+\d+\s+R/g), (match) => Number(match[1]));
-    const refMatch = source.match(/\/Contents\s+(\d+)\s+\d+\s+R/);
-    if (!refMatch) return [];
-    const ref = Number(refMatch[1]);
-    if (seen.has(ref)) return [];
-    seen.add(ref);
-    const objectText = objects.get(ref);
-    const stripped = objectText ? stripPdfObject(objectText) : "";
-    if (/^\s*\[/.test(stripped)) return Array.from(stripped.matchAll(/(\d+)\s+\d+\s+R/g), (match) => Number(match[1]));
-    if (!/\bstream\b/.test(stripped)) return contentRefs(`/Contents ${stripped}`, seen);
-    return [ref];
-  };
-  const collectDrawnImages = (ownerText: string | undefined, content: string, depth = 0): ImageResource[] => {
-    if (!ownerText || depth > 4) return [];
-    const entries = new Map(xObjectEntries(ownerText, objects).map((entry) => [entry.name, entry.objectNumber]));
-    const images: ImageResource[] = [];
-    for (const match of content.matchAll(/\/([^\s/<>[\]()]+)\s+Do\b/g)) {
-      const name = match[1];
-      const objectNumber = entries.get(name);
-      const objectText = objectNumber == null ? undefined : objects.get(objectNumber);
-      if (!objectText) {
-        images.push({ name });
-      } else if (/\/Subtype\s*\/Form\b/.test(objectText)) {
-        images.push(...collectDrawnImages(objectText, decodePdfStream(objectText), depth + 1));
-      } else if (/\/Subtype\s*\/Image\b/.test(objectText)) {
-        images.push(imageResource(name, objectText));
-      }
-    }
-    return images;
-  };
-  const unexpandedContent = contentRefs(pageObjectText)
-    .map((ref) => decodePdfStream(objects.get(ref)))
-    .join("\n");
-  const drawnImages = collectDrawnImages(pageObjectText, unexpandedContent);
-  if (drawnImages.length) return drawnImages;
-  const resourceRef = pageObjectText?.match(/\/Resources\s+(\d+)\s+\d+\s+R/)?.[1];
-  const resourceObject = resourceRef ? objects.get(Number(resourceRef)) : undefined;
-  const xObjectRef = (pageObjectText ?? resourceObject)?.match(/\/XObject\s+(\d+)\s+\d+\s+R/)?.[1];
-  const xObjectObject = xObjectRef ? objects.get(Number(xObjectRef)) : undefined;
-  const sources = [
-    pageObjectText ?? "",
-    resourceObject ?? "",
-    xObjectObject ? `/XObject ${xObjectObject.replace(/^\d+\s+\d+\s+obj\s*/, "").replace(/\s*endobj$/, "")}` : "",
-    ...objects.values()
-  ];
-  for (const source of sources) {
-    const match = source.match(/\/XObject\s*<<([\s\S]*?)>>/);
-    if (!match) continue;
-    const entryRe = /\/([^\s/<>[\]()]+)\s+(\d+)\s+\d+\s+R/g;
-    let entry: RegExpExecArray | null;
-    while ((entry = entryRe.exec(match[1]))) {
-      const name = entry[1];
-      if (out.some((image) => image.name === name)) continue;
-      const objectText = objects.get(Number(entry[2])) ?? "";
-      if (!/\/Subtype\s*\/Image\b/.test(objectText) && objectText) continue;
-      addResource(imageResource(name, objectText));
-    }
-    if (out.length) break;
-  }
-  const drawNames = Array.from(pageContent.matchAll(/\/([^\s/<>[\]()]+)\s+Do\b/g), (match) => match[1]);
-  return drawNames.length ? drawNames.map((name) => resourceByName.get(name) ?? { name }) : out;
+  return parseImageResourcesStructured(pageObjectText, objects, pageContent);
 }
 
 export function parseColorSpaceResources(pageObjectText: string | undefined, objects: Map<number, string>): Record<string, string> {
-  const out: Record<string, string> = {};
-  const collectSources = (ownerText: string | undefined, seen = new Set<number>(), depth = 0): string[] => {
-    if (!ownerText || depth > 4) return [];
-    const sources = [ownerText];
-    const resourceRef = ownerText.match(/\/Resources\s+(\d+)\s+\d+\s+R/)?.[1];
-    const resourceText = resourceRef ? objects.get(Number(resourceRef)) : undefined;
-    if (resourceText) sources.push(resourceText);
-    for (const entry of xObjectEntries(ownerText, objects)) {
-      if (seen.has(entry.objectNumber)) continue;
-      seen.add(entry.objectNumber);
-      const objectText = objects.get(entry.objectNumber);
-      if (!objectText || !/\/Subtype\s*\/Form\b/.test(objectText)) continue;
-      sources.push(objectText, ...collectSources(objectText, seen, depth + 1));
-    }
-    return sources;
-  };
-  const sources = collectSources(pageObjectText);
-  for (const source of sources) {
-    const match = source.match(/\/ColorSpace\s*<<([\s\S]*?)>>/);
-    if (!match) continue;
-    const body = match[1];
-    const entryRe = /\/([^\s/<>[\]()]+)\s+(?:(\d+)\s+\d+\s+R|\[\s*\/([^\s/<>[\]()]+))/g;
-    let entry: RegExpExecArray | null;
-    while ((entry = entryRe.exec(body))) {
-      const name = entry[1];
-      const direct = entry[3];
-      const referenced = entry[2] ? objects.get(Number(entry[2])) : undefined;
-      const indexedBaseRef = referenced?.match(/\[\s*\/Indexed\s+(\d+)\s+\d+\s+R/)?.[1];
-      const indexedBase = indexedBaseRef ? objects.get(Number(indexedBaseRef)) : undefined;
-      out[name] = colorSpaceName(
-        direct ??
-          indexedBase?.match(/\/Separation\b/)?.[0].slice(1) ??
-          referenced?.match(/\/Separation\b/)?.[0].slice(1) ??
-          referenced?.match(/\[\s*\/([^\s/<>[\]()]+)/)?.[1] ??
-          referenced?.match(/\/(DeviceRGB|DeviceGray|DeviceCMYK|ICCBased)\b/)?.[1] ??
-          name
-      );
-    }
-  }
-  return out;
+  return parseColorSpaceResourcesStructured(pageObjectText, objects);
 }
 
 export function parseColorOps(content: string, colorSpaces: Record<string, string> = {}): ColorOp[] {
@@ -365,11 +98,11 @@ export function parsePathOps(content: string): number[][] {
 }
 
 export function parseNumbers(value: string): number[] {
-  return Array.from(value.matchAll(/[-+]?(?:\d+\.\d*|\.\d+|\d+)/g)).map((m) => Number(m[0]));
+  return pdfNumbersFromString(value);
 }
 
 export function decodePdfName(value: string): string {
-  return value.replace(/#([0-9A-Fa-f]{2})/g, (_match, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)));
+  return decodePdfNamePrimitive(value);
 }
 
 export function decodePdfNameUtf8(value: string): string {
@@ -440,73 +173,11 @@ export function resolvePageBoxes(pdfPage: any, pageObjectText: string | undefine
 }
 
 export function parseFontRecords(objects: Map<number, string>): FontRecord[] {
-  const fonts: FontRecord[] = [];
-  for (const [objectNumber, text] of objects) {
-    if (!/\/Type\s*\/Font\b/.test(text) || !/\/BaseFont\s*(?:\/|\d+\s+\d+\s+R)/.test(text)) continue;
-    const baseFontRef = text.match(/\/BaseFont\s+(\d+)\s+\d+\s+R/)?.[1];
-    const baseFontRaw =
-      text.match(/\/BaseFont\s*\/([^\s/>]+)/)?.[1] ??
-      (baseFontRef ? objects.get(Number(baseFontRef))?.match(/\bobj\s*\/([^\s/>]+)/)?.[1] : undefined);
-    if (!baseFontRaw) continue;
-    const baseFont = decodePdfName(baseFontRaw);
-    const subtype = text.match(/\/Subtype\s*\/([^\s/>]+)/)?.[1];
-    const firstChar = Number(text.match(/\/FirstChar\s+(\d+)/)?.[1] ?? 0);
-    const encodingRef = text.match(/\/Encoding\s+(\d+)\s+\d+\s+R/)?.[1];
-    const encodingText = encodingRef ? objects.get(Number(encodingRef)) : text;
-    const encodingDifferences = parseEncodingDifferences(encodingText);
-    const widthsRef = text.match(/\/Widths\s+(\d+)\s+\d+\s+R/)?.[1];
-    const widthsText = widthsRef ? objects.get(Number(widthsRef)) : text;
-    const widthsMatch = widthsText?.match(/\[([\s\S]*?)\]/);
-    const widths = widthsMatch ? parseNumbers(widthsMatch[1]) : [];
-    const descendantRef = text.match(/\/DescendantFonts\s*\[\s*(\d+)\s+\d+\s+R/)?.[1];
-    const descendantContainer = descendantRef ? objects.get(Number(descendantRef)) : undefined;
-    const nestedDescendantRef = descendantContainer?.match(/^\s*\[\s*(\d+)\s+\d+\s+R/)?.[1];
-    const descendant = nestedDescendantRef ? objects.get(Number(nestedDescendantRef)) : descendantContainer;
-    const descriptorRef = text.match(/\/FontDescriptor\s+(\d+)\s+\d+\s+R/)?.[1] ?? descendant?.match(/\/FontDescriptor\s+(\d+)\s+\d+\s+R/)?.[1];
-    const descriptor = descriptorRef ? objects.get(Number(descriptorRef)) : undefined;
-    const ascent = descriptor?.match(/\/Ascent\s+([-+]?(?:\d+\.\d*|\.\d+|\d+))/)?.[1];
-    const descent = descriptor?.match(/\/Descent\s+([-+]?(?:\d+\.\d*|\.\d+|\d+))/)?.[1];
-    const flags = descriptor?.match(/\/Flags\s+(\d+)/)?.[1];
-    const charSet = descriptor?.match(/\/CharSet\s*\(([^)]*)\)/)?.[1].match(/\/([^/\s()]+)/g)?.map((name) => name.slice(1));
-    fonts.push({
-      objectNumber,
-      baseFont,
-      subtype: subtype ? decodePdfName(subtype) : undefined,
-      hasToUnicode: /\/ToUnicode\s+\d+\s+\d+\s+R\b/.test(text),
-      symbolic: flags == null ? undefined : (Number(flags) & 4) !== 0,
-      charSet,
-      encodingDifferences,
-      firstChar,
-      widths,
-      ascent: ascent == null ? undefined : Number(ascent) / FONT_UNITS_PER_EM,
-      descent: descent == null ? undefined : -Math.abs(Number(descent) / FONT_UNITS_PER_EM),
-      vertical: /\/Encoding\s*\/(?:Identity-V|DLIdent-V)\b/.test(text)
-    });
-  }
-  return fonts;
+  return parseFontRecordsStructured(objects);
 }
 
 export function parsePageFontObjectNumbers(pageObjectText: string | undefined): number[] {
-  const fontDict = pageObjectText?.match(/\/Font\s*<<([\s\S]*?)>>/)?.[1];
-  if (!fontDict) return [];
-  return Array.from(fontDict.matchAll(/\/[^\s/<>[\]()]+\s+(\d+)\s+\d+\s+R/g), (match) => Number(match[1]));
-}
-
-function parseEncodingDifferences(encodingText: string | undefined): Record<number, string> | undefined {
-  const body = encodingText?.match(/\/Differences\s*\[([\s\S]*?)\]/)?.[1];
-  if (!body) return undefined;
-  const differences: Record<number, string> = {};
-  let code: number | null = null;
-  for (const match of body.matchAll(/\/([^\s/[\]()<>]+)|(-?\d+)/g)) {
-    if (match[2] != null) {
-      code = Number(match[2]);
-      continue;
-    }
-    if (code == null) continue;
-    differences[code] = decodePdfName(match[1]);
-    code += 1;
-  }
-  return differences;
+  return parsePageFontObjectNumbersStructured(pageObjectText);
 }
 
 export function parseInfoMetadata(raw: string, objects: Map<number, string>): Record<string, unknown> {

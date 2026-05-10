@@ -57,6 +57,18 @@ export function normalizePdfStringLikePdfminer(value: string | null | undefined)
   return value;
 }
 
+// pdfminer aliases these nonstandard CMap names before deciding writing mode.
+// See pdfminer.pdffont.IDENTITY_ENCODER.
+export function normalizeIdentityCMapNameLikePdfminer(name: string | undefined): string | undefined {
+  if (name === "DLIdent-H") return "Identity-H";
+  if (name === "DLIdent-V") return "Identity-V";
+  return name;
+}
+
+export function isVerticalCMapNameLikePdfminer(name: string | undefined): boolean {
+  return /(?:^|-)V$/i.test(normalizeIdentityCMapNameLikePdfminer(name) ?? "");
+}
+
 export function shouldEmulatePdfminerOpenError(ctx: PdfminerCompatContext): Error | null {
   if (/\/Subtype\s*\/FreeText[\s\S]{0,300}?\/Contents\s*<\s*eda080\s*>/i.test(ctx.raw)) {
     return namedError("UnicodeDecodeError", "'utf-16-le' codec can't decode byte 0x80 in position 2: truncated data");
