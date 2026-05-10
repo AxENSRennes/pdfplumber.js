@@ -46,7 +46,9 @@ export class TextMap {
     const returnChars = options.return_chars !== false;
     let regex: RegExp;
     if (pattern instanceof RegExp) {
-      regex = pattern;
+      if (!regexOption) throw new Error("Cannot pass a compiled search pattern and regex=false together.");
+      if (!caseOption) throw new Error("Cannot pass a compiled search pattern and case=false together.");
+      regex = pattern.global ? pattern : new RegExp(pattern.source, `${pattern.flags}g`);
     } else {
       const source = regexOption ? pattern : pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       regex = new RegExp(source, `g${caseOption ? "" : "i"}`);
