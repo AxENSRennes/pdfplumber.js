@@ -45,6 +45,64 @@ const PDF_DOC_ENCODING_OVERRIDES: Record<number, string> = {
   0xad: "\u0000"
 };
 
+function hexBytes(value: string): Uint8Array {
+  const clean = value.replace(/\s+/g, "");
+  const padded = clean.length % 2 ? `${clean}0` : clean;
+  const bytes = new Uint8Array(padded.length / 2);
+  for (let i = 0; i < bytes.length; i += 1) bytes[i] = Number.parseInt(padded.slice(i * 2, i * 2 + 2), 16);
+  return bytes;
+}
+
+export function parsePdfLiteralStringBytes(source: string, start: number): { bytes: Uint8Array; end: number } | null {
+  if (source[start] !== "(") return null;
+  const out: number[] = [];
+  let depth = 1;
+  let index = start + 1;
+  while (index < source.length && depth > 0) {
+    const char = source[index++];
+    if (char === "\\") {
+      if (index >= source.length) break;
+      const escaped = source[index++];
+      if (escaped === "n") out.push(0x0a);
+      else if (escaped === "r") out.push(0x0d);
+      else if (escaped === "t") out.push(0x09);
+      else if (escaped === "b") out.push(0x08);
+      else if (escaped === "f") out.push(0x0c);
+      else if (escaped === "\r" || escaped === "\n") {
+        if (escaped === "\r" && source[index] === "\n") index += 1;
+      } else if (/[0-7]/.test(escaped)) {
+        let octal = escaped;
+        for (let i = 0; i < 2 && /[0-7]/.test(source[index] ?? ""); i += 1) octal += source[index++];
+        out.push(Number.parseInt(octal, 8) & 0xff);
+      } else {
+        out.push(escaped.charCodeAt(0) & 0xff);
+      }
+    } else if (char === "(") {
+      depth += 1;
+      out.push(0x28);
+    } else if (char === ")") {
+      depth -= 1;
+      if (depth > 0) out.push(0x29);
+    } else {
+      out.push(char.charCodeAt(0) & 0xff);
+    }
+  }
+  return depth === 0 ? { bytes: Uint8Array.from(out), end: index } : null;
+}
+
+export function parsePdfDictBytes(source: string, key: string): Uint8Array | null {
+  const match = new RegExp(`/${key}\\b`).exec(source);
+  if (!match) return null;
+  let index = match.index + match[0].length;
+  while (/\s/.test(source[index] ?? "")) index += 1;
+  if (source[index] === "(") return parsePdfLiteralStringBytes(source, index)?.bytes ?? null;
+  if (source[index] === "<" && source[index + 1] !== "<") {
+    const end = source.indexOf(">", index + 1);
+    return end >= 0 ? hexBytes(source.slice(index + 1, end)) : null;
+  }
+  return null;
+}
+
 export function decodePdfStringLikePdfminer(bytes: Uint8Array | number[]): string {
   if (bytes[0] === 0xfe && bytes[1] === 0xff) {
     let out = "";

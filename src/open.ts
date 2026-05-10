@@ -8,23 +8,19 @@ import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 import { METADATA_KEYS } from "./constants.js";
 import { PdfPlumberDocumentImpl } from "./document.js";
 import { buildLayoutObjects } from "./layout.js";
+import { collectGraphicsHintsFromContent } from "./pdf/content.js";
+import { parsePdfDocument } from "./pdf/document.js";
 import { PdfPlumberPageImpl } from "./page.js";
 import { shouldEmulatePdfminerOpenError, shouldSuppressPagesLikePdfminer, validateStreamsLikePdfminer } from "./pdfminer-compat.js";
 import {
   annotationToObject,
   extractPageContent,
   extractPageObjects,
-  parseColorOps,
   parseColorSpaceResources,
   parseFontRecords,
   parseImageResources,
   parseInfoMetadata,
   parsePageFontObjectNumbers,
-  parsePathOps,
-  parsePdfObjects,
-  parseTextMatrixOps,
-  parseTextMoveOps,
-  parseTransformOps,
   resolvePageBoxes
 } from "./pdf.js";
 import type { Matrix, OpenOptions, PDFInput, PDFPlumberDocument, PDFPlumberPage } from "./types.js";
@@ -58,7 +54,8 @@ function transformOpsMatch(rawTransforms: Matrix[], operatorTransforms: Matrix[]
 export async function open(input: PDFInput, options: OpenOptions = {}): Promise<PDFPlumberDocument> {
   const source = await inputToBytes(input);
   const raw = source.raw ?? (source.data ? Buffer.from(source.data).toString("latin1") : "");
-  const rawObjects = parsePdfObjects(raw, options.password ?? "");
+  const store = parsePdfDocument(raw, { password: options.password ?? "" });
+  const rawObjects = store.rawObjects;
   const compatContext = { raw, objects: rawObjects, password: options.password };
   const compatOpenError = shouldEmulatePdfminerOpenError(compatContext);
   if (compatOpenError) throw compatOpenError;
@@ -99,7 +96,8 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
   const pageTotal = pdf.numPages;
   for (let pageNumber = 1; pageNumber <= pageTotal; pageNumber += 1) {
     const pdfPage = await pdf.getPage(pageNumber);
-    const pageObjectText = pdfPage.ref?.num ? rawObjects.get(Number(pdfPage.ref.num)) : undefined;
+    const pageModel = store.getPageModel(pdfPage.ref?.num ? Number(pdfPage.ref.num) : undefined);
+    const pageObjectText = pageModel?.raw ?? (pdfPage.ref?.num ? rawObjects.get(Number(pdfPage.ref.num)) : undefined);
     const pageFontObjectNumbers = new Set(parsePageFontObjectNumbers(pageObjectText));
     const pageFontRecords = pageFontObjectNumbers.size
       ? [
@@ -115,15 +113,16 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
     const textContent = await pdfPage.getTextContent({ includeMarkedContent: true, disableNormalization: true });
     const operatorList = await pdfPage.getOperatorList({ annotationMode: (pdfjs as any).AnnotationMode?.DISABLE ?? 0 });
     const pageContent = extractPageContent(pageObjectText, rawObjects);
-    const colorOps = parseColorOps(pageContent, parseColorSpaceResources(pageObjectText, rawObjects));
-    const rawTransformOps = parseTransformOps(pageContent);
+    const graphicsHints = collectGraphicsHintsFromContent(pageContent, parseColorSpaceResources(pageObjectText, rawObjects));
+    const colorOps = graphicsHints.colorOps;
+    const rawTransformOps = graphicsHints.transforms;
     const operatorTransformOps = operatorList.fnArray.flatMap((fn: number, i: number) => (fn === pdfjs.OPS.transform ? [operatorList.argsArray[i] as Matrix] : []));
-    const rawTextMatrixOps = parseTextMatrixOps(pageContent);
+    const rawTextMatrixOps = graphicsHints.textMatrices;
     const setTextMatrixCount = operatorList.fnArray.filter((fn: number) => fn === pdfjs.OPS.setTextMatrix).length;
-    const rawTextMoveOps = parseTextMoveOps(pageContent);
+    const rawTextMoveOps = { move: graphicsHints.textMoves, leadingMove: graphicsHints.leadingTextMoves };
     const moveTextCount = operatorList.fnArray.filter((fn: number) => fn === pdfjs.OPS.moveText).length;
     const setLeadingMoveTextCount = operatorList.fnArray.filter((fn: number) => fn === pdfjs.OPS.setLeadingMoveText).length;
-    const rawPathOps = parsePathOps(pageContent);
+    const rawPathOps = graphicsHints.pathOps;
     const nonEmptyRawPathOps = rawPathOps.filter((op) => op.length);
     const constructPathCount = operatorList.fnArray.filter((fn: number) => fn === pdfjs.OPS.constructPath).length;
     const lowLevel = extractPageObjects(

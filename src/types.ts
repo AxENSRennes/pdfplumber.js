@@ -196,6 +196,6 @@ export interface PdfEncryption {
   encryptRef: number | null;
   key: Uint8Array;
   keyLength: number;
-  streamMethod: "RC4" | "Identity" | "Unsupported";
+  streamMethod: "RC4" | "AESV2" | "AESV3" | "Identity" | "Unsupported";
   encryptMetadata: boolean;
 }
