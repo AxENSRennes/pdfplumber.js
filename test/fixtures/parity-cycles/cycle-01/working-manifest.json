@@ -1,0 +1,1402 @@
+[
+  {
+    "categories": [
+      "image-xobject",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-001-image-xobject",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-001-image-xobject.pdf",
+    "sha256": "87f392bcf4b39a0d6470dd97cb15cd765c1e6c7bdfb472e8b1c2bc2e0a0e0fe9",
+    "size": 973,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annotation-link",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-002-annotation-link",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-002-annotation-link.pdf",
+    "sha256": "63eed9261b495cb3ccb29a03f94456f49709bc2c1cd951432d5628ffc5df4ce5",
+    "size": 926,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-basic",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-003-text-basic",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-003-text-basic.pdf",
+    "sha256": "605e05a9b66df93b6911a3b6b5bba12d2aab35bc81262c43697c906a389a4867",
+    "size": 817,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-004-text-positioned",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-004-text-positioned.pdf",
+    "sha256": "0d2523ab9c0129ef1a5b83f785ca2fb1107e96bace78e42fccbaabb46a472180",
+    "size": 810,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "vector-paths",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-005-vector-paths",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-005-vector-paths.pdf",
+    "sha256": "94b5bad1bbb709de4bb1eb7741041b337844a5188826204885b7d35f61617c11",
+    "size": 845,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "image-xobject",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-006-image-xobject",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-006-image-xobject.pdf",
+    "sha256": "020977038d849662bb89e568aa760b818144386d9ee3a94c976c0fdbd49c5a41",
+    "size": 973,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annotation-link",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-007-annotation-link",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-007-annotation-link.pdf",
+    "sha256": "76373e9f6de591f87e8266b8863c1409ebba511447119c385e4b43c7c7076fb3",
+    "size": 926,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-basic",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-008-text-basic",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-008-text-basic.pdf",
+    "sha256": "b0c3d0cf6d390d5f8d707b8760378765383b1d817b4940bbded3d9750ae8f71f",
+    "size": 817,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-009-text-positioned",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-009-text-positioned.pdf",
+    "sha256": "126634190d486ab94ce13063dac4e958835fb7e5e58b07f89b324cb687887c69",
+    "size": 810,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "vector-paths",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-010-vector-paths",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-010-vector-paths.pdf",
+    "sha256": "bdc2f61d067c45e748bfe45c5d9d490a3270d96a499d34ac2d78c94a48a6faca",
+    "size": 844,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "image-xobject",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-011-image-xobject",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-011-image-xobject.pdf",
+    "sha256": "fc2631eca4b27fd4c8cd0a491bbf84894b3aebb5dfdfc924fac16710a3a6f48b",
+    "size": 974,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annotation-link",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-012-annotation-link",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-012-annotation-link.pdf",
+    "sha256": "c0f2d0901eb825e3bb8f609b0c4b82576129cb28f150aa28509086a33268d5c2",
+    "size": 928,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-basic",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-013-text-basic",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-013-text-basic.pdf",
+    "sha256": "ad00ba2dc42051265538f9d7d4d06d90232cb34f45e85e7668d18f0ba2e081f6",
+    "size": 818,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-014-text-positioned",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-014-text-positioned.pdf",
+    "sha256": "5250a3390d021b6c92d1e513383ef7c5356a629ab2d2adaf750c2fce6483425a",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "vector-paths",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-015-vector-paths",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-015-vector-paths.pdf",
+    "sha256": "293d7e3c8c3146dd19467299409698a9f62caf851fcef6e8752dc59360949f5e",
+    "size": 845,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "image-xobject",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-016-image-xobject",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-016-image-xobject.pdf",
+    "sha256": "0d49f76ecb249ec051a5e89919427247245eddd090d65846004f214e5e5e6747",
+    "size": 974,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annotation-link",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-017-annotation-link",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-017-annotation-link.pdf",
+    "sha256": "ad05b4f27313694afcd14cdd2f3c30fa8d742c159b3178ad7e2630046d3be890",
+    "size": 928,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-basic",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-018-text-basic",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-018-text-basic.pdf",
+    "sha256": "0a955f8032cd0389f24bfd5d530747cd1dd0b20db04feac1639b089feefd04d8",
+    "size": 819,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-019-text-positioned",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-019-text-positioned.pdf",
+    "sha256": "684f359acb7d2e92218a055b3886eec5c5e19a59eea68fbafff036bd3b34cfb1",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "vector-paths",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-020-vector-paths",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-020-vector-paths.pdf",
+    "sha256": "cf8f9643eb752660ebe605eb7b85a8370d46d48f0c8085ec4763c7a845876886",
+    "size": 845,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "image-xobject",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-021-image-xobject",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-021-image-xobject.pdf",
+    "sha256": "1b73266fdab47438e99a74c7863dd9e1ab01ee028cc760d686e615f3703663e2",
+    "size": 974,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annotation-link",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-022-annotation-link",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-022-annotation-link.pdf",
+    "sha256": "bfae560b44e288d2b41373d1c6032acda5a6e01fb0cb1eb354b8eb5566396e1b",
+    "size": 928,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-basic",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-023-text-basic",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-023-text-basic.pdf",
+    "sha256": "1320c5e16115aa593d262335487d9487a5ea2bea0a5f0bc9f15b29f326aae4b1",
+    "size": 819,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-024-text-positioned",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-024-text-positioned.pdf",
+    "sha256": "d9dae2ab9e304a1b2a91152e7ad2b8f90b94025175922a6760ed90f0e07397e9",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "vector-paths",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-025-vector-paths",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-025-vector-paths.pdf",
+    "sha256": "3aefc8ad6338dc246005d4454b42e93eb87d28283eee882d2fdbe1f226f57aa7",
+    "size": 844,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "image-xobject",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-026-image-xobject",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-026-image-xobject.pdf",
+    "sha256": "0c85554a6a2e9efe02676a34549043cf3f6b9593a80dd13f43c7feb4eda3e858",
+    "size": 974,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annotation-link",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-027-annotation-link",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-027-annotation-link.pdf",
+    "sha256": "2f21018b8475602348678870762a9ad45cf5ea5737818fd3bec68a1d95902467",
+    "size": 928,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-basic",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-028-text-basic",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-028-text-basic.pdf",
+    "sha256": "27af06b5bb8f391e2b79cd83f10d6aaec0d32297863a1857bccca6aee2eab317",
+    "size": 818,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-029-text-positioned",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-029-text-positioned.pdf",
+    "sha256": "69cd4d23d7f77fb6795580534a06d80134e63efe3ee9046d972b67db992d4715",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "vector-paths",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-030-vector-paths",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-030-vector-paths.pdf",
+    "sha256": "00b252c51ba42243b5b761086cd1d7e78a9054000e190402afca23daf7e9e3de",
+    "size": 845,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "image-xobject",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-031-image-xobject",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-031-image-xobject.pdf",
+    "sha256": "788a7970cd59d0cd1e2ac809220ff9e7a2fae2e052a9bb6e89ebe7c6f29bcaf5",
+    "size": 974,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annotation-link",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-032-annotation-link",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-032-annotation-link.pdf",
+    "sha256": "6bbfef206b209422d3c91a57c6da6adfceb1b9dced82ccc805a8784112e22992",
+    "size": 928,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-basic",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-033-text-basic",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-033-text-basic.pdf",
+    "sha256": "0facb29cb306ce7574513cd6813b9bdccf5af2f21c274dbc731b07e07de22c05",
+    "size": 819,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-034-text-positioned",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-034-text-positioned.pdf",
+    "sha256": "64c6f8ad4b1fb14bce3f70ec4c975bd3fd858a03c25180a7cbbd2d4cc9feff9c",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "vector-paths",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-035-vector-paths",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-035-vector-paths.pdf",
+    "sha256": "77642d8dd3c2aecfb1889aca50c124a97df00398ea9a2b1f91d5e166b5712015",
+    "size": 845,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "image-xobject",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-036-image-xobject",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-036-image-xobject.pdf",
+    "sha256": "045237f7d813e07a56ba88f22b82e224a234523bf9f00a91a926dbf3a38e5597",
+    "size": 974,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annotation-link",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-037-annotation-link",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-037-annotation-link.pdf",
+    "sha256": "d5fe8ab652274bde8bd086ed5ace9be3b9149a5a9e183bc69c2f6fe3a9f33a2b",
+    "size": 928,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-basic",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-038-text-basic",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-038-text-basic.pdf",
+    "sha256": "a7782914b7629d102cd710e6d3d54584555becb313d0eee4f77d23ab15fd4747",
+    "size": 819,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-039-text-positioned",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-039-text-positioned.pdf",
+    "sha256": "b54ec4a28522b9124214141551ed6bfad99c2a2b81763db817b872f6f0f3c81d",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "vector-paths",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-040-vector-paths",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-040-vector-paths.pdf",
+    "sha256": "e8572b3ec3c89ab092c213f3e706e9aacfd08242664cd4a0097daf7caa9a69ac",
+    "size": 843,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "image-xobject",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-041-image-xobject",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-041-image-xobject.pdf",
+    "sha256": "477c60b157083ccd0fbc116c931541a7afebedd35367709efbd12c5c267ab772",
+    "size": 974,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annotation-link",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-042-annotation-link",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-042-annotation-link.pdf",
+    "sha256": "3f146ef3028a89444728e2a3129465e1734096a4ab863f679fc7166bdc1d259d",
+    "size": 928,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-basic",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-043-text-basic",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-043-text-basic.pdf",
+    "sha256": "d3da86178fcc19e2b8b3a7e9efc8b949a8bd46324da21286206f14d5a98a709e",
+    "size": 820,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-044-text-positioned",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-044-text-positioned.pdf",
+    "sha256": "ab224696463491c330b2cc81252404b61f8473fb3aa38d329113940d05fd71e7",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "vector-paths",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-045-vector-paths",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-045-vector-paths.pdf",
+    "sha256": "093ae8dc49683d2eb334325fd7e2b82029a3cc00521ba355bb7c073836d649c6",
+    "size": 845,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "image-xobject",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-046-image-xobject",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-046-image-xobject.pdf",
+    "sha256": "c72b6b95cd7a5abc6562be74e65226f59c49cb5c7478c92c0df8a73b6dd9e7d2",
+    "size": 974,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annotation-link",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-047-annotation-link",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-047-annotation-link.pdf",
+    "sha256": "b4cb6d469b6345144d353e81561dd197784f601469e20d3ee8b6d4ef93d320ab",
+    "size": 928,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-basic",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-048-text-basic",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-048-text-basic.pdf",
+    "sha256": "2b5dbb84fa3f7b2439de43fe2ab458d68b5843443879272505940f7a05350682",
+    "size": 819,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-049-text-positioned",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-049-text-positioned.pdf",
+    "sha256": "15fc009238ca7f8ff964822e59955c2275fea6e7a0b49566c1bafe3712f7f51b",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "vector-paths",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-050-vector-paths",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-050-vector-paths.pdf",
+    "sha256": "e6be61017ce8821224bfa660ac6cb7eeb268fdc888ad9b57b2860e8b7f007988",
+    "size": 844,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "image-xobject",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-051-image-xobject",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-051-image-xobject.pdf",
+    "sha256": "5f4594c39f8d825c2a33ea1ceb717dd7f0e61bdbc4a90a7caecc35ba39145d1b",
+    "size": 974,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annotation-link",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-052-annotation-link",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-052-annotation-link.pdf",
+    "sha256": "65ae9ac4d7b97168ed4465cbe2e36981a82f3a8f23671e2d565d15d583ecf0d2",
+    "size": 928,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-basic",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-053-text-basic",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-053-text-basic.pdf",
+    "sha256": "fb9828679d41c868e720db43edf5350ff81fcd7bc67c543144a987c8261e022e",
+    "size": 819,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-054-text-positioned",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-054-text-positioned.pdf",
+    "sha256": "177673578580a12b0a7c85ea581d1f28abff8cad1fd3b4ebd15eae342b048a93",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "vector-paths",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-055-vector-paths",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-055-vector-paths.pdf",
+    "sha256": "972f8fb912c3cb8817282bd587e9d5d93cdf080631e8905a0c31e41aa4210862",
+    "size": 845,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "image-xobject",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-056-image-xobject",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-056-image-xobject.pdf",
+    "sha256": "8dd8e3fa3d6efc22f00f6870465e3d41cdb79e5d8c6651c3cd84bc5a0c9812c7",
+    "size": 974,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annotation-link",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-057-annotation-link",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-057-annotation-link.pdf",
+    "sha256": "af3042f75c6fbadf75f4aea10b4e4533275e29884e26e64eed6ae3d36f18036b",
+    "size": 928,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-basic",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-058-text-basic",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-058-text-basic.pdf",
+    "sha256": "c328185ce2ffb7853d14d3d30a346cc3f083b15ac86c3d9994dd2e1fe91f8bb8",
+    "size": 819,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-059-text-positioned",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-059-text-positioned.pdf",
+    "sha256": "795cf7f62441549d308b23c6cd187379e643d2d623bcf70a8e3b7056316d2ed5",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "vector-paths",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-060-vector-paths",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-060-vector-paths.pdf",
+    "sha256": "4dc57ad01a8e553b864c3dc093277afb5e3258095086208833d44498383940ff",
+    "size": 845,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "image-xobject",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-061-image-xobject",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-061-image-xobject.pdf",
+    "sha256": "5197edfd07169b9f487016a68f36f0437ca6e3ca1a679656cad053c7f894b431",
+    "size": 974,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annotation-link",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-062-annotation-link",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-062-annotation-link.pdf",
+    "sha256": "0a2e41b2bf70c8148b1d9fc8c9bb96a4c665bf2fee2a25a497c6bb60a7c9f08d",
+    "size": 928,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-basic",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-063-text-basic",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-063-text-basic.pdf",
+    "sha256": "f44e636cc904d2f7a6c55235e7c8c9e11ef39dbc609a659c0434b47ad72734e6",
+    "size": 818,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-064-text-positioned",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-064-text-positioned.pdf",
+    "sha256": "a1211bc4103bd6929f629fdf5f22bfa01c37e76ea474dd3d8cfb8c623474a377",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "vector-paths",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-065-vector-paths",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-065-vector-paths.pdf",
+    "sha256": "8c3376e4fb33d06708e7b40ec2dacc759a80c48f3a89cf23ad396655f947afbb",
+    "size": 844,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "image-xobject",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-066-image-xobject",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-066-image-xobject.pdf",
+    "sha256": "e88aa5ba1f9ac422b5cdc59c88a7283aa5c150342421531760800194ecdfad62",
+    "size": 974,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annotation-link",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-067-annotation-link",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-067-annotation-link.pdf",
+    "sha256": "089e9bda32ce47872e23bf76f77bba30f216602311a856783de0e0ad7ca38cbc",
+    "size": 928,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-basic",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-068-text-basic",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-068-text-basic.pdf",
+    "sha256": "c754b156110119d081f90040d7f7ea1874a46fc66872a5040bf2c7986d4777aa",
+    "size": 819,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-069-text-positioned",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-069-text-positioned.pdf",
+    "sha256": "a609e90925ad7c234efe39af880ee6d1813460b62ae24b0da4fa6c4a8623a123",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "vector-paths",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-070-vector-paths",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-070-vector-paths.pdf",
+    "sha256": "b1c03f91091f3d260396b0da276c8e8c6d4bb961a3668b6789d7c5eafc899eea",
+    "size": 845,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "image-xobject",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-071-image-xobject",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-071-image-xobject.pdf",
+    "sha256": "513a0e1ae67d6ec643b85d2ba8288f811759bd1e873a27ebfe6335fceafcc50d",
+    "size": 974,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annotation-link",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-072-annotation-link",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-072-annotation-link.pdf",
+    "sha256": "f673166430984d7dec269526e15212f7255f3535f02fdcd6950bf0dd23c2e23a",
+    "size": 928,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-basic",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-073-text-basic",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-073-text-basic.pdf",
+    "sha256": "2596851156cb8e5e77e2feeff40c44848b5991ef3003b58ab7da8608bc9b218e",
+    "size": 819,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-074-text-positioned",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-074-text-positioned.pdf",
+    "sha256": "da9ed288a14c93c14d3843dd382272dffee7b64a0de3961f462c4a6550ad6656",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "vector-paths",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-075-vector-paths",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-075-vector-paths.pdf",
+    "sha256": "5f2e946df59eb9a11715a931dd1099e8b855b3edc572a7ea9f0b95bf55c9a04a",
+    "size": 845,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "image-xobject",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-076-image-xobject",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-076-image-xobject.pdf",
+    "sha256": "9b8fa13eac33b66ec925b778063e99fffe37cb91ebb250b7accf55ce4b4a03ad",
+    "size": 974,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annotation-link",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-077-annotation-link",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-077-annotation-link.pdf",
+    "sha256": "d9e5ed5b46de2a5ef53f50df99de9962435b66dfcfa681e2677cf0f1a5cd5e15",
+    "size": 928,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-basic",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-078-text-basic",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-078-text-basic.pdf",
+    "sha256": "e4a588413a504710c39fc22c3a20f83cfef3d4a9754629cb55a09078bf9a663e",
+    "size": 819,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-079-text-positioned",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-079-text-positioned.pdf",
+    "sha256": "af7bd2fcaf669490565e3edd0322e05ba176a12ad4ec605c409a1a50dee7e0ca",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "vector-paths",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-080-vector-paths",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-080-vector-paths.pdf",
+    "sha256": "62a9ac9e72d61441d37b6ed31427a2b062abe7432a69560ba9a2b456489d3d7f",
+    "size": 843,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "image-xobject",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-081-image-xobject",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-081-image-xobject.pdf",
+    "sha256": "f5789b0d5f7a070686e16472f5c15e755c79b52a1f9835b6c02e5cbd16a2d445",
+    "size": 974,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annotation-link",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-082-annotation-link",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-082-annotation-link.pdf",
+    "sha256": "9563cc8a623fcf684158336b31e42bfc3bbd17ca9d65e5c0d6965cd15d10a1e4",
+    "size": 928,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-basic",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-083-text-basic",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-083-text-basic.pdf",
+    "sha256": "d110f183916ecb945855a8acbcda4d3ec0754d392a95211d970a8a591cfa84fb",
+    "size": 819,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-084-text-positioned",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-084-text-positioned.pdf",
+    "sha256": "4f2d5c62f67b01324be182d612139bf69d7424be36c95dd0bad1e1c5df0bc990",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "vector-paths",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-085-vector-paths",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-085-vector-paths.pdf",
+    "sha256": "37c6b569860657cc957792e10bf46704ceaba8d8b0f9098ec36398379ac4e1b8",
+    "size": 845,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "image-xobject",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-086-image-xobject",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-086-image-xobject.pdf",
+    "sha256": "f3f55430da698d565bd18e372a2b0060936bc16bc72a331d44aae470f04e5d75",
+    "size": 974,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annotation-link",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-087-annotation-link",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-087-annotation-link.pdf",
+    "sha256": "7e08001a1b957ecad228c9417799df09c125303b89bf70191291678b2bac78e5",
+    "size": 928,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-basic",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-088-text-basic",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-088-text-basic.pdf",
+    "sha256": "1773682b533f1c83b86e7c947afc271a006e1434fadb08bf446056d86c58b0c9",
+    "size": 819,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-089-text-positioned",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-089-text-positioned.pdf",
+    "sha256": "308b8ff3e7eb278f7f1ae3b89d7e209c3bf353bb6e0e4feaab4615dc699c6ca2",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "vector-paths",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-090-vector-paths",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-090-vector-paths.pdf",
+    "sha256": "1ccb287e9cb964964984133bb53b132b5b72eac9da06d4528a06870eb67273b3",
+    "size": 844,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "image-xobject",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-091-image-xobject",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-091-image-xobject.pdf",
+    "sha256": "5d942f65427fbcb58ea86908dddfea67a99b49fd301e0ab744bf22c2b0cf58fc",
+    "size": 974,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annotation-link",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-092-annotation-link",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-092-annotation-link.pdf",
+    "sha256": "06c575bb3e9b6e80a4e63c253634e461a440d9fa04b3d91201df898a0bb189a4",
+    "size": 928,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-basic",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-093-text-basic",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-093-text-basic.pdf",
+    "sha256": "e7d01e4614905044588a89715ec577dd8830bc2670d8fd1d58a4167f5319c4b0",
+    "size": 819,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-094-text-positioned",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-094-text-positioned.pdf",
+    "sha256": "f00316c7b597708f2ea92cef9061e0af59e3fb2c91fa684c2c027595b6652463",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "vector-paths",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-095-vector-paths",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-095-vector-paths.pdf",
+    "sha256": "1caea2ea809f31b0f196247992b194dc41105ca884428804b11fee80f285a909",
+    "size": 845,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "image-xobject",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-096-image-xobject",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-096-image-xobject.pdf",
+    "sha256": "1cd06bfe3be2c314f37db905ddb9a75b72bea7e80a5c01cbf9e818553fff5910",
+    "size": 974,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annotation-link",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-097-annotation-link",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-097-annotation-link.pdf",
+    "sha256": "3ddfea8384e1649570586cb3787c895830b5c7d35cf7614fb88690f86bdaa633",
+    "size": 928,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-basic",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-098-text-basic",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-098-text-basic.pdf",
+    "sha256": "0a5e990884299c304ac44165dae97c59df806e10c22deb47cfc949b970e412dc",
+    "size": 819,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-099-text-positioned",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-099-text-positioned.pdf",
+    "sha256": "0584bdaf5efa6e4bd5d25ba40e88aab46ed8616148fd8ba992dd66ba98882f08",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "vector-paths",
+      "micro-pdf",
+      "cycle-01",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-01/working/c01-100-vector-paths",
+    "localPath": "test/fixtures/parity-cycles/cycle-01/working/c01-100-vector-paths.pdf",
+    "sha256": "362ce9f715544057bc8c42c20384ed67fbe0149aa08eb82f9a9a51cc72e50f9c",
+    "size": 845,
+    "source": "Generated micro-PDF"
+  }
+]

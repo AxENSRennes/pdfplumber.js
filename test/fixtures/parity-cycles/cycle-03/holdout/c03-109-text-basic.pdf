@@ -1,0 +1,45 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+2 0 obj
+<<  /Length 111 >>
+stream
+BT
+/F1 13 Tf
+21 161 Td
+(Cycle 3 Case 109) Tj
+0 -18 Td
+(Alpha 763 Beta 112) Tj
+0 -18 Td
+(Mix-10 page text) Tj
+ET
+endstream
+endobj
+3 0 obj
+<< /Type /Page /MediaBox [0 0 288 205] /Resources << /Font << /F1 1 0 R >> >> /Contents 2 0 R >>
+endobj
+4 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+5 0 obj
+<< /Type /Catalog /Pages 4 0 R  >>
+endobj
+6 0 obj
+<< /Title (cycle-03/holdout/c03-109-text-basic) /Creator (pdfplumber.js parity cycle generator) /Producer (pdfplumber.js tests) >>
+endobj
+xref
+0 7
+0000000000 65535 f
+0000000015 00000 n
+0000000085 00000 n
+0000000248 00000 n
+0000000360 00000 n
+0000000417 00000 n
+0000000467 00000 n
+trailer
+<< /Size 7 /Root 5 0 R /Info 6 0 R >>
+startxref
+613
+%%EOF

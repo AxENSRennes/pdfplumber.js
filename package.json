@@ -16,6 +16,7 @@
     "fixtures:generate:parity": "wsl_venv/bin/python scripts/generate-parity-goldens.py",
     "fixtures:generate:external-parity": "wsl_venv/bin/python scripts/generate-external-parity-goldens.py",
     "fixtures:generate:external-holdout-parity": "wsl_venv/bin/python scripts/generate-external-holdout-parity-goldens.py",
+    "fixtures:generate:parity-cycles": "wsl_venv/bin/python scripts/generate-parity-cycle-cases.py",
     "fixtures:download:external": "node scripts/download-external-fixtures.mjs --manifest test/fixtures/external-pdfs/manifest.json",
     "fixtures:download:external-holdout": "node scripts/download-external-fixtures.mjs --manifest test/fixtures/external-holdout-pdfs/manifest.json",
     "fixtures:download:external-all": "node scripts/download-external-fixtures.mjs",
@@ -28,6 +29,8 @@
     "test:compat": "PDFPLUMBER_JS_RUN_COMPAT=1 vitest run test/compat",
     "test:external-parity": "PDFPLUMBER_JS_RUN_EXTERNAL_PARITY=1 vitest run test/parity/pdfplumber.external-parity.test.ts",
     "test:external-holdout-parity": "PDFPLUMBER_JS_RUN_EXTERNAL_HOLDOUT_PARITY=1 vitest run test/parity/pdfplumber.external-holdout-parity.test.ts",
+    "test:cycle-working-parity": "PDFPLUMBER_JS_RUN_CYCLE_WORKING_PARITY=1 vitest run test/parity/pdfplumber.cycle-working-parity.test.ts",
+    "test:cycle-holdout-parity": "PDFPLUMBER_JS_RUN_CYCLE_HOLDOUT_PARITY=1 vitest run test/parity/pdfplumber.cycle-holdout-parity.test.ts",
     "test:lowlevel": "vitest run test/lowlevel",
     "test:parity": "PDFPLUMBER_JS_RUN_PARITY=1 vitest run test/parity",
     "typecheck": "tsc -p tsconfig.json --noEmit"
