@@ -309,6 +309,15 @@ function pdfStreamRepr(store: PdfObjectStore, objectNumber: number | undefined, 
   return `<PDFStream(${objectNumber ?? "?"}): raw=${raw}, {${attrs.join(", ")}}>`;
 }
 
+function cleanPdfBytesLikePython(value: string): string {
+  const bytes = Uint8Array.from([...value].map((char) => char.charCodeAt(0) & 0xff));
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+}
+
 function colorSpaceArrayRepr(store: PdfObjectStore, array: PdfArray): unknown[] {
   return array.map((value) => {
     if (isRef(value)) {
@@ -326,6 +335,7 @@ function colorSpaceArrayRepr(store: PdfObjectStore, array: PdfArray): unknown[] 
     if (isName(value)) return `/'${value.name}'`;
     if (typeof value === "number") return value;
     if (isArray(value)) return colorSpaceArrayRepr(store, value);
+    if (typeof value === "string") return cleanPdfBytesLikePython(value);
     return value;
   });
 }

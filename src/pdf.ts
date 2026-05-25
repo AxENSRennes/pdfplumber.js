@@ -14,7 +14,7 @@ import {
 } from "./pdf/resources.js";
 import { decodePdfStreamText } from "./pdf/streams.js";
 import { pdfNumbersFromString } from "./pdf/tokenizer.js";
-import { decodePdfLiteralBytesAsUtf8ThenUtf16, decodePdfStringLikePdfminer, parsePdfDictBytes } from "./pdf-strings.js";
+import { decodePdfLiteralBytesAsUtf8ThenUtf16, decodePdfStringLikePdfminer, parsePdfDictBytes, parsePdfLiteralStringBytes } from "./pdf-strings.js";
 import type {
   BBox,
   ColorOp,
@@ -226,35 +226,9 @@ function readPdfLiteralString(text: string, key: string): string | null {
 }
 
 function readPdfLiteralStringAt(text: string, start: number): string | null {
-  let i = start;
-  if (i < 0) return null;
-  i += 1;
-  let depth = 1;
-  let out = "";
-  for (; i < text.length; i += 1) {
-    const char = text[i];
-    if (char === "\\") {
-      const next = text[++i];
-      if (next == null) break;
-      if (/[0-7]/.test(next)) {
-        let octal = next;
-        for (let count = 0; count < 2 && /[0-7]/.test(text[i + 1] ?? ""); count += 1) octal += text[++i];
-        out += String.fromCharCode(Number.parseInt(octal, 8));
-      } else {
-        out += ({ n: "\n", r: "\r", t: "\t", b: "\b", f: "\f" } as Record<string, string>)[next] ?? next;
-      }
-    } else if (char === "(") {
-      depth += 1;
-      out += char;
-    } else if (char === ")") {
-      depth -= 1;
-      if (depth === 0) return decodePdfLiteralValue(out);
-      out += char;
-    } else {
-      out += char;
-    }
-  }
-  return null;
+  if (start < 0) return null;
+  const parsed = parsePdfLiteralStringBytes(text, start);
+  return parsed ? decodePdfStringBytes(Array.from(parsed.bytes)) : null;
 }
 
 function readPdfHexString(text: string, key: string): string | null {
@@ -295,9 +269,22 @@ function canonicalFontName(name: string | undefined): string | undefined {
   return standardFontMetrics(stripped)?.fontName ?? stripped;
 }
 
+function pythonBytesBody(value: string): string {
+  return pythonBytesName(value).replace(/^b'/, "").replace(/'$/, "");
+}
+
 function pdfminerCjkFontName(name: string | undefined): string | undefined {
   if (!name || !/[^\x20-\x7e]/.test(name)) return undefined;
-  return pythonBytesName(name);
+  const bytes = Uint8Array.from([...name].map((char) => char.charCodeAt(0) & 0xff));
+  const key = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const aliases: Record<string, string> = {
+    cbcecce5: "SimSun,Regular",
+    badacce5: "SimHei,Regular",
+    bfaccce55f474232333132: "SimKai,Regular",
+    b7c2cbce5f474232333132: "SimFang,Regular",
+    c1a5cae9: "SimLi,Regular"
+  };
+  return aliases[key] ?? pythonBytesBody(name);
 }
 
 function fontFamilyName(name: string | undefined): string | undefined {
@@ -430,6 +417,7 @@ function mapFonts(pdfPage: any, styles: Record<string, any>, fontRecords: FontRe
       vertical: Boolean(style.vertical ?? fontObj?.vertical ?? best?.vertical),
       cidFallback:
         shouldUseCidFallback(best) ||
+        Boolean((best?.subtype === "Type0" || best?.subtype === "CIDFontType2") && !best?.hasToUnicode) ||
         Boolean(
           fontObj?.composite &&
             !fontObj?.missingFile &&
@@ -510,7 +498,6 @@ function parseDrawPath(data: ArrayLike<number>): ParsedPath[] {
     } else if (op === 4) {
       if (current) {
         current.closed = true;
-        if (current.fromRect) current.forceCurve = true;
         const last = current.points[current.points.length - 1];
         if (start && last) {
           if (last[0] !== start[0] || last[1] !== start[1]) {
@@ -548,15 +535,18 @@ function isAxisAlignedRect(path: ParsedPath, inferFromGeometry = false): boolean
   if (path.fromRect) return true;
   void inferFromGeometry;
   const pts = [...path.points];
-  if (path.closed) {
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  const geometricallyClosed = path.closed || (first != null && last != null && cleanNumber(first[0]) === cleanNumber(last[0]) && cleanNumber(first[1]) === cleanNumber(last[1]));
+  if (geometricallyClosed) {
     while (pts.length > 1) {
-      const first = pts[0];
-      const last = pts[pts.length - 1];
-      if (first[0] !== last[0] || first[1] !== last[1]) break;
+      const firstPoint = pts[0];
+      const lastPoint = pts[pts.length - 1];
+      if (cleanNumber(firstPoint[0]) !== cleanNumber(lastPoint[0]) || cleanNumber(firstPoint[1]) !== cleanNumber(lastPoint[1])) break;
       pts.pop();
     }
   }
-  if (!path.closed || path.hasCurve || pts.length !== 4) return false;
+  if (!geometricallyClosed || pts.length !== 4) return false;
   const xs = new Set(pts.map((p) => cleanNumber(p[0])));
   const ys = new Set(pts.map((p) => cleanNumber(p[1])));
   return xs.size === 2 && ys.size === 2;
@@ -655,7 +645,30 @@ export function extractPageObjects(
     };
   };
   const colorFromHint = (fallback: unknown, queue: ColorOp[], currentColorSpace: string): { color: unknown; colorSpace: string | null; fromHint: boolean } => {
-    const hint = queue.shift();
+    const hintMatchesExtremeFallback = (hint: ColorOp, target: 0 | 1): boolean => {
+      if (hint.pattern || !hint.components.length) return false;
+      if (hint.colorSpace === "DeviceCMYK" && hint.components.length === 4) {
+        const [c, m, y, k] = hint.components;
+        return target === 0
+          ? Math.abs(c) < 1e-9 && Math.abs(m) < 1e-9 && Math.abs(y) < 1e-9 && k >= 0
+          : hint.components.every((component) => Math.abs(component) < 1e-9);
+      }
+      return hint.components.every((component) => Math.abs(component - target) < 1e-9);
+    };
+    let hint: ColorOp | undefined = queue[0];
+    if (typeof fallback === "string" && /^#(?:0{6}|f{6})$/i.test(fallback)) {
+      const target = fallback.toLowerCase() === "#000000" ? 0 : 1;
+      const matchingIndex = queue.findIndex((candidate) => hintMatchesExtremeFallback(candidate, target));
+      if (matchingIndex >= 0) {
+        hint = queue.splice(matchingIndex, 1)[0];
+      } else if (hint && !hintMatchesExtremeFallback(hint, target)) {
+        return { color: rgbColor(fallback), colorSpace: currentColorSpace === "DeviceGray" ? "DeviceGray" : currentColorSpace, fromHint: false };
+      } else {
+        hint = queue.shift();
+      }
+    } else {
+      hint = queue.shift();
+    }
     if (hint?.pattern) return { color: hint.pattern, colorSpace: "Pattern", fromHint: true };
     if (hint?.components.length === 1) return { color: [cleanNumber(hint.components[0])], colorSpace: hint.colorSpace, fromHint: true };
     if (hint) return { color: hint.components.map(cleanNumber), colorSpace: hint.colorSpace, fromHint: true };
@@ -1011,15 +1024,6 @@ export function extractPageObjects(
                 );
               }
             } else {
-              if (transformed.length === 1 && (state.dash != null || (transformed[0][0] === 0 && transformed[0][1] === 0))) {
-                const rawPointBBox = pathBBox(transformed);
-                curves.push(
-                  rectFromPdfBBox(rawPointBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
-                    pts: transformed.map((point) => pointToPageCoords(point, pageWidth, pageHeight, pageRotate).map(cleanNumber)),
-                    ...vectorExtras
-                  }, coordOffset)
-                );
-              }
               for (let p = 0; p < transformed.length - 1; p += 1) {
                 const rawLineBBox = pathBBox([transformed[p], transformed[p + 1]]);
                 lines.push(rectFromPdfBBox(rawLineBBox, pageWidth, pageHeight, pageRotate, pageNumber, "line", doctopOffset, lineExtras, coordOffset));
@@ -1028,7 +1032,7 @@ export function extractPageObjects(
           } else if (isFill) {
             const rawBBox = pathBBox(transformed);
             const lineEndpoints = !path.hasCurve ? collinearPathEndpoints(transformed) : null;
-            if (lineEndpoints && (rawBBox[0] === rawBBox[2] || rawBBox[1] === rawBBox[3])) {
+            if (isStroke && lineEndpoints && (rawBBox[0] === rawBBox[2] || rawBBox[1] === rawBBox[3])) {
               const rawLineBBox = pathBBox(lineEndpoints);
               lines.push(rectFromPdfBBox(rawLineBBox, pageWidth, pageHeight, pageRotate, pageNumber, "line", doctopOffset, vectorExtras, coordOffset));
             } else if (isAxisAlignedRect({ ...path, points: transformed }, inferRectFromGeometry)) {
@@ -1038,7 +1042,7 @@ export function extractPageObjects(
                   linewidth: isStroke || state.lineWidthSet ? linewidth : 0
                 }, coordOffset)
               );
-            } else if (transformed.length > 1 && !(isStroke && (rawBBox[0] === rawBBox[2] || rawBBox[1] === rawBBox[3]))) {
+            } else if (transformed.length > 0 && !(isStroke && transformed.length > 1 && (rawBBox[0] === rawBBox[2] || rawBBox[1] === rawBBox[3]))) {
               const curve = rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
                 pts: transformed.map((point) => pointToPageCoords(point, pageWidth, pageHeight, pageRotate).map(cleanNumber)),
                 ...vectorExtras,
@@ -1053,9 +1057,24 @@ export function extractPageObjects(
       case pdfjs.OPS.paintImageXObject:
       case pdfjs.OPS.paintInlineImageXObject:
       case pdfjs.OPS.paintImageMaskXObject: {
-        const resource = imageResources[imageIndex++];
-        const srcWidth = Number(resource?.width ?? args?.[1] ?? args?.[0]?.width ?? 0);
-        const srcHeight = Number(resource?.height ?? args?.[2] ?? args?.[0]?.height ?? 0);
+        const resourceBacked = typeof args?.[0] === "string";
+        const resource = resourceBacked ? imageResources[imageIndex] : undefined;
+        const argWidth = Number(args?.[1] ?? args?.[0]?.width ?? 0);
+        const argHeight = Number(args?.[2] ?? args?.[0]?.height ?? 0);
+        if (
+          resource &&
+          resource.width != null &&
+          resource.height != null &&
+          argWidth &&
+          argHeight &&
+          (Math.abs(argWidth - resource.width) > 1e-6 || Math.abs(argHeight - resource.height) > 1e-6)
+        ) {
+          break;
+        }
+        if (resourceBacked && !resource && imageResources.length > 0) break;
+        if (resource) imageIndex += 1;
+        const srcWidth = Number(resource?.width ?? argWidth);
+        const srcHeight = Number(resource?.height ?? argHeight);
         const rawBBox = bboxFromPoints([
           contentPoint(applyMatrix([0, 0], state.ctm)),
           contentPoint(applyMatrix([1, 0], state.ctm)),
@@ -1094,8 +1113,8 @@ export function annotationToObject(
   const pdfplumberContents = (value: unknown): string | null => (typeof value === "string" ? value : null);
   const objectNumber = Number.parseInt(String(annotation.id ?? ""), 10);
   const annotationObject = Number.isFinite(objectNumber) ? objects?.get(objectNumber) : undefined;
-  const rawRect = annotation.subtype === "Text" ? extractRawBox(annotationObject, "Rect") : null;
-  const rect = rawRect ?? (annotation.rect as number[]);
+  const rawRect = extractRawBox(annotationObject, "Rect");
+  const rect = rawRect ? normalizeRawBox(rawRect) : (annotation.rect as number[]);
   const rawContents = annotation.contentsObj?.str ?? annotation.contents ?? null;
   const rawContentsFromObject = annotationObject ? readPdfDictStringLikePdfplumber(annotationObject, "Contents") : null;
   const rawTitle = annotationObject ? readPdfDictStringLikePdfplumber(annotationObject, "T") : null;

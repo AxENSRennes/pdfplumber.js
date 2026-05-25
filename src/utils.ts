@@ -269,6 +269,10 @@ export function colorValue(value: unknown): unknown {
 }
 
 export function graphicColorValue(value: unknown, colorSpace: string): unknown {
+  if (colorSpace === "DeviceCMYK" && Array.isArray(value) && value.length === 1 && typeof value[0] === "number") {
+    return [0, 0, 0, cleanNumber(value[0])];
+  }
+  if (colorSpace === "DeviceCMYK" && typeof value === "number") return [0, 0, 0, cleanNumber(value)];
   if (Array.isArray(value) && value.length === 1 && typeof value[0] === "number") return cleanNumber(value[0]);
   if (colorSpace === "DeviceGray" && Array.isArray(value) && value.length === 1 && typeof value[0] === "number") return cleanNumber(value[0]);
   if (colorSpace === "DeviceGray" && typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value)) {
