@@ -6,3 +6,5 @@ wsl_venv/
 .pytest_cache/
 __pycache__/
 *.pyc
+test/fixtures/external-pdfs/*.pdf
+test/fixtures/external-holdout-pdfs/*.pdf
