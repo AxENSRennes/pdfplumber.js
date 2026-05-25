@@ -643,24 +643,30 @@ export function extractPageObjects(
   const colorFromHint = (fallback: unknown, queue: ColorOp[], currentColorSpace: string): { color: unknown; colorSpace: string | null; fromHint: boolean } => {
     const hintMatchesExtremeFallback = (hint: ColorOp, target: 0 | 1): boolean => {
       if (hint.pattern || !hint.components.length) return false;
+      const tolerance = 1e-5;
       if (hint.colorSpace === "DeviceCMYK" && hint.components.length === 4) {
         const [c, m, y, k] = hint.components;
         return target === 0
-          ? Math.abs(c) < 1e-9 && Math.abs(m) < 1e-9 && Math.abs(y) < 1e-9 && k >= 0
-          : hint.components.every((component) => Math.abs(component) < 1e-9);
+          ? Math.abs(c) <= tolerance && Math.abs(m) <= tolerance && Math.abs(y) <= tolerance && k >= 0
+          : hint.components.every((component) => Math.abs(component) <= tolerance);
       }
-      return hint.components.every((component) => Math.abs(component - target) < 1e-9);
+      return hint.components.every((component) => Math.abs(component - target) <= tolerance);
     };
     let hint: ColorOp | undefined = queue[0];
     if (typeof fallback === "string" && /^#(?:0{6}|f{6})$/i.test(fallback)) {
       const target = fallback.toLowerCase() === "#000000" ? 0 : 1;
-      const matchingIndex = queue.findIndex((candidate) => hintMatchesExtremeFallback(candidate, target));
-      if (matchingIndex >= 0) {
-        hint = queue.splice(matchingIndex, 1)[0];
-      } else if (hint && !hintMatchesExtremeFallback(hint, target)) {
-        return { color: rgbColor(fallback), colorSpace: currentColorSpace === "DeviceGray" ? "DeviceGray" : currentColorSpace, fromHint: false };
-      } else {
+      const rawTintColorSpace = hint && !["DeviceGray", "DeviceRGB", "DeviceCMYK", "ICCBased"].includes(hint.colorSpace);
+      if (rawTintColorSpace) {
         hint = queue.shift();
+      } else {
+        const matchingIndex = queue.findIndex((candidate) => hintMatchesExtremeFallback(candidate, target));
+        if (matchingIndex >= 0) {
+          hint = queue.splice(matchingIndex, 1)[0];
+        } else if (hint && !hintMatchesExtremeFallback(hint, target)) {
+          return { color: rgbColor(fallback), colorSpace: currentColorSpace === "DeviceGray" ? "DeviceGray" : currentColorSpace, fromHint: false };
+        } else {
+          hint = queue.shift();
+        }
       }
     } else {
       hint = queue.shift();
