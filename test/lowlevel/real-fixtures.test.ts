@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { open } from "../../src/index.js";
 import {
   extractPageContent,
   parseFontRecords,
@@ -50,6 +51,19 @@ describe("low-level parsing against imported PDF fixtures", () => {
 
     expect(parseTransformOps(content)).toEqual([[399, 0, 0, 400, 0, 0]]);
     expect(parseImageResources(page, objects, content).map((image) => [image.name, image.width, image.height, image.bits])).toEqual([["Im", 399, 400, 1]]);
+  });
+
+  it("keeps raw XObject names and metadata when PDF.js emits image masks as inline paint ops", async () => {
+    const pdf = await open(path.join(repoRoot, "pdfplumber-python/tests/pdfs/issue-203-decimalize.pdf"));
+    try {
+      expect(pdf.pages[0].images.slice(0, 3).map((image) => [image.name, image.srcsize, image.bits, image.colorspace])).toEqual([
+        ["Im0", [1204, 1718], 8, ["/'DeviceRGB'"]],
+        ["Ma0", [8, 25], 1, [null]],
+        ["Ma1", [1480, 1630], 1, [null]]
+      ]);
+    } finally {
+      await pdf.close();
+    }
   });
 
   it("keeps page-box normalization stable on an imported pdfplumber fixture", () => {

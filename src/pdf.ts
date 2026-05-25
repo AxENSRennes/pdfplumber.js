@@ -269,10 +269,6 @@ function canonicalFontName(name: string | undefined): string | undefined {
   return standardFontMetrics(stripped)?.fontName ?? stripped;
 }
 
-function pythonBytesBody(value: string): string {
-  return pythonBytesName(value).replace(/^b'/, "").replace(/'$/, "");
-}
-
 function pdfminerCjkFontName(name: string | undefined): string | undefined {
   if (!name || !/[^\x20-\x7e]/.test(name)) return undefined;
   const bytes = Uint8Array.from([...name].map((char) => char.charCodeAt(0) & 0xff));
@@ -284,7 +280,7 @@ function pdfminerCjkFontName(name: string | undefined): string | undefined {
     b7c2cbce5f474232333132: "SimFang,Regular",
     c1a5cae9: "SimLi,Regular"
   };
-  return aliases[key] ?? pythonBytesBody(name);
+  return aliases[key] ?? pythonBytesName(name);
 }
 
 function fontFamilyName(name: string | undefined): string | undefined {
@@ -1058,9 +1054,20 @@ export function extractPageObjects(
       case pdfjs.OPS.paintInlineImageXObject:
       case pdfjs.OPS.paintImageMaskXObject: {
         const resourceBacked = typeof args?.[0] === "string";
-        const resource = resourceBacked ? imageResources[imageIndex] : undefined;
         const argWidth = Number(args?.[1] ?? args?.[0]?.width ?? 0);
         const argHeight = Number(args?.[2] ?? args?.[0]?.height ?? 0);
+        const resourceCandidate = imageResources[imageIndex];
+        const dimensionsMatch = (resource: ImageResource | undefined): boolean =>
+          Boolean(
+            resource &&
+              resource.width != null &&
+              resource.height != null &&
+              argWidth &&
+              argHeight &&
+              Math.abs(argWidth - resource.width) <= 1e-6 &&
+              Math.abs(argHeight - resource.height) <= 1e-6
+          );
+        const resource = resourceBacked ? resourceCandidate : dimensionsMatch(resourceCandidate) ? resourceCandidate : undefined;
         if (
           resource &&
           resource.width != null &&
