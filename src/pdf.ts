@@ -321,10 +321,11 @@ function chooseFontRecord(fontRecords: FontRecord[], used: Set<number>, fontObjN
   );
   const exact = exactMatches[0];
   if (exact) {
+    const exactBase = stripSubsetPrefix(exact.baseFont);
     const parentType0 = fontRecords.find(
       (record) =>
         record.subtype === "Type0" &&
-        (record.baseFont === exact.baseFont || record.baseFont.startsWith(`${exact.baseFont}-`)) &&
+        (stripSubsetPrefix(record.baseFont) === exactBase || stripSubsetPrefix(record.baseFont).startsWith(`${exactBase}-`)) &&
         (record.hasToUnicode || !exact.hasToUnicode)
     );
     return parentType0
@@ -413,7 +414,7 @@ function mapFonts(pdfPage: any, styles: Record<string, any>, fontRecords: FontRe
       vertical: Boolean(style.vertical ?? fontObj?.vertical ?? best?.vertical),
       cidFallback:
         shouldUseCidFallback(best) ||
-        Boolean((best?.subtype === "Type0" || best?.subtype === "CIDFontType2") && !best?.hasToUnicode) ||
+        Boolean(best?.subtype === "CIDFontType2" && !best?.hasToUnicode) ||
         Boolean(
           fontObj?.composite &&
             !fontObj?.missingFile &&

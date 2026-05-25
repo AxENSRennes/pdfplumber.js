@@ -49,6 +49,7 @@ describe("low-level pdfminer string, glyph, and compatibility behavior", () => {
     expect(glyphTextLikePdfminer({ originalCharCode: 321, glyphUnicode: "x", font: font({ cidFallback: true }) })).toBe("(cid:321)");
     expect(glyphTextLikePdfminer({ originalCharCode: 65, glyphUnicode: "\u0001", font: font() })).toBe("A");
     expect(glyphTextLikePdfminer({ originalCharCode: 13, glyphUnicode: "\r", font: font() })).toBe("(cid:13)");
+    expect(glyphTextLikePdfminer({ originalCharCode: 121, glyphUnicode: "\r", font: font() })).toBe("y");
 
     expect(
       glyphWidthLikePdfminer(

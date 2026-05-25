@@ -77,7 +77,10 @@ export function glyphTextLikePdfminer(input: GlyphTextInput): string {
   if (glyphUnicode && glyphUnicode.length === 1 && glyphUnicode.charCodeAt(0) < 32 && glyphUnicode !== "\r" && glyphUnicode !== "\n") {
     if (typeof originalCharCode === "number" && originalCharCode >= 32 && originalCharCode <= 126) return String.fromCharCode(originalCharCode);
   }
-  if (glyphUnicode === "\r") return "(cid:13)";
+  if (glyphUnicode === "\r") {
+    if (typeof originalCharCode === "number" && originalCharCode >= 32 && originalCharCode <= 126) return String.fromCharCode(originalCharCode);
+    return "(cid:13)";
+  }
   return glyphUnicode ?? "";
 }
 
