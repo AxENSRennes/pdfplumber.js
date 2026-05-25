@@ -547,9 +547,8 @@ function isAxisAlignedRect(path: ParsedPath, inferFromGeometry = false): boolean
     }
   }
   if (!geometricallyClosed || pts.length !== 4) return false;
-  const xs = new Set(pts.map((p) => cleanNumber(p[0])));
-  const ys = new Set(pts.map((p) => cleanNumber(p[1])));
-  return xs.size === 2 && ys.size === 2;
+  const [[x0, y0], [x1, y1], [x2, y2], [x3, y3]] = pts.map((point) => [cleanNumber(point[0]), cleanNumber(point[1])] as Point);
+  return (x0 === x1 && y1 === y2 && x2 === x3 && y3 === y0) || (y0 === y1 && x1 === x2 && y2 === y3 && x3 === x0);
 }
 
 function pathSignature(data: ArrayLike<number>): string {
@@ -648,13 +647,14 @@ export function extractPageObjects(
     const hintMatchesExtremeFallback = (hint: ColorOp, target: 0 | 1): boolean => {
       if (hint.pattern || !hint.components.length) return false;
       const tolerance = 1e-5;
+      const quantizedFallbackTolerance = 0.002;
       if ((hint.colorSpace === "DeviceCMYK" || hint.colorSpace === "ICCBased") && hint.components.length === 4) {
         const [c, m, y, k] = hint.components;
         return target === 0
           ? Math.abs(c) <= tolerance && Math.abs(m) <= tolerance && Math.abs(y) <= tolerance && k >= 0
           : hint.components.every((component) => Math.abs(component) <= tolerance);
       }
-      return hint.components.every((component) => Math.abs(component - target) <= tolerance);
+      return hint.components.every((component) => Math.abs(component - target) <= quantizedFallbackTolerance);
     };
     let hint: ColorOp | undefined = queue[0];
     if (typeof fallback === "string" && /^#(?:0{6}|f{6})$/i.test(fallback)) {
@@ -1011,7 +1011,7 @@ export function extractPageObjects(
           const transformed = operandPoints.map((point) => contentPoint(applyMatrix(point, state.ctm)));
           const inferRectFromGeometry = rawPath === undefined;
           if (transformed.length < 2) {
-            if (isStroke && !isFill && transformed.length === 1 && !path.trailingMove) {
+            if ((isStroke || isFill) && transformed.length === 1 && paths.length === 1 && !path.trailingMove) {
               const rawBBox = pathBBox(transformed);
               curves.push(
                 rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
@@ -1053,7 +1053,7 @@ export function extractPageObjects(
           } else if (isFill) {
             const rawBBox = pathBBox(transformed);
             const lineEndpoints = !path.hasCurve ? collinearPathEndpoints(transformed) : null;
-            if (isStroke && lineEndpoints && (rawBBox[0] === rawBBox[2] || rawBBox[1] === rawBBox[3])) {
+            if (lineEndpoints && (transformed.length === 2 || (transformed.length === 3 && path.explicitClose))) {
               const rawLineBBox = pathBBox(lineEndpoints);
               lines.push(rectFromPdfBBox(rawLineBBox, pageWidth, pageHeight, pageRotate, pageNumber, "line", doctopOffset, vectorExtras, coordOffset));
             } else if (isAxisAlignedRect({ ...path, points: transformed }, inferRectFromGeometry)) {
