@@ -269,7 +269,7 @@ function canonicalFontName(name: string | undefined): string | undefined {
   return standardFontMetrics(stripped)?.fontName ?? stripped;
 }
 
-function pdfminerCjkFontName(name: string | undefined): string | undefined {
+function pdfminerCjkFontName(name: string | undefined, allowAliases = true): string | undefined {
   if (!name || !/[^\x20-\x7e]/.test(name)) return undefined;
   const bytes = Uint8Array.from([...name].map((char) => char.charCodeAt(0) & 0xff));
   const key = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -280,7 +280,7 @@ function pdfminerCjkFontName(name: string | undefined): string | undefined {
     b7c2cbce5f474232333132: "SimFang,Regular",
     c1a5cae9: "SimLi,Regular"
   };
-  return aliases[key] ?? pythonBytesName(name);
+  return (allowAliases ? aliases[key] : undefined) ?? pythonBytesName(name);
 }
 
 function fontFamilyName(name: string | undefined): string | undefined {
@@ -349,7 +349,7 @@ function resolveFontName(best: FontRecord | undefined, fontObjName: string | und
   if (best?.subtype === "Type3" || fontObjName === "Type3") return "unknown";
   const standard = standardFontMetrics(best?.baseFont) ?? standardFontMetrics(fontObjName);
   const rawName = fontObjName ?? best?.baseFont;
-  const cjkName = pdfminerCjkFontName(rawName);
+  const cjkName = pdfminerCjkFontName(rawName, best?.subtype !== "Type0" && best?.subtype !== "CIDFontType2");
   if (cjkName) return cjkName;
   return pythonBytesName(standard?.fontName ?? rawName ?? fallbackId);
 }
