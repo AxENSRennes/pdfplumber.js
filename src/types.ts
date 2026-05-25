@@ -174,6 +174,8 @@ export interface ParsedPath {
   hasCurve: boolean;
   lastOp: number;
   fromRect?: boolean;
+  explicitClose?: boolean;
+  trailingMove?: boolean;
   forceCurve?: boolean;
 }
 

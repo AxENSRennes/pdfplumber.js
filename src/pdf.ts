@@ -472,7 +472,7 @@ function parseDrawPath(data: ArrayLike<number>): ParsedPath[] {
     const op = data[i++];
     if (op === 0) {
       const point: Point = [Number(data[i++]), Number(data[i++])];
-      current = { points: [point], closed: false, hasCurve: false, lastOp: op };
+      current = { points: [point], closed: false, hasCurve: false, lastOp: op, trailingMove: paths.length > 0 };
       start = point;
       paths.push(current);
     } else if (op === 1) {
@@ -494,6 +494,7 @@ function parseDrawPath(data: ArrayLike<number>): ParsedPath[] {
       }
     } else if (op === 4) {
       if (current) {
+        current.explicitClose = true;
         current.closed = true;
         const last = current.points[current.points.length - 1];
         if (start && last) {
@@ -529,6 +530,8 @@ function parseDrawPath(data: ArrayLike<number>): ParsedPath[] {
 
 function isAxisAlignedRect(path: ParsedPath, inferFromGeometry = false): boolean {
   if (path.forceCurve) return false;
+  if (path.hasCurve) return false;
+  if (path.fromRect && path.explicitClose) return false;
   if (path.fromRect) return true;
   void inferFromGeometry;
   const pts = [...path.points];
@@ -1004,6 +1007,18 @@ export function extractPageObjects(
           const operandPoints = rawPath ? path.points : path.points.map(snapPathOperandPoint);
           const transformed = operandPoints.map((point) => contentPoint(applyMatrix(point, state.ctm)));
           const inferRectFromGeometry = rawPath === undefined;
+          if (transformed.length < 2) {
+            if (isStroke && !isFill && transformed.length === 1 && !path.trailingMove) {
+              const rawBBox = pathBBox(transformed);
+              curves.push(
+                rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
+                  pts: transformed.map((point) => pointToPageCoords(point, pageWidth, pageHeight, pageRotate).map(cleanNumber)),
+                  ...vectorExtras
+                }, coordOffset)
+              );
+            }
+            continue;
+          }
           if (isStroke && !isFill) {
             const rawBBox = pathBBox(transformed);
             if (path.closed || path.hasCurve || transformed.length > 2) {
