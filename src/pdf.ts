@@ -648,7 +648,7 @@ export function extractPageObjects(
     const hintMatchesExtremeFallback = (hint: ColorOp, target: 0 | 1): boolean => {
       if (hint.pattern || !hint.components.length) return false;
       const tolerance = 1e-5;
-      if (hint.colorSpace === "DeviceCMYK" && hint.components.length === 4) {
+      if ((hint.colorSpace === "DeviceCMYK" || hint.colorSpace === "ICCBased") && hint.components.length === 4) {
         const [c, m, y, k] = hint.components;
         return target === 0
           ? Math.abs(c) <= tolerance && Math.abs(m) <= tolerance && Math.abs(y) <= tolerance && k >= 0
@@ -682,7 +682,10 @@ export function extractPageObjects(
       const component = parseInt(fallback.slice(1, 3), 16);
       return { color: [component === 128 ? 0.5 : cleanNumber(component / 255)], colorSpace: "DeviceGray", fromHint: false };
     }
-    if (typeof fallback === "string" && /^#[0-9a-f]{6}$/i.test(fallback)) return { color: rgbColor(fallback), colorSpace: "DeviceRGB", fromHint: false };
+    if (typeof fallback === "string" && /^#[0-9a-f]{6}$/i.test(fallback)) {
+      const preservedColorSpace = ["ICCBased", "Separation"].includes(currentColorSpace) ? currentColorSpace : "DeviceRGB";
+      return { color: rgbColor(fallback), colorSpace: preservedColorSpace, fromHint: false };
+    }
     return { color: rgbColor(fallback), colorSpace: null, fromHint: false };
   };
   const setColorFromGeneric = (target: "fill" | "stroke", fallback: unknown): void => {
