@@ -50,11 +50,25 @@ Start with 20-30 files rather than a huge corpus:
 ## Integration Shape
 
 The external corpus lives in `test/fixtures/external-pdfs/` and is described
-by `test/fixtures/external-pdfs/manifest.json`. It currently contains 53 PDFs,
-about 124 MB total, from PDF.js, veraPDF, IRS, DOL, NASA, USPTO, UN ODS, arXiv,
-SCOTUS, GovInfo Federal Register, Wikimedia Commons / Internet Archive,
-company investor-relations sites, U.S. financial regulators, Treasury/Fiscal
-Data, and the World Bank Open Knowledge Repository.
+by `test/fixtures/external-pdfs/manifest.json`. The PDFs are not checked into
+Git; each manifest entry records `sourceUrl`, `size`, and `sha256` so another
+machine can recreate the corpus exactly. Restore the stabilization corpus with:
+
+```bash
+npm run fixtures:download:external
+```
+
+Restore both external corpora with:
+
+```bash
+npm run fixtures:download:external-all
+```
+
+The stabilization corpus currently contains 53 PDFs, about 124 MB total, from
+PDF.js, veraPDF, IRS, DOL, NASA, USPTO, UN ODS, arXiv, SCOTUS, GovInfo Federal
+Register, Wikimedia Commons / Internet Archive, company investor-relations
+sites, U.S. financial regulators, Treasury/Fiscal Data, and the World Bank Open
+Knowledge Repository.
 
 The external parity goldens intentionally compare object-level page snapshots.
 For short PDFs, every page is snapshotted. For long PDFs, the generator selects
@@ -83,6 +97,12 @@ The anti-overfit holdout lives in
 PDFs, about 65 MB total, from public companies, government forms, USPTO, FDA,
 CMS, arXiv, Federal Register/GovInfo, the European Banking Authority, the Bank
 of Japan, PDF.js, and SCOTUS.
+
+Restore it with:
+
+```bash
+npm run fixtures:download:external-holdout
+```
 
 The holdout is intentionally separate from the stabilization corpus. Generate
 its Python reference once with:
