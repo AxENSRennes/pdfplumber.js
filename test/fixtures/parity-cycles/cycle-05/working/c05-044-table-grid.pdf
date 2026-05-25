@@ -1,0 +1,61 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+2 0 obj
+<<  /Length 531 >>
+stream
+0.75 w
+24 54 m 24 166 l S
+82 54 m 82 166 l S
+156 54 m 156 166 l S
+244 54 m 244 166 l S
+24 54 m 244 54 l S
+24 82 m 244 82 l S
+24 110 m 244 110 l S
+24 138 m 244 138 l S
+24 166 m 244 166 l S
+BT
+/F1 9 Tf
+1 0 0 1 28 148 Tm (Item) Tj
+1 0 0 1 86 148 Tm (Qty) Tj
+1 0 0 1 160 148 Tm (Amount) Tj
+1 0 0 1 28 120 Tm (A5) Tj
+1 0 0 1 86 120 Tm (9) Tj
+1 0 0 1 160 120 Tm (132.00) Tj
+1 0 0 1 28 92 Tm (B44) Tj
+1 0 0 1 86 92 Tm (6) Tj
+1 0 0 1 160 92 Tm (308.50) Tj
+1 0 0 1 28 64 Tm (Total) Tj
+1 0 0 1 86 64 Tm () Tj
+1 0 0 1 160 64 Tm (440.50) Tj
+ET
+endstream
+endobj
+3 0 obj
+<< /Type /Page /MediaBox [0 0 280 220] /Resources << /Font << /F1 1 0 R >> >> /Contents 2 0 R >>
+endobj
+4 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+5 0 obj
+<< /Type /Catalog /Pages 4 0 R  >>
+endobj
+6 0 obj
+<< /Title (cycle-05/working/c05-044-table-grid) /Creator (pdfplumber.js parity cycle generator) /Producer (pdfplumber.js tests) >>
+endobj
+xref
+0 7
+0000000000 65535 f
+0000000015 00000 n
+0000000085 00000 n
+0000000668 00000 n
+0000000780 00000 n
+0000000837 00000 n
+0000000887 00000 n
+trailer
+<< /Size 7 /Root 5 0 R /Info 6 0 R >>
+startxref
+1033
+%%EOF

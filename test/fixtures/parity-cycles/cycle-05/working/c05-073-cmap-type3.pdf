@@ -1,0 +1,79 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<<  /Length 375 >>
+stream
+/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def
+/CMapName /CycleToUnicode def
+/CMapType 2 def
+1 begincodespacerange
+<0000> <FFFF>
+endcodespacerange
+4 beginbfchar
+<0001> <0041>
+<0002> <FB01>
+<0003> <0416>
+<0004> <003F>
+endbfchar
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end
+endstream
+endobj
+2 0 obj
+<< /Type /Font /Subtype /CIDFontType2 /BaseFont /CycleCID573 /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor << /Type /FontDescriptor /FontName /CycleCID573 /Flags 32 /Ascent 718 /Descent -207 /CapHeight 718 /ItalicAngle 0 /StemV 80 >> /DW 600 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type0 /BaseFont /CycleCID573 /Encoding /Identity-H /DescendantFonts [2 0 R] /ToUnicode 1 0 R >>
+endobj
+4 0 obj
+<<  /Length 39 >>
+stream
+500 0 0 0 500 500 d1
+50 50 400 400 re f
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type3 /Name /T3 /FontBBox [0 0 500 500] /FontMatrix [0.001 0 0 0.001 0 0] /CharProcs << /A 4 0 R >> /Encoding << /Type /Encoding /Differences [65 /A] >> /FirstChar 65 /LastChar 65 /Widths [500] /Resources << >> >>
+endobj
+6 0 obj
+<<  /Length 79 >>
+stream
+BT /F1 16 Tf 24 120 Td <0001000200030004> Tj ET
+BT /F2 22 Tf 24 78 Td (A) Tj ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /MediaBox [0 0 210 160] /Resources << /Font << /F1 3 0 R /F2 5 0 R >> >> /Contents 6 0 R >>
+endobj
+8 0 obj
+<< /Type /Pages /Kids [7 0 R] /Count 1 >>
+endobj
+9 0 obj
+<< /Type /Catalog /Pages 8 0 R  >>
+endobj
+10 0 obj
+<< /Title (cycle-05/working/c05-073-cmap-type3) /Creator (pdfplumber.js parity cycle generator) /Producer (pdfplumber.js tests) >>
+endobj
+xref
+0 11
+0000000000 65535 f
+0000000015 00000 n
+0000000442 00000 n
+0000000746 00000 n
+0000000882 00000 n
+0000000972 00000 n
+0000001226 00000 n
+0000001356 00000 n
+0000001478 00000 n
+0000001535 00000 n
+0000001585 00000 n
+trailer
+<< /Size 11 /Root 9 0 R /Info 10 0 R >>
+startxref
+1732
+%%EOF

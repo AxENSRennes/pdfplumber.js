@@ -1,0 +1,1842 @@
+[
+  {
+    "categories": [
+      "table-text",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-001-table-text",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-001-table-text.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "58c8dca84d229b237a8a0b55564aad8dbb59fbd8165629d756c607205092c11e",
+    "size": 1060,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "page-boxes",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-002-page-boxes",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-002-page-boxes.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "2e03bebf9f54a83347f247f247c403598e6466a625254385bbf08f59155f38e2",
+    "size": 861,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "paths-colors",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-003-paths-colors",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-003-paths-colors.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "7488a45a8b6dab22c1a4fd5a473b8974865f55d6e0e8c5eb83c1c044c1d36f5a",
+    "size": 961,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "images-masks",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-004-images-masks",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-004-images-masks.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "37df7b0c00cc4cb80e1ce7955196eab08b41665eeb90396c02c496abd7eb500e",
+    "size": 1146,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "real-pdf",
+      "encrypted",
+      "password",
+      "cycle-05",
+      "working",
+      "selected-page"
+    ],
+    "id": "cycle-05/working/c05-005-real-encrypted",
+    "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
+    "localPath": "pdfplumber-python/tests/pdfs/password-example.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "76593a57d9787a86050815e830a4c69425f5c95017fdb6f509074658932056e2",
+    "size": 49755,
+    "source": "Vendored upstream pdfplumber regression PDF",
+    "sourceUrl": "https://github.com/jsvine/pdfplumber/tree/stable/tests/pdfs"
+  },
+  {
+    "categories": [
+      "annots-widgets",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-006-annots-widgets",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-006-annots-widgets.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "30ed49e368e58612303c3ed76045280ba8e6cb2c32f0db66f77ce4e63b2ef627",
+    "size": 1234,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "cmap-type3",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-007-cmap-type3",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-007-cmap-type3.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "652df3a7e8d1f5e6354875395960c715e4d352069c0046d26a7b4b72638d1b27",
+    "size": 2017,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "marked-content",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-008-marked-content",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-008-marked-content.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "4b462874a676ac03b0ee8a3d17cf34192426b0cd8cfa30398c6f5978b5418370",
+    "size": 891,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-009-text-positioned",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-009-text-positioned.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "6b6be988fefc20faa1134c13d8ba432b45ac1ba6001e7a09155dfab40998e7b4",
+    "size": 810,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "real-pdf",
+      "tagged-pdf",
+      "mcid",
+      "cycle-05",
+      "working",
+      "selected-page"
+    ],
+    "id": "cycle-05/working/c05-010-real-tagged-pdf",
+    "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
+    "localPath": "pdfplumber-python/tests/pdfs/mcid_example.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "46ffbb251fbefd6f0b0e7410f504a3b0370f7f5c98f374b10cd1907fb400ee65",
+    "size": 24694,
+    "source": "Vendored upstream pdfplumber regression PDF",
+    "sourceUrl": "https://github.com/jsvine/pdfplumber/tree/stable/tests/pdfs"
+  },
+  {
+    "categories": [
+      "table-grid",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-011-table-grid",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-011-table-grid.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "fde80c1f0b8115571fcf4e1f3409f26ba42baa53b0f4a4940f7fadbd5976e6c6",
+    "size": 1240,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "table-text",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-012-table-text",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-012-table-text.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "28e573c82183df449b20cf2d90f2eab9653a20b5d666c5fb19d42efc12b4e451",
+    "size": 1064,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "page-boxes",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-013-page-boxes",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-013-page-boxes.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "757762d51b0d0ea05706ed9a73b6c78468f6bb32e9838dc991412b98d68e7148",
+    "size": 862,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "paths-colors",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-014-paths-colors",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-014-paths-colors.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "413553b2ad000c05d0ae2e0e3e265fd8a9a77854ee251bc8ed6aa8320e684b40",
+    "size": 960,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "real-pdf",
+      "images",
+      "tagged-pdf",
+      "cycle-05",
+      "working",
+      "selected-page"
+    ],
+    "id": "cycle-05/working/c05-015-real-images",
+    "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
+    "localPath": "pdfplumber-python/tests/pdfs/image_structure.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "ce664b97ca3f765ad6a82352c2555cbfcd687d554722341413d633178164fad4",
+    "size": 45966,
+    "source": "Vendored upstream pdfplumber regression PDF",
+    "sourceUrl": "https://github.com/jsvine/pdfplumber/tree/stable/tests/pdfs"
+  },
+  {
+    "categories": [
+      "forms-content",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-016-forms-content",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-016-forms-content.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "6d538beaf4f664a3ec8dd3fc18edb94c39d67ab6d24b75b00d36a3afe29f3eac",
+    "size": 1080,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annots-widgets",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-017-annots-widgets",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-017-annots-widgets.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "a17624af9dcaf4244670582071b9b2f8fbeffd803d4da01729869d94eeb0b96c",
+    "size": 1236,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "cmap-type3",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-018-cmap-type3",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-018-cmap-type3.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "b19f6b963338b1d08795d4899933bf0e4d3fc12ad0572aa353e47c51435ad628",
+    "size": 2020,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "marked-content",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-019-marked-content",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-019-marked-content.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "780a199694b97a1f7db0efa45d3200d9d1cdf31653a37b27b70bbf8b5eecfa60",
+    "size": 892,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "real-pdf",
+      "dedupe",
+      "tables",
+      "cycle-05",
+      "working",
+      "selected-page"
+    ],
+    "id": "cycle-05/working/c05-020-real-dedupe",
+    "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
+    "localPath": "pdfplumber-python/tests/pdfs/issue-71-duplicate-chars.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "c0f4504ee7c5f0e98d091db6ff866c8421694baa5f053efa6b82d9e19233e8ca",
+    "size": 72467,
+    "source": "Vendored upstream pdfplumber regression PDF",
+    "sourceUrl": "https://github.com/jsvine/pdfplumber/tree/stable/tests/pdfs"
+  },
+  {
+    "categories": [
+      "text-options",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-021-text-options",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-021-text-options.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "1eb96d6d4bb7ffd7018297793516a8c89af7dba94593df006d97548a994a28bd",
+    "size": 880,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "table-grid",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-022-table-grid",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-022-table-grid.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "ad56ed04e1eef5465a9cd74076ded895db1612be069c17e4f158cd20fe387393",
+    "size": 1241,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "table-text",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-023-table-text",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-023-table-text.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "0a9f81f16bdcca0b2d15b8aa9b1251d26dbac0460a3495baf01cd2df06d360bd",
+    "size": 1066,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "page-boxes",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-024-page-boxes",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-024-page-boxes.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "aae377e3d1f3e696525d3a5377f7c2da14f1c9dda56fed896774b58d082d7014",
+    "size": 862,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "real-pdf",
+      "government-form",
+      "tables",
+      "cycle-05",
+      "working",
+      "selected-page"
+    ],
+    "id": "cycle-05/working/c05-025-real-government-form",
+    "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
+    "localPath": "pdfplumber-python/tests/pdfs/nics-background-checks-2015-11.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "4f0ae6e017b0e97de211da8fd97316e55bd927af5740d6ce95e1b7b1539f9407",
+    "size": 90468,
+    "source": "Vendored upstream pdfplumber regression PDF",
+    "sourceUrl": "https://github.com/jsvine/pdfplumber/tree/stable/tests/pdfs"
+  },
+  {
+    "categories": [
+      "images-masks",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-026-images-masks",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-026-images-masks.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "fbbd369179adf06f8afc9538adbfb38f40549fc8c424d8dd27694c3fd9fe99ea",
+    "size": 1146,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "forms-content",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-027-forms-content",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-027-forms-content.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "822d2cb931e391e5745c1e2ce63091ba8a98a3c603561e0c4a5dfa621afa0dde",
+    "size": 1080,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annots-widgets",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-028-annots-widgets",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-028-annots-widgets.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "bc7d279a9b7b721b9cd2ecd870d934cecb899752a85f79c57c6f5ca4af906147",
+    "size": 1236,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "cmap-type3",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-029-cmap-type3",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-029-cmap-type3.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "59f8a79d33243cbeab7e77d29b8caa30e80cb7bc76957cc1cc1dc140d17d8be9",
+    "size": 2020,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "real-pdf",
+      "ligatures",
+      "fonts",
+      "cycle-05",
+      "working",
+      "selected-page"
+    ],
+    "id": "cycle-05/working/c05-030-real-ligatures",
+    "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
+    "localPath": "pdfplumber-python/tests/pdfs/issue-598-example.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "022dc4c57d995bea2317537fd91ca3b08d267f1c20469b9104e3a682e0b7dad8",
+    "size": 504551,
+    "source": "Vendored upstream pdfplumber regression PDF",
+    "sourceUrl": "https://github.com/jsvine/pdfplumber/tree/stable/tests/pdfs"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-031-text-positioned",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-031-text-positioned.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "6a295236d6b8e4c58e1eb2068021170b3f95200b26d8abd0242b53fa2ba8b0f8",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-options",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-032-text-options",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-032-text-options.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "5ca04d88edbb5cd6a9017b55ca9015f8510145430ba9ac17be9771cb2f01deb3",
+    "size": 880,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "table-grid",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-033-table-grid",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-033-table-grid.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "d2034305b181dca7249b12c20b380c69e64b5e1e492852dafd1801063b350ce0",
+    "size": 1241,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "table-text",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-034-table-text",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-034-table-text.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "344fc882127fd3cbea23ccf1e062856fc19fb2fadbbb71328a3c9744b96620f7",
+    "size": 1066,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "real-pdf",
+      "tagged-pdf",
+      "office",
+      "cycle-05",
+      "working",
+      "selected-page"
+    ],
+    "id": "cycle-05/working/c05-035-real-tagged-pdf",
+    "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
+    "localPath": "pdfplumber-python/tests/pdfs/word365_structure.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "3301c8da647514abf8fa145470bd0367daa3d8b0a1e7281f1c6850b50889ee53",
+    "size": 99253,
+    "source": "Vendored upstream pdfplumber regression PDF",
+    "sourceUrl": "https://github.com/jsvine/pdfplumber/tree/stable/tests/pdfs"
+  },
+  {
+    "categories": [
+      "paths-colors",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-036-paths-colors",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-036-paths-colors.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "6273a3ab92b08a9da60d47c13ad7490a37850290c977bf84317c842b91d435f2",
+    "size": 960,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "images-masks",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-037-images-masks",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-037-images-masks.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "4e9f92c50b310b5fa9bf234026778c02cfe2777f73d8b9da08630f391d3a82c6",
+    "size": 1146,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "forms-content",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-038-forms-content",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-038-forms-content.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "c82284a4ce4c101725b00c64c8417afbb74337f8565645dc4eca7c670fe6eb33",
+    "size": 1080,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annots-widgets",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-039-annots-widgets",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-039-annots-widgets.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "caee40a7cc110de02922b39db4fd7eb3a1aad4eb9f500ed646ec0335ac40a379",
+    "size": 1236,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "real-pdf",
+      "word-tolerance",
+      "layout",
+      "cycle-05",
+      "working",
+      "selected-page"
+    ],
+    "id": "cycle-05/working/c05-040-real-word-tolerance",
+    "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
+    "localPath": "pdfplumber-python/tests/pdfs/issue-987-test.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "353c84f0bdd88d17f04b87896e02bc0a54ad169da56b8ecf1aeacab9a75213bc",
+    "size": 8805,
+    "source": "Vendored upstream pdfplumber regression PDF",
+    "sourceUrl": "https://github.com/jsvine/pdfplumber/tree/stable/tests/pdfs"
+  },
+  {
+    "categories": [
+      "marked-content",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-041-marked-content",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-041-marked-content.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "42bbc841a3b1e11736b7fa1d1f25d28a23848b29fc11047ba4ebfd50bd4bdddb",
+    "size": 892,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-042-text-positioned",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-042-text-positioned.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "bac27e5dab6b854eb420d54d334da7c328c753324ef564c8110886928b29d5b9",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-options",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-043-text-options",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-043-text-options.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "18da1b7d9cb599eff8ae2b4ed8f84700d1eeb4726914d2db20100d1b649039c2",
+    "size": 880,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "table-grid",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-044-table-grid",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-044-table-grid.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "44a4c6fae5d62c015bd3b68f298a2185f32ddfa977718ac9b39bbaa9e606618f",
+    "size": 1242,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "real-pdf",
+      "legal",
+      "search",
+      "cycle-05",
+      "working",
+      "selected-page"
+    ],
+    "id": "cycle-05/working/c05-045-real-legal",
+    "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
+    "localPath": "pdfplumber-python/tests/pdfs/scotus-transcript-p1.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "c63508c7b195e6b6c398311fb1f3a36de31f604e3ae94b486a6776f1f144b379",
+    "size": 84509,
+    "source": "Vendored upstream pdfplumber regression PDF",
+    "sourceUrl": "https://github.com/jsvine/pdfplumber/tree/stable/tests/pdfs"
+  },
+  {
+    "categories": [
+      "page-boxes",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-046-page-boxes",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-046-page-boxes.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "2e1020a12a95c2b07e29c31530be768563ca69eeb54e46c3dd0c40898f1cf1ff",
+    "size": 862,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "paths-colors",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-047-paths-colors",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-047-paths-colors.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "ae67e6c7ac8c05f27fcd99a8393016290c7488f5ceacbad54b23817080814113",
+    "size": 961,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "images-masks",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-048-images-masks",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-048-images-masks.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "c92817b26a29796d9cd5aa84e12a25dbd9f81a362aee2fc2cf973a4eb8daf6b4",
+    "size": 1146,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "forms-content",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-049-forms-content",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-049-forms-content.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "809a06b7c28cc7dd72b1d0c639fcf3c89341ad7e8cfe18e6680262d1cebb71e7",
+    "size": 1080,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "real-pdf",
+      "annotations",
+      "rotation",
+      "cycle-05",
+      "working",
+      "selected-page"
+    ],
+    "id": "cycle-05/working/c05-050-real-annotations",
+    "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
+    "localPath": "pdfplumber-python/tests/pdfs/annotations-rotated-90.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "0c680ab11ec73b71cd879d5af80f698dfbfce1d1e2086365fbacb6225fd23468",
+    "size": 170174,
+    "source": "Vendored upstream pdfplumber regression PDF",
+    "sourceUrl": "https://github.com/jsvine/pdfplumber/tree/stable/tests/pdfs"
+  },
+  {
+    "categories": [
+      "cmap-type3",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-051-cmap-type3",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-051-cmap-type3.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "9af1a91cd268178162df7857a9af352e6767dbee8354a7575ecfd1e8628bf2cf",
+    "size": 2020,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "marked-content",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-052-marked-content",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-052-marked-content.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "d20d009272f6e17863f042aafa4ab4b062c3e003a1aef710fe69d073be696191",
+    "size": 892,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-053-text-positioned",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-053-text-positioned.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "710040f478b5f49a1d990f5f9ba9840a9193f4836aa712eb07834ce1c30d9134",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-options",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-054-text-options",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-054-text-options.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "f7a21306a7a11de4ac4a5fd775e8d41fdb73abf8e710b65fddcadb9cd26a5a21",
+    "size": 880,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "real-pdf",
+      "long-document",
+      "selected-last-page",
+      "cycle-05",
+      "working",
+      "selected-page"
+    ],
+    "id": "cycle-05/working/c05-055-real-long-document",
+    "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
+    "localPath": "pdfplumber-python/tests/pdfs/WARN-Report-for-7-1-2015-to-03-25-2016.pdf",
+    "selectedPages": [
+      15
+    ],
+    "sha256": "f52f80bd057313c8abec2e854c65c4d96658e72744c836e81d3048d8a5861046",
+    "size": 478619,
+    "source": "Vendored upstream pdfplumber regression PDF",
+    "sourceUrl": "https://github.com/jsvine/pdfplumber/tree/stable/tests/pdfs"
+  },
+  {
+    "categories": [
+      "table-text",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-056-table-text",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-056-table-text.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "30708321c4ad6361e3849e31e0a31f3beac3ff6c596838b681880ba95feb49d2",
+    "size": 1066,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "page-boxes",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-057-page-boxes",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-057-page-boxes.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "7ce8a23e089f54ef4158be8cb41ed994e6d7d2a95db5bfb1d1d8852f3b8bfcd5",
+    "size": 862,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "paths-colors",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-058-paths-colors",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-058-paths-colors.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "1705c203dc7f8e32588f5177101152b8b096067e24b3d0bee5fa32aa8c5b35eb",
+    "size": 960,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "images-masks",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-059-images-masks",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-059-images-masks.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "9f8aad9b4734e4c01f91954c0b6aba0318e56f70a775a081c76bb0a8c57b3662",
+    "size": 1146,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "real-pdf",
+      "malformed",
+      "recovery",
+      "cycle-05",
+      "working",
+      "selected-page"
+    ],
+    "id": "cycle-05/working/c05-060-real-malformed",
+    "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
+    "localPath": "pdfplumber-python/tests/pdfs/malformed-from-issue-932.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "471f16c8716a7fa8cda228ad293a4df97fe16f184ff3d952f26fc9e38a348ff3",
+    "size": 61037,
+    "source": "Vendored upstream pdfplumber regression PDF",
+    "sourceUrl": "https://github.com/jsvine/pdfplumber/tree/stable/tests/pdfs"
+  },
+  {
+    "categories": [
+      "annots-widgets",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-061-annots-widgets",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-061-annots-widgets.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "9f34a0eea3178595f9b24e922a0b7c6a1fa01df28fd7c47487a5d2de8e9f867a",
+    "size": 1236,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "cmap-type3",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-062-cmap-type3",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-062-cmap-type3.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "a7e4813e9a2a1c8721ca1505aa41ca100e9d24b9cad8f7cc2984b31a43ac4733",
+    "size": 2020,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "marked-content",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-063-marked-content",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-063-marked-content.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "80e5b9c6457ed0ab9e766cc7eb90e5d090a3932bfdb0a15fd9ea63097300ca69",
+    "size": 892,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-064-text-positioned",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-064-text-positioned.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "e3a70ab9dbd2bb05f59e76030c6c1f94747c9e00d7abcf5e1ffcbf71f8769552",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "real-pdf",
+      "page-boxes",
+      "geometry",
+      "cycle-05",
+      "working",
+      "selected-page"
+    ],
+    "id": "cycle-05/working/c05-065-real-page-boxes",
+    "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
+    "localPath": "pdfplumber-python/tests/pdfs/page-boxes-example.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "e0be9f61f14ec31f14d77fa0db26c1013eed67b662d8fdd4aa77fd4226cebb5f",
+    "size": 1187,
+    "source": "Vendored upstream pdfplumber regression PDF",
+    "sourceUrl": "https://github.com/jsvine/pdfplumber/tree/stable/tests/pdfs"
+  },
+  {
+    "categories": [
+      "table-grid",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-066-table-grid",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-066-table-grid.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "c514a9ea8150eb3293fcc4062903ca05946579a925b6505ee24a7cc1af665a49",
+    "size": 1242,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "table-text",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-067-table-text",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-067-table-text.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "0de36e05e9d9923063e1799463e8a78ed77b2e6ca3e6a3f294f4cd9377e978a9",
+    "size": 1066,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "page-boxes",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-068-page-boxes",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-068-page-boxes.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "a57ccadda3fe8a5c010b63bf7a1f51ae4d33812d90dcb52b476d8e7060c7b398",
+    "size": 862,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "paths-colors",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-069-paths-colors",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-069-paths-colors.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "3f037acce28d4d3ec19e081928e68ed2f4414cd70ee465154a872f8002260bbd",
+    "size": 961,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "real-pdf",
+      "tagged-pdf",
+      "structure",
+      "cycle-05",
+      "working",
+      "selected-page"
+    ],
+    "id": "cycle-05/working/c05-070-real-tagged-pdf",
+    "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
+    "localPath": "pdfplumber-python/tests/pdfs/pdf_structure.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "247db629cecbb2d6c58eaac7531dfb82125608881c6433e620689c807900c64c",
+    "size": 34467,
+    "source": "Vendored upstream pdfplumber regression PDF",
+    "sourceUrl": "https://github.com/jsvine/pdfplumber/tree/stable/tests/pdfs"
+  },
+  {
+    "categories": [
+      "forms-content",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-071-forms-content",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-071-forms-content.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "3e8ff2f7b6dd2570276fb31c55dbe7c409b9d94926807314280e254dfab3696b",
+    "size": 1080,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annots-widgets",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-072-annots-widgets",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-072-annots-widgets.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "0930d4df78ad044daf0db5f15b319004856c683f78f319dc71e820f7d89e21e1",
+    "size": 1236,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "cmap-type3",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-073-cmap-type3",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-073-cmap-type3.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "27bd28ac6818b87ea3ef0200165fa271b6a9a6f4137bef6fd768788684235f23",
+    "size": 2020,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "marked-content",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-074-marked-content",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-074-marked-content.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "a2c40bc7d0ebf053057d5b21a31b4e73f2a0d51773076942f2260dec9064054e",
+    "size": 892,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "real-pdf",
+      "curves",
+      "tables",
+      "cycle-05",
+      "working",
+      "selected-page"
+    ],
+    "id": "cycle-05/working/c05-075-real-curves",
+    "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
+    "localPath": "pdfplumber-python/tests/pdfs/table-curves-example.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "d68dce5cfaae86c5282b50603d60bc2601af23ecfd26245a9966382b5d3fdb70",
+    "size": 153741,
+    "source": "Vendored upstream pdfplumber regression PDF",
+    "sourceUrl": "https://github.com/jsvine/pdfplumber/tree/stable/tests/pdfs"
+  },
+  {
+    "categories": [
+      "text-options",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-076-text-options",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-076-text-options.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "9e40a6b527ff0cbdd9e457d5d0af1b278ac783a4ce15110c78b1eeebc7f91dd6",
+    "size": 880,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "table-grid",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-077-table-grid",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-077-table-grid.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "a1f148eb003fe8bdeea0fde9fe472d0ff5d11cd69363c42713c69788e3c5c0ed",
+    "size": 1242,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "table-text",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-078-table-text",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-078-table-text.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "5aec17cda9d20c16fce3a08efa197ac23059b381bba4f1a32fd2dd8e0326c48e",
+    "size": 1066,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "page-boxes",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-079-page-boxes",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-079-page-boxes.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "b4c60801d8bff5472df755f5a60a256dd05fabeaa1808ce98c2fb1ae6171fda2",
+    "size": 862,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "real-pdf",
+      "financial-table",
+      "text-table",
+      "cycle-05",
+      "working",
+      "selected-page"
+    ],
+    "id": "cycle-05/working/c05-080-real-financial-table",
+    "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
+    "localPath": "pdfplumber-python/tests/pdfs/senate-expenditures.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "16921f0fc9b2c6039b23b694e0317917118ad7dd2b3a95a88518b7e144df527c",
+    "size": 53481,
+    "source": "Vendored upstream pdfplumber regression PDF",
+    "sourceUrl": "https://github.com/jsvine/pdfplumber/tree/stable/tests/pdfs"
+  },
+  {
+    "categories": [
+      "images-masks",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-081-images-masks",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-081-images-masks.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "641af399883963eb32954ce86f272f176d063b5e41edcc817cc160f09ff7dfca",
+    "size": 1146,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "forms-content",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-082-forms-content",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-082-forms-content.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "28272309152b1c3ab49a5f894304244ef5db0fad8b402dbf0a5fd666ca1c42a2",
+    "size": 1080,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annots-widgets",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-083-annots-widgets",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-083-annots-widgets.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "d6660f64796c89f2053cca7e7e1b373af6921b0335c6e298592e9f0558136523",
+    "size": 1236,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "cmap-type3",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-084-cmap-type3",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-084-cmap-type3.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "a25c30d6a33d785fe4fb9811f48c8dd44f36826bd2b458f930f27adaf3a4d020",
+    "size": 2020,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "real-pdf",
+      "vertical-text",
+      "laparams",
+      "cycle-05",
+      "working",
+      "selected-page"
+    ],
+    "id": "cycle-05/working/c05-085-real-vertical-text",
+    "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
+    "localPath": "pdfplumber-python/tests/pdfs/issue-192-example.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "705af4b4e52a68d4d574216618a7d037001d9fbd1b7fa5a75aba25c903e230d9",
+    "size": 169520,
+    "source": "Vendored upstream pdfplumber regression PDF",
+    "sourceUrl": "https://github.com/jsvine/pdfplumber/tree/stable/tests/pdfs"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-086-text-positioned",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-086-text-positioned.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "edf13ec502f85d4d2f220ac73abbc8a9c7b928e04ad6d17c82bd92cc88e66ed2",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-options",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-087-text-options",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-087-text-options.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "7a2b986d37c32ab012e0678c2bd3afa1d1c40760ce035c4c19964ba418225f61",
+    "size": 880,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "table-grid",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-088-table-grid",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-088-table-grid.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "35754242fd116c185c4ca0736c915fb2c9002841de986366f64e0e48b2ad1260",
+    "size": 1242,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "table-text",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-089-table-text",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-089-table-text.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "485a79468c762d75608096177dde8d7eb23bd6d66baaa6984b6b828cf99e64ce",
+    "size": 1066,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "real-pdf",
+      "long-document",
+      "selected-middle-page",
+      "cycle-05",
+      "working",
+      "selected-page"
+    ],
+    "id": "cycle-05/working/c05-090-real-long-document",
+    "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
+    "localPath": "pdfplumber-python/tests/pdfs/chelsea_pdta.pdf",
+    "selectedPages": [
+      32
+    ],
+    "sha256": "e9823b5527fed648c9b4a891b0c018d75a4acfa3697f9bfa91b2f8e5097579e0",
+    "size": 2944560,
+    "source": "Vendored upstream pdfplumber regression PDF",
+    "sourceUrl": "https://github.com/jsvine/pdfplumber/tree/stable/tests/pdfs"
+  },
+  {
+    "categories": [
+      "paths-colors",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-091-paths-colors",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-091-paths-colors.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "4323abb1d2e76db336c6926e8448117a66c8f28b211ccb802cb811da6ce74869",
+    "size": 961,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "images-masks",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-092-images-masks",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-092-images-masks.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "f8f0fd79504654d4569355922cc62472d1ecc6464f459414c8316bc036051f88",
+    "size": 1146,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "forms-content",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-093-forms-content",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-093-forms-content.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "10ccbc755e37bfffaefde6acd3a38c7d2259a74e67cb3118472d51a088aa816e",
+    "size": 1080,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "annots-widgets",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-094-annots-widgets",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-094-annots-widgets.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "f27427763da721c0875f857a5595490a818bb537c06e7081b7e7429e633bb171",
+    "size": 1236,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "real-pdf",
+      "encrypted",
+      "password",
+      "cycle-05",
+      "working",
+      "selected-page"
+    ],
+    "id": "cycle-05/working/c05-095-real-encrypted",
+    "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
+    "localPath": "pdfplumber-python/tests/pdfs/password-example.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "76593a57d9787a86050815e830a4c69425f5c95017fdb6f509074658932056e2",
+    "size": 49755,
+    "source": "Vendored upstream pdfplumber regression PDF",
+    "sourceUrl": "https://github.com/jsvine/pdfplumber/tree/stable/tests/pdfs"
+  },
+  {
+    "categories": [
+      "marked-content",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-096-marked-content",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-096-marked-content.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "b98047c218abfc17c475d5afeaa9d2b61d10d728854db9903663f708efe56a2d",
+    "size": 892,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-positioned",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-097-text-positioned",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-097-text-positioned.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "e086ba548b71b14468c6fcf7ecb9c2aa5d57e3bef7789fe544361a9a4d96d2fb",
+    "size": 811,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "text-options",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-098-text-options",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-098-text-options.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "5c284d61efb9fba866ad5d2c457d2f68794f4c67e3eb04d1045d8854fbc07694",
+    "size": 880,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "table-grid",
+      "micro-pdf",
+      "cycle-05",
+      "working"
+    ],
+    "generator": "scripts/generate-parity-cycle-cases.py",
+    "id": "cycle-05/working/c05-099-table-grid",
+    "licenseOrTerms": "Generated locally for parity testing; no external license.",
+    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-099-table-grid.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "23f3105d7125b2e2f0d1c98fa7b439d5edd536dbd1cd69863a213d3d902debf5",
+    "size": 1242,
+    "source": "Generated micro-PDF"
+  },
+  {
+    "categories": [
+      "real-pdf",
+      "tagged-pdf",
+      "mcid",
+      "cycle-05",
+      "working",
+      "selected-page"
+    ],
+    "id": "cycle-05/working/c05-100-real-tagged-pdf",
+    "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
+    "localPath": "pdfplumber-python/tests/pdfs/mcid_example.pdf",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "46ffbb251fbefd6f0b0e7410f504a3b0370f7f5c98f374b10cd1907fb400ee65",
+    "size": 24694,
+    "source": "Vendored upstream pdfplumber regression PDF",
+    "sourceUrl": "https://github.com/jsvine/pdfplumber/tree/stable/tests/pdfs"
+  }
+]

@@ -1,0 +1,49 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+2 0 obj
+<<  /Length 47 >>
+stream
+BT /F1 12 Tf 24 180 Td (Widget link 6-96) Tj ET
+endstream
+endobj
+3 0 obj
+<< /Type /Annot /Subtype /Link /Rect [22 172 132 192] /Border [0 0 0] /A << /S /URI /URI (https://example.test/cycle/6/96) >> >>
+endobj
+4 0 obj
+<< /Type /Annot /Subtype /Text /Rect [24 132 44 152] /Contents (Note contents) /T (Reviewer) >>
+endobj
+5 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Tx /T (field) /V (value) /Rect [24 92 128 114] >>
+endobj
+6 0 obj
+<< /Type /Page /MediaBox [0 0 220 220] /Resources << /Font << /F1 1 0 R >> >> /Contents 2 0 R /Annots [3 0 R 4 0 R 5 0 R] >>
+endobj
+7 0 obj
+<< /Type /Pages /Kids [6 0 R] /Count 1 >>
+endobj
+8 0 obj
+<< /Type /Catalog /Pages 7 0 R /AcroForm << /Fields [5 0 R] >> >>
+endobj
+9 0 obj
+<< /Title (cycle-06/working/c06-096-annots-widgets) /Creator (pdfplumber.js parity cycle generator) /Producer (pdfplumber.js tests) >>
+endobj
+xref
+0 10
+0000000000 65535 f
+0000000015 00000 n
+0000000085 00000 n
+0000000183 00000 n
+0000000327 00000 n
+0000000438 00000 n
+0000000541 00000 n
+0000000681 00000 n
+0000000738 00000 n
+0000000819 00000 n
+trailer
+<< /Size 10 /Root 8 0 R /Info 9 0 R >>
+startxref
+969
+%%EOF

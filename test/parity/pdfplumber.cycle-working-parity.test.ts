@@ -4,7 +4,7 @@ import { goldenPath, readParityGoldensAt, runParityScenario } from "./helpers.js
 
 const shouldRun = process.env.PDFPLUMBER_JS_RUN_CYCLE_WORKING_PARITY === "1";
 const describeCycleWorking = shouldRun ? describe : describe.skip;
-const cycles = (process.env.PDFPLUMBER_JS_CYCLES ?? "1,2,3")
+const cycles = (process.env.PDFPLUMBER_JS_CYCLES ?? "4,5,6")
   .split(",")
   .map((value) => Number.parseInt(value.trim(), 10))
   .filter(Number.isFinite);
