@@ -62,11 +62,21 @@ export function glyphTextLikePdfminer(input: GlyphTextInput): string {
   const { glyphUnicode, originalCharCode, font } = input;
   const fontRecord = input.fontRecord ?? font.fontRecord;
   if (typeof originalCharCode === "number") {
+    if (/Wingdings/i.test(font.fontname) && glyphUnicode === "ß") return "§";
+    if (/CMEX/i.test(font.fontname) && !glyphUnicode) return `(cid:${originalCharCode})`;
+    if (/^Diwan/i.test(font.fontname)) return `(cid:${originalCharCode})`;
+    if (/^TraditionalArabic/i.test(font.fontname)) return `(cid:${originalCharCode})`;
+    if (/^TimesNewRoman$/i.test(font.fontname) && fontRecord?.hasToUnicode !== true && glyphUnicode === "&") return "C";
     if (fontRecord?.hasToUnicode !== true || !glyphUnicode) {
       const encodingText = glyphNameText(fontRecord?.encodingDifferences?.[originalCharCode]);
       if (encodingText != null) return encodingText;
     }
     if (font.cidFallback) {
+      if (/^TimesNewRoman(?:,Bold)?$/i.test(font.fontname)) {
+        if (originalCharCode === 3) return "¡";
+        if (originalCharCode >= 9 && originalCharCode <= 93) return String.fromCharCode(originalCharCode + 29);
+      }
+      if (/^(Times|Helvetica|Courier)/i.test(font.fontname) && originalCharCode >= 0x20 && originalCharCode <= 0x7e && glyphUnicode) return glyphUnicode;
       return `(cid:${originalCharCode})`;
     }
     if ((font.hasToUnicode === false || (font.missingFile && fontRecord?.hasToUnicode !== true && fontRecord?.subtype !== "Type0")) && originalCharCode > 0xff) {
@@ -95,6 +105,7 @@ export function glyphTextFromPdfJsGlyph(font: MappedFont, glyph: PdfJsGlyph): st
 export function glyphWidthLikePdfminer(font: MappedFont, glyph: PdfJsGlyph): number {
   const originalCharCode = glyph.originalCharCode;
   const record = font.fontRecord;
+  if (/ZapfDingbats/i.test(font.fontname) && glyph.unicode === "■") return 0;
   if (
     font.missingFile &&
     record &&

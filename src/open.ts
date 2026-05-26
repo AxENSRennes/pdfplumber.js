@@ -10,6 +10,7 @@ import { PdfPlumberDocumentImpl } from "./document.js";
 import { buildLayoutObjects } from "./layout.js";
 import { collectGraphicsHintsFromContent } from "./pdf/content.js";
 import { parsePdfDocument } from "./pdf/document.js";
+import { asArray, isRef } from "./pdf/primitives.js";
 import {
   extractPageContent,
   parseColorSpaceResources,
@@ -18,7 +19,7 @@ import {
   parsePageFontObjectNumbers
 } from "./pdf/resources.js";
 import { PdfPlumberPageImpl } from "./page.js";
-import { shouldEmulatePdfminerOpenError, shouldSuppressPagesLikePdfminer, validateStreamsLikePdfminer } from "./pdfminer-compat.js";
+import { annotationStringDecodeErrorLikePdfminer, shouldEmulatePdfminerOpenError, shouldSuppressPagesLikePdfminer, validateStreamsLikePdfminer } from "./pdfminer-compat.js";
 import {
   annotationToObject,
   extractPageObjects,
@@ -51,6 +52,21 @@ function transformOpsMatch(rawTransforms: Matrix[], operatorTransforms: Matrix[]
     const operator = operatorTransforms[index];
     return raw.every((value, i) => Math.abs(value - Number(operator[i] ?? Number.NaN)) < 1e-6);
   });
+}
+
+function sortAnnotationsByRawPageOrder(annotationList: any[], pageModel: ReturnType<ReturnType<typeof parsePdfDocument>["getPageModel"]> | undefined, store: ReturnType<typeof parsePdfDocument>): any[] | null {
+  const annots = asArray(store.resolve(pageModel?.dict?.get("Annots")));
+  const objectOrder = annots?.filter(isRef).map((ref) => ref.objectNumber) ?? [];
+  if (!objectOrder.length) return null;
+  const rank = new Map(objectOrder.map((objectNumber, index) => [objectNumber, index]));
+  const withRanks = annotationList.map((annotation, index) => {
+    const objectNumber = Number.parseInt(String(annotation.id ?? ""), 10);
+    return { annotation, index, rank: rank.get(objectNumber) };
+  });
+  if (!withRanks.some((item) => item.rank != null)) return null;
+  return withRanks
+    .sort((a, b) => (a.rank ?? Number.POSITIVE_INFINITY) - (b.rank ?? Number.POSITIVE_INFINITY) || a.index - b.index)
+    .map((item) => item.annotation);
 }
 
 export async function open(input: PDFInput, options: OpenOptions = {}): Promise<PDFPlumberDocument> {
@@ -154,13 +170,23 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
     const annotations = await pdfPage.getAnnotations({ intent: "display" }).catch(() => []);
     const annotationList = annotations as any[];
     const canSortAnnotationIds = annotationList.every((annot: any) => Number.isFinite(Number.parseInt(String(annot.id ?? ""), 10)));
+    const rawOrderSorted = sortAnnotationsByRawPageOrder(annotationList, pageModel, store);
     const annotationIdSorted =
-      canSortAnnotationIds && annotationList.some((annot: any) => annot.subtype === "Popup")
+      !rawOrderSorted && canSortAnnotationIds && annotationList.some((annot: any) => annot.subtype === "Popup")
         ? [...annotationList].sort((a: any, b: any) => Number.parseInt(String(a.id ?? ""), 10) - Number.parseInt(String(b.id ?? ""), 10))
         : null;
-    const sortedAnnotations = annotationIdSorted && annotationIdSorted[0]?.subtype !== "Popup" ? annotationIdSorted : annotationList;
-    const annots = sortedAnnotations.map((annot: any) => annotationToObject(annot, pageNumber, boxes.width, boxes.height, boxes.rotate, doctopOffset, rawObjects));
-    const hyperlinks = annots.filter((annot) => annot.uri != null);
+    const rawOrIdSorted = rawOrderSorted ?? annotationIdSorted;
+    const sortedAnnotations = rawOrIdSorted && rawOrIdSorted[0]?.subtype !== "Popup" ? rawOrIdSorted : annotationList;
+    const annotationError = annotationStringDecodeErrorLikePdfminer(
+      sortedAnnotations.map((annot: any) => {
+        const objectNumber = Number.parseInt(String(annot.id ?? ""), 10);
+        return Number.isFinite(objectNumber) ? rawObjects.get(objectNumber) : undefined;
+      })
+    );
+    const annots = annotationError
+      ? []
+      : sortedAnnotations.map((annot: any) => annotationToObject(annot, pageNumber, boxes.width, boxes.height, boxes.rotate, doctopOffset, rawObjects));
+    const hyperlinks = annotationError ? [] : annots.filter((annot) => annot.uri != null);
     const layout = options.laparams ? buildLayoutObjects(lowLevel.chars, lowLevel.images, boxes.height, doctopOffset, options.laparams) : null;
     const pageChars = layout?.chars ?? lowLevel.chars;
     const extraObjects = layout?.objects ?? {};
@@ -183,7 +209,8 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
         boxes.artbox,
         boxes.bleedbox,
         boxes.trimbox,
-        extraObjects
+        extraObjects,
+        annotationError
       )
     );
     doctopOffset += boxes.height;

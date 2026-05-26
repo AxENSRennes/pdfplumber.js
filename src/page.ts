@@ -19,6 +19,8 @@ export class PdfPlumberPageImpl implements PDFPlumberPage {
   rect_edges: PDFObject[];
   curve_edges: PDFObject[];
   edges: PDFObject[];
+  private readonly _annots: PDFObject[];
+  private readonly _hyperlinks: PDFObject[];
 
   constructor(
     readonly page_number: number,
@@ -32,15 +34,18 @@ export class PdfPlumberPageImpl implements PDFPlumberPage {
     readonly lines: PDFObject[],
     readonly curves: PDFObject[],
     readonly images: PDFObject[],
-    readonly annots: PDFObject[],
-    readonly hyperlinks: PDFObject[],
+    annots: PDFObject[],
+    hyperlinks: PDFObject[],
     readonly doctopOffset: number,
     readonly artbox?: BBox,
     readonly bleedbox?: BBox,
     readonly trimbox?: BBox,
-    readonly extraObjects: Record<string, PDFObject[]> = {}
+    readonly extraObjects: Record<string, PDFObject[]> = {},
+    private readonly annotsError: Error | null = null
   ) {
     this.pageNumber = page_number;
+    this._annots = annots;
+    this._hyperlinks = hyperlinks;
     this.objects = objectsByType([
       ["char", chars],
       ["line", lines],
@@ -52,6 +57,16 @@ export class PdfPlumberPageImpl implements PDFPlumberPage {
     this.rect_edges = rects.flatMap(rectToEdges);
     this.curve_edges = curves.flatMap(curveToEdges);
     this.edges = [...this.rect_edges, ...this.curve_edges, ...lines.map(lineToEdge)];
+  }
+
+  get annots(): PDFObject[] {
+    if (this.annotsError) throw this.annotsError;
+    return this._annots;
+  }
+
+  get hyperlinks(): PDFObject[] {
+    if (this.annotsError) throw this.annotsError;
+    return this._hyperlinks;
   }
 
   extract_text(options: Record<string, unknown> = {}): string {
@@ -126,7 +141,9 @@ export class PdfPlumberPageImpl implements PDFPlumberPage {
       this.doctopOffset,
       this.artbox,
       this.bleedbox,
-      this.trimbox
+      this.trimbox,
+      this.extraObjects,
+      this.annotsError
     );
   }
 

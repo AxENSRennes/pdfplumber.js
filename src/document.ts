@@ -3,8 +3,8 @@ import { aggregateObjects } from "./utils.js";
 
 export class PdfPlumberDocumentImpl implements PDFPlumberDocument {
   objects: Record<string, PDFObject[]>;
-  annots: PDFObject[];
-  hyperlinks: PDFObject[];
+  private _annots: PDFObject[] | null = null;
+  private _hyperlinks: PDFObject[] | null = null;
 
   constructor(
     readonly pdf: any,
@@ -12,8 +12,16 @@ export class PdfPlumberDocumentImpl implements PDFPlumberDocument {
     readonly pages: PDFPlumberPage[]
   ) {
     this.objects = aggregateObjects(pages);
-    this.annots = pages.flatMap((page) => page.annots);
-    this.hyperlinks = pages.flatMap((page) => page.hyperlinks);
+  }
+
+  get annots(): PDFObject[] {
+    this._annots ??= this.pages.flatMap((page) => page.annots);
+    return this._annots;
+  }
+
+  get hyperlinks(): PDFObject[] {
+    this._hyperlinks ??= this.pages.flatMap((page) => page.hyperlinks);
+    return this._hyperlinks;
   }
 
   async close(): Promise<void> {

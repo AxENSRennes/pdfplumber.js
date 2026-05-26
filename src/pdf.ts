@@ -219,6 +219,54 @@ function decodePdfLiteralValue(value: string): string {
   return decodePdfStringBytes([...value].map((char) => char.charCodeAt(0) & 0xff));
 }
 
+function settleArabicPresentationOrigin(text: string, value: number): number {
+  if (!/[\ufb50-\ufdff\ufe70-\ufeff]/u.test(text) || text === "ﺔ" || !Number.isFinite(value)) return value;
+  const scaled = Math.abs(value) * 1_000;
+  const fraction = scaled - Math.floor(scaled);
+  if (Math.abs(fraction - 0.500501) <= 0.000002) return value - Math.sign(value || 1) * 2e-9;
+  if (text !== "ﻟ" && Math.abs(fraction - 0.499499) <= 0.000002) return value + Math.sign(value || 1) * 2e-9;
+  return value;
+}
+
+function settleCyrillicGlyphEdge(text: string, value: number): number {
+  if (!/[\u0400-\u04ff]/u.test(text) || !Number.isFinite(value)) return value;
+  const scaled = Math.abs(value) * 1_000;
+  const fraction = scaled - Math.floor(scaled);
+  if (Math.abs(fraction - 0.499499) <= 0.000002) return value + Math.sign(value || 1) * 1e-6;
+  return value;
+}
+
+function settleHorizontalGlyphBBoxToMatrixOrigin(font: MappedFont, obj: PDFObject): void {
+  const baseFont = font.fontRecord?.baseFont ?? "";
+  const isTimesNewRomanCid = /TimesNewRoman/i.test(baseFont) && font.fontRecord?.subtype === "Type0" && !font.fontRecord?.hasToUnicode;
+  if (!/TimesNewRoman/i.test(font.fontname) && !isTimesNewRomanCid) return;
+  if (font.vertical || !obj.upright || !Array.isArray(obj.matrix)) return;
+  const size = Number(obj.size);
+  const originY = Number(obj.matrix[5]);
+  if (!Number.isFinite(size) || !Number.isFinite(originY) || !Number.isFinite(font.descent)) return;
+  const expectedY0Raw = originY + font.descent * size;
+  const expectedY1Raw = expectedY0Raw + size;
+  const expectedY0 = cleanNumber(expectedY0Raw);
+  const expectedY1 = cleanNumber(expectedY1Raw);
+  const oldY0 = Number(obj.y0);
+  const oldY1 = Number(obj.y1);
+  if (Math.abs(oldY0 - expectedY0) > 0.00002 || Math.abs(oldY1 - expectedY1) > 0.00002) return;
+  const y0Delta = expectedY0 - oldY0;
+  const y1Delta = expectedY1 - oldY1;
+  const rawTop = Number(obj.top) - (expectedY1Raw - oldY1);
+  const rawBottom = Number(obj.bottom) - (expectedY0Raw - oldY0);
+  obj.y0 = expectedY0;
+  obj.y1 = expectedY1;
+  obj.top = cleanNumber(Number(obj.top) - y1Delta);
+  obj.bottom = cleanNumber(Number(obj.bottom) - y0Delta);
+  obj.doctop = cleanNumber(Number(obj.doctop) - y1Delta);
+  Object.defineProperty(obj, "__pdfplumber_raw_bbox", {
+    value: [Number(obj.x0), rawTop, Number(obj.x1), rawBottom],
+    enumerable: false,
+    configurable: true
+  });
+}
+
 function readPdfLiteralString(text: string, key: string): string | null {
   const start = text.search(new RegExp(`/${key}\\s*\\(`));
   if (start < 0) return null;
@@ -347,6 +395,9 @@ function chooseFontRecord(fontRecords: FontRecord[], used: Set<number>, fontObjN
 
 function resolveFontName(best: FontRecord | undefined, fontObjName: string | undefined, fallbackId: string): string {
   if (best?.subtype === "Type3" || fontObjName === "Type3") return "unknown";
+  if (/TimesNewRoman/i.test(best?.baseFont ?? fontObjName ?? "") && best?.subtype === "Type0" && !best?.hasToUnicode) {
+    return pythonBytesName(fontObjName ?? best?.baseFont ?? fallbackId);
+  }
   const standard = standardFontMetrics(best?.baseFont) ?? standardFontMetrics(fontObjName);
   const rawName = fontObjName ?? best?.baseFont;
   const cjkName = pdfminerCjkFontName(rawName, best?.subtype !== "Type0" && best?.subtype !== "CIDFontType2");
@@ -355,6 +406,12 @@ function resolveFontName(best: FontRecord | undefined, fontObjName: string | und
 }
 
 function resolveFontMetrics(best: FontRecord | undefined, fontObj: any, style: Record<string, any>, fontname: string): Pick<MappedFont, "ascent" | "descent"> {
+  if (best?.subtype === "Type3" || fontObj?.name === "Type3") return { ascent: 1, descent: 0 };
+  if (/^Diwan/i.test(fontname) && best?.ascent == null && best?.descent == null) return { ascent: 1, descent: 0 };
+  if (/^TraditionalArabic/i.test(fontname) && best?.ascent == null && best?.descent == null) return { ascent: 1, descent: 0 };
+  if (/TimesNewRoman/i.test(best?.baseFont ?? fontObj?.name ?? "") && best?.subtype === "Type0" && !best?.hasToUnicode && best.ascent == null && best.descent == null) {
+    return { ascent: 1, descent: 0 };
+  }
   const mayUseStandardMetrics =
     best == null
       ? true
@@ -377,7 +434,7 @@ function resolveFontMetrics(best: FontRecord | undefined, fontObj: any, style: R
     style.descent,
     fontBBoxMetric(fontObj, 1)
   );
-  return { ascent: cleanNumber(ascent), descent: cleanNumber(descent > 0 ? -descent : descent) };
+  return { ascent, descent: descent > 0 ? -descent : descent };
 }
 
 function shouldUseCidFallback(record: FontRecord | undefined): boolean {
@@ -533,7 +590,7 @@ function isAxisAlignedRect(path: ParsedPath, inferFromGeometry = false): boolean
   if (path.hasCurve) return false;
   if (path.fromRect && path.explicitClose) return false;
   if (path.fromRect) return true;
-  void inferFromGeometry;
+  if (!inferFromGeometry) return false;
   const pts = [...path.points];
   const first = pts[0];
   const last = pts[pts.length - 1];
@@ -623,7 +680,7 @@ export function extractPageObjects(
   const images: PDFObject[] = [];
   const contentPoint = (point: Point): Point => (contentYOffset ? [point[0], point[1] + contentYOffset] : point);
   const coordOffset: Point = [0, pageTop];
-  const markedContent: Array<{ tag: string | null; mcid: number | null; suppressed?: boolean }> = [];
+  let markedContent: { tag: string | null; mcid: number | null } | null = null;
   const fillColorOps = colorOps.filter((op) => op.target === "fill");
   const strokeColorOps = colorOps.filter((op) => op.target === "stroke");
   let transformIndex = 0;
@@ -637,13 +694,20 @@ export function extractPageObjects(
   const partialRawPaths = pathOps.length > 0 && pathOps.length !== constructPathTotal;
   let usedPartialRawCurve = false;
   const markedExtras = () => {
-    const current = [...markedContent].reverse().find((item) => !item.suppressed && item.tag !== "OC");
     return {
-      mcid: current?.mcid ?? null,
-      tag: current?.tag ?? null
+      mcid: markedContent?.mcid ?? null,
+      tag: markedContent?.tag ?? null
     };
   };
-  const colorFromHint = (fallback: unknown, queue: ColorOp[], currentColorSpace: string): { color: unknown; colorSpace: string | null; fromHint: boolean } => {
+  const hasFutureDarkFillFallback = (startIndex: number): boolean => {
+    for (let j = startIndex + 1; j < operatorList.fnArray.length; j += 1) {
+      if (operatorList.fnArray[j] !== pdfjs.OPS.setFillRGBColor) continue;
+      const value = (operatorList.argsArray[j] as any[] | null)?.[0];
+      if (typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) && !/^#(?:0{6}|f{6})$/i.test(value)) return true;
+    }
+    return false;
+  };
+  const colorFromHint = (fallback: unknown, queue: ColorOp[], currentColorSpace: string, options: { deferBlackRawTint?: boolean } = {}): { color: unknown; colorSpace: string | null; fromHint: boolean } => {
     const hintMatchesExtremeFallback = (hint: ColorOp, target: 0 | 1): boolean => {
       if (hint.pattern || !hint.components.length) return false;
       const tolerance = 1e-5;
@@ -651,7 +715,7 @@ export function extractPageObjects(
       if ((hint.colorSpace === "DeviceCMYK" || hint.colorSpace === "ICCBased") && hint.components.length === 4) {
         const [c, m, y, k] = hint.components;
         return target === 0
-          ? Math.abs(c) <= tolerance && Math.abs(m) <= tolerance && Math.abs(y) <= tolerance && k >= 0
+          ? Math.abs(c) <= tolerance && Math.abs(m) <= tolerance && Math.abs(y) <= tolerance && k >= 1 - tolerance
           : hint.components.every((component) => Math.abs(component) <= tolerance);
       }
       return hint.components.every((component) => Math.abs(component - target) <= quantizedFallbackTolerance);
@@ -660,7 +724,10 @@ export function extractPageObjects(
     if (typeof fallback === "string" && /^#(?:0{6}|f{6})$/i.test(fallback)) {
       const target = fallback.toLowerCase() === "#000000" ? 0 : 1;
       const rawTintColorSpace = hint && !["DeviceGray", "DeviceRGB", "DeviceCMYK", "ICCBased"].includes(hint.colorSpace);
-      if (rawTintColorSpace) {
+      if (target === 0 && options.deferBlackRawTint && hint && !hintMatchesExtremeFallback(hint, target)) {
+        return { color: rgbColor(fallback), colorSpace: currentColorSpace === "DeviceGray" ? "DeviceGray" : currentColorSpace, fromHint: false };
+      }
+      if (rawTintColorSpace && !(target === 0 && options.deferBlackRawTint && !hintMatchesExtremeFallback(hint, target))) {
         hint = queue.shift();
       } else {
         const matchingIndex = queue.findIndex((candidate) => hintMatchesExtremeFallback(candidate, target));
@@ -738,16 +805,13 @@ export function extractPageObjects(
         state.dash = args ? [args[0] ?? [], args[1] ?? 0] : null;
         break;
       case pdfjs.OPS.beginMarkedContent:
-        markedContent.push({ tag: decodePdfNameUtf8(args?.[0]?.name ?? String(args?.[0] ?? "")), mcid: null });
+        markedContent = { tag: decodePdfNameUtf8(args?.[0]?.name ?? String(args?.[0] ?? "")), mcid: null };
         break;
       case pdfjs.OPS.beginMarkedContentProps:
-        markedContent.push({ tag: decodePdfNameUtf8(args?.[0]?.name ?? String(args?.[0] ?? "")), mcid: typeof args?.[1] === "number" ? args[1] : null });
+        markedContent = { tag: decodePdfNameUtf8(args?.[0]?.name ?? String(args?.[0] ?? "")), mcid: typeof args?.[1] === "number" ? args[1] : null };
         break;
       case pdfjs.OPS.endMarkedContent:
-        {
-          const ended = markedContent.pop();
-          if (ended?.mcid === null && markedContent.length) markedContent[markedContent.length - 1].suppressed = true;
-        }
+        markedContent = null;
         break;
       case pdfjs.OPS.setFillColorSpace:
         state.fillColorSpace = colorSpaceName(args?.[0]);
@@ -756,7 +820,9 @@ export function extractPageObjects(
         state.strokeColorSpace = colorSpaceName(args?.[0]);
         break;
       case pdfjs.OPS.setFillRGBColor: {
-        const hinted = colorFromHint(args?.[0], fillColorOps, state.fillColorSpace);
+        const hinted = colorFromHint(args?.[0], fillColorOps, state.fillColorSpace, {
+          deferBlackRawTint: typeof args?.[0] === "string" && args[0].toLowerCase() === "#000000" && hasFutureDarkFillFallback(i)
+        });
         if (
           !hinted.fromHint &&
           (sawDeviceCMYK || state.fillColorSpace === "DeviceCMYK" || state.strokeColorSpace === "DeviceCMYK") &&
@@ -930,6 +996,7 @@ export function extractPageObjects(
               contentPoint(applyMatrix([xEnd, yStart], matrix)),
               contentPoint(applyMatrix([xEnd, yEnd], matrix))
             ]);
+            const rawSize = font.vertical ? Math.abs(rawBBox[2] - rawBBox[0]) : Math.abs(rawBBox[3] - rawBBox[1]);
             const originX = font.vertical ? state.x + x : xStart;
             const originY = state.y + state.textRise;
             const [matrixE, matrixF] = contentPoint(applyMatrix([originX, originY], matrix));
@@ -938,8 +1005,8 @@ export function extractPageObjects(
               pageRotate === 90 || pageRotate === 270
                 ? Math.abs(matrix[0]) < 1e-6 && Math.abs(matrix[3]) < 1e-6
                 : matrix[0] * matrix[3] * textHScale > 0 && matrix[1] * matrix[2] <= 0;
-            glyphMatrix[4] = cleanNumber(glyphMatrix[4] - pageX0);
-            glyphMatrix[5] = cleanNumber(glyphMatrix[5] + pageTop);
+            glyphMatrix[4] = cleanNumber(softenHalfMicro(glyphMatrix[4] - pageX0));
+            glyphMatrix[5] = cleanNumber(softenHalfMicro(glyphMatrix[5] + pageTop));
             const obj = rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "char", doctopOffset, {
               text: partText,
               fontname: font.fontname,
@@ -954,7 +1021,34 @@ export function extractPageObjects(
               stroking_color: colorValue(state.strokeColor),
               ...markedExtras()
             }, coordOffset);
+            if (Array.isArray(obj.matrix) && Math.abs(Number(obj.matrix[4]) - Number(obj.x0)) < 0.002) {
+              obj.matrix[4] = obj.x0;
+            }
+            if (font.vertical && Array.isArray(obj.matrix)) {
+              obj.matrix[4] = cleanNumber(Number(obj.x0) + Number(obj.width) / 2);
+              obj.matrix[5] = cleanNumber(Number(obj.y1) - Number(obj.height) * 0.12);
+            }
+            const settledX0 = settleArabicPresentationOrigin(partText, Number(obj.x0));
+            if (settledX0 !== obj.x0) {
+              if (Array.isArray(obj.matrix) && obj.matrix[4] === obj.x0) obj.matrix[4] = settledX0;
+              obj.x0 = settledX0;
+              obj.width = Number(obj.x1) - settledX0;
+            }
+            const settledX1 = settleArabicPresentationOrigin(partText, Number(obj.x1));
+            if (settledX1 !== obj.x1) {
+              obj.x1 = settledX1;
+              obj.width = settledX1 - Number(obj.x0);
+            }
+            const settledCyrillicX1 = settleCyrillicGlyphEdge(partText, Number(obj.x1));
+            if (settledCyrillicX1 !== obj.x1) {
+              obj.x1 = settledCyrillicX1;
+              obj.width = settledCyrillicX1 - Number(obj.x0);
+            }
             obj.size = font.vertical ? obj.width : obj.height;
+            settleHorizontalGlyphBBoxToMatrixOrigin(font, obj);
+            const rawSizeKey = font.vertical ? `${rawSize}:${obj.x0}:${obj.x1}` : `${rawSize}:${obj.y0}:${obj.y1}`;
+            Object.defineProperty(obj, "__pdfplumber_raw_size", { value: rawSize, enumerable: false });
+            Object.defineProperty(obj, "__pdfplumber_raw_size_key", { value: rawSizeKey, enumerable: false });
             chars.push(obj);
           }
           x += advance;
@@ -1006,18 +1100,39 @@ export function extractPageObjects(
           ...markedExtras()
         };
         const lineExtras = vectorExtras;
-        for (const path of paths) {
+        const pathEntries = paths.map((path) => {
           const operandPoints = rawPath ? path.points : path.points.map(snapPathOperandPoint);
           const transformed = operandPoints.map((point) => contentPoint(applyMatrix(point, state.ctm)));
+          const pagePoints = transformed.map((point) => pointToPageCoords(point, pageWidth, pageHeight, pageRotate).map(cleanNumber) as Point);
+          return { path, transformed, pagePoints };
+        });
+        const pointKey = (points: Point[]): string | null => {
+          const first = points[0];
+          if (!first) return null;
+          if (!points.every((point) => cleanNumber(point[0]) === cleanNumber(first[0]) && cleanNumber(point[1]) === cleanNumber(first[1]))) return null;
+          return `${cleanNumber(first[0])}:${cleanNumber(first[1])}`;
+        };
+        const closedSinglePointKeys = new Set(
+          pathEntries
+            .filter(({ path, transformed }) => path.closed && transformed.length > 1)
+            .map(({ transformed }) => pointKey(transformed))
+            .filter((key): key is string => key != null)
+        );
+        for (const { path, transformed, pagePoints } of pathEntries) {
           const inferRectFromGeometry = rawPath === undefined;
           if (transformed.length < 2) {
-            if ((isStroke || isFill) && transformed.length === 1 && paths.length === 1 && !path.trailingMove) {
+            if (transformed.length === 1 && (isFill || isStroke)) {
+              if (!path.closed && closedSinglePointKeys.has(pointKey(transformed) ?? "")) continue;
               const rawBBox = pathBBox(transformed);
+              const pts = pagePoints;
+              const [pointX, pointTop] = pts[0] ?? [Number.NaN, Number.NaN];
+              if (!isStroke && (pointX < 0 || pointX > pageWidth || pointTop < 0 || pointTop > pageHeight)) continue;
               curves.push(
-                rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
-                  pts: transformed.map((point) => pointToPageCoords(point, pageWidth, pageHeight, pageRotate).map(cleanNumber)),
-                  ...vectorExtras
-                }, coordOffset)
+	                rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
+	                  pts,
+	                  closepath: path.closed,
+	                  ...vectorExtras
+	                }, coordOffset)
               );
             }
             continue;
@@ -1029,19 +1144,23 @@ export function extractPageObjects(
               if (lineEndpoints) {
                 const rawLineBBox = pathBBox(lineEndpoints);
                 lines.push(rectFromPdfBBox(rawLineBBox, pageWidth, pageHeight, pageRotate, pageNumber, "line", doctopOffset, path.closed ? vectorExtras : lineExtras, coordOffset));
-              } else if (isAxisAlignedRect({ ...path, points: transformed }, inferRectFromGeometry)) {
+              } else if (
+                isAxisAlignedRect({ ...path, points: transformed }, inferRectFromGeometry || (path.closed && transformed.length === 5)) ||
+                isAxisAlignedRect({ ...path, points: pagePoints }, inferRectFromGeometry || transformed.length === 5)
+              ) {
                 rects.push(
                   rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "rect", doctopOffset, {
                     ...vectorExtras,
-                    linewidth: isStroke || state.lineWidthSet ? linewidth : 0
+                    linewidth: isStroke ? linewidth : 0
                   }, coordOffset)
                 );
               } else {
                 curves.push(
-                  rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
-                    pts: transformed.map((point) => pointToPageCoords(point, pageWidth, pageHeight, pageRotate).map(cleanNumber)),
-                    ...vectorExtras
-                  }, coordOffset)
+	                  rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
+	                    pts: pagePoints,
+	                    closepath: path.closed,
+	                    ...vectorExtras
+	                  }, coordOffset)
                 );
               }
             } else {
@@ -1052,21 +1171,41 @@ export function extractPageObjects(
             }
           } else if (isFill) {
             const rawBBox = pathBBox(transformed);
+            if (isStroke && transformed.length > 1 && rawBBox[0] === rawBBox[2] && rawBBox[1] === rawBBox[3]) {
+              const pts = pagePoints;
+              const curve = rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
+                pts,
+                closepath: path.closed,
+                ...vectorExtras,
+                linewidth
+              }, coordOffset);
+              if (!curves.some((other) => other.x0 === curve.x0 && other.top === curve.top && other.fill === curve.fill && other.stroke === curve.stroke)) {
+                curves.push(curve);
+              }
+              continue;
+            }
             const lineEndpoints = !path.hasCurve ? collinearPathEndpoints(transformed) : null;
             if (lineEndpoints && (transformed.length === 2 || (transformed.length === 3 && path.explicitClose))) {
               const rawLineBBox = pathBBox(lineEndpoints);
               lines.push(rectFromPdfBBox(rawLineBBox, pageWidth, pageHeight, pageRotate, pageNumber, "line", doctopOffset, vectorExtras, coordOffset));
-            } else if (isAxisAlignedRect({ ...path, points: transformed }, inferRectFromGeometry)) {
+            } else if (isAxisAlignedRect({ ...path, points: transformed }, inferRectFromGeometry || (!isStroke && transformed.length === 5))) {
+              const strokeColor = vectorExtras.stroking_color;
+              const hasNonDefaultStrokeColor = Array.isArray(strokeColor)
+                ? strokeColor.some((component, index) => Number(component) !== (strokeColor.length === 4 && index === 3 ? 1 : 0))
+                : strokeColor !== 0;
+              const fillColor = vectorExtras.non_stroking_color;
+              const hasRgbWhiteFill = Array.isArray(fillColor) && fillColor.length === 3 && fillColor.every((component) => Number(component) === 1);
               rects.push(
                 rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "rect", doctopOffset, {
                   ...vectorExtras,
-                  linewidth: isStroke || state.lineWidthSet ? linewidth : 0
+                  linewidth: isStroke || (state.lineWidthSet && ((Math.abs(linewidth - 1) <= 1e-9 && (hasNonDefaultStrokeColor || hasRgbWhiteFill || vectorExtras.tag === "Document")) || (Math.abs(linewidth - 1) > 1e-9 && (linewidth <= 1 || linewidth > 10 || vectorExtras.tag !== "OC")))) ? linewidth : 0
                 }, coordOffset)
               );
             } else if (transformed.length > 0 && !(isStroke && transformed.length > 1 && (rawBBox[0] === rawBBox[2] || rawBBox[1] === rawBBox[3]))) {
-              const curve = rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
-                pts: transformed.map((point) => pointToPageCoords(point, pageWidth, pageHeight, pageRotate).map(cleanNumber)),
-                ...vectorExtras,
+	              const curve = rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
+	                pts: pagePoints,
+	                closepath: path.closed,
+	                ...vectorExtras,
                 linewidth: isStroke || state.lineWidthSet ? linewidth : 0
               }, coordOffset);
               curves.push(curve);
@@ -1150,9 +1289,10 @@ export function annotationToObject(
   const rawContents = annotation.contentsObj?.str ?? annotation.contents ?? null;
   const rawContentsFromObject = annotationObject ? readPdfDictStringLikePdfplumber(annotationObject, "Contents") : null;
   const rawTitle = annotationObject ? readPdfDictStringLikePdfplumber(annotationObject, "T") : null;
+  const rawUri = annotationObject ? readAnnotationUriLikePdfplumber(annotationObject, objects) : null;
   const isTinyPopup = annotation.subtype === "Popup" && Math.abs(Number(rect[2]) - Number(rect[0])) <= 2 && Math.abs(Number(rect[3]) - Number(rect[1])) <= 2;
   return rectFromPdfBBox([rect[0], rect[1], rect[2], rect[3]], pageWidth, pageHeight, pageRotate, pageNumber, "annot", doctopOffset, {
-    uri: optionalString(annotation.unsafeUrl ?? annotation.url ?? null),
+    uri: annotationUri(annotation, rawUri),
     title: annotation.subtype === "Popup" ? null : optionalString(annotation.titleObj?.str ?? annotation.title ?? rawTitle ?? null),
     contents:
       (annotation.subtype === "Popup" && !isTinyPopup) ||
@@ -1162,7 +1302,21 @@ export function annotationToObject(
   });
 }
 
+function annotationUri(annotation: any, rawUri: string | null): string | null {
+  const optionalString = (value: unknown): string | null => (typeof value === "string" && value.length > 0 ? value : null);
+  const value = optionalString(rawUri ?? annotation.url ?? annotation.unsafeUrl ?? null);
+  return value && /^[A-Za-z][A-Za-z0-9+.-]*:/.test(value) ? value : null;
+}
+
 function readPdfDictStringLikePdfplumber(objectText: string, key: string): string | null {
   const bytes = parsePdfDictBytes(objectText, key);
   return bytes ? decodePdfLiteralBytesAsUtf8ThenUtf16(bytes) : null;
+}
+
+function readAnnotationUriLikePdfplumber(annotationObject: string, objects?: Map<number, string>): string | null {
+  const direct = readPdfDictStringLikePdfplumber(annotationObject, "URI");
+  if (direct != null) return direct;
+  const actionRef = /\/A\s+(\d+)\s+\d+\s+R/.exec(annotationObject)?.[1];
+  const actionObject = actionRef ? objects?.get(Number(actionRef)) : undefined;
+  return actionObject ? readPdfDictStringLikePdfplumber(actionObject, "URI") : null;
 }

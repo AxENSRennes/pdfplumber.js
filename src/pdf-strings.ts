@@ -91,14 +91,15 @@ export function parsePdfLiteralStringBytes(source: string, start: number): { byt
 }
 
 export function parsePdfDictBytes(source: string, key: string): Uint8Array | null {
-  const match = new RegExp(`/${key}\\b`).exec(source);
-  if (!match) return null;
-  let index = match.index + match[0].length;
-  while (/\s/.test(source[index] ?? "")) index += 1;
-  if (source[index] === "(") return parsePdfLiteralStringBytes(source, index)?.bytes ?? null;
-  if (source[index] === "<" && source[index + 1] !== "<") {
-    const end = source.indexOf(">", index + 1);
-    return end >= 0 ? hexBytes(source.slice(index + 1, end)) : null;
+  const pattern = new RegExp(`/${key}\\b`, "g");
+  for (let match = pattern.exec(source); match; match = pattern.exec(source)) {
+    let index = match.index + match[0].length;
+    while (/\s/.test(source[index] ?? "")) index += 1;
+    if (source[index] === "(") return parsePdfLiteralStringBytes(source, index)?.bytes ?? null;
+    if (source[index] === "<" && source[index + 1] !== "<") {
+      const end = source.indexOf(">", index + 1);
+      if (end >= 0) return hexBytes(source.slice(index + 1, end));
+    }
   }
   return null;
 }

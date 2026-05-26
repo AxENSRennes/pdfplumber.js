@@ -395,8 +395,10 @@ async function documentSnapshot(
   pageIndices?: number[]
 ): Promise<Record<string, unknown>> {
   let document: PDFPlumberDocument;
+  const selectedPageNumbers = pageIndices?.map((index) => index + 1);
+  const shouldOpenSelectedPages = Boolean(selectedPageNumbers?.length) && !Array.isArray(openOptions.pages);
   try {
-    document = await open(pdfPath, openOptions);
+    document = await open(pdfPath, shouldOpenSelectedPages ? { ...openOptions, pages: selectedPageNumbers } : openOptions);
   } catch (error) {
     return {
       status: "error",
@@ -409,15 +411,15 @@ async function documentSnapshot(
     const selectedIndices =
       pageIndices ?? Array.from({ length: document.pages.length }, (_, index) => index);
     const pages = [];
-    for (const index of selectedIndices) {
-      const page = document.pages[index];
+    for (const [position, index] of selectedIndices.entries()) {
+      const page = shouldOpenSelectedPages ? document.pages[position] : document.pages[index];
       if (!page) throw new Error(`Missing page at index ${index}`);
       pages.push(await pageSnapshot(page));
     }
     const snapshot: Record<string, unknown> = {
       status: "ok",
       metadata: metadataSubset(document.metadata),
-      pageCount: document.pages.length,
+      pageCount: Number((document as unknown as { pdf?: { numPages?: number } }).pdf?.numPages ?? document.pages.length),
       ...(pageIndices ? { pageIndices: selectedIndices } : {}),
       pages
     };
@@ -427,6 +429,12 @@ async function documentSnapshot(
       snapshot.hyperlinks = objectListSummary(document.hyperlinks);
     }
     return snapshot;
+  } catch (error) {
+    return {
+      status: "error",
+      errorType: error instanceof Error ? error.name : typeof error,
+      message: error instanceof Error ? error.message.slice(0, 240) : String(error).slice(0, 240)
+    };
   } finally {
     await document.close();
   }

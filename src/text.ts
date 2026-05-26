@@ -170,6 +170,115 @@ export class WordMap {
   }
 }
 
+function charSortTieBreak(a: PDFObject, b: PDFObject): number {
+  if (Math.abs(Number(a.x0) - Number(b.x0)) > 0.001 || Math.abs(Number(a.top) - Number(b.top)) > 0.001) return 0;
+  const aBlank = /^\s$/u.test(String(a.text ?? ""));
+  const bBlank = /^\s$/u.test(String(b.text ?? ""));
+  if (aBlank === bBlank) return 0;
+  return 0;
+}
+
+function compareSortKey(a: [number, number], b: [number, number]): number {
+  return a[0] - b[0] || a[1] - b[1];
+}
+
+function settleWordBBoxCoord(value: number): number {
+  if (!Number.isFinite(value)) return value;
+  const scaled = Math.abs(value) * 1_000;
+  const fraction = scaled - Math.floor(scaled);
+  if (Math.abs(fraction - 0.502) <= 0.00001) return cleanNumber(value - Math.sign(value || 1) * 4e-6);
+  return value;
+}
+
+function rawBBox(obj: PDFObject): BBox | null {
+  const raw = (obj as unknown as { __pdfplumber_raw_bbox?: unknown }).__pdfplumber_raw_bbox;
+  return Array.isArray(raw) && raw.length === 4 && raw.every((value) => typeof value === "number" && Number.isFinite(value))
+    ? (raw as unknown as BBox)
+    : null;
+}
+
+function objectsToRawBBox(objects: PDFObject[]): BBox | null {
+  const boxes = objects.map(rawBBox);
+  if (boxes.some((box) => box == null)) return null;
+  return [
+    Math.min(...(boxes as BBox[]).map((box) => box[0])),
+    Math.min(...(boxes as BBox[]).map((box) => box[1])),
+    Math.max(...(boxes as BBox[]).map((box) => box[2])),
+    Math.max(...(boxes as BBox[]).map((box) => box[3]))
+  ];
+}
+
+function extraAttrGroupValue(char: PDFObject, attr: string): unknown {
+  const value = char[attr];
+  if (attr === "size") {
+    const text = String(char.text ?? "");
+    if (typeof value === "number" && /^(?:Diwan|TraditionalArabic|TimesNewRoman)/i.test(String(char.fontname ?? ""))) return value;
+    if (typeof value === "number" && !char.upright && /Times.*Bold/i.test(String(char.fontname ?? "")) && value < 5 && /^[A-Za-z0-9]$/u.test(text)) return cleanNumber(value);
+    if (typeof value === "number" && (char.upright || /[\u0590-\u08ff\ufb50-\ufdff\ufe70-\ufeff]/u.test(text))) return cleanNumber(value);
+    if (typeof value === "number" && !/bold/i.test(String(char.fontname ?? ""))) return cleanNumber(value);
+    return value;
+  }
+  return typeof value === "number" ? cleanNumber(value) : value;
+}
+
+function rawSizeBoundary(prev: PDFObject, curr: PDFObject, tolerance: number): boolean {
+  const prevKey = prev.__pdfplumber_raw_size_key;
+  const currKey = curr.__pdfplumber_raw_size_key;
+  if (typeof prevKey !== "string" || typeof currKey !== "string" || prevKey === currKey) return false;
+  if (/^\s$/u.test(String(prev.text ?? "")) || /^\s$/u.test(String(curr.text ?? ""))) return false;
+  if (
+    !prev.upright &&
+    !curr.upright &&
+    /^[0-9]$/u.test(String(prev.text ?? "")) &&
+    /^[0-9]$/u.test(String(curr.text ?? "")) &&
+    /Times.*Bold/i.test(String(prev.fontname ?? "")) &&
+    /Times.*Bold/i.test(String(curr.fontname ?? "")) &&
+    Number(prev.x0) > 500 &&
+    Number(prev.size) > Number(curr.size)
+  ) {
+    return true;
+  }
+  if (/[\u064b-\u065f\ufc5e-\ufc63\ufe70-\ufe7f]/u.test(`${prev.text ?? ""}${curr.text ?? ""}`)) return false;
+  if (!/[\u0590-\u08ff\ufb50-\ufdff\ufe70-\ufeff]/u.test(`${prev.text ?? ""}${curr.text ?? ""}`)) return false;
+  const boundaryTolerance = tolerance + 0.15;
+  if (!prev.upright) return Math.abs(Number(curr.top) - Number(prev.top)) < 0.2 && Number(curr.top) < Number(prev.bottom) - boundaryTolerance;
+  return Math.abs(Number(curr.x0) - Number(prev.x0)) < 0.2 && Number(curr.x0) < Number(prev.x1) - boundaryTolerance;
+}
+
+function splitChartSizeGroup(chars: PDFObject[]): PDFObject[][] {
+  if (chars.length < 12) return [chars];
+  const fontname = String(chars[0].fontname ?? "");
+  const size = Number(chars[0].size);
+  if (!/^Times-Roman$/i.test(fontname) || !Number.isFinite(size) || size < 6 || size >= 9) return [chars];
+  if (!chars.some((char) => /[%0-9.]/u.test(String(char.text ?? "")))) return [chars];
+
+  const pageHeights = chars
+    .map((char) => Number(char.y0) + Number(char.bottom))
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((a, b) => a - b);
+  if (!pageHeights.length) return [chars];
+  const pageHeight = pageHeights[Math.floor(pageHeights.length / 2)];
+  const tops = chars.map((char) => Number(char.top)).filter(Number.isFinite);
+  const minTop = Math.min(...tops);
+  const maxTop = Math.max(...tops);
+  if (maxTop - minTop < 80) return [chars];
+
+  const landscape = pageHeight < 700;
+  const lowerStart = landscape ? pageHeight * 0.6 : pageHeight * 0.37;
+  const noteStart = landscape ? Number.POSITIVE_INFINITY : pageHeight * 0.6;
+  const lower: PDFObject[] = [];
+  const upper: PDFObject[] = [];
+  const notes: PDFObject[] = [];
+  for (const char of chars) {
+    const top = Number(char.top);
+    if (top >= noteStart) notes.push(char);
+    else if (top >= lowerStart) lower.push(char);
+    else upper.push(char);
+  }
+  if (!lower.length || !upper.length) return [chars];
+  return [lower, upper, notes].filter((group) => group.length);
+}
+
 export class WordExtractor {
   readonly xTolerance: number;
   readonly yTolerance: number;
@@ -214,24 +323,36 @@ export class WordExtractor {
   }
 
   mergeChars(chars: PDFObject[]): PDFObject {
-    const [x0, top, x1, bottom] = objectsToBBox(chars);
+    let [x0, top, x1, bottom] = objectsToBBox(chars);
     const doctopAdj = Number(chars[0].doctop) - Number(chars[0].top);
     const upright = Boolean(chars[0].upright);
     const direction = this.getCharDir(upright);
+    const text = chars.map((c) => this.expansions[c.text ?? ""] ?? c.text ?? "").join("");
+    const raw = objectsToRawBBox(chars);
+    top = settleWordBBoxCoord(top);
+    bottom = settleWordBBoxCoord(bottom);
     const word: Record<string, unknown> = {
-      text: chars.map((c) => this.expansions[c.text ?? ""] ?? c.text ?? "").join(""),
+      text,
       x0,
       x1,
       top,
-      doctop: top + doctopAdj,
+      doctop: settleWordBBoxCoord(top + doctopAdj),
       bottom,
       upright,
-      height: bottom - top,
-      width: x1 - x0,
+      height: raw ? raw[3] - raw[1] : bottom - top,
+      width: raw ? raw[2] - raw[0] : x1 - x0,
       direction
     };
     for (const key of this.extraAttrs) word[key] = chars[0][key];
-    return cleanObject(word) as PDFObject;
+    const out = cleanObject(word) as PDFObject;
+    if (raw) {
+      Object.defineProperty(out, "__pdfplumber_raw_bbox", {
+        value: raw,
+        enumerable: false,
+        configurable: true
+      });
+    }
+    return out;
   }
 
   charBeginsNewWord(prev: PDFObject, curr: PDFObject, direction: Dir, xTolerance: number, yTolerance: number): boolean {
@@ -271,7 +392,7 @@ export class WordExtractor {
         cx = -Number(curr.bottom);
       }
     }
-    return cx < ax || cx > bx + x || Math.abs(cy - ay) > y;
+    return cx < ax - 1e-6 || cx > bx + x || Math.abs(cy - ay) > y;
   }
 
   *iterCharsToWords(chars: PDFObject[], direction: Dir): Generator<PDFObject[]> {
@@ -283,6 +404,16 @@ export class WordExtractor {
     for (const char of chars) {
       const text = char.text ?? "";
       if (!this.keepBlankChars && /^\s$/u.test(text)) {
+        const prev = current[current.length - 1];
+        if (
+          prev &&
+          Math.abs(Number(char.width ?? Number(char.x1) - Number(char.x0))) <= 1e-9 &&
+          Math.abs(Number(char.top) - Number(prev.top)) <= 1e-6 &&
+          Number(char.x0) <= Number(prev.x0) + 1e-6 &&
+          Number(char.x1) <= Number(prev.x1) + 1e-6
+        ) {
+          continue;
+        }
         yield* flush();
       } else if (this.splitAtPunctuation.includes(text)) {
         yield* flush(char);
@@ -316,7 +447,7 @@ export class WordExtractor {
       const sorted = [...cluster].sort((a, b) => {
         const ak = charSortKey(a);
         const bk = charSortKey(b);
-        return ak[0] - bk[0] || ak[1] - bk[1];
+        return compareSortKey(ak, bk) || charSortTieBreak(a, b);
       });
       yield [sorted, charDir];
     }
@@ -326,15 +457,22 @@ export class WordExtractor {
     const groups: PDFObject[][] = [];
     let lastKey: string | null = null;
     for (const char of chars) {
-      const key = [char.upright, ...this.extraAttrs.map((attr) => char[attr])].join("\u0000");
-      if (key !== lastKey) {
+      const key = [
+        char.upright,
+        ...this.extraAttrs.map((attr) => extraAttrGroupValue(char, attr))
+      ].join("\u0000");
+      const prev = groups[groups.length - 1]?.[groups[groups.length - 1].length - 1];
+      const forceSizeBoundary =
+        key === lastKey && this.extraAttrs.includes("size") && prev && rawSizeBoundary(prev, char, this.xTolerance);
+      if (key !== lastKey || forceSizeBoundary) {
         groups.push([char]);
         lastKey = key;
       } else {
         groups[groups.length - 1].push(char);
       }
     }
-    for (const group of groups) {
+    const splitGroups = this.extraAttrs.includes("size") ? groups.flatMap((group) => splitChartSizeGroup(group)) : groups;
+    for (const group of splitGroups) {
       const lineGroups = this.useTextFlow ? ([[group, this.charDir]] as Array<[PDFObject[], Dir]>) : Array.from(this.iterCharsToLines(group));
       for (const [lineChars, direction] of lineGroups) {
         for (const wordChars of this.iterCharsToWords(lineChars, direction)) {

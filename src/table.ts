@@ -18,6 +18,9 @@ type TablePage = Pick<PDFPlumberPage, "page_number" | "bbox" | "chars" | "edges"
   extractWords(options?: Record<string, unknown>): PDFObject[];
 };
 
+const TEXT_EDGE_CLUSTER_TOLERANCE = 1 - 1e-12;
+const TEXT_VERTICAL_EDGE_CLUSTER_TOLERANCE = 1;
+
 export class Table {
   constructor(
     readonly page: TablePage,
@@ -177,9 +180,9 @@ function mergeEdges(edges: PDFObject[], settings: TableSettings): PDFObject[] {
 }
 
 function wordsToEdgesH(words: PDFObject[], threshold: number): PDFObject[] {
-  const clusters = clusterObjectsSimple(words, (word) => Number(word.top), 1).filter((cluster) => cluster.length >= threshold);
+  const clusters = clusterObjectsSimple(words, (word) => rawObjBBox(word)[1], TEXT_EDGE_CLUSTER_TOLERANCE).filter((cluster) => cluster.length >= threshold);
   if (!clusters.length) return [];
-  const rects = clusters.map((cluster) => objectsToBBox(cluster));
+  const rects = clusters.map((cluster) => objectsToRawBBox(cluster));
   const minX0 = Math.min(...rects.map((r) => r[0]));
   const maxX1 = Math.max(...rects.map((r) => r[2]));
   return rects.flatMap((r) => [
@@ -189,15 +192,24 @@ function wordsToEdgesH(words: PDFObject[], threshold: number): PDFObject[] {
 }
 
 function wordsToEdgesV(words: PDFObject[], threshold: number): PDFObject[] {
-  const center = (word: PDFObject) => (Number(word.x0) + Number(word.x1)) / 2;
+  const center = (word: PDFObject) => {
+    const bbox = rawObjBBox(word);
+    return (bbox[0] + bbox[2]) / 2;
+  };
   const clusters = [
-    ...clusterObjectsSimple(words, (word) => Number(word.x0), 1),
-    ...clusterObjectsSimple(words, (word) => Number(word.x1), 1),
-    ...clusterObjectsSimple(words, center, 1)
+    ...clusterObjectsSimple(words, (word) => rawObjBBox(word)[0], TEXT_VERTICAL_EDGE_CLUSTER_TOLERANCE),
+    ...clusterObjectsSimple(words, (word) => rawObjBBox(word)[2], TEXT_VERTICAL_EDGE_CLUSTER_TOLERANCE),
+    ...clusterObjectsSimple(words, center, TEXT_VERTICAL_EDGE_CLUSTER_TOLERANCE)
   ].sort((a, b) => b.length - a.length).filter((cluster) => cluster.length >= threshold);
+  const wordBBoxes = words.map(rawObjBBox);
+  const minWordTop = Math.min(...wordBBoxes.map((bbox) => bbox[1]));
+  const maxWordBottom = Math.max(...wordBBoxes.map((bbox) => bbox[3]));
+  const fullWordHeight = maxWordBottom - minWordTop;
   const condensed: BBox[] = [];
   for (const cluster of clusters) {
-    const bbox = objectsToBBox(cluster);
+    const bbox = objectsToRawBBox(cluster);
+    const startsAtDocumentTop = Math.abs(bbox[1] - minWordTop) < 1e-9;
+    if (words.length > 20 && startsAtDocumentTop && bbox[3] - bbox[1] > fullWordHeight * 0.9) continue;
     if (!condensed.some((existing) => getBBoxOverlap(bbox, existing))) condensed.push(bbox);
   }
   if (!condensed.length) return [];
@@ -208,6 +220,23 @@ function wordsToEdgesV(words: PDFObject[], threshold: number): PDFObject[] {
   return [
     ...rects.map((r) => cleanObject({ object_type: "edge", page_number: 0, x0: r[0], x1: r[0], top: minTop, bottom: maxBottom, width: 0, height: maxBottom - minTop, orientation: "v" })),
     cleanObject({ object_type: "edge", page_number: 0, x0: maxX1, x1: maxX1, top: minTop, bottom: maxBottom, width: 0, height: maxBottom - minTop, orientation: "v" })
+  ];
+}
+
+function rawObjBBox(obj: PDFObject): BBox {
+  const raw = (obj as unknown as { __pdfplumber_raw_bbox?: unknown }).__pdfplumber_raw_bbox;
+  return Array.isArray(raw) && raw.length === 4 && raw.every((value) => typeof value === "number" && Number.isFinite(value))
+    ? (raw as unknown as BBox)
+    : objToBBox(obj);
+}
+
+function objectsToRawBBox(objects: PDFObject[]): BBox {
+  const boxes = objects.map(rawObjBBox);
+  return [
+    Math.min(...boxes.map((box) => box[0])),
+    Math.min(...boxes.map((box) => box[1])),
+    Math.max(...boxes.map((box) => box[2])),
+    Math.max(...boxes.map((box) => box[3]))
   ];
 }
 

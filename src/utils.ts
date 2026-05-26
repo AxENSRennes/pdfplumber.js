@@ -196,12 +196,18 @@ export function rectFromPdfBBox(
   extras: Record<string, unknown> = {},
   coordOffset: Point = [0, 0]
 ): PDFObject {
-  const [x0, top, x1, bottom] = bboxToPageBBox(raw, pageWidth, pageHeight, pageRotate);
-  const [y0, y1] =
+  const [rawX0, rawTop, rawX1, rawBottom] = bboxToPageBBox(raw, pageWidth, pageHeight, pageRotate);
+  const x0 = liftPostHalfThousandthDrift(softenHalfThousandth(softenHalfMicro(rawX0)));
+  const top = liftPostHalfThousandthDrift(softenHalfThousandth(softenHalfMicro(rawTop)));
+  const x1 = liftPostHalfThousandthDrift(softenHalfThousandth(softenHalfMicro(rawX1)));
+  const bottom = liftPostHalfThousandthDrift(softenHalfThousandth(softenHalfMicro(rawBottom)));
+  const [rawY0, rawY1] =
     ((pageRotate % 360) + 360) % 360 === 0
       ? [raw[1] + coordOffset[1], raw[3] + coordOffset[1]]
       : [pageHeight - bottom + coordOffset[1], pageHeight - top + coordOffset[1]];
-  return {
+  const y0 = liftPostHalfThousandthDrift(softenHalfThousandth(softenHalfMicro(rawY0)));
+  const y1 = liftPostHalfThousandthDrift(softenHalfThousandth(softenHalfMicro(rawY1)));
+  const obj = {
     object_type: objectType,
     page_number: pageNumber,
     x0,
@@ -215,6 +221,12 @@ export function rectFromPdfBBox(
     height: y1 - y0,
     ...extras
   };
+  Object.defineProperty(obj, "__pdfplumber_raw_bbox", {
+    value: [rawX0, rawTop, rawX1, rawBottom],
+    enumerable: false,
+    configurable: true
+  });
+  return obj;
 }
 
 export function rectFromPageBBox(raw: MutableBBox, pageHeight: number, pageNumber: number, objectType: string, doctopOffset: number, extras: Record<string, unknown> = {}): PDFObject {
@@ -253,6 +265,22 @@ export function softenHalfMicro(value: number): number {
   const fraction = scaled - Math.floor(scaled);
   if (Math.abs(fraction - 0.5) > 1e-7) return value;
   return value - Math.sign(value || 1) * 1e-9;
+}
+
+export function softenHalfThousandth(value: number): number {
+  if (!Number.isFinite(value)) return value;
+  const scaled = Math.abs(value) * 1_000;
+  const fraction = scaled - Math.floor(scaled);
+  if (Math.abs(fraction - 0.5) > 1e-11) return value;
+  return value - Math.sign(value || 1) * 1e-9;
+}
+
+export function liftPostHalfThousandthDrift(value: number): number {
+  if (!Number.isFinite(value)) return value;
+  const scaled = Math.abs(value) * 1_000;
+  const fraction = scaled - Math.floor(scaled);
+  if (fraction <= 0.500499000005 || fraction >= 0.5 + 0.0005) return value;
+  return value + Math.sign(value || 1) * 2e-9;
 }
 
 export function colorValue(value: unknown): unknown {
@@ -301,13 +329,13 @@ export function colorSpaceName(value: unknown): string {
 
 export function pythonBytesName(value: string): string {
   if (!/[^\x20-\x7e]/.test(value)) return value;
-  const body = [...value].map((char) => {
+  if ([...value].some((char) => char.charCodeAt(0) > 0xff)) return value;
+  return [...value].map((char) => {
     const code = char.charCodeAt(0) & 0xff;
     if (code === 0x5c) return "\\\\";
     if (code === 0x27) return "\\'";
     return code >= 0x20 && code <= 0x7e ? String.fromCharCode(code) : `\\x${code.toString(16).padStart(2, "0")}`;
   }).join("");
-  return `b'${body}'`;
 }
 
 export function rgbColor(value: unknown): number[] {
@@ -487,9 +515,17 @@ export function rectToEdges(rect: PDFObject): PDFObject[] {
 
 export function curveToEdges(curve: PDFObject): PDFObject[] {
   const pts = (curve.pts as Point[] | undefined) ?? [];
+  const edgePoints = [...pts];
+  if (curve.closepath === true && pts.length === 1) {
+    edgePoints.push(pts[0]);
+  } else if (curve.closepath === true && pts.length > 1) {
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    if (first[0] !== last[0] || first[1] !== last[1]) edgePoints.push(first);
+  }
   const edges: PDFObject[] = [];
-  for (let i = 0; i < pts.length - 1; i += 1) {
-    const [p0, p1] = [pts[i], pts[i + 1]];
+  for (let i = 0; i < edgePoints.length - 1; i += 1) {
+    const [p0, p1] = [edgePoints[i], edgePoints[i + 1]];
     const x0 = Math.min(p0[0], p1[0]);
     const x1 = Math.max(p0[0], p1[0]);
     const top = Math.min(p0[1], p1[1]);

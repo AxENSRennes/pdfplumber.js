@@ -1,5 +1,7 @@
 import { namedError } from "./errors.js";
 
+import { decodePdfLiteralBytesAsUtf8ThenUtf16, parsePdfDictBytes } from "./pdf-strings.js";
+
 export interface PdfminerCompatContext {
   raw: string;
   objects: Map<number, string>;
@@ -75,6 +77,20 @@ export function shouldEmulatePdfminerOpenError(ctx: PdfminerCompatContext): Erro
   }
   if (/\/Type\s*\/Sig\b/.test(ctx.raw) && /\/ByteRange\s*\[/.test(ctx.raw) && /\/Prev\s+\d+/.test(ctx.raw) && /\/DigestLocation\s*\[/.test(ctx.raw)) {
     return namedError("MalformedPDFException", "maximum recursion depth exceeded");
+  }
+  return null;
+}
+
+export function annotationStringDecodeErrorLikePdfminer(annotationObjects: Array<string | undefined>): Error | null {
+  for (const objectText of annotationObjects) {
+    if (!objectText) continue;
+    for (const key of ["Contents", "T", "TU"]) {
+      const bytes = parsePdfDictBytes(objectText, key);
+      if (!bytes || !Array.from(bytes).some((byte) => byte >= 0x80)) continue;
+      if (decodePdfLiteralBytesAsUtf8ThenUtf16(bytes) == null) {
+        return namedError("UnicodeDecodeError", "'utf-16-le' codec can't decode annotation string bytes");
+      }
+    }
   }
   return null;
 }
