@@ -1,0 +1,622 @@
+[
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-13",
+      "financial-report",
+      "government",
+      "holdout",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "XPP",
+    "id": "cycle-13/holdout/c13-101-financial-report-federal-reserve-2024-ar-p62",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "pageCount": 214,
+    "producer": "PDFlib+PDI 10.0.1p3 (Linux-x64)",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      61
+    ],
+    "sha256": "fc5e7145447ad369398a7a8670967b5b29d26be589e74d13f5f6c573021857e9",
+    "size": 2170319,
+    "source": "Board of Governors of the Federal Reserve System publications",
+    "sourceDocumentId": "federal-reserve-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
+    "title": "Federal Reserve Board Publication"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-13",
+      "financial-report",
+      "government",
+      "holdout",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "XPP",
+    "id": "cycle-13/holdout/c13-102-financial-report-federal-reserve-2024-ar-p68",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "pageCount": 214,
+    "producer": "PDFlib+PDI 10.0.1p3 (Linux-x64)",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      67
+    ],
+    "sha256": "fc5e7145447ad369398a7a8670967b5b29d26be589e74d13f5f6c573021857e9",
+    "size": 2170319,
+    "source": "Board of Governors of the Federal Reserve System publications",
+    "sourceDocumentId": "federal-reserve-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
+    "title": "Federal Reserve Board Publication"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-13",
+      "financial-report",
+      "government",
+      "holdout",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "XPP",
+    "id": "cycle-13/holdout/c13-103-financial-report-federal-reserve-2024-ar-p74",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "pageCount": 214,
+    "producer": "PDFlib+PDI 10.0.1p3 (Linux-x64)",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      73
+    ],
+    "sha256": "fc5e7145447ad369398a7a8670967b5b29d26be589e74d13f5f6c573021857e9",
+    "size": 2170319,
+    "source": "Board of Governors of the Federal Reserve System publications",
+    "sourceDocumentId": "federal-reserve-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
+    "title": "Federal Reserve Board Publication"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-13",
+      "financial-report",
+      "government",
+      "holdout",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "XPP",
+    "id": "cycle-13/holdout/c13-104-financial-report-federal-reserve-2024-ar-p80",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "pageCount": 214,
+    "producer": "PDFlib+PDI 10.0.1p3 (Linux-x64)",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      79
+    ],
+    "sha256": "fc5e7145447ad369398a7a8670967b5b29d26be589e74d13f5f6c573021857e9",
+    "size": 2170319,
+    "source": "Board of Governors of the Federal Reserve System publications",
+    "sourceDocumentId": "federal-reserve-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
+    "title": "Federal Reserve Board Publication"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-13",
+      "financial-report",
+      "government",
+      "holdout",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "XPP",
+    "id": "cycle-13/holdout/c13-105-financial-report-federal-reserve-2024-ar-p86",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "pageCount": 214,
+    "producer": "PDFlib+PDI 10.0.1p3 (Linux-x64)",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      85
+    ],
+    "sha256": "fc5e7145447ad369398a7a8670967b5b29d26be589e74d13f5f6c573021857e9",
+    "size": 2170319,
+    "source": "Board of Governors of the Federal Reserve System publications",
+    "sourceDocumentId": "federal-reserve-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
+    "title": "Federal Reserve Board Publication"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-13",
+      "financial-report",
+      "government",
+      "holdout",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "XPP",
+    "id": "cycle-13/holdout/c13-106-financial-report-federal-reserve-2024-ar-p92",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "pageCount": 214,
+    "producer": "PDFlib+PDI 10.0.1p3 (Linux-x64)",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      91
+    ],
+    "sha256": "fc5e7145447ad369398a7a8670967b5b29d26be589e74d13f5f6c573021857e9",
+    "size": 2170319,
+    "source": "Board of Governors of the Federal Reserve System publications",
+    "sourceDocumentId": "federal-reserve-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
+    "title": "Federal Reserve Board Publication"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-13",
+      "financial-report",
+      "government",
+      "holdout",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "XPP",
+    "id": "cycle-13/holdout/c13-107-financial-report-federal-reserve-2024-ar-p98",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "pageCount": 214,
+    "producer": "PDFlib+PDI 10.0.1p3 (Linux-x64)",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      97
+    ],
+    "sha256": "fc5e7145447ad369398a7a8670967b5b29d26be589e74d13f5f6c573021857e9",
+    "size": 2170319,
+    "source": "Board of Governors of the Federal Reserve System publications",
+    "sourceDocumentId": "federal-reserve-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
+    "title": "Federal Reserve Board Publication"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-13",
+      "financial-report",
+      "government",
+      "holdout",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "XPP",
+    "id": "cycle-13/holdout/c13-108-financial-report-federal-reserve-2024-ar-p104",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "pageCount": 214,
+    "producer": "PDFlib+PDI 10.0.1p3 (Linux-x64)",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      103
+    ],
+    "sha256": "fc5e7145447ad369398a7a8670967b5b29d26be589e74d13f5f6c573021857e9",
+    "size": 2170319,
+    "source": "Board of Governors of the Federal Reserve System publications",
+    "sourceDocumentId": "federal-reserve-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
+    "title": "Federal Reserve Board Publication"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-13",
+      "financial-report",
+      "government",
+      "holdout",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "XPP",
+    "id": "cycle-13/holdout/c13-109-financial-report-federal-reserve-2024-ar-p111",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "pageCount": 214,
+    "producer": "PDFlib+PDI 10.0.1p3 (Linux-x64)",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      110
+    ],
+    "sha256": "fc5e7145447ad369398a7a8670967b5b29d26be589e74d13f5f6c573021857e9",
+    "size": 2170319,
+    "source": "Board of Governors of the Federal Reserve System publications",
+    "sourceDocumentId": "federal-reserve-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
+    "title": "Federal Reserve Board Publication"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-13",
+      "financial-report",
+      "government",
+      "holdout",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "XPP",
+    "id": "cycle-13/holdout/c13-110-financial-report-federal-reserve-2024-ar-p117",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "pageCount": 214,
+    "producer": "PDFlib+PDI 10.0.1p3 (Linux-x64)",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      116
+    ],
+    "sha256": "fc5e7145447ad369398a7a8670967b5b29d26be589e74d13f5f6c573021857e9",
+    "size": 2170319,
+    "source": "Board of Governors of the Federal Reserve System publications",
+    "sourceDocumentId": "federal-reserve-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
+    "title": "Federal Reserve Board Publication"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-13",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 18.4 (Macintosh)",
+    "id": "cycle-13/holdout/c13-111-financial-report-boeing-2024-ar-p1",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "pageCount": 161,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "first page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "5e03ffd804b7dc9794de9a4be08e1db1263edbb27adb7791c6bf11b85fedc001",
+    "size": 6971675,
+    "source": "Boeing annual reports",
+    "sourceDocumentId": "boeing-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
+    "title": ""
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-13",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 18.4 (Macintosh)",
+    "id": "cycle-13/holdout/c13-112-financial-report-boeing-2024-ar-p2",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "pageCount": 161,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      1
+    ],
+    "sha256": "5e03ffd804b7dc9794de9a4be08e1db1263edbb27adb7791c6bf11b85fedc001",
+    "size": 6971675,
+    "source": "Boeing annual reports",
+    "sourceDocumentId": "boeing-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
+    "title": ""
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-13",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 18.4 (Macintosh)",
+    "id": "cycle-13/holdout/c13-113-financial-report-boeing-2024-ar-p3",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "pageCount": 161,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      2
+    ],
+    "sha256": "5e03ffd804b7dc9794de9a4be08e1db1263edbb27adb7791c6bf11b85fedc001",
+    "size": 6971675,
+    "source": "Boeing annual reports",
+    "sourceDocumentId": "boeing-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
+    "title": ""
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-13",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 18.4 (Macintosh)",
+    "id": "cycle-13/holdout/c13-114-financial-report-boeing-2024-ar-p6",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "pageCount": 161,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      5
+    ],
+    "sha256": "5e03ffd804b7dc9794de9a4be08e1db1263edbb27adb7791c6bf11b85fedc001",
+    "size": 6971675,
+    "source": "Boeing annual reports",
+    "sourceDocumentId": "boeing-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
+    "title": ""
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-13",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 18.4 (Macintosh)",
+    "id": "cycle-13/holdout/c13-115-financial-report-boeing-2024-ar-p10",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "pageCount": 161,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      9
+    ],
+    "sha256": "5e03ffd804b7dc9794de9a4be08e1db1263edbb27adb7791c6bf11b85fedc001",
+    "size": 6971675,
+    "source": "Boeing annual reports",
+    "sourceDocumentId": "boeing-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
+    "title": ""
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-13",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 18.4 (Macintosh)",
+    "id": "cycle-13/holdout/c13-116-financial-report-boeing-2024-ar-p15",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "pageCount": 161,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      14
+    ],
+    "sha256": "5e03ffd804b7dc9794de9a4be08e1db1263edbb27adb7791c6bf11b85fedc001",
+    "size": 6971675,
+    "source": "Boeing annual reports",
+    "sourceDocumentId": "boeing-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
+    "title": ""
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-13",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 18.4 (Macintosh)",
+    "id": "cycle-13/holdout/c13-117-financial-report-boeing-2024-ar-p19",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "pageCount": 161,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      18
+    ],
+    "sha256": "5e03ffd804b7dc9794de9a4be08e1db1263edbb27adb7791c6bf11b85fedc001",
+    "size": 6971675,
+    "source": "Boeing annual reports",
+    "sourceDocumentId": "boeing-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
+    "title": ""
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-13",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 18.4 (Macintosh)",
+    "id": "cycle-13/holdout/c13-118-financial-report-boeing-2024-ar-p24",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "pageCount": 161,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      23
+    ],
+    "sha256": "5e03ffd804b7dc9794de9a4be08e1db1263edbb27adb7791c6bf11b85fedc001",
+    "size": 6971675,
+    "source": "Boeing annual reports",
+    "sourceDocumentId": "boeing-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
+    "title": ""
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-13",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 18.4 (Macintosh)",
+    "id": "cycle-13/holdout/c13-119-financial-report-boeing-2024-ar-p28",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "pageCount": 161,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      27
+    ],
+    "sha256": "5e03ffd804b7dc9794de9a4be08e1db1263edbb27adb7791c6bf11b85fedc001",
+    "size": 6971675,
+    "source": "Boeing annual reports",
+    "sourceDocumentId": "boeing-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
+    "title": ""
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-13",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 18.4 (Macintosh)",
+    "id": "cycle-13/holdout/c13-120-financial-report-boeing-2024-ar-p33",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "pageCount": 161,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      32
+    ],
+    "sha256": "5e03ffd804b7dc9794de9a4be08e1db1263edbb27adb7791c6bf11b85fedc001",
+    "size": 6971675,
+    "source": "Boeing annual reports",
+    "sourceDocumentId": "boeing-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
+    "title": ""
+  }
+]

@@ -392,7 +392,7 @@ export class WordExtractor {
         cx = -Number(curr.bottom);
       }
     }
-    return cx < ax - 1e-6 || cx > bx + x || Math.abs(cy - ay) > y;
+    return cx < ax - 1e-6 || cx > bx + x + 1e-9 || Math.abs(cy - ay) > y;
   }
 
   *iterCharsToWords(chars: PDFObject[], direction: Dir): Generator<PDFObject[]> {

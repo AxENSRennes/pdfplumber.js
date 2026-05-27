@@ -26,7 +26,7 @@ if (!["working", "holdout"].includes(phase)) {
   throw new Error("--phase must be working or holdout");
 }
 
-const cycles = parseCycles(argValue("--cycles", "10,11,12"));
+const cycles = parseCycles(argValue("--cycles", "10,11,12,13"));
 const maxWorkers = argValue("--maxWorkers", phase === "holdout" ? "1" : "2");
 let failed = false;
 
