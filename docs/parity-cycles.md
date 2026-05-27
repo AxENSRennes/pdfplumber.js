@@ -20,7 +20,11 @@ Current generated totals:
 - Cycle 01: 100/100 working, 20/20 holdout
 - Cycle 02: 100/100 working, 20/20 holdout
 - Cycle 03: 100/100 working, 20/20 holdout
-- Total: 300/300 working, 60/60 holdout
+- Real cycle 12: 100/100 working, 20/20 holdout
+- Real cycle 13: 100/100 working, 20/20 holdout
+- Real cycle 14: 100/100 working, 19/20 holdout
+- Current real-document streak: 3 successful cycles in a row. Cycle 14's single holdout miss is `cycle-14/holdout/c14-116-financial-report-fdic-2024-ar-p3`, an image `doctop` drift of about 0.000377.
+- Total listed above: 600/600 working, 119/120 holdout
 
 ## Commands
 

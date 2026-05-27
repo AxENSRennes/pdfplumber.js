@@ -1,0 +1,616 @@
+[
+  {
+    "categories": [
+      "cycle-14",
+      "financial-report",
+      "french",
+      "holdout",
+      "international-organization",
+      "multilingual",
+      "real-document"
+    ],
+    "counted": true,
+    "creator": "Acrobat PDFMaker 25 for Word",
+    "id": "cycle-14/holdout/c14-101-financial-report-eba-2024-summary-fr-p1",
+    "licenseOrTerms": "European Banking Authority publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/eba-2024-summary-fr.pdf",
+    "pageCount": 3,
+    "producer": "Adobe PDF Library 25.1.250",
+    "rationale": "first page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "dd374465792139655b80ddcace7760020c4b03ff76fdeca551e305af4cdb2a5e",
+    "size": 131457,
+    "source": "European Banking Authority annual report summaries",
+    "sourceDocumentId": "eba-2024-summary-fr",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.eba.europa.eu/sites/default/files/2025-06/84030ead-a929-45fa-a03f-a4e252f7c3f0/Executive%20summary%20of%20the%202024%20Annual%20Report_FR_0.pdf",
+    "title": "Executive summary of the 2024 Annual Report_FR.docx"
+  },
+  {
+    "categories": [
+      "cycle-14",
+      "financial-report",
+      "french",
+      "holdout",
+      "international-organization",
+      "multilingual",
+      "real-document"
+    ],
+    "counted": true,
+    "creator": "Acrobat PDFMaker 25 for Word",
+    "id": "cycle-14/holdout/c14-102-financial-report-eba-2024-summary-fr-p2",
+    "licenseOrTerms": "European Banking Authority publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/eba-2024-summary-fr.pdf",
+    "pageCount": 3,
+    "producer": "Adobe PDF Library 25.1.250",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      1
+    ],
+    "sha256": "dd374465792139655b80ddcace7760020c4b03ff76fdeca551e305af4cdb2a5e",
+    "size": 131457,
+    "source": "European Banking Authority annual report summaries",
+    "sourceDocumentId": "eba-2024-summary-fr",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.eba.europa.eu/sites/default/files/2025-06/84030ead-a929-45fa-a03f-a4e252f7c3f0/Executive%20summary%20of%20the%202024%20Annual%20Report_FR_0.pdf",
+    "title": "Executive summary of the 2024 Annual Report_FR.docx"
+  },
+  {
+    "categories": [
+      "cycle-14",
+      "financial-report",
+      "french",
+      "holdout",
+      "international-organization",
+      "multilingual",
+      "real-document"
+    ],
+    "counted": true,
+    "creator": "Acrobat PDFMaker 25 for Word",
+    "id": "cycle-14/holdout/c14-103-financial-report-eba-2024-summary-fr-p3",
+    "licenseOrTerms": "European Banking Authority publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/eba-2024-summary-fr.pdf",
+    "pageCount": 3,
+    "producer": "Adobe PDF Library 25.1.250",
+    "rationale": "last page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      2
+    ],
+    "sha256": "dd374465792139655b80ddcace7760020c4b03ff76fdeca551e305af4cdb2a5e",
+    "size": 131457,
+    "source": "European Banking Authority annual report summaries",
+    "sourceDocumentId": "eba-2024-summary-fr",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.eba.europa.eu/sites/default/files/2025-06/84030ead-a929-45fa-a03f-a4e252f7c3f0/Executive%20summary%20of%20the%202024%20Annual%20Report_FR_0.pdf",
+    "title": "Executive summary of the 2024 Annual Report_FR.docx"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-14",
+      "financial-report",
+      "holdout",
+      "international-organization",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Microsoft® Word for Microsoft 365",
+    "id": "cycle-14/holdout/c14-104-financial-report-eba-2024-ar-p1",
+    "licenseOrTerms": "European Banking Authority publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/eba-2024-ar.pdf",
+    "pageCount": 138,
+    "producer": "Microsoft® Word for Microsoft 365",
+    "rationale": "first page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "ca016d78e3a00b5ec0caaa6132a95901c401cd73c836da46f63d95b41765326a",
+    "size": 3599453,
+    "source": "European Banking Authority annual reports",
+    "sourceDocumentId": "eba-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.eba.europa.eu/sites/default/files/2025-06/bee4e97f-91a9-43bd-abdb-bd774e0259bf/2024%20Annual%20Report.pdf",
+    "title": null
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-14",
+      "financial-report",
+      "holdout",
+      "international-organization",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Microsoft® Word for Microsoft 365",
+    "id": "cycle-14/holdout/c14-105-financial-report-eba-2024-ar-p2",
+    "licenseOrTerms": "European Banking Authority publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/eba-2024-ar.pdf",
+    "pageCount": 138,
+    "producer": "Microsoft® Word for Microsoft 365",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      1
+    ],
+    "sha256": "ca016d78e3a00b5ec0caaa6132a95901c401cd73c836da46f63d95b41765326a",
+    "size": 3599453,
+    "source": "European Banking Authority annual reports",
+    "sourceDocumentId": "eba-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.eba.europa.eu/sites/default/files/2025-06/bee4e97f-91a9-43bd-abdb-bd774e0259bf/2024%20Annual%20Report.pdf",
+    "title": null
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-14",
+      "financial-report",
+      "holdout",
+      "international-organization",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Microsoft® Word for Microsoft 365",
+    "id": "cycle-14/holdout/c14-106-financial-report-eba-2024-ar-p3",
+    "licenseOrTerms": "European Banking Authority publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/eba-2024-ar.pdf",
+    "pageCount": 138,
+    "producer": "Microsoft® Word for Microsoft 365",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      2
+    ],
+    "sha256": "ca016d78e3a00b5ec0caaa6132a95901c401cd73c836da46f63d95b41765326a",
+    "size": 3599453,
+    "source": "European Banking Authority annual reports",
+    "sourceDocumentId": "eba-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.eba.europa.eu/sites/default/files/2025-06/bee4e97f-91a9-43bd-abdb-bd774e0259bf/2024%20Annual%20Report.pdf",
+    "title": null
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-14",
+      "financial-report",
+      "holdout",
+      "international-organization",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Microsoft® Word for Microsoft 365",
+    "id": "cycle-14/holdout/c14-107-financial-report-eba-2024-ar-p5",
+    "licenseOrTerms": "European Banking Authority publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/eba-2024-ar.pdf",
+    "pageCount": 138,
+    "producer": "Microsoft® Word for Microsoft 365",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      4
+    ],
+    "sha256": "ca016d78e3a00b5ec0caaa6132a95901c401cd73c836da46f63d95b41765326a",
+    "size": 3599453,
+    "source": "European Banking Authority annual reports",
+    "sourceDocumentId": "eba-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.eba.europa.eu/sites/default/files/2025-06/bee4e97f-91a9-43bd-abdb-bd774e0259bf/2024%20Annual%20Report.pdf",
+    "title": null
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-14",
+      "financial-report",
+      "holdout",
+      "international-organization",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Microsoft® Word for Microsoft 365",
+    "id": "cycle-14/holdout/c14-108-financial-report-eba-2024-ar-p9",
+    "licenseOrTerms": "European Banking Authority publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/eba-2024-ar.pdf",
+    "pageCount": 138,
+    "producer": "Microsoft® Word for Microsoft 365",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      8
+    ],
+    "sha256": "ca016d78e3a00b5ec0caaa6132a95901c401cd73c836da46f63d95b41765326a",
+    "size": 3599453,
+    "source": "European Banking Authority annual reports",
+    "sourceDocumentId": "eba-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.eba.europa.eu/sites/default/files/2025-06/bee4e97f-91a9-43bd-abdb-bd774e0259bf/2024%20Annual%20Report.pdf",
+    "title": null
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-14",
+      "financial-report",
+      "holdout",
+      "international-organization",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Microsoft® Word for Microsoft 365",
+    "id": "cycle-14/holdout/c14-109-financial-report-eba-2024-ar-p13",
+    "licenseOrTerms": "European Banking Authority publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/eba-2024-ar.pdf",
+    "pageCount": 138,
+    "producer": "Microsoft® Word for Microsoft 365",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      12
+    ],
+    "sha256": "ca016d78e3a00b5ec0caaa6132a95901c401cd73c836da46f63d95b41765326a",
+    "size": 3599453,
+    "source": "European Banking Authority annual reports",
+    "sourceDocumentId": "eba-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.eba.europa.eu/sites/default/files/2025-06/bee4e97f-91a9-43bd-abdb-bd774e0259bf/2024%20Annual%20Report.pdf",
+    "title": null
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-14",
+      "financial-report",
+      "holdout",
+      "international-organization",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Microsoft® Word for Microsoft 365",
+    "id": "cycle-14/holdout/c14-110-financial-report-eba-2024-ar-p17",
+    "licenseOrTerms": "European Banking Authority publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/eba-2024-ar.pdf",
+    "pageCount": 138,
+    "producer": "Microsoft® Word for Microsoft 365",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      16
+    ],
+    "sha256": "ca016d78e3a00b5ec0caaa6132a95901c401cd73c836da46f63d95b41765326a",
+    "size": 3599453,
+    "source": "European Banking Authority annual reports",
+    "sourceDocumentId": "eba-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.eba.europa.eu/sites/default/files/2025-06/bee4e97f-91a9-43bd-abdb-bd774e0259bf/2024%20Annual%20Report.pdf",
+    "title": null
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-14",
+      "financial-report",
+      "holdout",
+      "international-organization",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Microsoft® Word for Microsoft 365",
+    "id": "cycle-14/holdout/c14-111-financial-report-eba-2024-ar-p21",
+    "licenseOrTerms": "European Banking Authority publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/eba-2024-ar.pdf",
+    "pageCount": 138,
+    "producer": "Microsoft® Word for Microsoft 365",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      20
+    ],
+    "sha256": "ca016d78e3a00b5ec0caaa6132a95901c401cd73c836da46f63d95b41765326a",
+    "size": 3599453,
+    "source": "European Banking Authority annual reports",
+    "sourceDocumentId": "eba-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.eba.europa.eu/sites/default/files/2025-06/bee4e97f-91a9-43bd-abdb-bd774e0259bf/2024%20Annual%20Report.pdf",
+    "title": null
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-14",
+      "financial-report",
+      "holdout",
+      "international-organization",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Microsoft® Word for Microsoft 365",
+    "id": "cycle-14/holdout/c14-112-financial-report-eba-2024-ar-p24",
+    "licenseOrTerms": "European Banking Authority publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/eba-2024-ar.pdf",
+    "pageCount": 138,
+    "producer": "Microsoft® Word for Microsoft 365",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      23
+    ],
+    "sha256": "ca016d78e3a00b5ec0caaa6132a95901c401cd73c836da46f63d95b41765326a",
+    "size": 3599453,
+    "source": "European Banking Authority annual reports",
+    "sourceDocumentId": "eba-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.eba.europa.eu/sites/default/files/2025-06/bee4e97f-91a9-43bd-abdb-bd774e0259bf/2024%20Annual%20Report.pdf",
+    "title": null
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-14",
+      "financial-report",
+      "holdout",
+      "international-organization",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Microsoft® Word for Microsoft 365",
+    "id": "cycle-14/holdout/c14-113-financial-report-eba-2024-ar-p28",
+    "licenseOrTerms": "European Banking Authority publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/eba-2024-ar.pdf",
+    "pageCount": 138,
+    "producer": "Microsoft® Word for Microsoft 365",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      27
+    ],
+    "sha256": "ca016d78e3a00b5ec0caaa6132a95901c401cd73c836da46f63d95b41765326a",
+    "size": 3599453,
+    "source": "European Banking Authority annual reports",
+    "sourceDocumentId": "eba-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.eba.europa.eu/sites/default/files/2025-06/bee4e97f-91a9-43bd-abdb-bd774e0259bf/2024%20Annual%20Report.pdf",
+    "title": null
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-14",
+      "financial-report",
+      "government",
+      "holdout",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "EQX BATCH",
+    "id": "cycle-14/holdout/c14-114-financial-report-fdic-2024-ar-p1",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-pdfs/fdic-2024-ar.pdf",
+    "pageCount": 186,
+    "producer": "Equidox 7",
+    "rationale": "first page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "0f31bc220f78ded5c1d312eaa547eff163843979cf3200aa7cfbe30622d66d77",
+    "size": 11266727,
+    "source": "Federal Deposit Insurance Corporation annual reports",
+    "sourceDocumentId": "fdic-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.fdic.gov/financial-reports/2024-annual-report-full-report.pdf",
+    "title": "FDIC 2024 Annual Report"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-14",
+      "financial-report",
+      "government",
+      "holdout",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "EQX BATCH",
+    "id": "cycle-14/holdout/c14-115-financial-report-fdic-2024-ar-p2",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-pdfs/fdic-2024-ar.pdf",
+    "pageCount": 186,
+    "producer": "Equidox 7",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      1
+    ],
+    "sha256": "0f31bc220f78ded5c1d312eaa547eff163843979cf3200aa7cfbe30622d66d77",
+    "size": 11266727,
+    "source": "Federal Deposit Insurance Corporation annual reports",
+    "sourceDocumentId": "fdic-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.fdic.gov/financial-reports/2024-annual-report-full-report.pdf",
+    "title": "FDIC 2024 Annual Report"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-14",
+      "financial-report",
+      "government",
+      "holdout",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "EQX BATCH",
+    "id": "cycle-14/holdout/c14-116-financial-report-fdic-2024-ar-p3",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-pdfs/fdic-2024-ar.pdf",
+    "pageCount": 186,
+    "producer": "Equidox 7",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      2
+    ],
+    "sha256": "0f31bc220f78ded5c1d312eaa547eff163843979cf3200aa7cfbe30622d66d77",
+    "size": 11266727,
+    "source": "Federal Deposit Insurance Corporation annual reports",
+    "sourceDocumentId": "fdic-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.fdic.gov/financial-reports/2024-annual-report-full-report.pdf",
+    "title": "FDIC 2024 Annual Report"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-14",
+      "financial-report",
+      "government",
+      "holdout",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "EQX BATCH",
+    "id": "cycle-14/holdout/c14-117-financial-report-fdic-2024-ar-p6",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-pdfs/fdic-2024-ar.pdf",
+    "pageCount": 186,
+    "producer": "Equidox 7",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      5
+    ],
+    "sha256": "0f31bc220f78ded5c1d312eaa547eff163843979cf3200aa7cfbe30622d66d77",
+    "size": 11266727,
+    "source": "Federal Deposit Insurance Corporation annual reports",
+    "sourceDocumentId": "fdic-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.fdic.gov/financial-reports/2024-annual-report-full-report.pdf",
+    "title": "FDIC 2024 Annual Report"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-14",
+      "financial-report",
+      "government",
+      "holdout",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "EQX BATCH",
+    "id": "cycle-14/holdout/c14-118-financial-report-fdic-2024-ar-p12",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-pdfs/fdic-2024-ar.pdf",
+    "pageCount": 186,
+    "producer": "Equidox 7",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      11
+    ],
+    "sha256": "0f31bc220f78ded5c1d312eaa547eff163843979cf3200aa7cfbe30622d66d77",
+    "size": 11266727,
+    "source": "Federal Deposit Insurance Corporation annual reports",
+    "sourceDocumentId": "fdic-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.fdic.gov/financial-reports/2024-annual-report-full-report.pdf",
+    "title": "FDIC 2024 Annual Report"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-14",
+      "financial-report",
+      "government",
+      "holdout",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "EQX BATCH",
+    "id": "cycle-14/holdout/c14-119-financial-report-fdic-2024-ar-p17",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-pdfs/fdic-2024-ar.pdf",
+    "pageCount": 186,
+    "producer": "Equidox 7",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      16
+    ],
+    "sha256": "0f31bc220f78ded5c1d312eaa547eff163843979cf3200aa7cfbe30622d66d77",
+    "size": 11266727,
+    "source": "Federal Deposit Insurance Corporation annual reports",
+    "sourceDocumentId": "fdic-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.fdic.gov/financial-reports/2024-annual-report-full-report.pdf",
+    "title": "FDIC 2024 Annual Report"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank-regulatory",
+      "cycle-14",
+      "financial-report",
+      "government",
+      "holdout",
+      "long-document",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "EQX BATCH",
+    "id": "cycle-14/holdout/c14-120-financial-report-fdic-2024-ar-p22",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-pdfs/fdic-2024-ar.pdf",
+    "pageCount": 186,
+    "producer": "Equidox 7",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      21
+    ],
+    "sha256": "0f31bc220f78ded5c1d312eaa547eff163843979cf3200aa7cfbe30622d66d77",
+    "size": 11266727,
+    "source": "Federal Deposit Insurance Corporation annual reports",
+    "sourceDocumentId": "fdic-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.fdic.gov/financial-reports/2024-annual-report-full-report.pdf",
+    "title": "FDIC 2024 Annual Report"
+  }
+]

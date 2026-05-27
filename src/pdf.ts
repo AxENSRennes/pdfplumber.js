@@ -1154,7 +1154,7 @@ export function extractPageObjects(
         for (const { path, transformed, pagePoints } of pathEntries) {
           const inferRectFromGeometry = rawPath === undefined;
           if (transformed.length < 2) {
-            if (transformed.length === 1 && isFill) {
+            if (transformed.length === 1 && (isFill || (isStroke && vectorExtras.tag === "Artifact"))) {
               if (!path.closed && closedSinglePointKeys.has(pointKey(transformed) ?? "")) continue;
               const rawBBox = pathBBox(transformed);
               const pts = pagePoints;
