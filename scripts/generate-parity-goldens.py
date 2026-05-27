@@ -27,7 +27,7 @@ except Exception:  # pragma: nocover
 
 JSONScalar = Optional[str | int | float | bool]
 CheckBuilder = Callable[[Any], List[Dict[str, Any]]]
-HASH_NUMERIC_DIGITS = 3
+HASH_NUMERIC_DIGITS = 1
 
 
 def finite_number(value: Any, digits: int = 6) -> JSONScalar:

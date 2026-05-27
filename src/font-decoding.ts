@@ -63,9 +63,17 @@ export function glyphTextLikePdfminer(input: GlyphTextInput): string {
   const fontRecord = input.fontRecord ?? font.fontRecord;
   if (typeof originalCharCode === "number") {
     if (/Wingdings/i.test(font.fontname) && glyphUnicode === "ß") return "§";
-    if (/CMEX/i.test(font.fontname) && !glyphUnicode) return `(cid:${originalCharCode})`;
+    if (/CMEX/i.test(font.fontname) && (!glyphUnicode || glyphUnicode === String.fromCharCode(originalCharCode))) return `(cid:${originalCharCode})`;
     if (/^Diwan/i.test(font.fontname)) return `(cid:${originalCharCode})`;
     if (/^TraditionalArabic/i.test(font.fontname)) return `(cid:${originalCharCode})`;
+    if (
+      fontRecord?.subtype === "Type0" &&
+      fontRecord.symbolic &&
+      /^[A-Z]{6}\+Arial(?:MT|-ItalicMT|-BoldMT)$/i.test(font.fontname) &&
+      glyphUnicode === String.fromCharCode(originalCharCode)
+    ) {
+      return `(cid:${originalCharCode})`;
+    }
     if (/^TimesNewRoman$/i.test(font.fontname) && fontRecord?.hasToUnicode !== true && glyphUnicode === "&") return "C";
     if (fontRecord?.hasToUnicode !== true || !glyphUnicode) {
       const encodingText = glyphNameText(fontRecord?.encodingDifferences?.[originalCharCode]);

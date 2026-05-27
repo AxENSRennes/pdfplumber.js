@@ -2,16 +2,16 @@
 import { defineCycleParityShard } from "../../../cycle-shard-runner.js";
 
 const caseIds = [
-  "cycle-12/working/c12-001-financial-report-boj-semiannual-2024-jp-p48",
-  "cycle-12/working/c12-002-financial-report-boj-semiannual-2024-jp-p51",
-  "cycle-12/working/c12-003-financial-report-boj-semiannual-2024-jp-p53",
-  "cycle-12/working/c12-004-financial-report-boj-semiannual-2024-jp-p56",
-  "cycle-12/working/c12-005-financial-report-boj-semiannual-2024-jp-p58",
-  "cycle-12/working/c12-006-financial-report-boj-semiannual-2024-jp-p61",
-  "cycle-12/working/c12-007-financial-report-boj-semiannual-2024-jp-p63",
-  "cycle-12/working/c12-008-financial-report-boj-semiannual-2024-jp-p66",
-  "cycle-12/working/c12-009-financial-report-boj-semiannual-2024-jp-p68",
-  "cycle-12/working/c12-010-financial-report-boj-semiannual-2024-jp-p71"
+  "cycle-12/working/c12-011-financial-report-boj-semiannual-2024-jp-p48",
+  "cycle-12/working/c12-012-financial-report-boj-semiannual-2024-jp-p51",
+  "cycle-12/working/c12-013-financial-report-boj-semiannual-2024-jp-p53",
+  "cycle-12/working/c12-014-financial-report-boj-semiannual-2024-jp-p56",
+  "cycle-12/working/c12-015-financial-report-boj-semiannual-2024-jp-p58",
+  "cycle-12/working/c12-016-financial-report-boj-semiannual-2024-jp-p61",
+  "cycle-12/working/c12-017-financial-report-boj-semiannual-2024-jp-p63",
+  "cycle-12/working/c12-018-financial-report-boj-semiannual-2024-jp-p66",
+  "cycle-12/working/c12-019-financial-report-boj-semiannual-2024-jp-p68",
+  "cycle-12/working/c12-020-financial-report-boj-semiannual-2024-jp-p71"
 ];
 
 defineCycleParityShard({

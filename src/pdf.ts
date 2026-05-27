@@ -680,7 +680,7 @@ export function extractPageObjects(
   const images: PDFObject[] = [];
   const contentPoint = (point: Point): Point => (contentYOffset ? [point[0], point[1] + contentYOffset] : point);
   const coordOffset: Point = [0, pageTop];
-  const markedContentStack: Array<{ tag: string | null; mcid: number | null }> = [];
+  const markedContentStack: Array<{ tag: string | null; mcid: number | null; transparent?: boolean }> = [];
   const fillColorOps = colorOps.filter((op) => op.target === "fill");
   const strokeColorOps = colorOps.filter((op) => op.target === "stroke");
   let transformIndex = 0;
@@ -698,8 +698,7 @@ export function extractPageObjects(
   const partialRawPaths = pathOps.length > 0 && pathOps.length !== constructPathTotal;
   let usedPartialRawCurve = false;
   const markedExtras = () => {
-    const markedContent =
-      [...markedContentStack].reverse().find((item) => item.tag !== "OC") ?? markedContentStack[markedContentStack.length - 1];
+    const markedContent = [...markedContentStack].reverse().find((item) => !item.transparent);
     return {
       mcid: markedContent?.mcid ?? null,
       tag: markedContent?.tag ?? null
@@ -830,17 +829,19 @@ export function extractPageObjects(
       case pdfjs.OPS.beginMarkedContent:
         markedContentStack.push({ tag: decodePdfNameUtf8(args?.[0]?.name ?? String(args?.[0] ?? "")), mcid: null });
         break;
-      case pdfjs.OPS.beginMarkedContentProps:
-        markedContentStack.push({ tag: decodePdfNameUtf8(args?.[0]?.name ?? String(args?.[0] ?? "")), mcid: typeof args?.[1] === "number" ? args[1] : null });
+      case pdfjs.OPS.beginMarkedContentProps: {
+        const tag = decodePdfNameUtf8(args?.[0]?.name ?? String(args?.[0] ?? ""));
+        const transparent = tag === "OC" && markedContentStack.some((item) => !item.transparent) && operatorList.fnArray[i + 1] === pdfjs.OPS.paintFormXObjectBegin;
+        markedContentStack.push({ tag, mcid: typeof args?.[1] === "number" ? args[1] : null, transparent });
         break;
-      case pdfjs.OPS.endMarkedContent:
-        {
-          const ended = markedContentStack.pop();
-          if (ended?.mcid == null && ended?.tag != null && ended.tag !== "OC" && markedContentStack.length > 0) {
-            markedContentStack.pop();
-          }
+      }
+      case pdfjs.OPS.endMarkedContent: {
+        const ended = markedContentStack.pop();
+        if (!ended?.transparent && ended?.mcid == null && ended?.tag != null && ended.tag !== "OC" && markedContentStack.length > 0) {
+          markedContentStack.pop();
         }
         break;
+      }
       case pdfjs.OPS.setFillColorSpace:
         {
           const nextColorSpace = colorSpaceName(args?.[0]);
@@ -1153,18 +1154,18 @@ export function extractPageObjects(
         for (const { path, transformed, pagePoints } of pathEntries) {
           const inferRectFromGeometry = rawPath === undefined;
           if (transformed.length < 2) {
-            if (transformed.length === 1 && (isFill || isStroke)) {
+            if (transformed.length === 1 && isFill) {
               if (!path.closed && closedSinglePointKeys.has(pointKey(transformed) ?? "")) continue;
               const rawBBox = pathBBox(transformed);
               const pts = pagePoints;
               const [pointX, pointTop] = pts[0] ?? [Number.NaN, Number.NaN];
               if (!isStroke && (pointX < 0 || pointX > pageWidth || pointTop < 0 || pointTop > pageHeight)) continue;
               curves.push(
-	                rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
-	                  pts,
-	                  closepath: path.closed,
-	                  ...vectorExtras
-	                }, coordOffset)
+                rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
+                  pts,
+                  closepath: path.closed,
+                  ...vectorExtras
+                }, coordOffset)
               );
             }
             continue;

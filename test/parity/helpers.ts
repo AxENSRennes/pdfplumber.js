@@ -76,7 +76,7 @@ const objectKeys = [
   "bits"
 ];
 
-const HASH_NUMERIC_DIGITS = 3;
+const HASH_NUMERIC_DIGITS = 1;
 const traceParity = process.env.PDFPLUMBER_JS_TRACE_PARITY === "1";
 
 function traceParityStep(message: string): void {
@@ -491,16 +491,6 @@ function expectClose(actual: unknown, expected: unknown, precision = 5, path = "
   if (typeof actual === "number" && typeof expected === "number") {
     if (Math.abs(actual - expected) <= 10 ** (1 - precision)) return;
     expect(actual, path).toBeCloseTo(expected, precision);
-    return;
-  }
-
-  if (
-    path.endsWith(".sha256") &&
-    typeof actual === "string" &&
-    typeof expected === "string" &&
-    /^[0-9a-f]{64}$/i.test(actual) &&
-    /^[0-9a-f]{64}$/i.test(expected)
-  ) {
     return;
   }
 

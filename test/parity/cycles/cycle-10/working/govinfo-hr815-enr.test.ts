@@ -2,10 +2,10 @@
 import { defineCycleParityShard } from "../../../cycle-shard-runner.js";
 
 const caseIds = [
-  "cycle-10/working/c10-057-legal-regulatory-govinfo-hr815-enr-p32",
-  "cycle-10/working/c10-058-legal-regulatory-govinfo-hr815-enr-p35",
-  "cycle-10/working/c10-059-legal-regulatory-govinfo-hr815-enr-p38",
-  "cycle-10/working/c10-060-legal-regulatory-govinfo-hr815-enr-p41"
+  "cycle-10/working/c10-070-legal-regulatory-govinfo-hr815-enr-p1",
+  "cycle-10/working/c10-071-legal-regulatory-govinfo-hr815-enr-p2",
+  "cycle-10/working/c10-072-legal-regulatory-govinfo-hr815-enr-p3",
+  "cycle-10/working/c10-073-legal-regulatory-govinfo-hr815-enr-p4"
 ];
 
 defineCycleParityShard({

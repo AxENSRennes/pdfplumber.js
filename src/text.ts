@@ -405,6 +405,18 @@ export class WordExtractor {
       const text = char.text ?? "";
       if (!this.keepBlankChars && /^\s$/u.test(text)) {
         const prev = current[current.length - 1];
+        const beforePrev = current[current.length - 2];
+        if (
+          prev &&
+          beforePrev &&
+          Number(char.x0) <= Number(prev.x0) + 1e-6 &&
+          Number(char.x1) < Number(prev.x1) - 1e-6 &&
+          Number(beforePrev.x1) > Number(char.x0) + 1e-6
+        ) {
+          const last = current.pop()!;
+          yield* flush(last);
+          continue;
+        }
         if (
           prev &&
           Math.abs(Number(char.width ?? Number(char.x1) - Number(char.x0))) <= 1e-9 &&

@@ -2,7 +2,7 @@
 import { defineCycleParityShard } from "../../../cycle-shard-runner.js";
 
 const caseIds = [
-  "cycle-10/working/c10-061-multilingual-text-pdfjs-simfang-variant-p1"
+  "cycle-10/working/c10-076-multilingual-text-pdfjs-simfang-variant-p1"
 ];
 
 defineCycleParityShard({

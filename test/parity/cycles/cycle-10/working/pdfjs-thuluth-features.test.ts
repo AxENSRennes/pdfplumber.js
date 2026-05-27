@@ -2,7 +2,7 @@
 import { defineCycleParityShard } from "../../../cycle-shard-runner.js";
 
 const caseIds = [
-  "cycle-10/working/c10-062-multilingual-text-pdfjs-thuluth-features-p1"
+  "cycle-10/working/c10-077-multilingual-text-pdfjs-thuluth-features-p1"
 ];
 
 defineCycleParityShard({

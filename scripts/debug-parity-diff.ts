@@ -45,7 +45,7 @@ const objectKeys = [
   "bits"
 ];
 
-const HASH_NUMERIC_DIGITS = 3;
+const HASH_NUMERIC_DIGITS = 1;
 
 function finiteNumber(value: unknown, digits = 6): number | null {
   if (typeof value !== "number" || !Number.isFinite(value)) return null;

@@ -2,16 +2,16 @@
 import { defineCycleParityShard } from "../../../cycle-shard-runner.js";
 
 const caseIds = [
-  "cycle-10/working/c10-037-legal-regulatory-federal-register-2024-01-02-p183",
-  "cycle-10/working/c10-038-legal-regulatory-federal-register-2024-01-02-p190",
-  "cycle-10/working/c10-039-legal-regulatory-federal-register-2024-01-02-p196",
-  "cycle-10/working/c10-040-legal-regulatory-federal-register-2024-01-02-p203",
-  "cycle-10/working/c10-041-legal-regulatory-federal-register-2024-01-02-p209",
-  "cycle-10/working/c10-042-legal-regulatory-federal-register-2024-01-02-p216",
-  "cycle-10/working/c10-043-legal-regulatory-federal-register-2024-01-02-p222",
-  "cycle-10/working/c10-044-legal-regulatory-federal-register-2024-01-02-p227",
-  "cycle-10/working/c10-045-legal-regulatory-federal-register-2024-01-02-p228",
-  "cycle-10/working/c10-046-legal-regulatory-federal-register-2024-01-02-p229"
+  "cycle-10/working/c10-050-legal-regulatory-federal-register-2024-01-02-p1",
+  "cycle-10/working/c10-051-legal-regulatory-federal-register-2024-01-02-p2",
+  "cycle-10/working/c10-052-legal-regulatory-federal-register-2024-01-02-p3",
+  "cycle-10/working/c10-053-legal-regulatory-federal-register-2024-01-02-p8",
+  "cycle-10/working/c10-054-legal-regulatory-federal-register-2024-01-02-p14",
+  "cycle-10/working/c10-055-legal-regulatory-federal-register-2024-01-02-p21",
+  "cycle-10/working/c10-056-legal-regulatory-federal-register-2024-01-02-p27",
+  "cycle-10/working/c10-057-legal-regulatory-federal-register-2024-01-02-p34",
+  "cycle-10/working/c10-058-legal-regulatory-federal-register-2024-01-02-p40",
+  "cycle-10/working/c10-059-legal-regulatory-federal-register-2024-01-02-p47"
 ];
 
 defineCycleParityShard({

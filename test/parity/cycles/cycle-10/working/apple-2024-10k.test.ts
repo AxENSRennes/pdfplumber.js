@@ -2,16 +2,16 @@
 import { defineCycleParityShard } from "../../../cycle-shard-runner.js";
 
 const caseIds = [
-  "cycle-10/working/c10-001-financial-report-apple-2024-10k-p97",
-  "cycle-10/working/c10-002-financial-report-apple-2024-10k-p100",
-  "cycle-10/working/c10-003-financial-report-apple-2024-10k-p104",
-  "cycle-10/working/c10-004-financial-report-apple-2024-10k-p107",
-  "cycle-10/working/c10-005-financial-report-apple-2024-10k-p111",
-  "cycle-10/working/c10-006-financial-report-apple-2024-10k-p114",
-  "cycle-10/working/c10-007-financial-report-apple-2024-10k-p118",
-  "cycle-10/working/c10-008-financial-report-apple-2024-10k-p119",
-  "cycle-10/working/c10-009-financial-report-apple-2024-10k-p120",
-  "cycle-10/working/c10-010-financial-report-apple-2024-10k-p121"
+  "cycle-10/working/c10-001-financial-report-apple-2024-10k-p1",
+  "cycle-10/working/c10-002-financial-report-apple-2024-10k-p2",
+  "cycle-10/working/c10-003-financial-report-apple-2024-10k-p3",
+  "cycle-10/working/c10-004-financial-report-apple-2024-10k-p4",
+  "cycle-10/working/c10-005-financial-report-apple-2024-10k-p8",
+  "cycle-10/working/c10-006-financial-report-apple-2024-10k-p11",
+  "cycle-10/working/c10-007-financial-report-apple-2024-10k-p15",
+  "cycle-10/working/c10-008-financial-report-apple-2024-10k-p18",
+  "cycle-10/working/c10-009-financial-report-apple-2024-10k-p22",
+  "cycle-10/working/c10-010-financial-report-apple-2024-10k-p25"
 ];
 
 defineCycleParityShard({

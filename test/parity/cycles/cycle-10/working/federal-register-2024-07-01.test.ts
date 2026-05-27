@@ -2,16 +2,16 @@
 import { defineCycleParityShard } from "../../../cycle-shard-runner.js";
 
 const caseIds = [
-  "cycle-10/working/c10-047-legal-regulatory-federal-register-2024-07-01-p319",
-  "cycle-10/working/c10-048-legal-regulatory-federal-register-2024-07-01-p331",
-  "cycle-10/working/c10-049-legal-regulatory-federal-register-2024-07-01-p342",
-  "cycle-10/working/c10-050-legal-regulatory-federal-register-2024-07-01-p354",
-  "cycle-10/working/c10-051-legal-regulatory-federal-register-2024-07-01-p365",
-  "cycle-10/working/c10-052-legal-regulatory-federal-register-2024-07-01-p376",
-  "cycle-10/working/c10-053-legal-regulatory-federal-register-2024-07-01-p388",
-  "cycle-10/working/c10-054-legal-regulatory-federal-register-2024-07-01-p397",
-  "cycle-10/working/c10-055-legal-regulatory-federal-register-2024-07-01-p398",
-  "cycle-10/working/c10-056-legal-regulatory-federal-register-2024-07-01-p399"
+  "cycle-10/working/c10-060-legal-regulatory-federal-register-2024-07-01-p1",
+  "cycle-10/working/c10-061-legal-regulatory-federal-register-2024-07-01-p2",
+  "cycle-10/working/c10-062-legal-regulatory-federal-register-2024-07-01-p3",
+  "cycle-10/working/c10-063-legal-regulatory-federal-register-2024-07-01-p12",
+  "cycle-10/working/c10-064-legal-regulatory-federal-register-2024-07-01-p24",
+  "cycle-10/working/c10-065-legal-regulatory-federal-register-2024-07-01-p35",
+  "cycle-10/working/c10-066-legal-regulatory-federal-register-2024-07-01-p46",
+  "cycle-10/working/c10-067-legal-regulatory-federal-register-2024-07-01-p58",
+  "cycle-10/working/c10-068-legal-regulatory-federal-register-2024-07-01-p69",
+  "cycle-10/working/c10-069-legal-regulatory-federal-register-2024-07-01-p81"
 ];
 
 defineCycleParityShard({

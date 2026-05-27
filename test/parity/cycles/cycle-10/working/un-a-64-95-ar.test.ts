@@ -2,11 +2,16 @@
 import { defineCycleParityShard } from "../../../cycle-shard-runner.js";
 
 const caseIds = [
-  "cycle-10/working/c10-063-multilingual-text-un-a-64-95-ar-p31",
-  "cycle-10/working/c10-064-multilingual-text-un-a-64-95-ar-p32",
-  "cycle-10/working/c10-065-multilingual-text-un-a-64-95-ar-p33",
-  "cycle-10/working/c10-066-multilingual-text-un-a-64-95-ar-p34",
-  "cycle-10/working/c10-067-multilingual-text-un-a-64-95-ar-p35"
+  "cycle-10/working/c10-079-multilingual-text-un-a-64-95-ar-p1",
+  "cycle-10/working/c10-080-multilingual-text-un-a-64-95-ar-p2",
+  "cycle-10/working/c10-081-multilingual-text-un-a-64-95-ar-p3",
+  "cycle-10/working/c10-082-multilingual-text-un-a-64-95-ar-p4",
+  "cycle-10/working/c10-083-multilingual-text-un-a-64-95-ar-p5",
+  "cycle-10/working/c10-084-multilingual-text-un-a-64-95-ar-p6",
+  "cycle-10/working/c10-085-multilingual-text-un-a-64-95-ar-p7",
+  "cycle-10/working/c10-086-multilingual-text-un-a-64-95-ar-p8",
+  "cycle-10/working/c10-087-multilingual-text-un-a-64-95-ar-p9",
+  "cycle-10/working/c10-088-multilingual-text-un-a-64-95-ar-p10"
 ];
 
 defineCycleParityShard({
