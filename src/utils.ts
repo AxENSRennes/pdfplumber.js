@@ -196,13 +196,16 @@ export function rectFromPdfBBox(
   extras: Record<string, unknown> = {},
   coordOffset: Point = [0, 0]
 ): PDFObject {
+  const preferPageYFromTop = Boolean(extras.__pdfplumber_page_y_from_top);
+  const outputExtras = { ...extras };
+  delete outputExtras.__pdfplumber_page_y_from_top;
   const [rawX0, rawTop, rawX1, rawBottom] = bboxToPageBBox(raw, pageWidth, pageHeight, pageRotate);
   const x0 = liftPostHalfThousandthDrift(softenHalfThousandth(softenHalfMicro(rawX0)));
   const top = liftPostHalfThousandthDrift(softenHalfThousandth(softenHalfMicro(rawTop)));
   const x1 = liftPostHalfThousandthDrift(softenHalfThousandth(softenHalfMicro(rawX1)));
   const bottom = liftPostHalfThousandthDrift(softenHalfThousandth(softenHalfMicro(rawBottom)));
   const [rawY0, rawY1] =
-    ((pageRotate % 360) + 360) % 360 === 0
+    ((pageRotate % 360) + 360) % 360 === 0 && !preferPageYFromTop
       ? [raw[1] + coordOffset[1], raw[3] + coordOffset[1]]
       : [pageHeight - bottom + coordOffset[1], pageHeight - top + coordOffset[1]];
   const y0 = liftPostHalfThousandthDrift(softenHalfThousandth(softenHalfMicro(rawY0)));
@@ -219,7 +222,7 @@ export function rectFromPdfBBox(
     doctop: top + doctopOffset,
     width: x1 - x0,
     height: y1 - y0,
-    ...extras
+    ...outputExtras
   };
   Object.defineProperty(obj, "__pdfplumber_raw_bbox", {
     value: [rawX0, rawTop, rawX1, rawBottom],
@@ -330,6 +333,9 @@ export function colorSpaceName(value: unknown): string {
 export function pythonBytesName(value: string): string {
   if (!/[^\x20-\x7e]/.test(value)) return value;
   if ([...value].some((char) => char.charCodeAt(0) > 0xff)) return value;
+  const bytes = Uint8Array.from([...value].map((char) => char.charCodeAt(0) & 0xff));
+  const decoded = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  if (decoded.includes("\uFFFD") === false && /[^\x20-\x7e]/.test(decoded)) return decoded;
   return [...value].map((char) => {
     const code = char.charCodeAt(0) & 0xff;
     if (code === 0x5c) return "\\\\";

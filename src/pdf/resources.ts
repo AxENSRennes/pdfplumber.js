@@ -274,7 +274,7 @@ function uniquePush<T>(values: T[], value: T): void {
   if (!values.includes(value)) values.push(value);
 }
 
-function pdfValueRepr(store: PdfObjectStore, value: PdfPrimitive | undefined): string | number | undefined {
+function pdfValueRepr(store: PdfObjectStore, value: PdfPrimitive | undefined, key = ""): string | number | undefined {
   if (value == null) return undefined;
   if (isRef(value)) return `<PDFObjRef:${value.objectNumber}>`;
   const resolved = resolveOne(store, value);
@@ -282,7 +282,10 @@ function pdfValueRepr(store: PdfObjectStore, value: PdfPrimitive | undefined): s
   if (isName(resolved)) return `/'${resolved.name}'`;
   if (isArray(resolved)) {
     const numbers = resolved.map((item) => resolvedNumber(store, item));
-    if (numbers.every((item) => item != null)) return `[${numbers.map((item) => item!.toFixed(1)).join(", ")}]`;
+    if (numbers.every((item) => item != null)) {
+      const format = key === "Size" ? (item: number) => String(item) : (item: number) => item.toFixed(1);
+      return `[${numbers.map((item) => format(item!)).join(", ")}]`;
+    }
   }
   return undefined;
 }
@@ -300,10 +303,10 @@ function resolvedLength(store: PdfObjectStore, objectNumber: number | undefined,
 function pdfStreamRepr(store: PdfObjectStore, objectNumber: number | undefined, stream: PdfStream): string {
   const raw = resolvedLength(store, objectNumber, stream) ?? decodeStreamToLatin1(stream).length;
   const attrs: string[] = [];
-  const allowedKeys = new Set(["Domain", "Length", "N", "Alternate", "Filter", "FunctionType", "Range"]);
+  const allowedKeys = new Set(["BitsPerSample", "Domain", "Length", "N", "Alternate", "Filter", "FunctionType", "Order", "Range", "Size"]);
   const keys = Array.from(stream.dict.keys()).filter((key) => allowedKeys.has(key));
   for (const key of keys) {
-    const value = pdfValueRepr(store, stream.dict.get(key));
+    const value = pdfValueRepr(store, stream.dict.get(key), key);
     if (value !== undefined) attrs.push(`'${key}': ${typeof value === "string" ? value : String(value)}`);
   }
   return `<PDFStream(${objectNumber ?? "?"}): raw=${raw}, {${attrs.join(", ")}}>`;

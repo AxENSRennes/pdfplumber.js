@@ -1,0 +1,622 @@
+[
+  {
+    "categories": [
+      "bank-regulatory",
+      "cycle-12",
+      "financial-report",
+      "government",
+      "holdout",
+      "legal",
+      "long-document",
+      "multi-column",
+      "real-document"
+    ],
+    "counted": true,
+    "creator": "govinfo, U. S. Government Publishing Office",
+    "id": "cycle-12/holdout/c12-101-financial-report-govinfo-cfr12-2024-vol1-p1",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-holdout-pdfs/govinfo-cfr12-2024-vol1.pdf",
+    "pageCount": 1191,
+    "producer": "iText® Core 7.2.3 (production version) ©2000-2022 iText Group NV, Government Publishing Office",
+    "rationale": "first page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "07c4609b90deeeac5406c23801f4cc0c9449c8d497e15fb5e782b1dadd9465ab",
+    "size": 5729499,
+    "source": "GovInfo Code of Federal Regulations",
+    "sourceDocumentId": "govinfo-cfr12-2024-vol1",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.govinfo.gov/content/pkg/CFR-2024-title12-vol1/pdf/CFR-2024-title12-vol1.pdf",
+    "title": null
+  },
+  {
+    "categories": [
+      "bank-regulatory",
+      "cycle-12",
+      "financial-report",
+      "government",
+      "holdout",
+      "legal",
+      "long-document",
+      "multi-column",
+      "real-document"
+    ],
+    "counted": true,
+    "creator": "govinfo, U. S. Government Publishing Office",
+    "id": "cycle-12/holdout/c12-102-financial-report-govinfo-cfr12-2024-vol1-p2",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-holdout-pdfs/govinfo-cfr12-2024-vol1.pdf",
+    "pageCount": 1191,
+    "producer": "iText® Core 7.2.3 (production version) ©2000-2022 iText Group NV, Government Publishing Office",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      1
+    ],
+    "sha256": "07c4609b90deeeac5406c23801f4cc0c9449c8d497e15fb5e782b1dadd9465ab",
+    "size": 5729499,
+    "source": "GovInfo Code of Federal Regulations",
+    "sourceDocumentId": "govinfo-cfr12-2024-vol1",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.govinfo.gov/content/pkg/CFR-2024-title12-vol1/pdf/CFR-2024-title12-vol1.pdf",
+    "title": null
+  },
+  {
+    "categories": [
+      "bank-regulatory",
+      "cycle-12",
+      "financial-report",
+      "government",
+      "holdout",
+      "legal",
+      "long-document",
+      "multi-column",
+      "real-document"
+    ],
+    "counted": true,
+    "creator": "govinfo, U. S. Government Publishing Office",
+    "id": "cycle-12/holdout/c12-103-financial-report-govinfo-cfr12-2024-vol1-p3",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-holdout-pdfs/govinfo-cfr12-2024-vol1.pdf",
+    "pageCount": 1191,
+    "producer": "iText® Core 7.2.3 (production version) ©2000-2022 iText Group NV, Government Publishing Office",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      2
+    ],
+    "sha256": "07c4609b90deeeac5406c23801f4cc0c9449c8d497e15fb5e782b1dadd9465ab",
+    "size": 5729499,
+    "source": "GovInfo Code of Federal Regulations",
+    "sourceDocumentId": "govinfo-cfr12-2024-vol1",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.govinfo.gov/content/pkg/CFR-2024-title12-vol1/pdf/CFR-2024-title12-vol1.pdf",
+    "title": null
+  },
+  {
+    "categories": [
+      "bank-regulatory",
+      "cycle-12",
+      "financial-report",
+      "government",
+      "holdout",
+      "legal",
+      "long-document",
+      "multi-column",
+      "real-document"
+    ],
+    "counted": true,
+    "creator": "govinfo, U. S. Government Publishing Office",
+    "id": "cycle-12/holdout/c12-104-financial-report-govinfo-cfr12-2024-vol1-p35",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-holdout-pdfs/govinfo-cfr12-2024-vol1.pdf",
+    "pageCount": 1191,
+    "producer": "iText® Core 7.2.3 (production version) ©2000-2022 iText Group NV, Government Publishing Office",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      34
+    ],
+    "sha256": "07c4609b90deeeac5406c23801f4cc0c9449c8d497e15fb5e782b1dadd9465ab",
+    "size": 5729499,
+    "source": "GovInfo Code of Federal Regulations",
+    "sourceDocumentId": "govinfo-cfr12-2024-vol1",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.govinfo.gov/content/pkg/CFR-2024-title12-vol1/pdf/CFR-2024-title12-vol1.pdf",
+    "title": null
+  },
+  {
+    "categories": [
+      "bank-regulatory",
+      "cycle-12",
+      "financial-report",
+      "government",
+      "holdout",
+      "legal",
+      "long-document",
+      "multi-column",
+      "real-document"
+    ],
+    "counted": true,
+    "creator": "govinfo, U. S. Government Publishing Office",
+    "id": "cycle-12/holdout/c12-105-financial-report-govinfo-cfr12-2024-vol1-p69",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-holdout-pdfs/govinfo-cfr12-2024-vol1.pdf",
+    "pageCount": 1191,
+    "producer": "iText® Core 7.2.3 (production version) ©2000-2022 iText Group NV, Government Publishing Office",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      68
+    ],
+    "sha256": "07c4609b90deeeac5406c23801f4cc0c9449c8d497e15fb5e782b1dadd9465ab",
+    "size": 5729499,
+    "source": "GovInfo Code of Federal Regulations",
+    "sourceDocumentId": "govinfo-cfr12-2024-vol1",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.govinfo.gov/content/pkg/CFR-2024-title12-vol1/pdf/CFR-2024-title12-vol1.pdf",
+    "title": null
+  },
+  {
+    "categories": [
+      "bank-regulatory",
+      "cycle-12",
+      "financial-report",
+      "government",
+      "holdout",
+      "legal",
+      "long-document",
+      "multi-column",
+      "real-document"
+    ],
+    "counted": true,
+    "creator": "govinfo, U. S. Government Publishing Office",
+    "id": "cycle-12/holdout/c12-106-financial-report-govinfo-cfr12-2024-vol1-p103",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-holdout-pdfs/govinfo-cfr12-2024-vol1.pdf",
+    "pageCount": 1191,
+    "producer": "iText® Core 7.2.3 (production version) ©2000-2022 iText Group NV, Government Publishing Office",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      102
+    ],
+    "sha256": "07c4609b90deeeac5406c23801f4cc0c9449c8d497e15fb5e782b1dadd9465ab",
+    "size": 5729499,
+    "source": "GovInfo Code of Federal Regulations",
+    "sourceDocumentId": "govinfo-cfr12-2024-vol1",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.govinfo.gov/content/pkg/CFR-2024-title12-vol1/pdf/CFR-2024-title12-vol1.pdf",
+    "title": null
+  },
+  {
+    "categories": [
+      "bank-regulatory",
+      "cycle-12",
+      "financial-report",
+      "government",
+      "holdout",
+      "legal",
+      "long-document",
+      "multi-column",
+      "real-document"
+    ],
+    "counted": true,
+    "creator": "govinfo, U. S. Government Publishing Office",
+    "id": "cycle-12/holdout/c12-107-financial-report-govinfo-cfr12-2024-vol1-p137",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-holdout-pdfs/govinfo-cfr12-2024-vol1.pdf",
+    "pageCount": 1191,
+    "producer": "iText® Core 7.2.3 (production version) ©2000-2022 iText Group NV, Government Publishing Office",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      136
+    ],
+    "sha256": "07c4609b90deeeac5406c23801f4cc0c9449c8d497e15fb5e782b1dadd9465ab",
+    "size": 5729499,
+    "source": "GovInfo Code of Federal Regulations",
+    "sourceDocumentId": "govinfo-cfr12-2024-vol1",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.govinfo.gov/content/pkg/CFR-2024-title12-vol1/pdf/CFR-2024-title12-vol1.pdf",
+    "title": null
+  },
+  {
+    "categories": [
+      "bank-regulatory",
+      "cycle-12",
+      "financial-report",
+      "government",
+      "holdout",
+      "legal",
+      "long-document",
+      "multi-column",
+      "real-document"
+    ],
+    "counted": true,
+    "creator": "govinfo, U. S. Government Publishing Office",
+    "id": "cycle-12/holdout/c12-108-financial-report-govinfo-cfr12-2024-vol1-p171",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-holdout-pdfs/govinfo-cfr12-2024-vol1.pdf",
+    "pageCount": 1191,
+    "producer": "iText® Core 7.2.3 (production version) ©2000-2022 iText Group NV, Government Publishing Office",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      170
+    ],
+    "sha256": "07c4609b90deeeac5406c23801f4cc0c9449c8d497e15fb5e782b1dadd9465ab",
+    "size": 5729499,
+    "source": "GovInfo Code of Federal Regulations",
+    "sourceDocumentId": "govinfo-cfr12-2024-vol1",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.govinfo.gov/content/pkg/CFR-2024-title12-vol1/pdf/CFR-2024-title12-vol1.pdf",
+    "title": null
+  },
+  {
+    "categories": [
+      "bank-regulatory",
+      "cycle-12",
+      "financial-report",
+      "government",
+      "holdout",
+      "legal",
+      "long-document",
+      "multi-column",
+      "real-document"
+    ],
+    "counted": true,
+    "creator": "govinfo, U. S. Government Publishing Office",
+    "id": "cycle-12/holdout/c12-109-financial-report-govinfo-cfr12-2024-vol1-p205",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-holdout-pdfs/govinfo-cfr12-2024-vol1.pdf",
+    "pageCount": 1191,
+    "producer": "iText® Core 7.2.3 (production version) ©2000-2022 iText Group NV, Government Publishing Office",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      204
+    ],
+    "sha256": "07c4609b90deeeac5406c23801f4cc0c9449c8d497e15fb5e782b1dadd9465ab",
+    "size": 5729499,
+    "source": "GovInfo Code of Federal Regulations",
+    "sourceDocumentId": "govinfo-cfr12-2024-vol1",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.govinfo.gov/content/pkg/CFR-2024-title12-vol1/pdf/CFR-2024-title12-vol1.pdf",
+    "title": null
+  },
+  {
+    "categories": [
+      "bank-regulatory",
+      "cycle-12",
+      "financial-report",
+      "government",
+      "holdout",
+      "legal",
+      "long-document",
+      "multi-column",
+      "real-document"
+    ],
+    "counted": true,
+    "creator": "govinfo, U. S. Government Publishing Office",
+    "id": "cycle-12/holdout/c12-110-financial-report-govinfo-cfr12-2024-vol1-p239",
+    "licenseOrTerms": "Public domain / U.S. government work",
+    "localPath": "test/fixtures/external-holdout-pdfs/govinfo-cfr12-2024-vol1.pdf",
+    "pageCount": 1191,
+    "producer": "iText® Core 7.2.3 (production version) ©2000-2022 iText Group NV, Government Publishing Office",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      238
+    ],
+    "sha256": "07c4609b90deeeac5406c23801f4cc0c9449c8d497e15fb5e782b1dadd9465ab",
+    "size": 5729499,
+    "source": "GovInfo Code of Federal Regulations",
+    "sourceDocumentId": "govinfo-cfr12-2024-vol1",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.govinfo.gov/content/pkg/CFR-2024-title12-vol1/pdf/CFR-2024-title12-vol1.pdf",
+    "title": null
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank",
+      "cycle-12",
+      "financial-report",
+      "holdout",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Acrobat Pro 25.1.20438",
+    "id": "cycle-12/holdout/c12-111-financial-report-jpmorgan-2024-ar-p1",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-pdfs/jpmorgan-2024-ar.pdf",
+    "pageCount": 372,
+    "producer": "Acrobat Pro 25.1.20438",
+    "rationale": "first page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      0
+    ],
+    "sha256": "78443e60b3188a70673ca7042d0bf9e4dc596d04072af729242886d22bd0a4e3",
+    "size": 17104906,
+    "source": "JPMorgan Chase investor relations",
+    "sourceDocumentId": "jpmorgan-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.jpmorganchase.com/content/dam/jpmc/jpmorgan-chase-and-co/investor-relations/documents/annualreport-2024.pdf",
+    "title": "Resolute Annual Report 2024"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank",
+      "cycle-12",
+      "financial-report",
+      "holdout",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Acrobat Pro 25.1.20438",
+    "id": "cycle-12/holdout/c12-112-financial-report-jpmorgan-2024-ar-p2",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-pdfs/jpmorgan-2024-ar.pdf",
+    "pageCount": 372,
+    "producer": "Acrobat Pro 25.1.20438",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      1
+    ],
+    "sha256": "78443e60b3188a70673ca7042d0bf9e4dc596d04072af729242886d22bd0a4e3",
+    "size": 17104906,
+    "source": "JPMorgan Chase investor relations",
+    "sourceDocumentId": "jpmorgan-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.jpmorganchase.com/content/dam/jpmc/jpmorgan-chase-and-co/investor-relations/documents/annualreport-2024.pdf",
+    "title": "Resolute Annual Report 2024"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank",
+      "cycle-12",
+      "financial-report",
+      "holdout",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Acrobat Pro 25.1.20438",
+    "id": "cycle-12/holdout/c12-113-financial-report-jpmorgan-2024-ar-p3",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-pdfs/jpmorgan-2024-ar.pdf",
+    "pageCount": 372,
+    "producer": "Acrobat Pro 25.1.20438",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      2
+    ],
+    "sha256": "78443e60b3188a70673ca7042d0bf9e4dc596d04072af729242886d22bd0a4e3",
+    "size": 17104906,
+    "source": "JPMorgan Chase investor relations",
+    "sourceDocumentId": "jpmorgan-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.jpmorganchase.com/content/dam/jpmc/jpmorgan-chase-and-co/investor-relations/documents/annualreport-2024.pdf",
+    "title": "Resolute Annual Report 2024"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank",
+      "cycle-12",
+      "financial-report",
+      "holdout",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Acrobat Pro 25.1.20438",
+    "id": "cycle-12/holdout/c12-114-financial-report-jpmorgan-2024-ar-p12",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-pdfs/jpmorgan-2024-ar.pdf",
+    "pageCount": 372,
+    "producer": "Acrobat Pro 25.1.20438",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      11
+    ],
+    "sha256": "78443e60b3188a70673ca7042d0bf9e4dc596d04072af729242886d22bd0a4e3",
+    "size": 17104906,
+    "source": "JPMorgan Chase investor relations",
+    "sourceDocumentId": "jpmorgan-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.jpmorganchase.com/content/dam/jpmc/jpmorgan-chase-and-co/investor-relations/documents/annualreport-2024.pdf",
+    "title": "Resolute Annual Report 2024"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank",
+      "cycle-12",
+      "financial-report",
+      "holdout",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Acrobat Pro 25.1.20438",
+    "id": "cycle-12/holdout/c12-115-financial-report-jpmorgan-2024-ar-p22",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-pdfs/jpmorgan-2024-ar.pdf",
+    "pageCount": 372,
+    "producer": "Acrobat Pro 25.1.20438",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      21
+    ],
+    "sha256": "78443e60b3188a70673ca7042d0bf9e4dc596d04072af729242886d22bd0a4e3",
+    "size": 17104906,
+    "source": "JPMorgan Chase investor relations",
+    "sourceDocumentId": "jpmorgan-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.jpmorganchase.com/content/dam/jpmc/jpmorgan-chase-and-co/investor-relations/documents/annualreport-2024.pdf",
+    "title": "Resolute Annual Report 2024"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank",
+      "cycle-12",
+      "financial-report",
+      "holdout",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Acrobat Pro 25.1.20438",
+    "id": "cycle-12/holdout/c12-116-financial-report-jpmorgan-2024-ar-p33",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-pdfs/jpmorgan-2024-ar.pdf",
+    "pageCount": 372,
+    "producer": "Acrobat Pro 25.1.20438",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      32
+    ],
+    "sha256": "78443e60b3188a70673ca7042d0bf9e4dc596d04072af729242886d22bd0a4e3",
+    "size": 17104906,
+    "source": "JPMorgan Chase investor relations",
+    "sourceDocumentId": "jpmorgan-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.jpmorganchase.com/content/dam/jpmc/jpmorgan-chase-and-co/investor-relations/documents/annualreport-2024.pdf",
+    "title": "Resolute Annual Report 2024"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank",
+      "cycle-12",
+      "financial-report",
+      "holdout",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Acrobat Pro 25.1.20438",
+    "id": "cycle-12/holdout/c12-117-financial-report-jpmorgan-2024-ar-p43",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-pdfs/jpmorgan-2024-ar.pdf",
+    "pageCount": 372,
+    "producer": "Acrobat Pro 25.1.20438",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      42
+    ],
+    "sha256": "78443e60b3188a70673ca7042d0bf9e4dc596d04072af729242886d22bd0a4e3",
+    "size": 17104906,
+    "source": "JPMorgan Chase investor relations",
+    "sourceDocumentId": "jpmorgan-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.jpmorganchase.com/content/dam/jpmc/jpmorgan-chase-and-co/investor-relations/documents/annualreport-2024.pdf",
+    "title": "Resolute Annual Report 2024"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank",
+      "cycle-12",
+      "financial-report",
+      "holdout",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Acrobat Pro 25.1.20438",
+    "id": "cycle-12/holdout/c12-118-financial-report-jpmorgan-2024-ar-p54",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-pdfs/jpmorgan-2024-ar.pdf",
+    "pageCount": 372,
+    "producer": "Acrobat Pro 25.1.20438",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      53
+    ],
+    "sha256": "78443e60b3188a70673ca7042d0bf9e4dc596d04072af729242886d22bd0a4e3",
+    "size": 17104906,
+    "source": "JPMorgan Chase investor relations",
+    "sourceDocumentId": "jpmorgan-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.jpmorganchase.com/content/dam/jpmc/jpmorgan-chase-and-co/investor-relations/documents/annualreport-2024.pdf",
+    "title": "Resolute Annual Report 2024"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank",
+      "cycle-12",
+      "financial-report",
+      "holdout",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Acrobat Pro 25.1.20438",
+    "id": "cycle-12/holdout/c12-119-financial-report-jpmorgan-2024-ar-p65",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-pdfs/jpmorgan-2024-ar.pdf",
+    "pageCount": 372,
+    "producer": "Acrobat Pro 25.1.20438",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      64
+    ],
+    "sha256": "78443e60b3188a70673ca7042d0bf9e4dc596d04072af729242886d22bd0a4e3",
+    "size": 17104906,
+    "source": "JPMorgan Chase investor relations",
+    "sourceDocumentId": "jpmorgan-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.jpmorganchase.com/content/dam/jpmc/jpmorgan-chase-and-co/investor-relations/documents/annualreport-2024.pdf",
+    "title": "Resolute Annual Report 2024"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "bank",
+      "cycle-12",
+      "financial-report",
+      "holdout",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Acrobat Pro 25.1.20438",
+    "id": "cycle-12/holdout/c12-120-financial-report-jpmorgan-2024-ar-p75",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-pdfs/jpmorgan-2024-ar.pdf",
+    "pageCount": 372,
+    "producer": "Acrobat Pro 25.1.20438",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      74
+    ],
+    "sha256": "78443e60b3188a70673ca7042d0bf9e4dc596d04072af729242886d22bd0a4e3",
+    "size": 17104906,
+    "source": "JPMorgan Chase investor relations",
+    "sourceDocumentId": "jpmorgan-2024-ar",
+    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceUrl": "https://www.jpmorganchase.com/content/dam/jpmc/jpmorgan-chase-and-co/investor-relations/documents/annualreport-2024.pdf",
+    "title": "Resolute Annual Report 2024"
+  }
+]

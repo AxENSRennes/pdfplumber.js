@@ -84,12 +84,11 @@ export function shouldEmulatePdfminerOpenError(ctx: PdfminerCompatContext): Erro
 export function annotationStringDecodeErrorLikePdfminer(annotationObjects: Array<string | undefined>): Error | null {
   for (const objectText of annotationObjects) {
     if (!objectText) continue;
-    for (const key of ["Contents", "T", "TU"]) {
-      const bytes = parsePdfDictBytes(objectText, key);
-      if (!bytes || !Array.from(bytes).some((byte) => byte >= 0x80)) continue;
-      if (decodePdfLiteralBytesAsUtf8ThenUtf16(bytes) == null) {
-        return namedError("UnicodeDecodeError", "'utf-16-le' codec can't decode annotation string bytes");
-      }
+    if (!/\/FT\s*\/Tx\b/.test(objectText)) continue;
+    const bytes = parsePdfDictBytes(objectText, "T");
+    if (!bytes || !Array.from(bytes).some((byte) => byte >= 0x80)) continue;
+    if (decodePdfLiteralBytesAsUtf8ThenUtf16(bytes) == null) {
+      return namedError("UnicodeDecodeError", "'utf-16-le' codec can't decode annotation string bytes");
     }
   }
   return null;

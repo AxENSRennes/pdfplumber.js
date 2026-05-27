@@ -17,6 +17,7 @@
     "fixtures:generate:external-parity": "wsl_venv/bin/python scripts/generate-external-parity-goldens.py",
     "fixtures:generate:external-holdout-parity": "wsl_venv/bin/python scripts/generate-external-holdout-parity-goldens.py",
     "fixtures:generate:parity-cycles": "wsl_venv/bin/python scripts/generate-parity-cycle-cases.py",
+    "fixtures:generate:real-parity-cycles": "wsl_venv/bin/python scripts/generate-real-parity-cycle-cases.py",
     "fixtures:generate:parity-test-shards": "node scripts/generate-parity-test-shards.mjs",
     "fixtures:download:external": "node scripts/download-external-fixtures.mjs --manifest test/fixtures/external-pdfs/manifest.json",
     "fixtures:download:external-holdout": "node scripts/download-external-fixtures.mjs --manifest test/fixtures/external-holdout-pdfs/manifest.json",
@@ -41,6 +42,8 @@
     "test:cycle-shards:05:holdout": "PDFPLUMBER_JS_RUN_CYCLE_SHARDS=1 vitest run test/parity/cycles/cycle-05/holdout",
     "test:cycle-shards:06:working": "PDFPLUMBER_JS_RUN_CYCLE_SHARDS=1 vitest run test/parity/cycles/cycle-06/working",
     "test:cycle-shards:06:holdout": "PDFPLUMBER_JS_RUN_CYCLE_SHARDS=1 vitest run test/parity/cycles/cycle-06/holdout",
+    "test:cycle-shards:real:working": "PDFPLUMBER_JS_RUN_CYCLE_WORKING_PARITY=1 PDFPLUMBER_JS_CYCLES=10,11,12 vitest run test/parity/pdfplumber.cycle-working-parity.test.ts",
+    "test:cycle-shards:real:holdout": "PDFPLUMBER_JS_RUN_CYCLE_HOLDOUT_PARITY=1 PDFPLUMBER_JS_CYCLES=10,11,12 vitest run test/parity/pdfplumber.cycle-holdout-parity.test.ts",
     "test:lowlevel": "vitest run test/lowlevel",
     "test:parity": "PDFPLUMBER_JS_RUN_PARITY=1 vitest run test/parity",
     "typecheck": "tsc -p tsconfig.json --noEmit"

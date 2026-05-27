@@ -166,6 +166,7 @@ export interface GraphicsState {
   y: number;
   lineX: number;
   lineY: number;
+  formMatrixApplied?: boolean;
 }
 
 export interface ParsedPath {

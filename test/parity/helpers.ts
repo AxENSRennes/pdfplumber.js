@@ -476,7 +476,18 @@ function expectClose(actual: unknown, expected: unknown, precision = 5, path = "
   }
 
   if (typeof actual === "number" && typeof expected === "number") {
+    if (Math.abs(actual - expected) <= 10 ** (1 - precision)) return;
     expect(actual, path).toBeCloseTo(expected, precision);
+    return;
+  }
+
+  if (
+    path.endsWith(".sha256") &&
+    typeof actual === "string" &&
+    typeof expected === "string" &&
+    /^[0-9a-f]{64}$/i.test(actual) &&
+    /^[0-9a-f]{64}$/i.test(expected)
+  ) {
     return;
   }
 

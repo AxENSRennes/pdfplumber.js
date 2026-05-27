@@ -1,0 +1,622 @@
+[
+  {
+    "categories": [
+      "annual-report",
+      "cycle-10",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 18.4 (Macintosh)",
+    "id": "cycle-10/holdout/c10-101-financial-report-boeing-2024-ar-p74",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "pageCount": 161,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      73
+    ],
+    "sha256": "5e03ffd804b7dc9794de9a4be08e1db1263edbb27adb7791c6bf11b85fedc001",
+    "size": 6971675,
+    "source": "Boeing annual reports",
+    "sourceDocumentId": "boeing-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
+    "title": ""
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-10",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 18.4 (Macintosh)",
+    "id": "cycle-10/holdout/c10-102-financial-report-boeing-2024-ar-p79",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "pageCount": 161,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      78
+    ],
+    "sha256": "5e03ffd804b7dc9794de9a4be08e1db1263edbb27adb7791c6bf11b85fedc001",
+    "size": 6971675,
+    "source": "Boeing annual reports",
+    "sourceDocumentId": "boeing-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
+    "title": ""
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-10",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 18.4 (Macintosh)",
+    "id": "cycle-10/holdout/c10-103-financial-report-boeing-2024-ar-p83",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "pageCount": 161,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      82
+    ],
+    "sha256": "5e03ffd804b7dc9794de9a4be08e1db1263edbb27adb7791c6bf11b85fedc001",
+    "size": 6971675,
+    "source": "Boeing annual reports",
+    "sourceDocumentId": "boeing-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
+    "title": ""
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-10",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 18.4 (Macintosh)",
+    "id": "cycle-10/holdout/c10-104-financial-report-boeing-2024-ar-p88",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "pageCount": 161,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      87
+    ],
+    "sha256": "5e03ffd804b7dc9794de9a4be08e1db1263edbb27adb7791c6bf11b85fedc001",
+    "size": 6971675,
+    "source": "Boeing annual reports",
+    "sourceDocumentId": "boeing-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
+    "title": ""
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-10",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 18.4 (Macintosh)",
+    "id": "cycle-10/holdout/c10-105-financial-report-boeing-2024-ar-p92",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "pageCount": 161,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      91
+    ],
+    "sha256": "5e03ffd804b7dc9794de9a4be08e1db1263edbb27adb7791c6bf11b85fedc001",
+    "size": 6971675,
+    "source": "Boeing annual reports",
+    "sourceDocumentId": "boeing-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
+    "title": ""
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-10",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 18.4 (Macintosh)",
+    "id": "cycle-10/holdout/c10-106-financial-report-boeing-2024-ar-p97",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "pageCount": 161,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      96
+    ],
+    "sha256": "5e03ffd804b7dc9794de9a4be08e1db1263edbb27adb7791c6bf11b85fedc001",
+    "size": 6971675,
+    "source": "Boeing annual reports",
+    "sourceDocumentId": "boeing-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
+    "title": ""
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-10",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 18.4 (Macintosh)",
+    "id": "cycle-10/holdout/c10-107-financial-report-boeing-2024-ar-p102",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "pageCount": 161,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      101
+    ],
+    "sha256": "5e03ffd804b7dc9794de9a4be08e1db1263edbb27adb7791c6bf11b85fedc001",
+    "size": 6971675,
+    "source": "Boeing annual reports",
+    "sourceDocumentId": "boeing-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
+    "title": ""
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-10",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 18.4 (Macintosh)",
+    "id": "cycle-10/holdout/c10-108-financial-report-boeing-2024-ar-p106",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "pageCount": 161,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      105
+    ],
+    "sha256": "5e03ffd804b7dc9794de9a4be08e1db1263edbb27adb7791c6bf11b85fedc001",
+    "size": 6971675,
+    "source": "Boeing annual reports",
+    "sourceDocumentId": "boeing-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
+    "title": ""
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-10",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 18.4 (Macintosh)",
+    "id": "cycle-10/holdout/c10-109-financial-report-boeing-2024-ar-p111",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "pageCount": 161,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      110
+    ],
+    "sha256": "5e03ffd804b7dc9794de9a4be08e1db1263edbb27adb7791c6bf11b85fedc001",
+    "size": 6971675,
+    "source": "Boeing annual reports",
+    "sourceDocumentId": "boeing-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
+    "title": ""
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-10",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 18.4 (Macintosh)",
+    "id": "cycle-10/holdout/c10-110-financial-report-boeing-2024-ar-p115",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "pageCount": 161,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      114
+    ],
+    "sha256": "5e03ffd804b7dc9794de9a4be08e1db1263edbb27adb7791c6bf11b85fedc001",
+    "size": 6971675,
+    "source": "Boeing annual reports",
+    "sourceDocumentId": "boeing-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
+    "title": ""
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-10",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 19.2 (Macintosh)",
+    "id": "cycle-10/holdout/c10-111-financial-report-caterpillar-2024-ar-p26",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/caterpillar-2024-ar.pdf",
+    "pageCount": 112,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      25
+    ],
+    "sha256": "3a38651c724016bca792bef165fd42bb09d9b033d23718372a2599378768e925",
+    "size": 22316473,
+    "source": "Caterpillar annual reports",
+    "sourceDocumentId": "caterpillar-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://m.cat-cn.com/pdf/2024-annual-report.pdf",
+    "title": "2024 Annual Report"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-10",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 19.2 (Macintosh)",
+    "id": "cycle-10/holdout/c10-112-financial-report-caterpillar-2024-ar-p30",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/caterpillar-2024-ar.pdf",
+    "pageCount": 112,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      29
+    ],
+    "sha256": "3a38651c724016bca792bef165fd42bb09d9b033d23718372a2599378768e925",
+    "size": 22316473,
+    "source": "Caterpillar annual reports",
+    "sourceDocumentId": "caterpillar-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://m.cat-cn.com/pdf/2024-annual-report.pdf",
+    "title": "2024 Annual Report"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-10",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 19.2 (Macintosh)",
+    "id": "cycle-10/holdout/c10-113-financial-report-caterpillar-2024-ar-p33",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/caterpillar-2024-ar.pdf",
+    "pageCount": 112,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      32
+    ],
+    "sha256": "3a38651c724016bca792bef165fd42bb09d9b033d23718372a2599378768e925",
+    "size": 22316473,
+    "source": "Caterpillar annual reports",
+    "sourceDocumentId": "caterpillar-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://m.cat-cn.com/pdf/2024-annual-report.pdf",
+    "title": "2024 Annual Report"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-10",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 19.2 (Macintosh)",
+    "id": "cycle-10/holdout/c10-114-financial-report-caterpillar-2024-ar-p36",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/caterpillar-2024-ar.pdf",
+    "pageCount": 112,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      35
+    ],
+    "sha256": "3a38651c724016bca792bef165fd42bb09d9b033d23718372a2599378768e925",
+    "size": 22316473,
+    "source": "Caterpillar annual reports",
+    "sourceDocumentId": "caterpillar-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://m.cat-cn.com/pdf/2024-annual-report.pdf",
+    "title": "2024 Annual Report"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-10",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 19.2 (Macintosh)",
+    "id": "cycle-10/holdout/c10-115-financial-report-caterpillar-2024-ar-p39",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/caterpillar-2024-ar.pdf",
+    "pageCount": 112,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      38
+    ],
+    "sha256": "3a38651c724016bca792bef165fd42bb09d9b033d23718372a2599378768e925",
+    "size": 22316473,
+    "source": "Caterpillar annual reports",
+    "sourceDocumentId": "caterpillar-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://m.cat-cn.com/pdf/2024-annual-report.pdf",
+    "title": "2024 Annual Report"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-10",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 19.2 (Macintosh)",
+    "id": "cycle-10/holdout/c10-116-financial-report-caterpillar-2024-ar-p42",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/caterpillar-2024-ar.pdf",
+    "pageCount": 112,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      41
+    ],
+    "sha256": "3a38651c724016bca792bef165fd42bb09d9b033d23718372a2599378768e925",
+    "size": 22316473,
+    "source": "Caterpillar annual reports",
+    "sourceDocumentId": "caterpillar-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://m.cat-cn.com/pdf/2024-annual-report.pdf",
+    "title": "2024 Annual Report"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-10",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 19.2 (Macintosh)",
+    "id": "cycle-10/holdout/c10-117-financial-report-caterpillar-2024-ar-p45",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/caterpillar-2024-ar.pdf",
+    "pageCount": 112,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      44
+    ],
+    "sha256": "3a38651c724016bca792bef165fd42bb09d9b033d23718372a2599378768e925",
+    "size": 22316473,
+    "source": "Caterpillar annual reports",
+    "sourceDocumentId": "caterpillar-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://m.cat-cn.com/pdf/2024-annual-report.pdf",
+    "title": "2024 Annual Report"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-10",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 19.2 (Macintosh)",
+    "id": "cycle-10/holdout/c10-118-financial-report-caterpillar-2024-ar-p49",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/caterpillar-2024-ar.pdf",
+    "pageCount": 112,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      48
+    ],
+    "sha256": "3a38651c724016bca792bef165fd42bb09d9b033d23718372a2599378768e925",
+    "size": 22316473,
+    "source": "Caterpillar annual reports",
+    "sourceDocumentId": "caterpillar-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://m.cat-cn.com/pdf/2024-annual-report.pdf",
+    "title": "2024 Annual Report"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-10",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 19.2 (Macintosh)",
+    "id": "cycle-10/holdout/c10-119-financial-report-caterpillar-2024-ar-p52",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/caterpillar-2024-ar.pdf",
+    "pageCount": 112,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      51
+    ],
+    "sha256": "3a38651c724016bca792bef165fd42bb09d9b033d23718372a2599378768e925",
+    "size": 22316473,
+    "source": "Caterpillar annual reports",
+    "sourceDocumentId": "caterpillar-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://m.cat-cn.com/pdf/2024-annual-report.pdf",
+    "title": "2024 Annual Report"
+  },
+  {
+    "categories": [
+      "annual-report",
+      "cycle-10",
+      "financial-report",
+      "holdout",
+      "industrial",
+      "long-document",
+      "public-company",
+      "real-document",
+      "tables"
+    ],
+    "counted": true,
+    "creator": "Adobe InDesign 19.2 (Macintosh)",
+    "id": "cycle-10/holdout/c10-120-financial-report-caterpillar-2024-ar-p55",
+    "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
+    "localPath": "test/fixtures/external-holdout-pdfs/caterpillar-2024-ar.pdf",
+    "pageCount": 112,
+    "producer": "Adobe PDF Library 17.0",
+    "rationale": "interior page selected from a real financial report document to exercise pdfplumber page geometry, objects, text, words, colors, images, annotations, and table summaries when present.",
+    "selectedPages": [
+      54
+    ],
+    "sha256": "3a38651c724016bca792bef165fd42bb09d9b033d23718372a2599378768e925",
+    "size": 22316473,
+    "source": "Caterpillar annual reports",
+    "sourceDocumentId": "caterpillar-2024-ar",
+    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceUrl": "https://m.cat-cn.com/pdf/2024-annual-report.pdf",
+    "title": "2024 Annual Report"
+  }
+]

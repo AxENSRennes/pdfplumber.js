@@ -680,7 +680,7 @@ export function extractPageObjects(
   const images: PDFObject[] = [];
   const contentPoint = (point: Point): Point => (contentYOffset ? [point[0], point[1] + contentYOffset] : point);
   const coordOffset: Point = [0, pageTop];
-  let markedContent: { tag: string | null; mcid: number | null } | null = null;
+  const markedContentStack: Array<{ tag: string | null; mcid: number | null }> = [];
   const fillColorOps = colorOps.filter((op) => op.target === "fill");
   const strokeColorOps = colorOps.filter((op) => op.target === "stroke");
   let transformIndex = 0;
@@ -691,9 +691,15 @@ export function extractPageObjects(
   let imageIndex = 0;
   let sawDeviceCMYK = false;
   const constructPathTotal = operatorList.fnArray.filter((fn) => fn === pdfjs.OPS.constructPath).length;
+  const applyFormXObjectMatrices =
+    !operatorList.fnArray.some((fn) => fn === pdfjs.OPS.setTextMatrix) &&
+    !operatorList.fnArray.some((fn) => fn === pdfjs.OPS.beginGroup);
+  const formYExtras = () => (state.formMatrixApplied ? { __pdfplumber_page_y_from_top: true } : {});
   const partialRawPaths = pathOps.length > 0 && pathOps.length !== constructPathTotal;
   let usedPartialRawCurve = false;
   const markedExtras = () => {
+    const markedContent =
+      [...markedContentStack].reverse().find((item) => item.tag !== "OC") ?? markedContentStack[markedContentStack.length - 1];
     return {
       mcid: markedContent?.mcid ?? null,
       tag: markedContent?.tag ?? null
@@ -797,6 +803,23 @@ export function extractPageObjects(
       case pdfjs.OPS.transform:
         state.ctm = multiplyMatrix(state.ctm, transformOps[transformIndex++] ?? (args as Matrix));
         break;
+      case pdfjs.OPS.paintFormXObjectBegin:
+        if (applyFormXObjectMatrices) {
+          stack.push(cloneState(state));
+          const formMatrix = Array.from(args?.[0] ?? []).map((value) => Number(value)) as Matrix;
+          if (formMatrix.length === 6 && formMatrix.every(Number.isFinite)) {
+            state.ctm = multiplyMatrix(state.ctm, formMatrix);
+            state.formMatrixApplied = true;
+          }
+        }
+        break;
+      case pdfjs.OPS.paintFormXObjectEnd: {
+        if (applyFormXObjectMatrices) {
+          const restored = stack.pop();
+          if (restored) Object.assign(state, restored);
+        }
+        break;
+      }
       case pdfjs.OPS.setLineWidth:
         state.lineWidth = Number(args?.[0] ?? state.lineWidth) * lineWidthScale(state.ctm);
         state.lineWidthSet = true;
@@ -805,16 +828,24 @@ export function extractPageObjects(
         state.dash = args ? [args[0] ?? [], args[1] ?? 0] : null;
         break;
       case pdfjs.OPS.beginMarkedContent:
-        markedContent = { tag: decodePdfNameUtf8(args?.[0]?.name ?? String(args?.[0] ?? "")), mcid: null };
+        markedContentStack.push({ tag: decodePdfNameUtf8(args?.[0]?.name ?? String(args?.[0] ?? "")), mcid: null });
         break;
       case pdfjs.OPS.beginMarkedContentProps:
-        markedContent = { tag: decodePdfNameUtf8(args?.[0]?.name ?? String(args?.[0] ?? "")), mcid: typeof args?.[1] === "number" ? args[1] : null };
+        markedContentStack.push({ tag: decodePdfNameUtf8(args?.[0]?.name ?? String(args?.[0] ?? "")), mcid: typeof args?.[1] === "number" ? args[1] : null });
         break;
       case pdfjs.OPS.endMarkedContent:
-        markedContent = null;
+        {
+          const ended = markedContentStack.pop();
+          if (ended?.mcid == null && ended?.tag != null && ended.tag !== "OC" && markedContentStack.length > 0) {
+            markedContentStack.pop();
+          }
+        }
         break;
       case pdfjs.OPS.setFillColorSpace:
-        state.fillColorSpace = colorSpaceName(args?.[0]);
+        {
+          const nextColorSpace = colorSpaceName(args?.[0]);
+          state.fillColorSpace = nextColorSpace === "Indexed" && state.fillColorSpace === "Separation" ? state.fillColorSpace : nextColorSpace;
+        }
         break;
       case pdfjs.OPS.setStrokeColorSpace:
         state.strokeColorSpace = colorSpaceName(args?.[0]);
@@ -1016,9 +1047,10 @@ export function extractPageObjects(
                   : cleanNumber(Math.abs((advance * textHScale) / metricParts)),
               upright,
               matrix: glyphMatrix,
-              ncs: state.fillColorSpace,
+              ncs: state.fillColorSpace === "Indexed" && Array.isArray(state.fillColor) && state.fillColor.length === 1 && Number(state.fillColor[0]) === 1 ? "Separation" : state.fillColorSpace,
               non_stroking_color: colorValue(state.fillColor),
               stroking_color: colorValue(state.strokeColor),
+              ...formYExtras(),
               ...markedExtras()
             }, coordOffset);
             if (Array.isArray(obj.matrix) && Math.abs(Number(obj.matrix[4]) - Number(obj.x0)) < 0.002) {
@@ -1141,7 +1173,7 @@ export function extractPageObjects(
             const rawBBox = pathBBox(transformed);
             if (path.closed || path.hasCurve || transformed.length > 2) {
               const lineEndpoints = !path.hasCurve ? collinearPathEndpoints(transformed) : null;
-              if (lineEndpoints) {
+              if (lineEndpoints && vectorExtras.tag !== "P" && transformed.length === 2) {
                 const rawLineBBox = pathBBox(lineEndpoints);
                 lines.push(rectFromPdfBBox(rawLineBBox, pageWidth, pageHeight, pageRotate, pageNumber, "line", doctopOffset, path.closed ? vectorExtras : lineExtras, coordOffset));
               } else if (
@@ -1188,7 +1220,10 @@ export function extractPageObjects(
             if (lineEndpoints && (transformed.length === 2 || (transformed.length === 3 && path.explicitClose))) {
               const rawLineBBox = pathBBox(lineEndpoints);
               lines.push(rectFromPdfBBox(rawLineBBox, pageWidth, pageHeight, pageRotate, pageNumber, "line", doctopOffset, vectorExtras, coordOffset));
-            } else if (isAxisAlignedRect({ ...path, points: transformed }, inferRectFromGeometry || (!isStroke && transformed.length === 5))) {
+            } else if (
+              !(rawPath && path.fromRect && vectorExtras.tag === "Figure" && linewidth > 0 && !isStroke && typeof vectorExtras.non_stroking_color === "number") &&
+              isAxisAlignedRect({ ...path, points: transformed }, inferRectFromGeometry || (!isStroke && transformed.length === 5))
+            ) {
               const strokeColor = vectorExtras.stroking_color;
               const hasNonDefaultStrokeColor = Array.isArray(strokeColor)
                 ? strokeColor.some((component, index) => Number(component) !== (strokeColor.length === 4 && index === 3 ? 1 : 0))
@@ -1201,7 +1236,7 @@ export function extractPageObjects(
                   linewidth: isStroke || (state.lineWidthSet && ((Math.abs(linewidth - 1) <= 1e-9 && (hasNonDefaultStrokeColor || hasRgbWhiteFill || vectorExtras.tag === "Document")) || (Math.abs(linewidth - 1) > 1e-9 && (linewidth <= 1 || linewidth > 10 || vectorExtras.tag !== "OC")))) ? linewidth : 0
                 }, coordOffset)
               );
-            } else if (transformed.length > 0 && !(isStroke && transformed.length > 1 && (rawBBox[0] === rawBBox[2] || rawBBox[1] === rawBBox[3]))) {
+            } else if (transformed.length > 0 && !(isStroke && !path.hasCurve && transformed.length > 1 && (rawBBox[0] === rawBBox[2] || rawBBox[1] === rawBBox[3]))) {
 	              const curve = rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
 	                pts: pagePoints,
 	                closepath: path.closed,
@@ -1305,7 +1340,8 @@ export function annotationToObject(
 function annotationUri(annotation: any, rawUri: string | null): string | null {
   const optionalString = (value: unknown): string | null => (typeof value === "string" && value.length > 0 ? value : null);
   const value = optionalString(rawUri ?? annotation.url ?? annotation.unsafeUrl ?? null);
-  return value && /^[A-Za-z][A-Za-z0-9+.-]*:/.test(value) ? value : null;
+  if (!value) return null;
+  return /^[A-Za-z][A-Za-z0-9+.-]*:/.test(value) || !/\s/.test(value) ? value : null;
 }
 
 function readPdfDictStringLikePdfplumber(objectText: string, key: string): string | null {
