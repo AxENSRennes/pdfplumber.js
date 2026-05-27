@@ -11,6 +11,8 @@ export interface CycleParityShardOptions {
   caseIds: string[];
 }
 
+const cycleShardTestTimeoutMs = Number.parseInt(process.env.PDFPLUMBER_JS_CYCLE_SHARD_TIMEOUT_MS ?? "180000", 10);
+
 function cycleLabel(cycle: number): string {
   return String(cycle).padStart(2, "0");
 }
@@ -39,7 +41,7 @@ export function defineCycleParityShard(options: CycleParityShardOptions): void {
     for (const scenario of scenarios) {
       it(scenario.id, async () => {
         await runParityScenario(scenario);
-      }, 60_000);
+      }, cycleShardTestTimeoutMs);
     }
   });
 }

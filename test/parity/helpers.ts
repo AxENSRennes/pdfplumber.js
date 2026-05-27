@@ -77,6 +77,11 @@ const objectKeys = [
 ];
 
 const HASH_NUMERIC_DIGITS = 3;
+const traceParity = process.env.PDFPLUMBER_JS_TRACE_PARITY === "1";
+
+function traceParityStep(message: string): void {
+  if (traceParity) console.error(`[pdfplumber parity] ${message}`);
+}
 
 export function readParityGoldens(): ParityGoldenFile {
   return JSON.parse(readFileSync(goldenPath, "utf8")) as ParityGoldenFile;
@@ -440,9 +445,11 @@ async function documentSnapshot(
   }
 }
 
-function scenarioPage(document: PDFPlumberDocument, check: ParityCheck): PDFPlumberPage {
-  const selected = document.pages[check.page ?? 0];
-  if (!selected) throw new Error(`Missing page at index ${check.page ?? 0}`);
+function scenarioPage(document: PDFPlumberDocument, check: ParityCheck, selectedPageIndices?: number[]): PDFPlumberPage {
+  const requestedIndex = check.page ?? 0;
+  const documentIndex = selectedPageIndices ? selectedPageIndices.indexOf(requestedIndex) : requestedIndex;
+  const selected = documentIndex >= 0 ? document.pages[documentIndex] : undefined;
+  if (!selected) throw new Error(`Missing page at index ${requestedIndex}`);
   let page = selected;
   if (check.bbox) {
     if (check.bboxMethod === "outside") page = page.outsideBbox(check.bbox);
@@ -462,6 +469,12 @@ function buildMcidText(page: PDFPlumberPage): Array<Record<string, unknown>> {
     mcids[char.mcid] += String(char.text ?? "");
   }
   return mcids.map((text, mcid) => ({ mcid, text }));
+}
+
+function selectedPageIndicesForScenario(scenario: ParityScenario): number[] | undefined {
+  if (Array.isArray(scenario.openOptions?.pages)) return undefined;
+  const snapshotCheck = scenario.checks.find((check) => check.type === "document.snapshot" && check.pageIndices?.length);
+  return snapshotCheck?.pageIndices;
 }
 
 function expectClose(actual: unknown, expected: unknown, precision = 5, path = "$"): void {
@@ -522,52 +535,58 @@ function expectClose(actual: unknown, expected: unknown, precision = 5, path = "
 export async function runParityScenario(scenario: ParityScenario): Promise<void> {
   const pdfPath = resolvePdfPath(scenario);
   let document: PDFPlumberDocument | null = null;
+  const selectedPageIndices = selectedPageIndicesForScenario(scenario);
+  const selectedPageNumbers = selectedPageIndices?.map((index) => index + 1);
 
   const getDocument = async (): Promise<PDFPlumberDocument> => {
-    document ??= await open(pdfPath, scenario.openOptions ?? {});
+    const openOptions = selectedPageNumbers?.length
+      ? { ...(scenario.openOptions ?? {}), pages: selectedPageNumbers }
+      : (scenario.openOptions ?? {});
+    document ??= await open(pdfPath, openOptions);
     return document;
   };
 
   try {
-    for (const check of scenario.checks) {
+    for (const [checkIndex, check] of scenario.checks.entries()) {
       let actual: unknown;
+      traceParityStep(`${scenario.id} check ${checkIndex} ${check.type} start`);
 
       switch (check.type) {
         case "document.snapshot":
           actual = await documentSnapshot(pdfPath, scenario.openOptions ?? {}, check.pageIndices);
           break;
         case "page.textSummary": {
-          const page = scenarioPage(await getDocument(), check);
+          const page = scenarioPage(await getDocument(), check, selectedPageIndices);
           actual = await withStatus(() => page.extractText(check.options ?? {}), textSummary);
           break;
         }
         case "page.wordsSummary": {
-          const page = scenarioPage(await getDocument(), check);
+          const page = scenarioPage(await getDocument(), check, selectedPageIndices);
           actual = await withStatus(() => page.extractWords(check.options ?? {}), objectListSummary);
           break;
         }
         case "page.searchSummary": {
-          const page = scenarioPage(await getDocument(), check);
+          const page = scenarioPage(await getDocument(), check, selectedPageIndices);
           actual = await withStatus(() => page.search(String(check.pattern ?? ""), check.options ?? {}), searchSummary);
           break;
         }
         case "page.extractTableSummary": {
-          const page = scenarioPage(await getDocument(), check);
+          const page = scenarioPage(await getDocument(), check, selectedPageIndices);
           actual = await withStatus(() => page.extractTable(check.options ?? {}), jsonValueSummary);
           break;
         }
         case "page.extractTablesSummary": {
-          const page = scenarioPage(await getDocument(), check);
+          const page = scenarioPage(await getDocument(), check, selectedPageIndices);
           actual = await withStatus(() => page.extractTables(check.options ?? {}), jsonValueSummary);
           break;
         }
         case "page.findTablesSummary": {
-          const page = scenarioPage(await getDocument(), check);
+          const page = scenarioPage(await getDocument(), check, selectedPageIndices);
           actual = await withStatus(() => page.findTables(check.options ?? {}), findTablesSummary);
           break;
         }
         case "page.mcidText": {
-          const page = scenarioPage(await getDocument(), check);
+          const page = scenarioPage(await getDocument(), check, selectedPageIndices);
           actual = buildMcidText(page);
           break;
         }
@@ -575,7 +594,9 @@ export async function runParityScenario(scenario: ParityScenario): Promise<void>
           throw new Error(`Unknown parity check type: ${check.type}`);
       }
 
+      traceParityStep(`${scenario.id} check ${checkIndex} ${check.type} compare`);
       expectClose(clean(actual), check.expected);
+      traceParityStep(`${scenario.id} check ${checkIndex} ${check.type} done`);
     }
   } finally {
     const opened = document as PDFPlumberDocument | null;

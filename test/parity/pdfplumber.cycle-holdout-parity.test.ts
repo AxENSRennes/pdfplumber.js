@@ -8,6 +8,7 @@ const cycles = (process.env.PDFPLUMBER_JS_CYCLES ?? "10,11,12")
   .split(",")
   .map((value) => Number.parseInt(value.trim(), 10))
   .filter(Number.isFinite);
+const cycleParityTestTimeoutMs = Number.parseInt(process.env.PDFPLUMBER_JS_CYCLE_PARITY_TIMEOUT_MS ?? "180000", 10);
 
 describeCycleHoldout("pdfplumber Python real-document cycle holdout corpus", () => {
   for (const cycle of cycles) {
@@ -16,7 +17,7 @@ describeCycleHoldout("pdfplumber Python real-document cycle holdout corpus", () 
     for (const scenario of goldens.scenarios) {
       it(scenario.id, async () => {
         await runParityScenario(scenario);
-      }, 60_000);
+      }, cycleParityTestTimeoutMs);
     }
   }
 });

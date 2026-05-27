@@ -111,8 +111,10 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
   const pages: PDFPlumberPage[] = [];
   let doctopOffset = 0;
   const selected = new Set(options.pages ?? Array.from({ length: pdf.numPages }, (_, i) => i + 1));
+  const maxSelectedPage = selected.size ? Math.max(...selected) : 0;
   const pageTotal = pdf.numPages;
   for (let pageNumber = 1; pageNumber <= pageTotal; pageNumber += 1) {
+    if (pageNumber > maxSelectedPage) break;
     const pdfPage = await pdf.getPage(pageNumber);
     const pageModel = store.getPageModel(pdfPage.ref?.num ? Number(pdfPage.ref.num) : undefined);
     const pageObjectText = pageModel?.raw ?? (pdfPage.ref?.num ? rawObjects.get(Number(pdfPage.ref.num)) : undefined);
@@ -215,5 +217,5 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
     );
     doctopOffset += boxes.height;
   }
-  return new PdfPlumberDocumentImpl(pdf, metadata, pages);
+  return new PdfPlumberDocumentImpl(pdf, metadata, pages, selected.size < pdf.numPages ? "cleanup" : "destroy");
 }

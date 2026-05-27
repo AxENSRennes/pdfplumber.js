@@ -9,7 +9,8 @@ export class PdfPlumberDocumentImpl implements PDFPlumberDocument {
   constructor(
     readonly pdf: any,
     readonly metadata: Record<string, unknown>,
-    readonly pages: PDFPlumberPage[]
+    readonly pages: PDFPlumberPage[],
+    private readonly closeMode: "cleanup" | "destroy" = "destroy"
   ) {
     this.objects = aggregateObjects(pages);
   }
@@ -25,6 +26,10 @@ export class PdfPlumberDocumentImpl implements PDFPlumberDocument {
   }
 
   async close(): Promise<void> {
+    if (this.closeMode === "cleanup" && typeof this.pdf.cleanup === "function") {
+      await this.pdf.cleanup();
+      return;
+    }
     await this.pdf.destroy();
   }
 }

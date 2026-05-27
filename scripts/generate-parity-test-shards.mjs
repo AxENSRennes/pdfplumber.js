@@ -26,6 +26,20 @@ function primaryShardFromId(id) {
   return match?.[1] ?? basename;
 }
 
+function sanitizeShardName(value) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function shardFromEntry(entry) {
+  if (entry.sourceDocumentId) {
+    return sanitizeShardName(entry.sourceDocumentId);
+  }
+  return primaryShardFromId(entry.id);
+}
+
 function readManifest(cycle, phase) {
   const label = cycleLabel(cycle);
   const manifestPath = path.join(fixturesRoot, `cycle-${label}`, `${phase}-manifest.json`);
@@ -56,7 +70,7 @@ function generatePhase(cycle, phase) {
   const manifest = readManifest(cycle, phase);
   const groups = new Map();
   for (const entry of manifest) {
-    const shard = primaryShardFromId(entry.id);
+    const shard = shardFromEntry(entry);
     const ids = groups.get(shard) ?? [];
     ids.push(entry.id);
     groups.set(shard, ids);
