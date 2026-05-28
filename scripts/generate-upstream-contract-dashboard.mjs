@@ -130,6 +130,16 @@ function passedPdfplumberCompatGate(subsystem, scenario) {
   };
 }
 
+function passedRobustnessGate(subsystem) {
+  return {
+    scope: "robustness-corpus",
+    subsystem,
+    status: "passed",
+    js: "test/smoke/open-robustness.test.ts",
+    rationale: "The public open() robustness gate verifies malformed, missing, encrypted, and OSS-Fuzz PDF inputs either extract stable structured page data or raise a documented named error."
+  };
+}
+
 const pdfplumberCompatCoveredTests = new Map(
   [
     ["pdfplumber-python/tests/test_ca_warn_report.py", "Test.test page limiting", "pages-option-load"],
@@ -356,13 +366,7 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
       };
     }
     if (/\b(non-existent url|invalid pdf|bad xref|bad \/pages|circular references|incomplete trailer|bad \/resources|password protected|protected with|empty typedarray)\b/.test(lowerBehavior)) {
-      return {
-        scope: "robustness-corpus",
-        subsystem,
-        status: "needs-adapted-js-test",
-        js: "Add a public open() robustness test that either extracts matching behavior or raises the documented stable error.",
-        rationale: "Malformed, encrypted, and failed-load API cases matter as stable public open() outcomes rather than as raw PDF.js APIs."
-      };
+      return passedRobustnessGate(subsystem);
     }
     if (/\b(gets number of pages|gets page\b|gets non-existent page|gets page multiple time|gets page index|gets invalid page index|gets metadata|gets outline|gets annotations|get text content|get operator list)\b/.test(lowerBehavior)) {
       return {
@@ -445,13 +449,7 @@ function classify(source, behavior, kind) {
       return passedPublicInputGate("runtime");
     }
     if (lowerBehavior === "test.test bad fileobj") {
-      return {
-        scope: "robustness-corpus",
-        subsystem: "runtime",
-        status: "needs-adapted-js-test",
-        js: "Add a public open() robustness test for empty or invalid PDF inputs that either raises the documented stable error or proves matching extraction behavior.",
-        rationale: "The upstream row covers failed file loading plus Python file-object lifetime semantics; JS does not expose Python file objects, but invalid public inputs need a stable open() outcome."
-      };
+      return passedRobustnessGate("runtime");
     }
   }
 
@@ -476,13 +474,7 @@ function classify(source, behavior, kind) {
   }
 
   if (lowerSourceFile.includes("pdfplumber-python/tests/test_oss_fuzz.py")) {
-    return {
-      scope: "robustness-corpus",
-      subsystem: "parser",
-      status: "needs-adapted-js-test",
-      js: "Add an OSS-Fuzz corpus gate that opens each PDF through the public API and either extracts stable structured data or raises the documented stable error.",
-      rationale: "The upstream test is a malformed-PDF robustness harness; Python-only conversion and image helpers it opportunistically calls are not themselves part of the JS public surface."
-    };
+    return passedRobustnessGate("parser");
   }
 
   if (lowerSourceFile.includes("pdfplumber-python/tests/test_utils.py") && excludedPdfplumberUtilityTests.has(lowerBehavior)) {
@@ -547,6 +539,15 @@ function classify(source, behavior, kind) {
         rationale: "Visual rendering and viewer UI checks are excluded unless the capability is used or exposed by the extraction API."
       };
     }
+    if (/\btype=highlight\b/.test(lowerBehavior)) {
+      return {
+        scope: "excluded",
+        subsystem: "viewer-ui",
+        status: "excluded",
+        js: "PDF.js text-highlight rendering/reference behavior is not exposed by pdfplumber.js.",
+        rationale: "Highlight manifest checks validate PDF.js viewer/text-layer rendering, not the pdfplumber.js extraction API."
+      };
+    }
     if (/\btext\b/.test(lowerBehavior)) {
       return {
         scope: "pdfjs-capability",
@@ -556,11 +557,29 @@ function classify(source, behavior, kind) {
         rationale: "pdf.js text manifest items are capability checks for the retained pdf.js role, not the native default engine."
       };
     }
+    if (/\btype=extract\b/.test(lowerBehavior)) {
+      return {
+        scope: "pdfjs-capability",
+        subsystem: "text",
+        status: "needs-adapted-js-test",
+        js: "Adapt only if PDF.js text extraction remains a named fallback/capability; otherwise reclassify as excluded or duplicate.",
+        rationale: "PDF.js extract manifest rows exercise its text extraction harness, which is a retained-capability concern rather than the default native extraction oracle."
+      };
+    }
+    if (/\btype=(?:load|other)\b/.test(lowerBehavior)) {
+      return {
+        scope: "robustness-corpus",
+        subsystem,
+        status: "needs-adapted-js-test",
+        js: "Select for a public open() robustness corpus gate or mark as duplicate of an existing real-document/parity case.",
+        rationale: "PDF.js load/other manifest rows are upstream corpus inputs; each should either open/extract with stable public behavior, raise a documented stable error, or be linked to duplicate corpus coverage."
+      };
+    }
     return {
       scope: "robustness-corpus",
       subsystem,
-      status: "needs-classification",
-      js: "Classify as a robustness input, pdf.js capability test, duplicate, or excluded rendering case.",
+      status: "needs-adapted-js-test",
+      js: "Classify with a targeted public extraction, robustness, duplicate, or exclusion rule.",
       rationale: "Manifest entries are upstream corpus items; non-rendering failures should produce stable errors or targeted behavior tests."
     };
   }
