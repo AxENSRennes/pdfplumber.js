@@ -137,6 +137,16 @@ def table_cell_line(table_data: List[List[Optional[str]]], row: int, col: int, i
     return None if value is None else value.split("\n")[index]
 
 
+def table_sample_summary(table_data: List[List[Optional[str]]], cells: List[List[int]]) -> Dict[str, Any]:
+    return clean(
+        {
+            "row_count": len(table_data),
+            "column_count": len(table_data[0]) if table_data else 0,
+            "cells": {f"{row},{col}": table_data[row][col] for row, col in cells},
+        }
+    )
+
+
 def dedupe_extra_attrs_lines(page: Any) -> Dict[str, List[str]]:
     specs = [
         ("no_dedupe", None),
@@ -344,6 +354,43 @@ def build_scenarios() -> List[Dict[str, Any]]:
             "crop-filter-and-validation",
             "nics-background-checks-2015-11.pdf",
             crop_filter_checks,
+        )
+    )
+
+    def nics_filter_checks(pdf: Any) -> List[Dict[str, Any]]:
+        page = pdf.pages[0]
+        filtered = page.filter(lambda obj: not (obj["object_type"] == "char" and obj["size"] < 15))
+        return [
+            make_check("page.filterMinCharSize.extractText", filtered.extract_text(), page=0, args={"minSize": 15}),
+            make_check("page.filterMinCharSize.objectCounts", object_counts(filtered.objects), page=0, args={"minSize": 15}),
+        ]
+
+    scenarios.append(
+        scenario(
+            "nics-filter-min-char-size",
+            "nics-background-checks-2015-11.pdf",
+            nics_filter_checks,
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "nics-table-text-only-strategy",
+            "nics-background-checks-2015-11.pdf",
+            lambda pdf: [
+                make_check(
+                    "page.crop.extractTableSummary",
+                    table_sample_summary(
+                        pdf.pages[0]
+                        .crop((0, 80, pdf.pages[0].width, 475))
+                        .extract_table({"horizontal_strategy": "text", "vertical_strategy": "text"}),
+                        [[0, 0], [0, 22], [-1, 0], [-1, 22]],
+                    ),
+                    page=0,
+                    bbox=(0, 80, pdf.pages[0].width, 475),
+                    args={"horizontal_strategy": "text", "vertical_strategy": "text", "cells": [[0, 0], [0, 22], [-1, 0], [-1, 22]]},
+                )
+            ],
         )
     )
 

@@ -168,6 +168,8 @@ const pdfplumberCompatCoveredTests = new Map(
     ["pdfplumber-python/tests/test_laparams.py", "Test.test issue 383", "laparams-layout-objects-default"],
     ["pdfplumber-python/tests/test_list_metadata.py", "Test.test load", "list-metadata-load"],
     ["pdfplumber-python/tests/test_mcids.py", "TestMCIDs.test mcids", "marked-content-ids"],
+    ["pdfplumber-python/tests/test_nics_report.py", "Test.test filter", "nics-filter-min-char-size"],
+    ["pdfplumber-python/tests/test_nics_report.py", "Test.test text only strategy", "nics-table-text-only-strategy"],
     ["pdfplumber-python/tests/test_table.py", "Test.test edges strict", "table-lines-strict"],
     ["pdfplumber-python/tests/test_table.py", "Test.test text tolerance", "table-text-strategy-and-tolerance"],
     ["pdfplumber-python/tests/test_table.py", "Test.test text layout", "table-text-layout"],

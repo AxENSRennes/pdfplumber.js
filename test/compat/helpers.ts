@@ -95,8 +95,22 @@ function textLine(text: string, index: number): string | undefined {
 }
 
 function tableCellLine(table: Array<Array<string | null>> | null, row: number, col: number, index: number): string | null | undefined {
-  const value = table?.[row]?.[col];
+  const selectedRow = table ? itemAt(table, row) : undefined;
+  const value = selectedRow ? itemAt(selectedRow, col) : undefined;
   return value == null ? value : textLine(value, index);
+}
+
+function tableSampleSummary(table: Array<Array<string | null>> | null, cells: number[][]): Record<string, unknown> {
+  return {
+    row_count: table?.length ?? 0,
+    column_count: table?.[0]?.length ?? 0,
+    cells: Object.fromEntries(
+      cells.map(([row, col]) => {
+        const selectedRow = table ? itemAt(table, row) : undefined;
+        return [`${row},${col}`, selectedRow ? itemAt(selectedRow, col) : undefined];
+      })
+    )
+  };
 }
 
 function firstWordCharsSummary(words: Array<Record<string, unknown>>): Record<string, unknown> {
@@ -255,6 +269,16 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
         case "page.dedupeExtraAttrsLines":
           actual = await dedupeExtraAttrsLines(selectedPage);
           break;
+        case "page.filterMinCharSize.extractText": {
+          const minSize = Number(check.args?.minSize ?? 0);
+          actual = await valueOf(selectedPage.filter((object) => object.object_type !== "char" || Number(object.size) >= minSize).extractText(check.args ?? {}));
+          break;
+        }
+        case "page.filterMinCharSize.objectCounts": {
+          const minSize = Number(check.args?.minSize ?? 0);
+          actual = pageObjectCounts(selectedPage.filter((object) => object.object_type !== "char" || Number(object.size) >= minSize));
+          break;
+        }
         case "page.extractWords":
           actual = await valueOf(selectedPage.extractWords(check.args ?? {}));
           break;
@@ -408,6 +432,15 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
             relative: check.relative,
             strict: check.strict
           }).extractTable(check.args ?? {}));
+          break;
+        case "page.crop.extractTableSummary":
+          actual = tableSampleSummary(
+            await valueOf(selectedPage.crop(check.bbox as BBox, {
+              relative: check.relative,
+              strict: check.strict
+            }).extractTable(check.args ?? {})),
+            (check.args?.cells as number[][] | undefined) ?? []
+          );
           break;
         case "page.annots":
           actual = Array.isArray(check.expected) ? selectedPage.annots.slice(0, check.expected.length) : selectedPage.annots;

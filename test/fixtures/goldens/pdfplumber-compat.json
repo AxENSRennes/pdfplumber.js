@@ -1,6 +1,6 @@
 {
   "reference": {
-    "generatedAt": "2026-05-28T01:10:45.108300+00:00",
+    "generatedAt": "2026-05-28T01:13:35.607296+00:00",
     "pdfminerVersion": "20260107",
     "pdfplumberCommit": "98041536932ce85d18a1fba80d9db0686b831d9d",
     "pdfplumberVersion": "0.11.9"
@@ -1569,6 +1569,80 @@
         }
       ],
       "id": "crop-filter-and-validation",
+      "pdf": "nics-background-checks-2015-11.pdf"
+    },
+    {
+      "checks": [
+        {
+          "args": {
+            "minSize": 15
+          },
+          "expected": "NICS Firearm Background Checks\nNovember - 2015",
+          "page": 0,
+          "type": "page.filterMinCharSize.extractText"
+        },
+        {
+          "args": {
+            "minSize": 15
+          },
+          "expected": {
+            "char": 45,
+            "line": 192,
+            "rect": 254
+          },
+          "page": 0,
+          "type": "page.filterMinCharSize.objectCounts"
+        }
+      ],
+      "id": "nics-filter-min-char-size",
+      "pdf": "nics-background-checks-2015-11.pdf"
+    },
+    {
+      "checks": [
+        {
+          "args": {
+            "cells": [
+              [
+                0,
+                0
+              ],
+              [
+                0,
+                22
+              ],
+              [
+                -1,
+                0
+              ],
+              [
+                -1,
+                22
+              ]
+            ],
+            "horizontal_strategy": "text",
+            "vertical_strategy": "text"
+          },
+          "bbox": [
+            0,
+            80,
+            1008,
+            475
+          ],
+          "expected": {
+            "cells": {
+              "-1,0": "Wyoming",
+              "-1,22": "5,017",
+              "0,0": "Alabama",
+              "0,22": "71,137"
+            },
+            "column_count": 23,
+            "row_count": 55
+          },
+          "page": 0,
+          "type": "page.crop.extractTableSummary"
+        }
+      ],
+      "id": "nics-table-text-only-strategy",
       "pdf": "nics-background-checks-2015-11.pdf"
     },
     {
