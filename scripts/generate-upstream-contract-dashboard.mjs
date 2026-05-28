@@ -322,6 +322,16 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
     return passedBrowserInputGate("runtime");
   }
 
+  if (sourceFile.endsWith("core_utils_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem,
+      status: "excluded",
+      js: "PDF.js core utility helpers are not exposed by pdfplumber.js.",
+      rationale: "These rows validate raw PDF.js helper functions for inherited properties, Roman numerals, PDF name/string escaping, URL parsing, font CSS parsing, object equality, and ArrayBuffer concatenation; pdfplumber.js exposes public extraction objects and has separate public/native gates for page labels, metadata strings, fonts, geometry, and parser behavior."
+    };
+  }
+
   if (sourceFile.endsWith("pdf.worker_spec.js")) {
     return {
       ...passedBrowserInputGate("runtime"),
@@ -331,6 +341,16 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
 
   if (sourceFile.endsWith("util_spec.js") && lowerBehavior === "correctly creates a valid url for allowed protocols") {
     return passedBrowserInputGate("runtime");
+  }
+
+  if (sourceFile.endsWith("util_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem,
+      status: "excluded",
+      js: "PDF.js generic utility helpers and exception classes are not exposed by pdfplumber.js.",
+      rationale: "These rows validate raw PDF.js helpers for PDF string decoding, URL filtering, date formatting, UUIDs, array conversion, string conversion, and exception class construction; pdfplumber.js exposes public extraction behavior and has separate metadata, robustness, and browser input gates."
+    };
   }
 
   if (sourceFile.endsWith("node_stream_spec.js")) {
@@ -567,6 +587,16 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
     };
   }
 
+  if (sourceFile.endsWith("font_substitutions_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "viewer-ui",
+      status: "excluded",
+      js: "PDF.js browser font substitution tables are not exposed by pdfplumber.js.",
+      rationale: "pdfplumber.js exposes extracted font names and text geometry, not PDF.js renderer fallback font-family choices for missing or substituted browser fonts."
+    };
+  }
+
   if (/xfa_parser_spec/.test(sourceFile)) {
     return {
       scope: "excluded",
@@ -607,6 +637,20 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
       status: "excluded",
       js: "PDF.js annotation rendering, editing, form-save, and sandbox helper behavior is not exposed by pdfplumber.js.",
       rationale: "pdfplumber.js exposes extracted annotation objects and hyperlinks, not PDF.js annotation-layer appearance rendering, editor creation/update flows, saved PDF serialization, or scripting sandbox field objects."
+    };
+  }
+
+  if (
+    sourceFile.endsWith("annotation_spec.js") &&
+    (/\b(?:quadpoints?|field names?|text alignment|maximum length|comb fields?|checkbox(?:es)?|radio buttons?|option arrays?|form values?|field value|flags|viewable|printable|modification date|creation date|irt|\/rt|state model|state when|color|width|style|dash array|corner radius|line coordinates|line endings|ink lists?|file attachment)\b/.test(lowerBehavior) ||
+      (lowerBehavior.includes("push buttons") && !lowerBehavior.includes("url")))
+  ) {
+    return {
+      scope: "excluded",
+      subsystem: "annotations",
+      status: "excluded",
+      js: "Detailed PDF.js annotation/form widget properties are not exposed by pdfplumber.js.",
+      rationale: "The public annotation API exposes geometry plus simple uri/title/contents fields; it does not expose PDF.js quadpoints, form field state, widget choices, border/style/color/date/reply-state, line/ink detail, or file-attachment payload parsing."
     };
   }
 
