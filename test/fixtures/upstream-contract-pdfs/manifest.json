@@ -1,0 +1,28 @@
+[
+  {
+    "id": "pdfjs-bug1260585",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-bug1260585.pdf",
+    "sourceUrl": "https://bugzilla.mozilla.org/attachment.cgi?id=8736063",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": ["pdfjs-regression", "linked-manifest", "load", "text"],
+    "size": 795117,
+    "md5": "9415b1eb00a43c97c15328cd4c8d136a",
+    "sha256": "0a81ec207f9c735d717af186141d32f15d8664944d00aa6f17cafc65ea936649",
+    "selectedPages": [1],
+    "why": "Covers a linked PDF.js load-manifest regression fixture with text extraction and stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-bug867484",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-bug867484.pdf",
+    "sourceUrl": "https://bugzilla.mozilla.org/attachment.cgi?id=744001",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": ["pdfjs-regression", "linked-manifest", "load", "scanned"],
+    "size": 126647,
+    "md5": "347af7b0ef7279b1a7f43b03bfda4548",
+    "sha256": "0a92dc4e718a92444b5aaa946db404c9e3a179050def66ad53d8da7ceb80bd28",
+    "selectedPages": [1],
+    "why": "Covers a linked PDF.js load-manifest regression fixture whose first page has no extractable text but must still open with stable page data."
+  }
+]

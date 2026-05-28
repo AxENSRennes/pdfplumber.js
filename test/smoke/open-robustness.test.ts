@@ -160,7 +160,9 @@ describe("public open() robustness", () => {
       "pdfjs/test/pdfs/bug900822.pdf",
       "pdfjs/test/pdfs/issue11922_reduced.pdf",
       "pdfjs/test/pdfs/issue7229.pdf",
-      "pdfjs/test/pdfs/bug1978317.pdf"
+      "pdfjs/test/pdfs/bug1978317.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-bug1260585.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-bug867484.pdf"
     ];
 
     for (const relativePath of cases) {
