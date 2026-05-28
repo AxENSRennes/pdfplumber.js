@@ -177,7 +177,16 @@ describe("public open() robustness", () => {
       "test/fixtures/upstream-contract-pdfs/pdfjs-bug1823296.pdf",
       "test/fixtures/upstream-contract-pdfs/pdfjs-bug1847733.pdf",
       "test/fixtures/upstream-contract-pdfs/pdfjs-issue16863.pdf",
-      "test/fixtures/upstream-contract-pdfs/pdfjs-issue17856.pdf"
+      "test/fixtures/upstream-contract-pdfs/pdfjs-issue17856.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-bug808084.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-hudsonsurvey.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-issue2129.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-issue3848.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-issue4387.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-issue6549.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-jai-pdf.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-liveprogramming.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-txt2pdf.pdf"
     ];
 
     for (const relativePath of cases) {

@@ -342,5 +342,176 @@
       1
     ],
     "why": "Covers linked PDF.js other-manifest fixture issue19281 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-bug808084",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-bug808084.pdf",
+    "sourceUrl": "https://www.open-std.org/JTC1/SC22/WG21/docs/papers/2006/n1984.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 150429,
+    "md5": "b1c400de699af29ea3f1983bb26870ab",
+    "sha256": "cb27ff919c525e066b5071ac00b16c434fa374d75af2a1d289ae602912e4c9c0",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture bug808084 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-hudsonsurvey",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-hudsonsurvey.pdf",
+    "sourceUrl": "https://svn.apache.org/repos/asf/pdfbox/branches/1.2.x/pdfbox/src/test/resources/input/rendering/survey.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 127295,
+    "md5": "bf0e6576a7b6c2fe7485bce1b78e006f",
+    "sha256": "2e8b87ea72de7dd54176354706a5d7ff9e64a12624e603ffac64aa55743bf581",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture hudsonsurvey with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue2129",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue2129.pdf",
+    "sourceUrl": "http://docs.dpaq.de/1737-itcsamsungapple337_794notice14092012.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 85439,
+    "md5": "b082dd2cb3648f979fd668f498af14d6",
+    "sha256": "aa081c5073df81b404c416cbc9524498b682cd4fbb510c920ae52c34bc7f3eb8",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture issue2129 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue3848",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue3848.pdf",
+    "sourceUrl": "http://www.unicode.org/L2/L2006/06334-reph-telugu-gurmukhi.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 595804,
+    "md5": "2498cf0650cc97ceca3e24dfa0425a73",
+    "sha256": "3370541c1a39712302d7c5ad38351c96eb4f18b7dfc1536492c53beae9e7c509",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture issue3848 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue4387",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue4387.pdf",
+    "sourceUrl": "https://www.swiss-orienteering.ch/files/magazin/blw2014_nachwuchs.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 870069,
+    "md5": "e06da177b5b9e36016fa2442510d62da",
+    "sha256": "4064e908e30877eba029dcf3076a49337a89351c4c3c19828784a7a7dd905a63",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture issue4387 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue6549",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue6549.pdf",
+    "sourceUrl": "https://www.kokuyo-st.co.jp/stationery/camiapp/CamiApp_Sample.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 6521156,
+    "md5": "699aeea73a6f45375022ffc6cc80f12a",
+    "sha256": "3da568a054c321d9c98229f6104a4e3ca4c4a7dcd546aefadccfbe52512590cb",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture issue6549 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-jai-pdf",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-jai-pdf.pdf",
+    "sourceUrl": "https://docs.oracle.com/cd/E19957-01/806-5413-10/806-5413-10.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 3177163,
+    "md5": "1f5dd128c3757420a881a155f2f8ace3",
+    "sha256": "291bc918fd70eb4f997c17741e45331b81f2f5fba994ba04391e6c66d0af9138",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture jai-pdf with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-liveprogramming",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-liveprogramming.pdf",
+    "sourceUrl": "https://blog.lassus.se/files/liveprogramming.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 1912300,
+    "md5": "7bd4dad1188232ef597d36fd72c33e52",
+    "sha256": "312279d0f63cf94b2faec9e7c847f04ade581d496b6a6e3b924a4473cb1e3a50",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture liveprogramming with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-txt2pdf",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-txt2pdf.pdf",
+    "sourceUrl": "https://www.sanface.com/pdf/test.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 15336,
+    "md5": "02cefa0f5e8d96313bb05163b2f88c8c",
+    "sha256": "e89533e21917b007c2e4501afa982ae9b1abcb7d5d726f89b560d745c6a2a256",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture txt2pdf with stable public open() behavior."
   }
 ]
