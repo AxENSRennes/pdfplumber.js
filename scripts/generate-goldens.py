@@ -275,6 +275,42 @@ def build_scenarios() -> List[Dict[str, Any]]:
         )
     )
 
+    def annotations_cropped_checks(pdf: Any) -> List[Dict[str, Any]]:
+        page = pdf.pages[0]
+        hyperlink_bbox = utils.obj_to_bbox(page.hyperlinks[0])
+        return [
+            make_check("page.annots.count", len(page.annots), page=0),
+            make_check("page.hyperlinks.count", len(page.hyperlinks), page=0),
+            make_check("page.crop.annots", [slim_obj(a) for a in page.crop(page.bbox).annots], page=0, bbox=page.bbox),
+            make_check("page.crop.hyperlinks", [slim_obj(a) for a in page.crop(page.bbox).hyperlinks], page=0, bbox=page.bbox),
+            make_check("page.crop.annots", [slim_obj(a) for a in page.crop(hyperlink_bbox).annots], page=0, bbox=hyperlink_bbox),
+            make_check("page.crop.hyperlinks", [slim_obj(a) for a in page.crop(hyperlink_bbox).hyperlinks], page=0, bbox=hyperlink_bbox),
+        ]
+
+    scenarios.append(
+        scenario(
+            "annotations-cropped",
+            "pdffill-demo.pdf",
+            annotations_cropped_checks,
+        )
+    )
+
+    for rotation_name, pdf_name in [
+        ("annotations-rotated-base", "annotations.pdf"),
+        ("annotations-rotated-180", "annotations-rotated-180.pdf"),
+        ("annotations-rotated-90", "annotations-rotated-90.pdf"),
+        ("annotations-rotated-270", "annotations-rotated-270.pdf"),
+    ]:
+        scenarios.append(
+            scenario(
+                rotation_name,
+                pdf_name,
+                lambda pdf: [
+                    make_check("page.annots", [slim_obj(a) for a in pdf.pages[0].annots], page=0),
+                ],
+            )
+        )
+
     scenarios.append(
         scenario(
             "password-open",

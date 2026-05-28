@@ -137,6 +137,8 @@ const pdfplumberCompatCoveredTests = new Map(
     ["pdfplumber-python/tests/test_basics.py", "Test.test page number", "open-basic-objects-text-and-edges"],
     ["pdfplumber-python/tests/test_basics.py", "Test.test objects", "open-basic-objects-text-and-edges"],
     ["pdfplumber-python/tests/test_basics.py", "Test.test annots", "annotations-and-hyperlinks"],
+    ["pdfplumber-python/tests/test_basics.py", "Test.test annots cropped", "annotations-cropped"],
+    ["pdfplumber-python/tests/test_basics.py", "Test.test annots rotated", "annotations-rotated-*"],
     ["pdfplumber-python/tests/test_basics.py", "Test.test outside bbox", "open-basic-objects-text-and-edges"],
     ["pdfplumber-python/tests/test_basics.py", "Test.test crop and filter", "crop-filter-and-validation"],
     ["pdfplumber-python/tests/test_basics.py", "Test.test relative crop", "crop-filter-and-validation"],

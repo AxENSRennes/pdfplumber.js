@@ -135,6 +135,12 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
         case "page.objectCounts":
           actual = pageObjectCounts(selectedPage);
           break;
+        case "page.annots.count":
+          actual = selectedPage.annots.length;
+          break;
+        case "page.hyperlinks.count":
+          actual = selectedPage.hyperlinks.length;
+          break;
         case "page.edgeCounts":
           actual = {
             rect_edges: selectedPage.rect_edges.length,
@@ -183,6 +189,18 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
             relative: check.relative,
             strict: check.strict
           }));
+          break;
+        case "page.crop.annots":
+          actual = selectedPage.crop(check.bbox as BBox, {
+            relative: check.relative,
+            strict: check.strict
+          }).annots;
+          break;
+        case "page.crop.hyperlinks":
+          actual = selectedPage.crop(check.bbox as BBox, {
+            relative: check.relative,
+            strict: check.strict
+          }).hyperlinks;
           break;
         case "page.crop.crop.geometry": {
           const base = selectedPage.crop(check.args?.baseBbox as BBox);

@@ -1,6 +1,6 @@
 {
   "reference": {
-    "generatedAt": "2026-05-28T00:48:19.265556+00:00",
+    "generatedAt": "2026-05-28T00:53:01.280976+00:00",
     "pdfminerVersion": "20260107",
     "pdfplumberCommit": "98041536932ce85d18a1fba80d9db0686b831d9d",
     "pdfplumberVersion": "0.11.9"
@@ -1660,6 +1660,694 @@
       ],
       "id": "annotations-and-hyperlinks",
       "pdf": "pdffill-demo.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": 13,
+          "page": 0,
+          "type": "page.annots.count"
+        },
+        {
+          "expected": 1,
+          "page": 0,
+          "type": "page.hyperlinks.count"
+        },
+        {
+          "bbox": [
+            0,
+            0,
+            612,
+            792
+          ],
+          "expected": [
+            {
+              "bottom": 233.23,
+              "contents": null,
+              "doctop": 213.3,
+              "height": 19.93,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 213.3,
+              "uri": null,
+              "width": 169.83,
+              "x0": 45.83,
+              "x1": 215.66,
+              "y0": 558.77,
+              "y1": 578.7
+            },
+            {
+              "bottom": 261.98,
+              "contents": null,
+              "doctop": 242.04,
+              "height": 19.94,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 242.04,
+              "uri": null,
+              "width": 183.87,
+              "x0": 45.83,
+              "x1": 229.7,
+              "y0": 530.02,
+              "y1": 549.96
+            },
+            {
+              "bottom": 290.72,
+              "contents": null,
+              "doctop": 270.79,
+              "height": 19.93,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 270.79,
+              "uri": null,
+              "width": 447.57,
+              "x0": 45.83,
+              "x1": 493.4,
+              "y0": 501.28,
+              "y1": 521.21
+            },
+            {
+              "bottom": 39.89,
+              "contents": null,
+              "doctop": 19.96,
+              "height": 19.93,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 19.96,
+              "uri": null,
+              "width": 72.43,
+              "x0": 60.09,
+              "x1": 132.52,
+              "y0": 752.11,
+              "y1": 772.04
+            },
+            {
+              "bottom": 39.89,
+              "contents": null,
+              "doctop": 19.96,
+              "height": 19.93,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 19.96,
+              "uri": null,
+              "width": 102.42,
+              "x0": 189.86,
+              "x1": 292.28,
+              "y0": 752.11,
+              "y1": 772.04
+            },
+            {
+              "bottom": 39.89,
+              "contents": null,
+              "doctop": 19.96,
+              "height": 19.93,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 19.96,
+              "uri": null,
+              "width": 74.41,
+              "x0": 349.62,
+              "x1": 424.03,
+              "y0": 752.11,
+              "y1": 772.04
+            },
+            {
+              "bottom": 39.89,
+              "contents": null,
+              "doctop": 19.96,
+              "height": 19.93,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 19.96,
+              "uri": null,
+              "width": 70.4,
+              "x0": 481.36,
+              "x1": 551.76,
+              "y0": 752.11,
+              "y1": 772.04
+            },
+            {
+              "bottom": 153.99,
+              "contents": null,
+              "doctop": 115.87,
+              "height": 38.12,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 115.87,
+              "uri": "http://www.pdfill.com/pdf_drawing.html",
+              "width": 100.93,
+              "x0": 504.34,
+              "x1": 605.27,
+              "y0": 638.01,
+              "y1": 676.13
+            },
+            {
+              "bottom": 319.47,
+              "contents": null,
+              "doctop": 299.53,
+              "height": 19.94,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 299.53,
+              "uri": null,
+              "width": 333.12,
+              "x0": 45.83,
+              "x1": 378.95,
+              "y0": 472.53,
+              "y1": 492.47
+            },
+            {
+              "bottom": 85.39,
+              "contents": null,
+              "doctop": 65.45,
+              "height": 19.94,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 65.45,
+              "uri": null,
+              "width": 34.98,
+              "x0": 549.51,
+              "x1": 584.49,
+              "y0": 706.61,
+              "y1": 726.55
+            },
+            {
+              "bottom": 348.21,
+              "contents": null,
+              "doctop": 328.28,
+              "height": 19.93,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 328.28,
+              "uri": null,
+              "width": 257.76,
+              "x0": 45.83,
+              "x1": 303.59,
+              "y0": 443.79,
+              "y1": 463.72
+            },
+            {
+              "bottom": 376.95,
+              "contents": null,
+              "doctop": 357.02,
+              "height": 19.93,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 357.02,
+              "uri": null,
+              "width": 213.33,
+              "x0": 45.83,
+              "x1": 259.16,
+              "y0": 415.05,
+              "y1": 434.98
+            },
+            {
+              "bottom": 248.11,
+              "contents": "Create this in 3 Steps:\n1. Insert a Single Text\n2. Make it Under Line\n3. Click Action => Local Page => Page 2\n",
+              "doctop": 240.01,
+              "height": 8.1,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": "PDFill",
+              "top": 240.01,
+              "uri": null,
+              "width": 6.84,
+              "x0": 271.9,
+              "x1": 278.74,
+              "y0": 543.89,
+              "y1": 551.99
+            }
+          ],
+          "page": 0,
+          "type": "page.crop.annots"
+        },
+        {
+          "bbox": [
+            0,
+            0,
+            612,
+            792
+          ],
+          "expected": [
+            {
+              "bottom": 153.99,
+              "contents": null,
+              "doctop": 115.87,
+              "height": 38.12,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 115.87,
+              "uri": "http://www.pdfill.com/pdf_drawing.html",
+              "width": 100.93,
+              "x0": 504.34,
+              "x1": 605.27,
+              "y0": 638.01,
+              "y1": 676.13
+            }
+          ],
+          "page": 0,
+          "type": "page.crop.hyperlinks"
+        },
+        {
+          "bbox": [
+            504.34,
+            115.87,
+            605.27,
+            153.99
+          ],
+          "expected": [
+            {
+              "bottom": 153.99,
+              "contents": null,
+              "doctop": 115.87,
+              "height": 38.12,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 115.87,
+              "uri": "http://www.pdfill.com/pdf_drawing.html",
+              "width": 100.93,
+              "x0": 504.34,
+              "x1": 605.27,
+              "y0": 638.01,
+              "y1": 676.13
+            }
+          ],
+          "page": 0,
+          "type": "page.crop.annots"
+        },
+        {
+          "bbox": [
+            504.34,
+            115.87,
+            605.27,
+            153.99
+          ],
+          "expected": [
+            {
+              "bottom": 153.99,
+              "contents": null,
+              "doctop": 115.87,
+              "height": 38.12,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 115.87,
+              "uri": "http://www.pdfill.com/pdf_drawing.html",
+              "width": 100.93,
+              "x0": 504.34,
+              "x1": 605.27,
+              "y0": 638.01,
+              "y1": 676.13
+            }
+          ],
+          "page": 0,
+          "type": "page.crop.hyperlinks"
+        }
+      ],
+      "id": "annotations-cropped",
+      "pdf": "pdffill-demo.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": [
+            {
+              "bottom": 78.3133,
+              "contents": "",
+              "doctop": 76.875892,
+              "height": 1.437408,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": "Author Name",
+              "top": 76.875892,
+              "uri": null,
+              "width": 123.4113,
+              "x0": 56.8,
+              "x1": 180.2113,
+              "y0": 763.6867,
+              "y1": 765.124108
+            },
+            {
+              "bottom": 112.931282,
+              "contents": "",
+              "doctop": 42.074336,
+              "height": 70.856946,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": "Author Name",
+              "top": 42.074336,
+              "uri": null,
+              "width": 70.856946,
+              "x0": 133.697562,
+              "x1": 204.554508,
+              "y0": 729.068718,
+              "y1": 799.925664
+            },
+            {
+              "bottom": 89.09386,
+              "contents": "",
+              "doctop": 67.53274,
+              "height": 21.56112,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": "Jeremy Singer-Vine",
+              "top": 67.53274,
+              "uri": null,
+              "width": 127.00482,
+              "x0": 55.00324,
+              "x1": 182.00806,
+              "y0": 752.90614,
+              "y1": 774.46726
+            },
+            {
+              "bottom": 90.627004,
+              "contents": "A popup note",
+              "doctop": 64.627004,
+              "height": 26.0,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": "Jeremy Singer-Vine",
+              "top": 64.627004,
+              "uri": null,
+              "width": 26.0,
+              "x0": 247.310028,
+              "x1": 273.310028,
+              "y0": 751.372996,
+              "y1": 777.372996
+            },
+            {
+              "bottom": 843,
+              "contents": "A popup note",
+              "doctop": 841,
+              "height": 2,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 841,
+              "uri": null,
+              "width": 2,
+              "x0": -1,
+              "x1": 1,
+              "y0": -1,
+              "y1": 1
+            }
+          ],
+          "page": 0,
+          "type": "page.annots"
+        }
+      ],
+      "id": "annotations-rotated-base",
+      "pdf": "annotations.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": [
+            {
+              "bottom": 765.124108,
+              "contents": "",
+              "doctop": 763.6867,
+              "height": 1.437408,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": "Author Name",
+              "top": 763.6867,
+              "uri": null,
+              "width": 123.4113,
+              "x0": 414.7887,
+              "x1": 538.2,
+              "y0": 76.875892,
+              "y1": 78.3133
+            },
+            {
+              "bottom": 799.9257,
+              "contents": null,
+              "doctop": 729.0687,
+              "height": 70.857,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": "Author Name",
+              "top": 729.0687,
+              "uri": null,
+              "width": 70.8569,
+              "x0": 390.4455,
+              "x1": 461.3024,
+              "y0": 42.0743,
+              "y1": 112.9313
+            },
+            {
+              "bottom": 774.46726,
+              "contents": "",
+              "doctop": 752.90614,
+              "height": 21.56112,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": "Jeremy Singer-Vine",
+              "top": 752.90614,
+              "uri": null,
+              "width": 127.00482,
+              "x0": 412.99194,
+              "x1": 539.99676,
+              "y0": 67.53274,
+              "y1": 89.09386
+            },
+            {
+              "bottom": 777.372996,
+              "contents": "A popup note",
+              "doctop": 751.372996,
+              "height": 26.0,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": "Jeremy Singer-Vine",
+              "top": 751.372996,
+              "uri": null,
+              "width": 26.0,
+              "x0": 321.689972,
+              "x1": 347.689972,
+              "y0": 64.627004,
+              "y1": 90.627004
+            },
+            {
+              "bottom": 1,
+              "contents": "A popup note",
+              "doctop": -1,
+              "height": 2,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": -1,
+              "uri": null,
+              "width": 2,
+              "x0": 594,
+              "x1": 596,
+              "y0": 841,
+              "y1": 843
+            }
+          ],
+          "page": 0,
+          "type": "page.annots"
+        }
+      ],
+      "id": "annotations-rotated-180",
+      "pdf": "annotations-rotated-180.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": [
+            {
+              "bottom": 180.2113,
+              "contents": "",
+              "doctop": 56.8,
+              "height": 123.4113,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": "Author Name",
+              "top": 56.8,
+              "uri": null,
+              "width": 1.437408,
+              "x0": 763.6867,
+              "x1": 765.124108,
+              "y0": 414.7887,
+              "y1": 538.2
+            },
+            {
+              "bottom": 204.5545,
+              "contents": null,
+              "doctop": 133.6976,
+              "height": 70.8569,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": "Author Name",
+              "top": 133.6976,
+              "uri": null,
+              "width": 70.857,
+              "x0": 729.0687,
+              "x1": 799.9257,
+              "y0": 390.4455,
+              "y1": 461.3024
+            },
+            {
+              "bottom": 182.00806,
+              "contents": "",
+              "doctop": 55.00324,
+              "height": 127.00482,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": "Jeremy Singer-Vine",
+              "top": 55.00324,
+              "uri": null,
+              "width": 21.56112,
+              "x0": 752.90614,
+              "x1": 774.46726,
+              "y0": 412.99194,
+              "y1": 539.99676
+            },
+            {
+              "bottom": 273.310028,
+              "contents": "A popup note",
+              "doctop": 247.310028,
+              "height": 26.0,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": "Jeremy Singer-Vine",
+              "top": 247.310028,
+              "uri": null,
+              "width": 26.0,
+              "x0": 751.372996,
+              "x1": 777.372996,
+              "y0": 321.689972,
+              "y1": 347.689972
+            },
+            {
+              "bottom": 1,
+              "contents": "A popup note",
+              "doctop": -1,
+              "height": 2,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": -1,
+              "uri": null,
+              "width": 2,
+              "x0": -1,
+              "x1": 1,
+              "y0": 594,
+              "y1": 596
+            }
+          ],
+          "page": 0,
+          "type": "page.annots"
+        }
+      ],
+      "id": "annotations-rotated-90",
+      "pdf": "annotations-rotated-90.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": [
+            {
+              "bottom": 538.2,
+              "contents": "",
+              "doctop": 414.7887,
+              "height": 123.4113,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": "Author Name",
+              "top": 414.7887,
+              "uri": null,
+              "width": 1.437408,
+              "x0": 76.875892,
+              "x1": 78.3133,
+              "y0": 56.8,
+              "y1": 180.2113
+            },
+            {
+              "bottom": 461.3024,
+              "contents": null,
+              "doctop": 390.4455,
+              "height": 70.8569,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": "Author Name",
+              "top": 390.4455,
+              "uri": null,
+              "width": 70.857,
+              "x0": 42.0743,
+              "x1": 112.9313,
+              "y0": 133.6976,
+              "y1": 204.5545
+            },
+            {
+              "bottom": 539.99676,
+              "contents": "",
+              "doctop": 412.99194,
+              "height": 127.00482,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": "Jeremy Singer-Vine",
+              "top": 412.99194,
+              "uri": null,
+              "width": 21.56112,
+              "x0": 67.53274,
+              "x1": 89.09386,
+              "y0": 55.00324,
+              "y1": 182.00806
+            },
+            {
+              "bottom": 347.689972,
+              "contents": "A popup note",
+              "doctop": 321.689972,
+              "height": 26.0,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": "Jeremy Singer-Vine",
+              "top": 321.689972,
+              "uri": null,
+              "width": 26.0,
+              "x0": 64.627004,
+              "x1": 90.627004,
+              "y0": 247.310028,
+              "y1": 273.310028
+            },
+            {
+              "bottom": 596,
+              "contents": "A popup note",
+              "doctop": 594,
+              "height": 2,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": null,
+              "top": 594,
+              "uri": null,
+              "width": 2,
+              "x0": 841,
+              "x1": 843,
+              "y0": -1,
+              "y1": 1
+            }
+          ],
+          "page": 0,
+          "type": "page.annots"
+        }
+      ],
+      "id": "annotations-rotated-270",
+      "pdf": "annotations-rotated-270.pdf"
     },
     {
       "checks": [
