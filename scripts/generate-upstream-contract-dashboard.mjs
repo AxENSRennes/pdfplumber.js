@@ -719,7 +719,7 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
 
   if (
     sourceFile.endsWith("annotation_spec.js") &&
-    /\b(?:render|printing|print|save|compress and save|create a new|update an existing|added|new free|annotation storage|js sandbox)\b/.test(lowerBehavior)
+    /\b(?:render|printing|print|save|compress and save|create a new|update an existing|added|new free|annotation storage|js sandbox|extract the text from a freetext annotation)\b/.test(lowerBehavior)
   ) {
     return {
       scope: "excluded",
@@ -730,9 +730,40 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
     };
   }
 
+  if (sourceFile.endsWith("annotation_spec.js") && /^should correctly parse a uri action/.test(lowerBehavior)) {
+    return passedPdfjsPublicApiGate(
+      "annotations",
+      "The Python-backed public API test builds URI link annotations for absolute, protocol-less, and UTF-8 literal-string URLs, then verifies JS annots and hyperlinks match Python pdfplumber uri, contents, title, and geometry."
+    );
+  }
+
+  if (
+    sourceFile.endsWith("annotation_spec.js") &&
+    /^(?:should set and get valid contents|should set and get a valid rectangle)$/.test(lowerBehavior)
+  ) {
+    return passedPdfjsPublicApiGate(
+      "annotations",
+      "The Python-backed public API test verifies authored annotation contents, title, and rectangle-derived geometry through the pdfplumber-shaped annots and hyperlinks objects."
+    );
+  }
+
+  if (
+    sourceFile.endsWith("annotation_spec.js") &&
+    /\b(?:goto(?:r)? action|launch action|javascript actions?|named action|simple dest|parse a dest|push buttons|fallback ids?|get id for annotation|missing \/subtype|invalid contents|invalid rectangle|parent properties|inherit properties|inherit contents|group-master)\b/.test(lowerBehavior)
+  ) {
+    return {
+      scope: "excluded",
+      subsystem: "annotations",
+      status: "excluded",
+      js: "PDF.js annotation factory IDs, destinations, viewer actions, widget action URLs, popup inheritance, and internal setter validation are not exposed by pdfplumber.js.",
+      rationale: "The public annotation API exposes pdfplumber-compatible geometry plus simple uri/title/contents fields. It does not expose PDF.js annotation IDs, destination/action objects, JavaScript URL recovery, widget button actions, popup reply inheritance internals, or Annotation class setter/defaulting behavior."
+    };
+  }
+
   if (
     sourceFile.endsWith("annotation_spec.js") &&
     (/\b(?:quadpoints?|field names?|text alignment|maximum length|comb fields?|checkbox(?:es)?|radio buttons?|option arrays?|form values?|field value|flags|viewable|printable|modification date|creation date|irt|\/rt|state model|state when|color|width|style|dash array|corner radius|line coordinates|line endings|ink lists?|file attachment)\b/.test(lowerBehavior) ||
+      /^should ignore (?:non-array values|arrays where the length is not a multiple of eight)$/.test(lowerBehavior) ||
       (lowerBehavior.includes("push buttons") && !lowerBehavior.includes("url")))
   ) {
     return {
