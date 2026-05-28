@@ -586,6 +586,15 @@ function classify(source, behavior, kind) {
         "The low-level native string/glyph tests verify pdfminer-compatible PDFFont width defaults and get_widths parsing for list, range, and object-reference width definitions."
       );
     }
+    if (lowerSourceFile.includes("pdfminer-six/tests/test_converter.py") && lowerBehavior.includes("testbinarydetector.")) {
+      return {
+        scope: "excluded",
+        subsystem,
+        status: "excluded",
+        js: "pdfminer PDFConverter binary/text output stream detection is Python file-like output plumbing; pdfplumber.js returns structured extraction data and does not expose converter output streams.",
+        rationale: "The stable JS API covers browser-capable PDF inputs and extraction objects, while Python converter output stream mode detection is not exposed by this library."
+      };
+    }
     if (lowerSourceFile.includes("pdfminer-six/tests/test_utils.py")) {
       if (lowerBehavior.includes("openfilename")) {
         return {
