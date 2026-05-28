@@ -5,11 +5,18 @@
     "sourceUrl": "https://bugzilla.mozilla.org/attachment.cgi?id=8736063",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
-    "categories": ["pdfjs-regression", "linked-manifest", "load", "text"],
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load",
+      "text"
+    ],
     "size": 795117,
     "md5": "9415b1eb00a43c97c15328cd4c8d136a",
     "sha256": "0a81ec207f9c735d717af186141d32f15d8664944d00aa6f17cafc65ea936649",
-    "selectedPages": [1],
+    "selectedPages": [
+      1
+    ],
     "why": "Covers a linked PDF.js load-manifest regression fixture with text extraction and stable public open() behavior."
   },
   {
@@ -18,11 +25,322 @@
     "sourceUrl": "https://bugzilla.mozilla.org/attachment.cgi?id=744001",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
-    "categories": ["pdfjs-regression", "linked-manifest", "load", "scanned"],
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load",
+      "scanned"
+    ],
     "size": 126647,
     "md5": "347af7b0ef7279b1a7f43b03bfda4548",
     "sha256": "0a92dc4e718a92444b5aaa946db404c9e3a179050def66ad53d8da7ceb80bd28",
-    "selectedPages": [1],
+    "selectedPages": [
+      1
+    ],
     "why": "Covers a linked PDF.js load-manifest regression fixture whose first page has no extractable text but must still open with stable page data."
+  },
+  {
+    "id": "pdfjs-bug1755201",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-bug1755201.pdf",
+    "sourceUrl": "https://bugzilla.mozilla.org/attachment.cgi?id=9263657",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "other"
+    ],
+    "size": 1585346,
+    "md5": "cece14097812d8a1f69e86a51e4a3804",
+    "sha256": "3aca5580be0d091eb3af040ed10f6db7c93891894b0db46261cf7e504cb51233",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js other-manifest fixture bug1755201 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue14864",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue14864.pdf",
+    "sourceUrl": "https://github.com/mozilla/pdf.js/files/8599802/songbook.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "other"
+    ],
+    "size": 1024583,
+    "md5": "cfe5e68267d1e84ec909a915911974cf",
+    "sha256": "a47f30a79674b17486adcd3ee58b21ee32593ea011324d1ceab6d12f2628cc08",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js other-manifest fixture issue14864 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue18503",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue18503.pdf",
+    "sourceUrl": "https://github.com/user-attachments/files/16402842/apl_23_003.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "other"
+    ],
+    "size": 302523,
+    "md5": "b6c7c8db3505d07ce8eabe6712641a94",
+    "sha256": "7afad5a177b0625eb937c1c442f79ea5967842146934b0e53b8542567644133c",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js other-manifest fixture issue18503 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue19835",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue19835.pdf",
+    "sourceUrl": "https://github.com/user-attachments/files/19825124/AAPL-2024-09-28-10-K-d71aeb7ff955e2fc4770624610676221.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "other"
+    ],
+    "size": 616080,
+    "md5": "2940a2f8a41fae299b9a599b8364d05c",
+    "sha256": "ae0523414413941f9692b30256f8e2fb17dfdd848d938277f9bf44e405bd4895",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js other-manifest fixture issue19835 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue10004",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue10004.pdf",
+    "sourceUrl": "https://github.com/mozilla/pdf.js/files/2315390/2371410.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 757485,
+    "md5": "64d1853060cefe3be50e5c4617dd0505",
+    "sha256": "e07b41ab277c3a449853fb331a85c7a9d9a2893c3fc29c8f9c0befc59ead2a96",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture issue10004 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue10272",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue10272.pdf",
+    "sourceUrl": "https://github.com/mozilla/pdf.js/files/2598691/ATS_TEST_PVC_2_1.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "other"
+    ],
+    "size": 376555,
+    "md5": "bf3b2f74c6878d38a70dc0825f1b9a02",
+    "sha256": "3e4f3a03bf851c9d785ae4cc2a9ee5f9d56089637614d59256bb25f82d24853d",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js other-manifest fixture issue10272 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue11518",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue11518.pdf",
+    "sourceUrl": "https://github.com/mozilla/pdf.js/files/4076920/set-2_lyst7242.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "other"
+    ],
+    "size": 977834,
+    "md5": "4cced24e75c35654d47141cef348301e",
+    "sha256": "ac98514986bb694af547d39d1668ece3046ef271a734538f62228254cc86a300",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js other-manifest fixture issue11518 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue14562",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue14562.pdf",
+    "sourceUrl": "https://github.com/mozilla/pdf.js/files/8055863/NHA-20211231-A-018_before.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "other"
+    ],
+    "size": 813186,
+    "md5": "565b0a1e46a32e907837506a10d25277",
+    "sha256": "3562901cca3c90fbbbf29925397e7527bb1662a26b495b965655419d418f3835",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js other-manifest fixture issue14562 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-bug1766987",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-bug1766987.pdf",
+    "sourceUrl": "https://bugzilla.mozilla.org/attachment.cgi?id=9274388",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "other"
+    ],
+    "size": 68784,
+    "md5": "3ce134ead03d6158c3e8207453dcd21d",
+    "sha256": "b6ed33d4b98ec1de577d5fb2439e5eaadf18735eca7c0da56a294fcea45af974",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js other-manifest fixture bug1766987 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue16081",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue16081.pdf",
+    "sourceUrl": "https://github.com/mozilla/pdf.js/files/10808293/pptc153.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "other"
+    ],
+    "size": 1801279,
+    "md5": "e890d55c9527a116431ebef3efb960ff",
+    "sha256": "2b010651e1eaa0bb946a45ec4cd5df0a145aaa610e9ad3312977bb64cfd0b259",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js other-manifest fixture issue16081 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue16119",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue16119.pdf",
+    "sourceUrl": "https://github.com/mozilla/pdf.js/files/10907776/Fiskelagkagen_2016v2.1.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "other"
+    ],
+    "size": 380951,
+    "md5": "76d680172c969c77c9fb650b3d822ad6",
+    "sha256": "29747b82ec14302f0298ba745459f5b9bcea4564b54ce60d1094b5a92bdf8762",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js other-manifest fixture issue16119 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-bug1823296",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-bug1823296.pdf",
+    "sourceUrl": "https://bugzilla.mozilla.org/attachment.cgi?id=9324226",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "other"
+    ],
+    "size": 154994,
+    "md5": "f71e89ebe3d6e75e0c83ce41cd72df1f",
+    "sha256": "3eeb680ea8299441d035846dbf692dd10cabbf9e088723d20aa387b107c295c2",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js other-manifest fixture bug1823296 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-bug1847733",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-bug1847733.pdf",
+    "sourceUrl": "https://github.com/mozilla/pdf.js/files/12290354/PDF.Form.4.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "other"
+    ],
+    "size": 54087,
+    "md5": "d2e167216493a50f732b4b3685a91792",
+    "sha256": "e079b96a001e8e85e75f35b805c9adbd295c895c252d567238562d71140eab44",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js other-manifest fixture bug1847733 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue16863",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue16863.pdf",
+    "sourceUrl": "https://github.com/mozilla/pdf.js/files/12422360/4422-84.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "other"
+    ],
+    "size": 545663,
+    "md5": "af8abe281721f92a0d46646969f061de",
+    "sha256": "b3b49b3da765cedc0f05325059b45e5cda2307447ae679c93a8402bd70869f49",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js other-manifest fixture issue16863 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue17856",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue17856.pdf",
+    "sourceUrl": "https://github.com/mozilla/pdf.js/files/14808044/outline-without-title.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "other"
+    ],
+    "size": 79232,
+    "md5": "b31e5258948f0f4bb99eb5d4127c2162",
+    "sha256": "f535e9f9c7f4cd494143566cbdca7790c114848df63eb599e570bfbe73b417c1",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js other-manifest fixture issue17856 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue19281",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue19281.pdf",
+    "sourceUrl": "https://github.com/user-attachments/files/18304780/Antarctica-Grid.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "other"
+    ],
+    "size": 4162180,
+    "md5": "c5db558965e4189cc6db2720cdaa3e55",
+    "sha256": "a79e8840a4aba47b42d8d896cfe961e9530950f701973f437ff7aab9c6657a8f",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js other-manifest fixture issue19281 with stable public open() behavior."
   }
 ]

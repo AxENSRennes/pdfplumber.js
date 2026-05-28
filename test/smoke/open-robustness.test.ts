@@ -162,13 +162,32 @@ describe("public open() robustness", () => {
       "pdfjs/test/pdfs/issue7229.pdf",
       "pdfjs/test/pdfs/bug1978317.pdf",
       "test/fixtures/upstream-contract-pdfs/pdfjs-bug1260585.pdf",
-      "test/fixtures/upstream-contract-pdfs/pdfjs-bug867484.pdf"
+      "test/fixtures/upstream-contract-pdfs/pdfjs-bug867484.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-bug1755201.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-issue14864.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-issue18503.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-issue19835.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-issue10004.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-issue10272.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-issue11518.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-issue14562.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-bug1766987.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-issue16081.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-issue16119.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-bug1823296.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-bug1847733.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-issue16863.pdf",
+      "test/fixtures/upstream-contract-pdfs/pdfjs-issue17856.pdf"
     ];
 
     for (const relativePath of cases) {
       expectStableOpenOutcome(await captureOpen(fixture(relativePath)));
     }
-  }, 10_000);
+  }, 30_000);
+
+  it("opens the large linked PDF.js load manifest corpus PDF with a stable public outcome", async () => {
+    expectStableOpenOutcome(await captureOpen(fixture("test/fixtures/upstream-contract-pdfs/pdfjs-issue19281.pdf")));
+  }, 90_000);
 
   it("opens OSS-Fuzz corpus PDFs or raises the documented stable error", async () => {
     const cases = [

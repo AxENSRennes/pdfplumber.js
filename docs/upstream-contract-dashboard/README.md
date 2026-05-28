@@ -31,5 +31,5 @@ Generated rows: 3580
 | backend-gap | 13 |
 | excluded | 3036 |
 | inventory | 85 |
-| needs-adapted-js-test | 64 |
-| passed | 382 |
+| needs-adapted-js-test | 48 |
+| passed | 398 |
