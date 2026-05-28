@@ -152,10 +152,24 @@ export function applyMatrix(point: Point, matrix: Matrix, snap = false): Point {
   return snap ? [snapPdfCoordinate(transformed[0]), snapPdfCoordinate(transformed[1])] : transformed;
 }
 
+export function translateMatrixLikePdfminer(matrix: Matrix, point: Point): Matrix {
+  const [x, y] = point;
+  return [matrix[0], matrix[1], matrix[2], matrix[3], x * matrix[0] + y * matrix[2] + matrix[4], x * matrix[1] + y * matrix[3] + matrix[5]];
+}
+
 export function bboxFromPoints(points: Point[]): MutableBBox {
   const xs = points.map((p) => p[0]);
   const ys = points.map((p) => p[1]);
   return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
+
+export function applyMatrixRectLikePdfminer(matrix: Matrix, rect: MutableBBox): MutableBBox {
+  return bboxFromPoints([
+    applyMatrix([rect[0], rect[1]], matrix),
+    applyMatrix([rect[2], rect[1]], matrix),
+    applyMatrix([rect[2], rect[3]], matrix),
+    applyMatrix([rect[0], rect[3]], matrix)
+  ]);
 }
 
 export function snapPathBBox(bbox: MutableBBox): MutableBBox {

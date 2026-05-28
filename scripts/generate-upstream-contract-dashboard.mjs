@@ -558,6 +558,21 @@ function classify(source, behavior, kind) {
         "The low-level native tests verify pdfminer-compatible Type0/CID CMap-name normalization and writing-mode behavior for Identity, DLIdent, OneByteIdentity, H/V stream encodings, literal-string CMapName values, and missing encoding defaults."
       );
     }
+    if (
+      lowerSourceFile.includes("pdfminer-six/tests/test_utils.py") &&
+      (
+        lowerBehavior === "test mult matrix" ||
+        lowerBehavior === "test translate matrix" ||
+        lowerBehavior === "test apply matrix pt" ||
+        lowerBehavior === "test rotation examples based on pdf reference 4.2.2 common transformations"
+      )
+    ) {
+      return passedNativeCompatGate(
+        subsystem,
+        "test/lowlevel/geometry-compat.test.ts",
+        "The low-level native test verifies pdfminer-compatible matrix multiplication, projected translation, point transformation, and outside rectangle transformation for identity, translation, scale, rotation, and skew cases."
+      );
+    }
     return {
       scope: "native-engine",
       subsystem,
