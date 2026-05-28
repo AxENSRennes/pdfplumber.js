@@ -179,6 +179,7 @@ const pdfplumberCompatCoveredTests = new Map(
     ["pdfplumber-python/tests/test_table.py", "Test.test explicit desc decimalization", "table-explicit-desc-decimalization"],
     ["pdfplumber-python/tests/test_table.py", "Test.test text tolerance", "table-text-strategy-and-tolerance"],
     ["pdfplumber-python/tests/test_table.py", "Test.test text layout", "table-text-layout"],
+    ["pdfplumber-python/tests/test_table.py", "Test.test text without words", "table-text-without-words"],
     ["pdfplumber-python/tests/test_table.py", "Test.test order", "table-order"],
     ["pdfplumber-python/tests/test_table.py", "Test.test issue 466 mixed strategy", "table-mixed-strategy-issue-466"],
     ["pdfplumber-python/tests/test_table.py", "Test.test discussion 539 null value", "table-null-value-discussion-539"],
@@ -208,6 +209,10 @@ const excludedPdfplumberUtilityTests = new Set(
     "Test.test to list"
   ].map((behavior) => behavior.toLowerCase())
 );
+
+const excludedPdfplumberInternalHelperTests = new Set([
+  "pdfplumber-python/tests/test_table.py|test.test orientation errors"
+]);
 
 function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
   const lowerBehavior = behavior.toLowerCase();
@@ -387,6 +392,16 @@ function classify(source, behavior, kind) {
       status: "excluded",
       js: "Python pdfplumber utility helpers are not exported by the pdfplumber.js package or documented as public extraction APIs.",
       rationale: "These rows exercise internal helper functions such as clustering, object resolving, object geometry transforms, edge filtering, and list coercion; corresponding public extraction behavior remains covered by page/document API tests."
+    };
+  }
+
+  if (excludedPdfplumberInternalHelperTests.has(`${lowerSourceFile}|${lowerBehavior}`)) {
+    return {
+      scope: "excluded",
+      subsystem,
+      status: "excluded",
+      js: "Python pdfplumber table helper functions such as table.join_edge_group are not exported by pdfplumber.js or documented as public extraction APIs.",
+      rationale: "This upstream row validates an internal Python helper's direct argument validation; public table input validation is covered separately by table-settings-errors."
     };
   }
 

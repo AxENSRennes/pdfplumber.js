@@ -902,6 +902,29 @@ def build_scenarios() -> List[Dict[str, Any]]:
 
     scenarios.append(
         scenario(
+            "table-text-without-words",
+            "pdffill-demo.pdf",
+            lambda pdf: [
+                make_check(
+                    "page.crop.extractTables",
+                    pdf.pages[0].crop((0, 0, 10, 10)).extract_tables({"vertical_strategy": "text", "horizontal_strategy": "text"}),
+                    page=0,
+                    bbox=(0, 0, 10, 10),
+                    args={"vertical_strategy": "text", "horizontal_strategy": "text"},
+                ),
+                make_check(
+                    "page.crop.extractTable",
+                    pdf.pages[0].crop((0, 0, 10, 10)).extract_table({"vertical_strategy": "text", "horizontal_strategy": "text"}),
+                    page=0,
+                    bbox=(0, 0, 10, 10),
+                    args={"vertical_strategy": "text", "horizontal_strategy": "text"},
+                ),
+            ],
+        )
+    )
+
+    scenarios.append(
+        scenario(
             "table-order",
             "issue-336-example.pdf",
             lambda pdf: [

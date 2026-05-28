@@ -583,6 +583,12 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
             strict: check.strict
           }).extractTable(tableOptions(check.args)));
           break;
+        case "page.crop.extractTables":
+          actual = await valueOf(selectedPage.crop(check.bbox as BBox, {
+            relative: check.relative,
+            strict: check.strict
+          }).extractTables(tableOptions(check.args)));
+          break;
         case "page.crop.extractTableSummary":
           actual = tableSampleSummary(
             await valueOf(selectedPage.crop(check.bbox as BBox, {
