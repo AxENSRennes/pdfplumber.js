@@ -68,11 +68,17 @@ describe("low-level pdfminer high-level extract_text compatibility", () => {
   });
 
   it("preserves targeted CMap and xref-stream high-level text invariants", async () => {
+    const issue566CMapBytes = samplePath("contrib/issue_566_test_1.pdf");
+    expect((await jsExtractTextLikePdfminer(issue566CMapBytes)).trim()).toBe(pdfminerExtractText(issue566CMapBytes).trim());
+
     const issue566CidRange = samplePath("contrib/issue_566_test_2.pdf");
     expect((await jsExtractTextLikePdfminer(issue566CidRange)).trim()).toBe(pdfminerExtractText(issue566CidRange).trim());
 
     const issue625IdentityCmap = samplePath("contrib/issue-625-identity-cmap.pdf");
     expect((await jsExtractTextLikePdfminer(issue625IdentityCmap)).split(/\r?\n/)[6]).toBe(pdfminerExtractText(issue625IdentityCmap).split(/\r?\n/)[6]);
+
+    const issue791NonUnicodeCMap = samplePath("contrib/issue-791-non-unicode-cmap.pdf");
+    expect((await jsExtractTextLikePdfminer(issue791NonUnicodeCMap)).trim()).toBe(pdfminerExtractText(issue791NonUnicodeCMap).trim());
 
     const issue886XrefWidths = samplePath("contrib/issue-886-xref-stream-widths.pdf");
     expect((await jsExtractTextLikePdfminer(issue886XrefWidths)).trim()).toBe(pdfminerExtractText(issue886XrefWidths).trim());

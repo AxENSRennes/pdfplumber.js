@@ -17,7 +17,7 @@ import {
 } from "./primitives.js";
 import type { PdfArray, PdfDict, PdfIndirectObject, PdfPrimitive, PdfRef, PdfStream } from "./primitives.js";
 import { decodePdfName } from "./primitives.js";
-import { decodePdfStreamText, decodeStreamToLatin1 } from "./streams.js";
+import { decodePdfStreamText, decodeStream, decodeStreamToLatin1 } from "./streams.js";
 import { tokenizePdf } from "./tokenizer.js";
 
 export type PdfResourceContext = PdfObjectStore | Map<number, string>;
@@ -521,6 +521,109 @@ function hasToUnicode(store: PdfObjectStore, fontDict: PdfDict): boolean {
   return isRef(value) || isStream(resolveOne(store, value));
 }
 
+function uint16(bytes: Uint8Array, offset: number): number {
+  return (bytes[offset] << 8) | bytes[offset + 1];
+}
+
+function int16(bytes: Uint8Array, offset: number): number {
+  const value = uint16(bytes, offset);
+  return value & 0x8000 ? value - 0x10000 : value;
+}
+
+function uint32(bytes: Uint8Array, offset: number): number {
+  return ((bytes[offset] << 24) >>> 0) + (bytes[offset + 1] << 16) + (bytes[offset + 2] << 8) + bytes[offset + 3];
+}
+
+function tableOffset(bytes: Uint8Array, tag: string): number | null {
+  if (bytes.length < 12) return null;
+  const numTables = uint16(bytes, 4);
+  for (let i = 0; i < numTables; i += 1) {
+    const offset = 12 + i * 16;
+    const current = String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
+    if (current === tag) return uint32(bytes, offset + 8);
+  }
+  return null;
+}
+
+function invertFormat4CMap(bytes: Uint8Array, offset: number): Record<number, string> {
+  const length = uint16(bytes, offset + 2);
+  const end = Math.min(bytes.length, offset + length);
+  const segCount = uint16(bytes, offset + 6) / 2;
+  const endCodes = offset + 14;
+  const startCodes = endCodes + segCount * 2 + 2;
+  const idDeltas = startCodes + segCount * 2;
+  const idRangeOffsets = idDeltas + segCount * 2;
+  const out: Record<number, string> = {};
+  for (let segment = 0; segment < segCount; segment += 1) {
+    const start = uint16(bytes, startCodes + segment * 2);
+    const stop = uint16(bytes, endCodes + segment * 2);
+    const delta = int16(bytes, idDeltas + segment * 2);
+    const rangeOffset = uint16(bytes, idRangeOffsets + segment * 2);
+    if (start === 0xffff && stop === 0xffff) continue;
+    for (let code = start; code <= stop; code += 1) {
+      let glyph = 0;
+      if (rangeOffset === 0) {
+        glyph = (code + delta) & 0xffff;
+      } else {
+        const glyphOffset = idRangeOffsets + segment * 2 + rangeOffset + (code - start) * 2;
+        if (glyphOffset + 1 >= end) continue;
+        const raw = uint16(bytes, glyphOffset);
+        glyph = raw === 0 ? 0 : (raw + delta) & 0xffff;
+      }
+      if (glyph !== 0 && out[glyph] == null) out[glyph] = String.fromCodePoint(code);
+    }
+  }
+  return out;
+}
+
+function invertFormat12CMap(bytes: Uint8Array, offset: number): Record<number, string> {
+  const groups = uint32(bytes, offset + 12);
+  const out: Record<number, string> = {};
+  for (let group = 0; group < groups; group += 1) {
+    const groupOffset = offset + 16 + group * 12;
+    if (groupOffset + 11 >= bytes.length) break;
+    const startChar = uint32(bytes, groupOffset);
+    const endChar = uint32(bytes, groupOffset + 4);
+    const startGlyph = uint32(bytes, groupOffset + 8);
+    for (let code = startChar; code <= endChar; code += 1) {
+      const glyph = startGlyph + code - startChar;
+      if (glyph !== 0 && out[glyph] == null) out[glyph] = String.fromCodePoint(code);
+    }
+  }
+  return out;
+}
+
+function trueTypeGlyphUnicodeMap(bytes: Uint8Array): Record<number, string> | undefined {
+  const cmap = tableOffset(bytes, "cmap");
+  if (cmap == null || cmap + 4 > bytes.length) return undefined;
+  const records = uint16(bytes, cmap + 2);
+  const subtables: Array<{ score: number; offset: number; format: number }> = [];
+  for (let i = 0; i < records; i += 1) {
+    const record = cmap + 4 + i * 8;
+    if (record + 7 >= bytes.length) break;
+    const platform = uint16(bytes, record);
+    const encoding = uint16(bytes, record + 2);
+    const subtable = cmap + uint32(bytes, record + 4);
+    if (subtable + 1 >= bytes.length) continue;
+    const format = uint16(bytes, subtable);
+    if (format !== 4 && format !== 12) continue;
+    const score = (platform === 3 && encoding === 10 ? 0 : platform === 3 && encoding === 1 ? 1 : platform === 0 ? 2 : 3) + (format === 12 ? 0 : 0.5);
+    subtables.push({ score, offset: subtable, format });
+  }
+  subtables.sort((a, b) => a.score - b.score);
+  for (const subtable of subtables) {
+    const map = subtable.format === 12 ? invertFormat12CMap(bytes, subtable.offset) : invertFormat4CMap(bytes, subtable.offset);
+    if (Object.keys(map).length) return map;
+  }
+  return undefined;
+}
+
+function embeddedUnicodeMap(store: PdfObjectStore, descriptor: PdfDict | undefined): Record<number, string> | undefined {
+  const fontFile = resolveToStream(store, descriptor?.get("FontFile2")) ?? resolveToStream(store, descriptor?.get("FontFile"));
+  if (!fontFile) return undefined;
+  return trueTypeGlyphUnicodeMap(decodeStream(fontFile.stream));
+}
+
 export function parseFontRecords(context: PdfResourceContext): FontRecord[] {
   const store = toStore(context);
   const fonts: FontRecord[] = [];
@@ -538,6 +641,7 @@ export function parseFontRecords(context: PdfResourceContext): FontRecord[] {
     const descent = resolvedNumber(store, descriptor?.get("Descent"));
     const encodingDifferences = parseEncodingDifferences(store, fontDict.get("Encoding"));
     const firstChar = resolvedNumber(store, fontDict.get("FirstChar")) ?? 0;
+    const unicodeMap = embeddedUnicodeMap(store, descriptor);
     fonts.push({
       objectNumber,
       baseFont,
@@ -546,6 +650,7 @@ export function parseFontRecords(context: PdfResourceContext): FontRecord[] {
       symbolic: flags == null ? undefined : (flags & 4) !== 0,
       charSet: charSetNames(resolveOne(store, descriptor?.get("CharSet"))),
       encodingDifferences,
+      embeddedUnicodeMap: unicodeMap,
       firstChar,
       widths: primitiveArrayNumbers(store, fontDict.get("Widths")),
       ascent: ascent == null ? undefined : ascent / FONT_UNITS_PER_EM,

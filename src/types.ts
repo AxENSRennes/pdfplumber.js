@@ -127,6 +127,7 @@ export interface FontRecord {
   symbolic?: boolean;
   charSet?: string[];
   encodingDifferences?: Record<number, string>;
+  embeddedUnicodeMap?: Record<number, string>;
   pageScoped?: boolean;
   firstChar: number;
   widths: number[];

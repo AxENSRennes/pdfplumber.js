@@ -131,6 +131,14 @@ function bytesFromCharCode(code: number): number[] {
 export function glyphTextLikePdfminer(input: GlyphTextInput): string {
   const { glyphUnicode, originalCharCode, font } = input;
   const fontRecord = input.fontRecord ?? font.fontRecord;
+  const embeddedCode = originalCharCode ?? (glyphUnicode && glyphUnicode.length === 1 ? glyphUnicode.charCodeAt(0) : undefined);
+  const embeddedCMapCode =
+    embeddedCode != null &&
+    (/^[\x20-\x7e]+$/.test(fontRecord?.baseFont ?? font.fontname) || embeddedCode > 0xff);
+  if (/^[A-Z]{6}\+/.test(font.fontname) && /^(?:Type0|CIDFontType2)$/.test(fontRecord?.subtype ?? "") && fontRecord?.hasToUnicode === false && embeddedCMapCode) {
+    const embeddedText = fontRecord?.embeddedUnicodeMap?.[embeddedCode];
+    if (embeddedText != null) return embeddedText;
+  }
   if (typeof originalCharCode === "number") {
     if (/Wingdings/i.test(font.fontname) && glyphUnicode === "ß") return "§";
     if (/CMEX/i.test(font.fontname) && (!glyphUnicode || glyphUnicode === String.fromCharCode(originalCharCode))) return `(cid:${originalCharCode})`;
