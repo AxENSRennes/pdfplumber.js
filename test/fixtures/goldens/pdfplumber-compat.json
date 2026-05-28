@@ -1,6 +1,6 @@
 {
   "reference": {
-    "generatedAt": "2026-05-28T01:45:40.525475+00:00",
+    "generatedAt": "2026-05-28T02:01:12.570187+00:00",
     "pdfminerVersion": "20260107",
     "pdfplumberCommit": "98041536932ce85d18a1fba80d9db0686b831d9d",
     "pdfplumberVersion": "0.11.9"
@@ -1734,6 +1734,159 @@
       ],
       "id": "ca-warn-objects-and-parse",
       "pdf": "WARN-Report-for-7-1-2015-to-03-25-2016.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "checked_count": 5,
+            "diagonal_line_count": 10,
+            "rect_count": 10
+          },
+          "page": 0,
+          "type": "page.issue13CheckboxSummary"
+        }
+      ],
+      "id": "issue-13-checkboxes",
+      "pdf": "issue-13-151201DSP-Fond-581-90D.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "char_count": 5140,
+            "curve_count": 23,
+            "edge_count": 1303,
+            "table_shapes": [
+              [
+                17,
+                12
+              ],
+              [
+                8,
+                2
+              ]
+            ]
+          },
+          "page": 0,
+          "type": "page.pr138TableSummary"
+        }
+      ],
+      "id": "pr-138-explicit-lines",
+      "pdf": "pr-138-example.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "changes_is_list": true,
+            "first_creation_date": "D:20061207105020Z00'00'"
+          },
+          "type": "pdf.metadataChangesSummary"
+        }
+      ],
+      "id": "issue-316-metadata-changes",
+      "pdf": "issue-316-example.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "char_count": 866,
+            "dedupe_error": null,
+            "fontnames_are_str": true
+          },
+          "page": 0,
+          "type": "page.fontnameDedupeSummary"
+        }
+      ],
+      "id": "issue-461-fontnames",
+      "pdf": "issue-461-example.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "char_count": 430,
+            "dedupe_error": null,
+            "fontnames_are_str": true
+          },
+          "page": 0,
+          "type": "page.fontnameDedupeSummary"
+        }
+      ],
+      "id": "issue-842-fontnames",
+      "pdf": "issue-842-example.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": [
+            {
+              "bottom": 228.876,
+              "contents": "日本語",
+              "doctop": 142.874,
+              "height": 86.002,
+              "object_type": "annot",
+              "page_number": 1,
+              "title": "tung.phanhuy",
+              "top": 142.874,
+              "uri": null,
+              "width": 474.9023,
+              "x0": 65.9597,
+              "x1": 540.862,
+              "y0": 563.124,
+              "y1": 649.126
+            }
+          ],
+          "page": 0,
+          "type": "page.annots"
+        }
+      ],
+      "id": "issue-463-annotation-unicode",
+      "pdf": "issue-463-example.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "heads_match": true,
+            "text_head": "1 Creativity in Machine Learning Martin Thoma E-Mail: info@martin-thoma.de Abstract—Recent machine l",
+            "words_head": "1 Creativity in Machine Learning Martin Thoma E-Mail: info@martin-thoma.de Abstract—Recent machine l"
+          },
+          "page": 0,
+          "type": "page.textFlowMatchSummary"
+        }
+      ],
+      "id": "issue-982-text-flow",
+      "pdf": "issue-982-example.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": "UnicodeDecodeError",
+          "type": "pdf.annots.error"
+        }
+      ],
+      "id": "pr-1195-annotation-unicode-errors",
+      "pdf": "annotations-unicode-issues.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": null,
+          "type": "pdf.annots.error"
+        },
+        {
+          "expected": 1,
+          "type": "pdf.annots.count"
+        }
+      ],
+      "id": "pr-1195-annotation-unicode-errors-disabled",
+      "openOptions": {
+        "raise_unicode_errors": false
+      },
+      "pdf": "annotations-unicode-issues.pdf"
     },
     {
       "checks": [

@@ -243,10 +243,11 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
         return Number.isFinite(objectNumber) ? rawObjects.get(objectNumber) : undefined;
       })
     );
-    const annots = annotationError
+    const annotsError = options.raise_unicode_errors === false ? null : annotationError;
+    const annots = annotsError
       ? []
       : sortedAnnotations.map((annot: any) => annotationToObject(annot, pageNumber, boxes.width, boxes.height, boxes.rotate, doctopOffset, rawObjects));
-    const hyperlinks = annotationError ? [] : annots.filter((annot) => annot.uri != null);
+    const hyperlinks = annotsError ? [] : annots.filter((annot) => annot.uri != null);
     const layout = options.laparams ? buildLayoutObjects(lowLevel.chars, lowLevel.images, boxes.height, doctopOffset, options.laparams) : null;
     const pageChars = layout?.chars ?? lowLevel.chars;
     const extraObjects = layout?.objects ?? {};
@@ -270,7 +271,7 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
         boxes.bleedbox,
         boxes.trimbox,
         extraObjects,
-        annotationError
+        annotsError
       )
     );
     doctopOffset += boxes.height;

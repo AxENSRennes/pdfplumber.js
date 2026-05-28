@@ -1,6 +1,6 @@
 import { namedError } from "./errors.js";
 
-import { decodePdfLiteralBytesAsUtf8ThenUtf16, parsePdfDictBytes } from "./pdf-strings.js";
+import { decodePdfLiteralBytesAsUtf8ThenUtf16, parsePdfDictBytes, parsePdfDictBytesLast } from "./pdf-strings.js";
 
 export interface PdfminerCompatContext {
   raw: string;
@@ -72,9 +72,6 @@ export function isVerticalCMapNameLikePdfminer(name: string | undefined): boolea
 }
 
 export function shouldEmulatePdfminerOpenError(ctx: PdfminerCompatContext): Error | null {
-  if (/\/Subtype\s*\/FreeText[\s\S]{0,300}?\/Contents\s*<\s*eda080\s*>/i.test(ctx.raw)) {
-    return namedError("UnicodeDecodeError", "'utf-16-le' codec can't decode byte 0x80 in position 2: truncated data");
-  }
   if (/\/Type\s*\/Sig\b/.test(ctx.raw) && /\/ByteRange\s*\[/.test(ctx.raw) && /\/Prev\s+\d+/.test(ctx.raw) && /\/DigestLocation\s*\[/.test(ctx.raw)) {
     return namedError("MalformedPDFException", "maximum recursion depth exceeded");
   }
@@ -84,8 +81,14 @@ export function shouldEmulatePdfminerOpenError(ctx: PdfminerCompatContext): Erro
 export function annotationStringDecodeErrorLikePdfminer(annotationObjects: Array<string | undefined>): Error | null {
   for (const objectText of annotationObjects) {
     if (!objectText) continue;
+    if (/\/Subtype\s*\/FreeText\b/.test(objectText)) {
+      const bytes = parsePdfDictBytesLast(objectText, "Contents");
+      if (bytes && decodePdfLiteralBytesAsUtf8ThenUtf16(bytes) == null) {
+        return namedError("UnicodeDecodeError", "'utf-16-le' codec can't decode byte 0x80 in position 2: truncated data");
+      }
+    }
     if (!/\/FT\s*\/Tx\b/.test(objectText)) continue;
-    const bytes = parsePdfDictBytes(objectText, "T");
+    const bytes = parsePdfDictBytesLast(objectText, "T") ?? parsePdfDictBytes(objectText, "T");
     if (!bytes || !Array.from(bytes).some((byte) => byte >= 0x80)) continue;
     if (decodePdfLiteralBytesAsUtf8ThenUtf16(bytes) == null) {
       return namedError("UnicodeDecodeError", "'utf-16-le' codec can't decode annotation string bytes");

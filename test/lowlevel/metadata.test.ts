@@ -26,6 +26,29 @@ describe("low-level PDF metadata and page boxes", () => {
     });
   });
 
+  it("resolves indirect Info array entries like pdfminer metadata", () => {
+    const raw = "%PDF-1.7\ntrailer\n<< /Info 9 0 R >>";
+    const objects = new Map<number, string>([
+      [9, "9 0 obj\n<< /Title (Main) /Changes [ 10 0 R 11 0 R ] /SPDF 1082 >>\nendobj"],
+      [10, "10 0 obj\n<< /CreationDate (D:20061207105020Z00'00') /Producer (Acrobat Distiller 5.0.5 \\(Windows\\)) >>\nendobj"],
+      [11, "11 0 obj\n<< /ModDate (D:20061211145545-00'00') /Product (APStripFiles) >>\nendobj"]
+    ]);
+
+    expect(parseInfoMetadata(raw, objects)).toMatchObject({
+      Title: "Main",
+      SPDF: 1082,
+      Changes: [
+        {
+          CreationDate: "D:20061207105020Z00'00'",
+          Producer: "Acrobat Distiller 5.0.5 (Windows)"
+        },
+        {
+          ModDate: "D:20061211145545-00'00'"
+        }
+      ]
+    });
+  });
+
   it("normalizes crop/media boxes and rotation into pdfplumber coordinates", () => {
     expect(
       resolvePageBoxes({ view: [0, 0, 200, 100], rotate: 0 }, "1 0 obj\n<< /MediaBox [0 0 200 100] /CropBox [10 20 190 90] >>\nendobj")

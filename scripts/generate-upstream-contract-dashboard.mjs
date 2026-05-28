@@ -160,6 +160,7 @@ const pdfplumberCompatCoveredTests = new Map(
     ["pdfplumber-python/tests/test_dedupe_chars.py", "Test.test extract text2", "dedupe-chars"],
     ["pdfplumber-python/tests/test_dedupe_chars.py", "Test.test extra attrs", "dedupe-extra-attrs"],
     ["pdfplumber-python/tests/test_issues.py", "Test.test issue 53", "table-text-layout"],
+    ["pdfplumber-python/tests/test_issues.py", "Test.test issue 13", "issue-13-checkboxes"],
     ["pdfplumber-python/tests/test_issues.py", "Test.test issue 14", "issue-14-objects"],
     ["pdfplumber-python/tests/test_issues.py", "Test.test issue 21", "issue-21-objects"],
     ["pdfplumber-python/tests/test_issues.py", "Test.test issue 33", "issue-33-metadata-present"],
@@ -167,11 +168,17 @@ const pdfplumberCompatCoveredTests = new Map(
     ["pdfplumber-python/tests/test_issues.py", "Test.test pr 88", "pr-88-word-count"],
     ["pdfplumber-python/tests/test_issues.py", "Test.test issue 90", "issue-90-extract-words-no-error"],
     ["pdfplumber-python/tests/test_issues.py", "Test.test pr 136", "pr-136-extract-words-no-error"],
+    ["pdfplumber-python/tests/test_issues.py", "Test.test pr 138", "pr-138-explicit-lines"],
     ["pdfplumber-python/tests/test_issues.py", "Test.test issue 140", "table-lines-strict"],
     ["pdfplumber-python/tests/test_issues.py", "Test.test issue 203", "issue-203-objects"],
     ["pdfplumber-python/tests/test_issues.py", "Test.test issue 216", "issue-216-empty-crop-table"],
     ["pdfplumber-python/tests/test_issues.py", "Test.test issue 297", "issue-297-integer-metadata"],
+    ["pdfplumber-python/tests/test_issues.py", "Test.test issue 316", "issue-316-metadata-changes"],
+    ["pdfplumber-python/tests/test_issues.py", "Test.test issue 461 and 842", "issue-461-fontnames + issue-842-fontnames"],
+    ["pdfplumber-python/tests/test_issues.py", "Test.test issue 463", "issue-463-annotation-unicode"],
     ["pdfplumber-python/tests/test_issues.py", "Test.test issue 1147", "issue-1147-extract-text"],
+    ["pdfplumber-python/tests/test_issues.py", "Test.test issue 982", "issue-982-text-flow"],
+    ["pdfplumber-python/tests/test_issues.py", "Test.test pr 1195", "pr-1195-annotation-unicode-errors + pr-1195-annotation-unicode-errors-disabled"],
     ["pdfplumber-python/tests/test_issues.py", "Test.test issue 598", "ligatures"],
     ["pdfplumber-python/tests/test_issues.py", "Test.test issue 683", "dedupe-chars"],
     ["pdfplumber-python/tests/test_issues.py", "Test.test issue 1181", "mediabox-offset-table-coordinates"],
@@ -226,6 +233,7 @@ const excludedPdfplumberUtilityTests = new Set(
 const excludedPdfplumberInternalHelperTests = new Set([
   "pdfplumber-python/tests/test_ca_warn_report.py|test.test edge merging",
   "pdfplumber-python/tests/test_ca_warn_report.py|test.test vertices",
+  "pdfplumber-python/tests/test_issues.py|test.test issue 386",
   "pdfplumber-python/tests/test_table.py|test.test orientation errors"
 ]);
 
@@ -415,8 +423,8 @@ function classify(source, behavior, kind) {
       scope: "excluded",
       subsystem,
       status: "excluded",
-      js: "Python pdfplumber table helper functions such as join_edge_group, merge_edges, and edges_to_intersections are not exported by pdfplumber.js or documented as public extraction APIs.",
-      rationale: "This upstream row validates direct internal helper behavior; public table extraction, page edge counts, and table input validation are covered by compat scenarios such as ca-warn-objects-and-parse and table-settings-errors."
+      js: "Python pdfplumber helper functions such as table geometry helpers and pdfplumber.utils.extract_text are not exported by pdfplumber.js or documented as public extraction APIs.",
+      rationale: "This upstream row validates direct internal helper behavior; public extraction behavior for the same subsystems is covered by compat scenarios such as ca-warn-objects-and-parse, table-settings-errors, and text extraction tests."
     };
   }
 

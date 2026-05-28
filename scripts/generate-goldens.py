@@ -5,6 +5,7 @@ import json
 import math
 import os
 import pathlib
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -194,6 +195,77 @@ def ca_warn_parse_summary(pdf: Any) -> Dict[str, Any]:
             "last_data_row": ca_warn_fix_row_spaces(table_data[-1]),
         }
     )
+
+
+def issue_13_checkbox_summary(page: Any) -> Dict[str, Any]:
+    rect_width = 9.3
+    rect_height = 9.3
+    tolerance = 2
+    checklines = [line for line in page.lines if round(line["height"], 2) == round(line["width"], 2)]
+    rects = [
+        rect
+        for rect in page.objects["rect"]
+        if rect["height"] > (rect_height - tolerance)
+        and rect["height"] < (rect_height + tolerance)
+        and rect["width"] < (rect_width + tolerance)
+        and rect["width"] < (rect_width + tolerance)
+    ]
+
+    def checked(checkbox: Dict[str, Any]) -> bool:
+        return any(
+            max(checkbox["x0"], line["x0"]) <= min(checkbox["x1"], line["x1"])
+            and max(checkbox["y0"], line["y0"]) <= min(checkbox["y1"], line["y1"])
+            for line in checklines
+        )
+
+    return {
+        "rect_count": len(rects),
+        "diagonal_line_count": len(checklines),
+        "checked_count": sum(checked(rect) for rect in rects),
+    }
+
+
+def pr_138_table_summary(page: Any) -> Dict[str, Any]:
+    tables = page.extract_tables(
+        {
+            "vertical_strategy": "explicit",
+            "horizontal_strategy": "lines",
+            "explicit_vertical_lines": page.curves + page.edges,
+        }
+    )
+    return {
+        "char_count": len(page.chars),
+        "curve_count": len(page.curves),
+        "edge_count": len(page.edges),
+        "table_shapes": [[len(table), len(table[0]) if table else 0] for table in tables],
+    }
+
+
+def metadata_changes_summary(metadata: Dict[str, Any]) -> Dict[str, Any]:
+    changes = metadata.get("Changes")
+    first = changes[0] if isinstance(changes, list) and changes else {}
+    return {
+        "changes_is_list": isinstance(changes, list),
+        "first_creation_date": first.get("CreationDate") if isinstance(first, dict) else None,
+    }
+
+
+def fontname_dedupe_summary(page: Any) -> Dict[str, Any]:
+    return {
+        "char_count": len(page.chars),
+        "fontnames_are_str": all(isinstance(char["fontname"], str) for char in page.chars),
+        "dedupe_error": error_name(lambda: page.dedupe_chars()),
+    }
+
+
+def text_flow_match_summary(page: Any) -> Dict[str, Any]:
+    text = re.sub(r"\s+", " ", page.extract_text(use_text_flow=True))
+    words = " ".join(word["text"] for word in page.extract_words(use_text_flow=True))
+    return {
+        "text_head": text[:100],
+        "words_head": words[:100],
+        "heads_match": text[:100] == words[:100],
+    }
 
 
 def nics_explicit_horizontal_summary(page: Any) -> Dict[str, Any]:
@@ -562,6 +634,82 @@ def build_scenarios() -> List[Dict[str, Any]]:
                 make_check("page.edgeCounts", {"rect_edges": len(pdf.pages[0].rect_edges), "curve_edges": len(pdf.pages[0].curve_edges), "edges": len(pdf.pages[0].edges)}, page=0),
                 make_check("pdf.caWarnParseSummary", ca_warn_parse_summary(pdf)),
             ],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "issue-13-checkboxes",
+            "issue-13-151201DSP-Fond-581-90D.pdf",
+            lambda pdf: [make_check("page.issue13CheckboxSummary", issue_13_checkbox_summary(pdf.pages[0]), page=0)],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "pr-138-explicit-lines",
+            "pr-138-example.pdf",
+            lambda pdf: [make_check("page.pr138TableSummary", pr_138_table_summary(pdf.pages[0]), page=0)],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "issue-316-metadata-changes",
+            "issue-316-example.pdf",
+            lambda pdf: [make_check("pdf.metadataChangesSummary", metadata_changes_summary(pdf.metadata))],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "issue-461-fontnames",
+            "issue-461-example.pdf",
+            lambda pdf: [make_check("page.fontnameDedupeSummary", fontname_dedupe_summary(pdf.pages[0]), page=0)],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "issue-842-fontnames",
+            "issue-842-example.pdf",
+            lambda pdf: [make_check("page.fontnameDedupeSummary", fontname_dedupe_summary(pdf.pages[0]), page=0)],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "issue-463-annotation-unicode",
+            "issue-463-example.pdf",
+            lambda pdf: [make_check("page.annots", [slim_obj(pdf.pages[0].annots[0])], page=0)],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "issue-982-text-flow",
+            "issue-982-example.pdf",
+            lambda pdf: [make_check("page.textFlowMatchSummary", text_flow_match_summary(pdf.pages[0]), page=0)],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "pr-1195-annotation-unicode-errors",
+            "annotations-unicode-issues.pdf",
+            lambda pdf: [make_check("pdf.annots.error", error_name(lambda: list(pdf.annots)))],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "pr-1195-annotation-unicode-errors-disabled",
+            "annotations-unicode-issues.pdf",
+            lambda pdf: [
+                make_check("pdf.annots.error", error_name(lambda: list(pdf.annots))),
+                make_check("pdf.annots.count", len(pdf.annots)),
+            ],
+            open_options={"raise_unicode_errors": False},
         )
     )
 

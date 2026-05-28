@@ -4,6 +4,7 @@ import { glyphTextLikePdfminer, glyphWidthLikePdfminer } from "../../src/font-de
 import { decodePdfLiteralBytesAsUtf8ThenUtf16, decodePdfStringLikePdfminer } from "../../src/pdf-strings.js";
 import { parsePdfObjects } from "../../src/pdf.js";
 import {
+  annotationStringDecodeErrorLikePdfminer,
   normalizePdfStringLikePdfminer,
   shouldEmulatePdfminerOpenError,
   shouldSuppressPagesLikePdfminer,
@@ -80,7 +81,9 @@ describe("low-level pdfminer string, glyph, and compatibility behavior", () => {
 
     expect(shouldSuppressPagesLikePdfminer({ raw: suppressRaw, objects: suppressObjects })).toBe(true);
     expect(shouldSuppressPagesLikePdfminer({ raw: suppressRaw.replace("/Copies 0", "/Copies 1"), objects: parsePdfObjects(suppressRaw.replace("/Copies 0", "/Copies 1")) })).toBe(false);
-    expect(shouldEmulatePdfminerOpenError({ raw: "/Subtype /FreeText /Contents <eda080>", objects: new Map() })?.name).toBe("UnicodeDecodeError");
+    expect(shouldEmulatePdfminerOpenError({ raw: "/Subtype /FreeText /Contents <eda080>", objects: new Map() })).toBeNull();
+    expect(annotationStringDecodeErrorLikePdfminer(["/Subtype /FreeText /Contents <eda080>"])?.name).toBe("UnicodeDecodeError");
+    expect(annotationStringDecodeErrorLikePdfminer(["/Subtype /FreeText /Contents (valid) /Contents <eda080>"])?.name).toBe("UnicodeDecodeError");
     expect(normalizePdfStringLikePdfminer("")).toBeNull();
     expect(normalizePdfStringLikePdfminer("value")).toBe("value");
   });

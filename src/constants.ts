@@ -13,7 +13,7 @@ export const LIGATURES: Record<string, string> = {
   "\ufb05": "st"
 };
 
-export const METADATA_KEYS = ["Author", "Creator", "Producer", "Title", "Subject", "Keywords", "CreationDate", "ModDate", "Copies"];
+export const METADATA_KEYS = ["Author", "Creator", "Producer", "Title", "Subject", "Keywords", "CreationDate", "ModDate", "Copies", "Changes", "SPDF"];
 export const PUNCTUATION = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
 
 export const FONT_UNITS_PER_EM = 1000;

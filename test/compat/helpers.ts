@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { expect } from "vitest";
-import { open, type BBox, type PDFPlumberDocument, type PDFPlumberPage } from "../../src/index.js";
+import { open, type BBox, type PDFObject, type PDFPlumberDocument, type PDFPlumberPage } from "../../src/index.js";
 
 export interface GoldenCheck {
   type: string;
@@ -144,6 +144,70 @@ async function caWarnParseSummary(document: PDFPlumberDocument): Promise<Record<
     header: table ? caWarnFixRowSpaces(table[0]) : [],
     first_data_row: table ? caWarnFixRowSpaces(table[1]) : [],
     last_data_row: table ? caWarnFixRowSpaces(table.at(-1) ?? []) : []
+  };
+}
+
+function issue13CheckboxSummary(selectedPage: PDFPlumberPage): Record<string, unknown> {
+  const rectWidth = 9.3;
+  const rectHeight = 9.3;
+  const tolerance = 2;
+  const checklines = selectedPage.lines.filter((line) => Number(Number(line.height).toFixed(2)) === Number(Number(line.width).toFixed(2)));
+  const rects = selectedPage.objects.rect.filter((rect) =>
+    Number(rect.height) > rectHeight - tolerance &&
+    Number(rect.height) < rectHeight + tolerance &&
+    Number(rect.width) < rectWidth + tolerance &&
+    Number(rect.width) < rectWidth + tolerance
+  );
+  const checked = (checkbox: Record<string, unknown>) =>
+    checklines.some((line) =>
+      Math.max(Number(checkbox.x0), Number(line.x0)) <= Math.min(Number(checkbox.x1), Number(line.x1)) &&
+      Math.max(Number(checkbox.y0), Number(line.y0)) <= Math.min(Number(checkbox.y1), Number(line.y1))
+    );
+  return {
+    rect_count: rects.length,
+    diagonal_line_count: checklines.length,
+    checked_count: rects.filter(checked).length
+  };
+}
+
+async function pr138TableSummary(selectedPage: PDFPlumberPage): Promise<Record<string, unknown>> {
+  const tables = await valueOf(selectedPage.extractTables({
+    vertical_strategy: "explicit",
+    horizontal_strategy: "lines",
+    explicit_vertical_lines: [...selectedPage.curves, ...selectedPage.edges]
+  }));
+  return {
+    char_count: selectedPage.chars.length,
+    curve_count: selectedPage.curves.length,
+    edge_count: selectedPage.edges.length,
+    table_shapes: tables.map((table) => [table.length, table[0]?.length ?? 0])
+  };
+}
+
+function metadataChangesSummary(metadata: Record<string, unknown>): Record<string, unknown> {
+  const changes = metadata.Changes;
+  const first = Array.isArray(changes) ? changes[0] as Record<string, unknown> | undefined : undefined;
+  return {
+    changes_is_list: Array.isArray(changes),
+    first_creation_date: first?.CreationDate ?? null
+  };
+}
+
+function fontnameDedupeSummary(selectedPage: PDFPlumberPage): Record<string, unknown> {
+  return {
+    char_count: selectedPage.chars.length,
+    fontnames_are_str: selectedPage.chars.every((char) => typeof char.fontname === "string"),
+    dedupe_error: captureErrorName(() => selectedPage.dedupeChars())
+  };
+}
+
+async function textFlowMatchSummary(selectedPage: PDFPlumberPage): Promise<Record<string, unknown>> {
+  const text = (await valueOf(selectedPage.extractText({ use_text_flow: true }))).replace(/\s+/g, " ");
+  const words = (await valueOf(selectedPage.extractWords({ use_text_flow: true }))).map((word: PDFObject) => String(word.text)).join(" ");
+  return {
+    text_head: text.slice(0, 100),
+    words_head: words.slice(0, 100),
+    heads_match: text.slice(0, 100) === words.slice(0, 100)
   };
 }
 
@@ -372,11 +436,17 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
         case "pdf.metadataHasKeys":
           actual = Object.keys(document.metadata).length > 0;
           break;
+        case "pdf.metadataChangesSummary":
+          actual = metadataChangesSummary(document.metadata);
+          break;
         case "pdf.objectCounts":
           actual = Object.fromEntries(Object.entries(document.objects).map(([key, value]) => [key, value.length]));
           break;
         case "pdf.annots.count":
           actual = document.annots.length;
+          break;
+        case "pdf.annots.error":
+          actual = captureErrorName(() => document.annots);
           break;
         case "pdf.hyperlinks.count":
           actual = document.hyperlinks.length;
@@ -427,6 +497,18 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
           actual = ctmSummary(selectedPage.chars[index] as Record<string, unknown>);
           break;
         }
+        case "page.issue13CheckboxSummary":
+          actual = issue13CheckboxSummary(selectedPage);
+          break;
+        case "page.pr138TableSummary":
+          actual = await pr138TableSummary(selectedPage);
+          break;
+        case "page.fontnameDedupeSummary":
+          actual = fontnameDedupeSummary(selectedPage);
+          break;
+        case "page.textFlowMatchSummary":
+          actual = await textFlowMatchSummary(selectedPage);
+          break;
         case "page.extractText":
           actual = await valueOf(selectedPage.extractText(check.args ?? {}));
           break;

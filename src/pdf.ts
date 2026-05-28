@@ -183,12 +183,27 @@ export function parsePageFontObjectNumbers(pageObjectText: string | undefined): 
 export function parseInfoMetadata(raw: string, objects: Map<number, string>): Record<string, unknown> {
   const infoRefs = Array.from(raw.matchAll(/\/Info\s+(\d+)\s+\d+\s+R/g));
   const infoRef = infoRefs.at(-1)?.[1];
-  const text = infoRef ? objects.get(Number(infoRef)) : undefined;
+  const text = infoRef ? pdfObjectText(raw, objects, Number(infoRef)) : undefined;
   if (!text) return {};
+  return parseInfoDictionary(text, objects, raw);
+}
+
+function parseInfoDictionary(text: string, objects: Map<number, string>, raw: string, depth = 0): Record<string, unknown> {
   const metadata: Record<string, unknown> = {};
   for (const key of METADATA_KEYS) {
+    const indirectArray = text.match(new RegExp(`/${key}\\s*\\[([^\\]]*)\\]`))?.[1];
+    if (indirectArray && depth < 2) {
+      const values = Array.from(indirectArray.matchAll(/(\d+)\s+\d+\s+R/g))
+        .map((match) => pdfObjectText(raw, objects, Number(match[1])))
+        .filter((value): value is string => value !== undefined)
+        .map((value) => parseInfoDictionary(value, objects, raw, depth + 1));
+      if (values.length) {
+        metadata[key] = values;
+        continue;
+      }
+    }
     const indirectRef = text.match(new RegExp(`/${key}\\s+(\\d+)\\s+\\d+\\s+R\\b`))?.[1];
-    const indirectText = indirectRef ? objects.get(Number(indirectRef)) : undefined;
+    const indirectText = indirectRef ? pdfObjectText(raw, objects, Number(indirectRef)) : undefined;
     const indirectString = indirectText ? readFirstPdfString(indirectText) : null;
     if (indirectString != null) {
       metadata[key] = indirectString;
@@ -204,6 +219,10 @@ export function parseInfoMetadata(raw: string, objects: Map<number, string>): Re
     }
   }
   return metadata;
+}
+
+function pdfObjectText(raw: string, objects: Map<number, string>, objectNumber: number): string | undefined {
+  return objects.get(objectNumber) ?? raw.match(new RegExp(`${objectNumber}\\s+\\d+\\s+obj[\\s\\S]*?endobj`))?.[0];
 }
 
 function decodePdfStringBytes(bytes: number[]): string {
