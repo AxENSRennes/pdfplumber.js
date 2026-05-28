@@ -417,6 +417,26 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
     };
   }
 
+  if (sourceFile.endsWith("bidi_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "text",
+      status: "excluded",
+      js: "PDF.js bidi string-reordering helpers are not exposed by pdfplumber.js; public text direction behavior is covered by pdfplumber compatibility tests.",
+      rationale: "These rows exercise PDF.js bidi() thresholding and Unicode Bidi test-data reordering. pdfplumber.js exposes pdfplumber-style word/text direction options and geometry-driven ordering through test/compat/pdfplumber.compat.test.ts scenarios text-render-directions, text-rotation, text-rotation-layout, and words-directions-and-extra-attrs."
+    };
+  }
+
+  if (sourceFile.endsWith("encodings_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "text",
+      status: "excluded",
+      js: "PDF.js getEncoding() lookup arrays are not exposed by pdfplumber.js; native encoding behavior is covered by pdfminer-backed glyph and CMap tests.",
+      rationale: "The public API exposes decoded chars/text rather than raw PDF.js 256-entry encoding tables. pdfminer-compatible Encoding Differences, Adobe glyph names, predefined CMaps, and CMap font extraction are covered by low-level native tests."
+    };
+  }
+
   if (sourceFile.endsWith("ui_utils_spec.js")) {
     return {
       scope: "excluded",
