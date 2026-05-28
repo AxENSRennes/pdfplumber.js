@@ -28,7 +28,16 @@ const columns = [
 ];
 
 const passedPdfjsManifestLoadRobustnessIds = new Set([
+  "arabiccidtruetype-pdf",
+  "bug1978317",
   "bug1020858",
+  "bug868745",
+  "bug886717",
+  "bug900822",
+  "complexttffont-pdf",
+  "html5-canvas-cheat-sheet-load",
+  "issue11922",
+  "issue1249-load",
   "issue1293",
   "issue1586",
   "issue17554",
@@ -39,10 +48,13 @@ const passedPdfjsManifestLoadRobustnessIds = new Set([
   "issue6069",
   "issue6108",
   "issue6151",
+  "issue7229",
   "issue7446",
   "issue7665",
   "openoffice-pdf",
-  "openofficearabiccidtruetype-pdf"
+  "openofficearabiccidtruetype-pdf",
+  "openofficecidtruetype-pdf",
+  "scan-bad"
 ]);
 
 function slash(value) {

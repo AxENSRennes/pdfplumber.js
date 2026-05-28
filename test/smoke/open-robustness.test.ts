@@ -148,7 +148,19 @@ describe("public open() robustness", () => {
       "pdfjs/test/pdfs/pdfjsbad1586.pdf",
       "pdfjs/test/pdfs/issue1985.pdf",
       "pdfjs/test/pdfs/openoffice.pdf",
-      "pdfjs/test/pdfs/arial_unicode_ab_cidfont.pdf"
+      "pdfjs/test/pdfs/arial_unicode_ab_cidfont.pdf",
+      "pdfjs/test/pdfs/arial_unicode_en_cidfont.pdf",
+      "pdfjs/test/pdfs/bug868745.pdf",
+      "pdfjs/test/pdfs/scan-bad.pdf",
+      "pdfjs/test/pdfs/ArabicCIDTrueType.pdf",
+      "pdfjs/test/pdfs/complex_ttf_font.pdf",
+      "pdfjs/test/pdfs/issue1249.pdf",
+      "pdfjs/test/pdfs/bug886717.pdf",
+      "pdfjs/test/pdfs/canvas.pdf",
+      "pdfjs/test/pdfs/bug900822.pdf",
+      "pdfjs/test/pdfs/issue11922_reduced.pdf",
+      "pdfjs/test/pdfs/issue7229.pdf",
+      "pdfjs/test/pdfs/bug1978317.pdf"
     ];
 
     for (const relativePath of cases) {
