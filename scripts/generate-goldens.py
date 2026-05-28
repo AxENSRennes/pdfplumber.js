@@ -809,6 +809,33 @@ def build_scenarios() -> List[Dict[str, Any]]:
 
     scenarios.append(
         scenario(
+            "table-explicit-desc-decimalization",
+            "pdffill-demo.pdf",
+            lambda pdf: [
+                make_check(
+                    "page.extractTables",
+                    pdf.pages[0].extract_tables(
+                        {
+                            "vertical_strategy": "explicit",
+                            "explicit_vertical_lines": [100, 200, 300],
+                            "horizontal_strategy": "explicit",
+                            "explicit_horizontal_lines": [100, 200, 300],
+                        }
+                    ),
+                    page=0,
+                    args={
+                        "vertical_strategy": "explicit",
+                        "explicit_vertical_lines": [100, 200, 300],
+                        "horizontal_strategy": "explicit",
+                        "explicit_horizontal_lines": [100, 200, 300],
+                    },
+                ),
+            ],
+        )
+    )
+
+    scenarios.append(
+        scenario(
             "table-text-strategy-and-tolerance",
             "senate-expenditures.pdf",
             lambda pdf: [
@@ -840,6 +867,120 @@ def build_scenarios() -> List[Dict[str, Any]]:
             "issue-53-example.pdf",
             lambda pdf: [
                 make_check("page.extractTable", pdf.pages[0].extract_table({"text_layout": True}), page=0, args={"text_layout": True})
+            ],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "table-order",
+            "issue-336-example.pdf",
+            lambda pdf: [
+                make_check("page.extractTables", pdf.pages[0].extract_tables(), page=0),
+            ],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "table-mixed-strategy-issue-466",
+            "issue-466-example.pdf",
+            lambda pdf: [
+                make_check(
+                    "page.extractTables",
+                    pdf.pages[0].extract_tables(
+                        {
+                            "vertical_strategy": "lines",
+                            "horizontal_strategy": "text",
+                            "snap_tolerance": 8,
+                            "intersection_tolerance": 4,
+                        }
+                    ),
+                    page=0,
+                    args={
+                        "vertical_strategy": "lines",
+                        "horizontal_strategy": "text",
+                        "snap_tolerance": 8,
+                        "intersection_tolerance": 4,
+                    },
+                ),
+            ],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "table-null-value-discussion-539",
+            "nics-background-checks-2015-11.pdf",
+            lambda pdf: [
+                make_check(
+                    "page.extractTable",
+                    pdf.pages[0].extract_table(
+                        {
+                            "vertical_strategy": "lines",
+                            "horizontal_strategy": "lines",
+                            "explicit_vertical_lines": [],
+                            "explicit_horizontal_lines": [],
+                            "snap_tolerance": 3,
+                            "join_tolerance": 3,
+                            "edge_min_length": 3,
+                            "min_words_vertical": 3,
+                            "min_words_horizontal": 1,
+                            "text_keep_blank_chars": False,
+                            "text_tolerance": 3,
+                            "intersection_tolerance": 3,
+                        }
+                    ),
+                    page=0,
+                    args={
+                        "vertical_strategy": "lines",
+                        "horizontal_strategy": "lines",
+                        "explicit_vertical_lines": [],
+                        "explicit_horizontal_lines": [],
+                        "snap_tolerance": 3,
+                        "join_tolerance": 3,
+                        "edge_min_length": 3,
+                        "min_words_vertical": 3,
+                        "min_words_horizontal": 1,
+                        "text_keep_blank_chars": False,
+                        "text_tolerance": 3,
+                        "intersection_tolerance": 3,
+                    },
+                ),
+                make_check(
+                    "page.extractTables",
+                    pdf.pages[0].extract_tables(
+                        {
+                            "vertical_strategy": "lines",
+                            "horizontal_strategy": "lines",
+                            "explicit_vertical_lines": [],
+                            "explicit_horizontal_lines": [],
+                            "snap_tolerance": 3,
+                            "join_tolerance": 3,
+                            "edge_min_length": 3,
+                            "min_words_vertical": 3,
+                            "min_words_horizontal": 1,
+                            "text_keep_blank_chars": False,
+                            "text_tolerance": 3,
+                            "intersection_tolerance": 3,
+                        }
+                    ),
+                    page=0,
+                    args={
+                        "vertical_strategy": "lines",
+                        "horizontal_strategy": "lines",
+                        "explicit_vertical_lines": [],
+                        "explicit_horizontal_lines": [],
+                        "snap_tolerance": 3,
+                        "join_tolerance": 3,
+                        "edge_min_length": 3,
+                        "min_words_vertical": 3,
+                        "min_words_horizontal": 1,
+                        "text_keep_blank_chars": False,
+                        "text_tolerance": 3,
+                        "intersection_tolerance": 3,
+                    },
+                ),
             ],
         )
     )
