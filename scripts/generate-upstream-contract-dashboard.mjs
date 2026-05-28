@@ -467,6 +467,26 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
     };
   }
 
+  if (sourceFile.endsWith("crypto_spec.js") && /\bpassword\b/.test(lowerBehavior)) {
+    return {
+      scope: "robustness-corpus",
+      subsystem: "security",
+      status: "passed",
+      js: "test/smoke/open-robustness.test.ts; test/compat/pdfplumber.compat.test.ts (password-open)",
+      rationale: "The public gates verify encrypted PDF outcomes through open(): missing and wrong passwords raise stable PasswordException errors, correct PDF.js fixture passwords open, and the Python pdfplumber password fixture extracts through the public API."
+    };
+  }
+
+  if (sourceFile.endsWith("crypto_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "security",
+      status: "excluded",
+      js: "Raw PDF.js crypto primitive and CipherTransformFactory APIs are not exposed by pdfplumber.js.",
+      rationale: "These rows validate PDF.js MD5/SHA helpers, ARCFour/AES block APIs, PDF 1.7/2.0 key derivation helpers, and internal encrypt/decrypt transform lengths. pdfplumber.js exposes encrypted-document opening and extraction, not standalone crypto classes; native pdfminer-style RC4/AES padding/object decryption coverage lives in test/lowlevel/crypto-compat.test.ts and test/lowlevel/pdfdocument-compat.test.ts."
+    };
+  }
+
   if (sourceFile.endsWith("to_unicode_map_spec.js")) {
     return {
       scope: "pdfjs-capability",
