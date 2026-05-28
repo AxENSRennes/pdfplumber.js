@@ -17,19 +17,19 @@ Generated rows: 3580
 
 | Value | Rows |
 | --- | ---: |
-| excluded | 3037 |
+| duplicate | 2 |
+| excluded | 3038 |
 | native-engine | 140 |
 | pdfjs-capability | 83 |
 | public-api | 111 |
-| robustness-corpus | 194 |
+| robustness-corpus | 191 |
 | runtime-adaptation | 15 |
 
 ## Rows By Status
 
 | Value | Rows |
 | --- | ---: |
-| backend-gap | 16 |
-| excluded | 3037 |
-| inventory | 58 |
+| backend-gap | 71 |
+| excluded | 3038 |
 | needs-adapted-js-test | 29 |
-| passed | 440 |
+| passed | 442 |

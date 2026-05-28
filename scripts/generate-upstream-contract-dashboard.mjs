@@ -27,6 +27,22 @@ const columns = [
   "rationale"
 ];
 
+function readJsonIfPresent(relativePath) {
+  const absolutePath = path.join(repoRoot, relativePath);
+  if (!fs.existsSync(absolutePath)) return null;
+  return JSON.parse(fs.readFileSync(absolutePath, "utf8"));
+}
+
+function parityCorpusFixtureSources() {
+  const golden = readJsonIfPresent("test/fixtures/goldens/pdfplumber-parity.json");
+  if (!golden) return [];
+  return golden.scenarios
+    .filter((scenario) => scenario.id?.startsWith("corpus/default/"))
+    .map((scenario) => scenario.pdf)
+    .filter((pdf) => typeof pdf === "string" && pdf.endsWith(".pdf"))
+    .map((pdf) => pdf.includes("/") || pdf.includes("\\") ? slash(pdf) : `pdfplumber-python/tests/pdfs/${pdf}`);
+}
+
 const passedPdfjsManifestLoadRobustnessIds = new Set([
   "arabiccidtruetype-pdf",
   "bug1020858",
@@ -166,6 +182,26 @@ const classifiedPdfjsManifestTextBackendGaps = new Map([
 
 const passedPythonSupportFixtures = new Map([
   [
+    "pdfplumber-python/tests/comparisons/scotus-transcript-p1-cropped.txt",
+    {
+      scope: "duplicate",
+      status: "passed",
+      subsystem: "text",
+      js: "test/compat/pdfplumber.compat.test.ts (extract-text-layout-cropped)",
+      rationale: "This upstream expected-output fixture is covered by the adapted cropped layout text compat scenario, which compares JS public text extraction against Python pdfplumber goldens."
+    }
+  ],
+  [
+    "pdfplumber-python/tests/comparisons/scotus-transcript-p1.txt",
+    {
+      scope: "duplicate",
+      status: "passed",
+      subsystem: "text",
+      js: "test/compat/pdfplumber.compat.test.ts (search-and-text-lines)",
+      rationale: "This upstream expected-output fixture is covered by the adapted text layout and search compat scenario, which compares JS public text extraction against Python pdfplumber goldens."
+    }
+  ],
+  [
     "pdfplumber-python/tests/pdfs/issue-203-decimalize.pdf",
     {
       subsystem: "images",
@@ -220,8 +256,27 @@ const passedPythonSupportFixtures = new Map([
       js: "test/lowlevel/real-fixtures.test.ts",
       rationale: "The low-level real-fixture test verifies text-strategy table extraction on this upstream pdfplumber Senate expenditures fixture."
     }
+  ],
+  [
+    "pdfplumber-python/tests/pdfs/issue-948.zip",
+    {
+      scope: "excluded",
+      status: "excluded",
+      subsystem: "viewer-ui",
+      js: "Python display/debug image fixture archive, not a pdfplumber.js extraction input.",
+      rationale: "The only upstream use is the PIL/Jupyter visual-debug display test, which is outside the documented extraction API."
+    }
   ]
 ]);
+
+for (const source of parityCorpusFixtureSources()) {
+  if (passedPythonSupportFixtures.has(source)) continue;
+  passedPythonSupportFixtures.set(source, {
+    status: "backend-gap",
+    js: "test/parity/pdfplumber.parity.test.ts (PDFPLUMBER_JS_RUN_PARITY=1)",
+    rationale: "The Python-generated parity corpus includes this upstream fixture as a corpus/default document.snapshot scenario; until per-fixture parity outcomes are promoted into targeted rows, broad corpus-default fixture coverage remains classified as an incomplete backend gap."
+  });
+}
 
 const passedOssFuzzSupportFixtureNames = new Set([
   "4591020179783680.pdf",
@@ -1185,9 +1240,9 @@ function classify(source, behavior, kind) {
     const supportCoverage = passedPythonSupportFixtures.get(source);
     if (supportCoverage) {
       return {
-        scope: "robustness-corpus",
-        subsystem: supportCoverage.subsystem,
-        status: "passed",
+        scope: supportCoverage.scope ?? "robustness-corpus",
+        subsystem: supportCoverage.subsystem ?? subsystem,
+        status: supportCoverage.status ?? "passed",
         js: supportCoverage.js,
         rationale: supportCoverage.rationale
       };
