@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import * as api from "../../src/index.js";
 import { open } from "../../src/index.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
 
 describe("public API", () => {
+  it("exports only the documented runtime entrypoints", () => {
+    expect(Object.keys(api).sort()).toEqual(["Table", "TableAxisGroup", "open"]);
+  });
+
   it("opens a PDF and exposes pdfplumber-shaped pages", async () => {
     const document = await open(path.join(repoRoot, "pdfplumber-python/tests/pdfs/nics-background-checks-2015-11.pdf"));
     try {
