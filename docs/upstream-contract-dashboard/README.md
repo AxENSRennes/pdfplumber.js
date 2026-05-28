@@ -20,8 +20,8 @@ Generated rows: 3579
 | excluded | 2067 |
 | native-engine | 146 |
 | pdfjs-capability | 995 |
-| public-api | 133 |
-| robustness-corpus | 179 |
+| public-api | 131 |
+| robustness-corpus | 181 |
 | runtime-adaptation | 59 |
 
 ## Rows By Status

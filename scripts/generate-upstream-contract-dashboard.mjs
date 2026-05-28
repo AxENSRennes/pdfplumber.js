@@ -288,6 +288,16 @@ function classify(source, behavior, kind) {
     };
   }
 
+  if (lowerSourceFile.includes("pdfplumber-python/tests/test_oss_fuzz.py")) {
+    return {
+      scope: "robustness-corpus",
+      subsystem: "parser",
+      status: "needs-adapted-js-test",
+      js: "Add an OSS-Fuzz corpus gate that opens each PDF through the public API and either extracts stable structured data or raises the documented stable error.",
+      rationale: "The upstream test is a malformed-PDF robustness harness; Python-only conversion and image helpers it opportunistically calls are not themselves part of the JS public surface."
+    };
+  }
+
   if (lowerSourceFile.includes("pdfminer-six/tests/test_tools_")) {
     return {
       scope: "excluded",
