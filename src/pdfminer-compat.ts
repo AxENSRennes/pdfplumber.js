@@ -68,7 +68,7 @@ export function normalizeIdentityCMapNameLikePdfminer(name: string | undefined):
 }
 
 export function isVerticalCMapNameLikePdfminer(name: string | undefined): boolean {
-  return /(?:^|-)V$/i.test(normalizeIdentityCMapNameLikePdfminer(name) ?? "");
+  return /(?:^|(?:-|Identity))V$/i.test(normalizeIdentityCMapNameLikePdfminer(name) ?? "");
 }
 
 export function decodeIdentityCMapLikePdfminer(bytes: Uint8Array | number[]): number[] {

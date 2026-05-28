@@ -103,7 +103,8 @@ describe("low-level pdfminer string, glyph, and compatibility behavior", () => {
     expect(isVerticalCMapNameLikePdfminer("Identity-V")).toBe(true);
     expect(isVerticalCMapNameLikePdfminer("DLIdent-H")).toBe(false);
     expect(isVerticalCMapNameLikePdfminer("DLIdent-V")).toBe(true);
-    expect(isVerticalCMapNameLikePdfminer("OneByteIdentityV")).toBe(false);
+    expect(isVerticalCMapNameLikePdfminer("OneByteIdentityV")).toBe(true);
+    expect(isVerticalCMapNameLikePdfminer("OneByteIdentityH")).toBe(false);
   });
 
   it("validates pdfminer-compatible ASCII85 stream failures", () => {

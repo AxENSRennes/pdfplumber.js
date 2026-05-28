@@ -70,6 +70,50 @@ describe("low-level PDF font parsing", () => {
     ]);
   });
 
+  it("normalizes CID font CMap names and writing mode like pdfminer", () => {
+    const objects = new Map<number, string>([
+      [1, "1 0 obj << /CMapName /Identity-V >> stream\nendstream\nendobj"],
+      [2, "2 0 obj << /CMapName (Identity-H) >> stream\nendstream\nendobj"],
+      [3, "3 0 obj << /CMapName /DLIdent-V >> stream\nendstream\nendobj"],
+      [4, "4 0 obj << /CMapName /DLIdent-H >> stream\nendstream\nendobj"],
+      [5, "5 0 obj << /CMapName /OneByteIdentityV >> stream\nendstream\nendobj"],
+      [6, "6 0 obj << /CMapName /OneByteIdentityH >> stream\nendstream\nendobj"],
+      [7, "7 0 obj << /CMapName /V >> stream\nendstream\nendobj"],
+      [8, "8 0 obj << /CMapName /H >> stream\nendstream\nendobj"],
+      [21, "21 0 obj << /Type /Font /Subtype /Type0 /BaseFont /IdentityVDirect /Encoding /Identity-V >> endobj"],
+      [22, "22 0 obj << /Type /Font /Subtype /Type0 /BaseFont /IdentityHDirect /Encoding /Identity-H >> endobj"],
+      [23, "23 0 obj << /Type /Font /Subtype /Type0 /BaseFont /IdentityVStream /Encoding 1 0 R >> endobj"],
+      [24, "24 0 obj << /Type /Font /Subtype /Type0 /BaseFont /IdentityHStream /Encoding 2 0 R >> endobj"],
+      [25, "25 0 obj << /Type /Font /Subtype /Type0 /BaseFont /DLIdentVDirect /Encoding /DLIdent-V >> endobj"],
+      [26, "26 0 obj << /Type /Font /Subtype /Type0 /BaseFont /DLIdentHDirect /Encoding /DLIdent-H >> endobj"],
+      [27, "27 0 obj << /Type /Font /Subtype /Type0 /BaseFont /DLIdentVStream /Encoding 3 0 R >> endobj"],
+      [28, "28 0 obj << /Type /Font /Subtype /Type0 /BaseFont /DLIdentHStream /Encoding 4 0 R >> endobj"],
+      [29, "29 0 obj << /Type /Font /Subtype /Type0 /BaseFont /OneByteIdentityV /Encoding 5 0 R >> endobj"],
+      [30, "30 0 obj << /Type /Font /Subtype /Type0 /BaseFont /OneByteIdentityH /Encoding 6 0 R >> endobj"],
+      [31, "31 0 obj << /Type /Font /Subtype /Type0 /BaseFont /VStream /Encoding 7 0 R >> endobj"],
+      [32, "32 0 obj << /Type /Font /Subtype /Type0 /BaseFont /HStream /Encoding 8 0 R >> endobj"],
+      [33, "33 0 obj << /Type /Font /Subtype /Type0 /BaseFont /NoEncoding >> endobj"]
+    ]);
+
+    const verticalByBaseFont = Object.fromEntries(parseFontRecords(objects).map((record) => [record.baseFont, record.vertical]));
+
+    expect(verticalByBaseFont).toMatchObject({
+      IdentityVDirect: true,
+      IdentityHDirect: false,
+      IdentityVStream: true,
+      IdentityHStream: false,
+      DLIdentVDirect: true,
+      DLIdentHDirect: false,
+      DLIdentVStream: true,
+      DLIdentHStream: false,
+      OneByteIdentityV: true,
+      OneByteIdentityH: false,
+      VStream: true,
+      HStream: false,
+      NoEncoding: false
+    });
+  });
+
   it("finds page-scoped font object numbers without collecting unrelated resources", () => {
     const pageObject = "1 0 obj\n<< /Type /Page /Resources << /Font << /F1 10 0 R /F2 20 0 R >> /XObject << /Im1 30 0 R >> >> >>\nendobj";
 

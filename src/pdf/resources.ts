@@ -95,6 +95,12 @@ function primitiveName(store: PdfObjectStore, value: PdfPrimitive | undefined): 
   return asName(resolved);
 }
 
+function primitiveNameOrString(store: PdfObjectStore, value: PdfPrimitive | undefined): string | undefined {
+  const resolved = resolveOne(store, value);
+  if (isName(resolved)) return resolved.name;
+  return typeof resolved === "string" ? resolved : undefined;
+}
+
 function resourceSubdict(store: PdfObjectStore, resources: PdfDict | undefined, key: string): PdfDict | undefined {
   return resolvedDict(store, resources?.get(key));
 }
@@ -505,8 +511,8 @@ function charSetNames(value: PdfPrimitive | undefined): string[] | undefined {
 function fontEncodingName(store: PdfObjectStore, fontDict: PdfDict): string | undefined {
   const encoding = resolveOne(store, fontDict.get("Encoding"));
   if (isName(encoding)) return normalizeIdentityCMapNameLikePdfminer(encoding.name);
-  if (encoding instanceof Map) return normalizeIdentityCMapNameLikePdfminer(primitiveName(store, encoding.get("CMapName")));
-  if (isStream(encoding)) return normalizeIdentityCMapNameLikePdfminer(asName(encoding.dict.get("CMapName")));
+  if (encoding instanceof Map) return normalizeIdentityCMapNameLikePdfminer(primitiveNameOrString(store, encoding.get("CMapName")));
+  if (isStream(encoding)) return normalizeIdentityCMapNameLikePdfminer(primitiveNameOrString(store, encoding.dict.get("CMapName")));
   return undefined;
 }
 

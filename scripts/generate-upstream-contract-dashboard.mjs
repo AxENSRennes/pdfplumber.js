@@ -544,6 +544,13 @@ function classify(source, behavior, kind) {
         "The low-level native tests verify pdfminer-compatible Adobe glyph-name conversion rules and that invalid Encoding Differences entries are ignored while valid entries continue to map."
       );
     }
+    if (lowerSourceFile.includes("pdfminer-six/tests/test_pdfencoding.py")) {
+      return passedNativeCompatGate(
+        subsystem,
+        "test/lowlevel/fonts.test.ts; test/lowlevel/strings-glyphs-compat.test.ts",
+        "The low-level native tests verify pdfminer-compatible Type0/CID CMap-name normalization and writing-mode behavior for Identity, DLIdent, OneByteIdentity, H/V stream encodings, literal-string CMapName values, and missing encoding defaults."
+      );
+    }
     return {
       scope: "native-engine",
       subsystem,
