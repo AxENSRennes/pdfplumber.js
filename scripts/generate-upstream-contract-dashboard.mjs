@@ -621,6 +621,13 @@ function classify(source, behavior, kind) {
         "The low-level native stream tests verify pdfminer-compatible ASCII85, ASCIIHex, LZW, and RunLength decoding through PDF stream filters."
       );
     }
+    if (lowerSourceFile.includes("pdfminer-six/tests/test_pdfminer_ccitt.py")) {
+      return passedNativeCompatGate(
+        "images",
+        "test/lowlevel/ccitt-compat.test.ts",
+        "The low-level native CCITT tests compare JS G4 line state transitions and fax output-line byte packing against live pdfminer.six oracles for every upstream CCITTG4Parser and CCITTFaxDecoder case."
+      );
+    }
     if (
       lowerSourceFile.includes("pdfminer-six/tests/test_pdfminer_psparser.py") &&
       lowerBehavior.includes("token that crosses a")
