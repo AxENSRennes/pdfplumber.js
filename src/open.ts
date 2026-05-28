@@ -1,8 +1,3 @@
-import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { createRequire } from "node:module";
-import path from "node:path";
-
 import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 
 import { METADATA_KEYS } from "./constants.js";
@@ -28,22 +23,86 @@ import {
 } from "./pdf.js";
 import type { Matrix, OpenOptions, PDFInput, PDFPlumberDocument, PDFPlumberPage } from "./types.js";
 
-const require = createRequire(import.meta.url);
-const pdfjsRoot = path.dirname(require.resolve("pdfjs-dist/package.json"));
+interface InputBytes {
+  data: Uint8Array;
+  raw: string;
+}
 
-async function inputToBytes(input: PDFInput): Promise<{ data?: Uint8Array; url?: string; raw?: string }> {
-  if (typeof input === "string") {
-    if (/^https?:\/\//i.test(input)) return { url: input };
-    const resolved = path.resolve(input);
-    if (existsSync(resolved)) {
-      const bytes = await readFile(resolved);
-      return { data: new Uint8Array(bytes), raw: bytes.toString("latin1") };
-    }
-    return { url: input };
+let nodePdfjsAssetOptions: Record<string, string> | null = null;
+
+function isNodeRuntime(): boolean {
+  return typeof process !== "undefined" && process.versions?.node != null;
+}
+
+function bytesToLatin1(bytes: Uint8Array): string {
+  const chunkSize = 0x8000;
+  const chunks: string[] = [];
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    chunks.push(String.fromCharCode(...bytes.subarray(i, i + chunkSize)));
   }
-  if (input instanceof URL) return { url: input.href };
-  if (input instanceof Uint8Array) return { data: new Uint8Array(input) };
-  return { data: new Uint8Array(input.slice(0)) };
+  return chunks.join("");
+}
+
+function isBlobInput(input: PDFInput): input is Blob {
+  return typeof Blob !== "undefined" && input instanceof Blob;
+}
+
+async function readNodeFileBytes(input: string): Promise<Uint8Array | null> {
+  if (!isNodeRuntime()) return null;
+  try {
+    const [{ access, readFile }, path] = await Promise.all([import("node:fs/promises"), import("node:path")]);
+    const resolved = path.resolve(input);
+    await access(resolved);
+    return new Uint8Array(await readFile(resolved));
+  } catch {
+    return null;
+  }
+}
+
+async function fetchBytes(url: string): Promise<Uint8Array> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch PDF: ${response.status} ${response.statusText}`);
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+async function inputToBytes(input: PDFInput): Promise<InputBytes> {
+  if (typeof input === "string") {
+    const fileBytes = await readNodeFileBytes(input);
+    const bytes = fileBytes ?? (await fetchBytes(input));
+    return { data: bytes, raw: bytesToLatin1(bytes) };
+  }
+  if (input instanceof URL) {
+    const bytes = await fetchBytes(input.href);
+    return { data: bytes, raw: bytesToLatin1(bytes) };
+  }
+  if (isBlobInput(input)) {
+    const bytes = new Uint8Array(await input.arrayBuffer());
+    return { data: bytes, raw: bytesToLatin1(bytes) };
+  }
+  const bytes = input instanceof Uint8Array ? new Uint8Array(input) : new Uint8Array(input.slice(0));
+  return { data: bytes, raw: bytesToLatin1(bytes) };
+}
+
+function ensurePdfjsWorkerConfigured(): void {
+  if (isNodeRuntime()) return;
+  const workerOptions = (pdfjs as any).GlobalWorkerOptions;
+  if (workerOptions && !workerOptions.workerSrc) {
+    workerOptions.workerSrc = new URL("./pdf.worker.js", import.meta.url).href;
+  }
+}
+
+async function pdfjsAssetOptions(): Promise<Record<string, string>> {
+  if (!isNodeRuntime()) return {};
+  if (nodePdfjsAssetOptions) return nodePdfjsAssetOptions;
+  const [{ createRequire }, path] = await Promise.all([import("node:module"), import("node:path")]);
+  const require = createRequire(import.meta.url);
+  const pdfjsRoot = path.dirname(require.resolve("pdfjs-dist/package.json"));
+  nodePdfjsAssetOptions = {
+    cMapUrl: path.join(pdfjsRoot, "cmaps/"),
+    standardFontDataUrl: path.join(pdfjsRoot, "standard_fonts/"),
+    wasmUrl: path.join(pdfjsRoot, "wasm/")
+  };
+  return nodePdfjsAssetOptions;
 }
 
 function transformOpsMatch(rawTransforms: Matrix[], operatorTransforms: Matrix[]): boolean {
@@ -70,8 +129,9 @@ function sortAnnotationsByRawPageOrder(annotationList: any[], pageModel: ReturnT
 }
 
 export async function open(input: PDFInput, options: OpenOptions = {}): Promise<PDFPlumberDocument> {
+  ensurePdfjsWorkerConfigured();
   const source = await inputToBytes(input);
-  const raw = source.raw ?? (source.data ? Buffer.from(source.data).toString("latin1") : "");
+  const raw = source.raw;
   const store = parsePdfDocument(raw, { password: options.password ?? "" });
   const rawObjects = store.rawObjects;
   const compatContext = { raw, objects: rawObjects, password: options.password };
@@ -87,14 +147,12 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
     return new PdfPlumberDocumentImpl({ destroy: async () => undefined }, metadata, []);
   }
   const loadingTask = (pdfjs as any).getDocument({
-    ...(source.url ? { url: source.url } : { data: source.data ? new Uint8Array(source.data) : undefined }),
+    data: new Uint8Array(source.data),
     password: options.password,
     disableWorker: true,
     fontExtraProperties: true,
     cMapPacked: true,
-    cMapUrl: path.join(pdfjsRoot, "cmaps/"),
-    standardFontDataUrl: path.join(pdfjsRoot, "standard_fonts/"),
-    wasmUrl: path.join(pdfjsRoot, "wasm/")
+    ...(await pdfjsAssetOptions())
   });
   const pdf = await loadingTask.promise;
   const fontRecords = parseFontRecords(store);

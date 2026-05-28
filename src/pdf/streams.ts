@@ -1,4 +1,4 @@
-import { inflateSync } from "node:zlib";
+import { decompressSync } from "fflate";
 
 import { asArray, asName, isName, latin1String } from "./primitives.js";
 import type { PdfDict, PdfPrimitive, PdfStream } from "./primitives.js";
@@ -124,7 +124,7 @@ export function decodeStream(stream: PdfStream): Uint8Array {
     else if (filter === "LZWDecode" || filter === "LZW") bytes = lzwDecode(bytes);
     else if (filter === "FlateDecode" || filter === "Fl") {
       try {
-        bytes = inflateSync(bytes);
+        bytes = decompressSync(bytes);
       } catch {
         return new Uint8Array();
       }

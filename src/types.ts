@@ -2,7 +2,7 @@ import type { Table } from "./table.js";
 
 export type BBox = readonly [number, number, number, number];
 
-export type PDFInput = string | URL | ArrayBuffer | Uint8Array;
+export type PDFInput = string | URL | ArrayBuffer | Blob | Uint8Array;
 
 export interface OpenOptions {
   pages?: number[];

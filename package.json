@@ -4,13 +4,23 @@
   "private": true,
   "type": "module",
   "description": "Browser-capable TypeScript port of pdfplumber with Python parity tests.",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/src/index.js",
+  "module": "./dist/src/index.js",
+  "browser": "./dist/browser/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "browser": "./dist/browser/index.js",
+      "import": "./dist/src/index.js"
+    }
+  },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && npm run build:browser",
+    "build:browser": "esbuild src/index.ts --bundle --format=esm --platform=browser --target=es2022 --external:node:* --outfile=dist/browser/index.js --sourcemap && esbuild node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/browser/pdf.worker.js --sourcemap",
     "fixtures:generate": "wsl_venv/bin/python scripts/generate-goldens.py",
     "fixtures:generate:micro": "wsl_venv/bin/python scripts/generate-micro-pdfs.py",
     "fixtures:generate:parity": "wsl_venv/bin/python scripts/generate-parity-goldens.py",
@@ -30,6 +40,7 @@
     "parity:external:analyze": "tsx scripts/analyze-external-parity-failures.ts",
     "parity:holdout:analyze": "tsx scripts/analyze-external-parity-failures.ts --holdout",
     "test": "vitest run",
+    "test:browser": "npm run build && playwright test test/browser",
     "test:compat": "PDFPLUMBER_JS_RUN_COMPAT=1 vitest run test/compat",
     "test:external-parity": "PDFPLUMBER_JS_RUN_EXTERNAL_PARITY=1 vitest run test/parity/pdfplumber.external-parity.test.ts",
     "test:external-holdout-parity": "PDFPLUMBER_JS_RUN_EXTERNAL_HOLDOUT_PARITY=1 vitest run test/parity/pdfplumber.external-holdout-parity.test.ts",
@@ -61,11 +72,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "fflate": "^0.8.3",
     "pdfjs-dist": "^5.7.284"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
     "@types/node": "^22.15.3",
+    "esbuild": "^0.25.12",
     "mupdf": "^1.27.0",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",

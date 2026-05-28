@@ -5,12 +5,14 @@ const vendorExcludes = [
   "pdfjs/**",
   "pdfminer-six/**",
   "pdfplumber-python/**",
-  "mupdf.js/**"
+  "mupdf.js/**",
+  "test/browser/**"
 ];
 const baseExcludes = [...configDefaults.exclude, ...vendorExcludes];
 
 export default defineConfig({
   test: {
+    include: ["test/**/*.test.ts"],
     exclude: runCycleShards ? baseExcludes : [...baseExcludes, "test/parity/cycles/**"]
   }
 });
