@@ -507,6 +507,16 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
     };
   }
 
+  if (sourceFile.endsWith("metadata_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "metadata",
+      status: "excluded",
+      js: "PDF.js XMP Metadata and MetadataParser helper APIs are not exposed by pdfplumber.js; public Info metadata is covered by Python-backed API tests.",
+      rationale: "These rows exercise standalone PDF.js XMP/XML metadata parsing, repair, iteration, and entity-expansion behavior. The stable public metadata API exposes pdfplumber-compatible Info dictionary values through test/lowlevel/pdfjs-api-public-compat.test.ts, not PDF.js Metadata helper objects."
+    };
+  }
+
   if (sourceFile.endsWith("event_utils_spec.js")) {
     return {
       scope: "excluded",
