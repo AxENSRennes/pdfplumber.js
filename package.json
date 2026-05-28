@@ -20,6 +20,7 @@
     "fixtures:generate:real-parity-cycles": "wsl_venv/bin/python scripts/generate-real-parity-cycle-cases.py",
     "fixtures:generate:parity-test-shards": "node scripts/generate-parity-test-shards.mjs",
     "fixtures:generate:real-parity-test-shards": "node scripts/generate-parity-test-shards.mjs --cycles 10,11,12,13,14",
+    "contract:dashboard": "node scripts/generate-upstream-contract-dashboard.mjs",
     "fixtures:download:external": "node scripts/download-external-fixtures.mjs --manifest test/fixtures/external-pdfs/manifest.json",
     "fixtures:download:external-holdout": "node scripts/download-external-fixtures.mjs --manifest test/fixtures/external-holdout-pdfs/manifest.json",
     "fixtures:download:external-all": "node scripts/download-external-fixtures.mjs",

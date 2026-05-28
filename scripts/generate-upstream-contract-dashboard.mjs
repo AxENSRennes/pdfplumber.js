@@ -1,0 +1,456 @@
+#!/usr/bin/env node
+import fs from "node:fs";
+import path from "node:path";
+
+const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
+const outDir = path.join(repoRoot, "docs", "upstream-contract-dashboard");
+const rowsPath = path.join(outDir, "dashboard.tsv");
+const summaryPath = path.join(outDir, "README.md");
+
+const allowedScopes = new Set([
+  "public-api",
+  "runtime-adaptation",
+  "native-engine",
+  "pdfjs-capability",
+  "robustness-corpus",
+  "duplicate",
+  "excluded"
+]);
+
+const columns = [
+  "source",
+  "asserted_behavior",
+  "scope",
+  "subsystem",
+  "js_test_or_reason",
+  "status",
+  "rationale"
+];
+
+function slash(value) {
+  return value.split(path.sep).join("/");
+}
+
+function rel(file) {
+  return slash(path.relative(repoRoot, file));
+}
+
+function read(file) {
+  return fs.readFileSync(file, "utf8");
+}
+
+function walk(dir) {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    if (entry.name === "__pycache__" || entry.name === "node_modules") continue;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) files.push(...walk(full));
+    else files.push(full);
+  }
+  return files.sort();
+}
+
+function firstSentence(value) {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\.$/, "");
+}
+
+function cleanCell(value) {
+  return String(value ?? "")
+    .replace(/\r?\n/g, " ")
+    .replace(/\t/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function lineNumberForOffset(text, offset) {
+  let line = 1;
+  for (let i = 0; i < offset; i += 1) {
+    if (text.charCodeAt(i) === 10) line += 1;
+  }
+  return line;
+}
+
+function detectSubsystem(source, behavior) {
+  const haystack = `${source} ${behavior}`.toLowerCase();
+  const checks = [
+    ["table", /\b(table|tables|edge|edges|intersection|cell)\b/],
+    ["annotations", /\b(annot|annotation|acroform|widget|hyperlink|uri|link)\b/],
+    ["marked-content", /\b(mcid|marked|struct|structure|tagged|tag)\b/],
+    ["images", /\b(image|jpeg|jpx|jbig|ccitt|bitmap|mask|xobject)\b/],
+    ["colors", /\b(color|colorspace|icc|pattern|shading|rgb|cmyk|gray)\b/],
+    ["vectors", /\b(line|rect|curve|path|stroke|fill|bezier|dash|graphics)\b/],
+    ["text", /\b(text|word|char|glyph|unicode|encoding|cmap|cid|bidi|font|type1|cff|truetype|to_unicode|layout|laparams)\b/],
+    ["search", /\b(search|find|regex|match)\b/],
+    ["boxes", /\b(box|crop|mediabox|cropbox|rotate|rotation|bbox|viewport)\b/],
+    ["metadata", /\b(metadata|info|xmp|outline|destinations|attachments|nametree|catalog)\b/],
+    ["security", /\b(crypt|encrypt|password|permission|aes|rc4|security)\b/],
+    ["streams", /\b(stream|filter|flate|lzw|runlength|asciihex|predictor|decode)\b/],
+    ["parser", /\b(parser|xref|object|primitive|token|literal|number|name|dict|array|document|page)\b/],
+    ["runtime", /\b(fetch|network|node|browser|worker|arraybuffer|blob|url|range)\b/],
+    ["viewer-ui", /\b(viewer|editor|toolbar|thumbnail|history|sidebar|canvas|svg|text_layer|xfa|scripting|print|download)\b/],
+    ["cli", /\b(cli|tool|dumppdf|pdf2txt|command)\b/]
+  ];
+  for (const [name, pattern] of checks) {
+    if (pattern.test(haystack)) return name;
+  }
+  return "general";
+}
+
+function classify(source, behavior, kind) {
+  const subsystem = detectSubsystem(source, behavior);
+  const lowerSource = source.toLowerCase();
+  const lowerSourceFile = lowerSource.replace(/[:#].*$/, "");
+  const lowerBehavior = behavior.toLowerCase();
+
+  if (kind === "support") {
+    if (/\.(pdf|zip|png|jpg|jpeg|ttf|otf|cff|bcmap|txt|json)$/i.test(source)) {
+      return {
+        scope: "robustness-corpus",
+        subsystem,
+        status: "inventory",
+        js: "Fixture/support artifact; covered when referenced by an adapted JS test or selected parity-corpus case.",
+        rationale: "Upstream fixture retained in the contract inventory so file-backed behavior is not silently omitted."
+      };
+    }
+    return {
+      scope: "excluded",
+      subsystem,
+      status: "excluded",
+      js: "Support code for upstream tests, not a pdfplumber.js runtime behavior.",
+      rationale: "Harness helpers and local upstream utilities are not exposed by this library."
+    };
+  }
+
+  if (lowerSourceFile.includes("pdfplumber-python/tests/test_display.py")) {
+    return {
+      scope: "excluded",
+      subsystem: "viewer-ui",
+      status: "excluded",
+      js: "Python display/debug helper behavior is outside the public extraction API.",
+      rationale: "The stable goal explicitly excludes PIL/Jupyter/debug display helpers."
+    };
+  }
+
+  if (lowerSourceFile.includes("pdfminer-six/tests/test_tools_")) {
+    return {
+      scope: "excluded",
+      subsystem: "cli",
+      status: "excluded",
+      js: "pdfminer CLI behavior is outside the pdfplumber.js public extraction API.",
+      rationale: "The stable goal excludes CLI-only behavior."
+    };
+  }
+
+  if (lowerSourceFile.startsWith("pdfplumber-python/tests/")) {
+    return {
+      scope: "public-api",
+      subsystem,
+      status: "needs-adapted-js-test",
+      js: "Adapt through test/compat, test/parity, or a targeted public API test backed by Python pdfplumber goldens.",
+      rationale: "Python pdfplumber tests are the primary public API oracle for extraction semantics."
+    };
+  }
+
+  if (lowerSourceFile.startsWith("pdfminer-six/tests/")) {
+    return {
+      scope: "native-engine",
+      subsystem,
+      status: "needs-adapted-js-test",
+      js: "Adapt through test/lowlevel or a targeted native-engine parity test backed by pdfminer.six behavior.",
+      rationale: "pdfminer.six tests define parser, layout, font, stream, and security behavior for the native engine."
+    };
+  }
+
+  if (lowerSourceFile.startsWith("pdfjs/test/test_manifest.json")) {
+    if (/\b(eq|fbf|print|annotation-layer|text-layer)\b/.test(lowerBehavior)) {
+      return {
+        scope: "excluded",
+        subsystem: "viewer-ui",
+        status: "excluded",
+        js: "Rendering/reference-image behavior is not exposed by pdfplumber.js.",
+        rationale: "Visual rendering and viewer UI checks are excluded unless the capability is used or exposed by the extraction API."
+      };
+    }
+    if (/\btext\b/.test(lowerBehavior)) {
+      return {
+        scope: "pdfjs-capability",
+        subsystem: "text",
+        status: "needs-adapted-js-test",
+        js: "Add/verify a JS extraction test only if pdf.js text capability remains a named dependency.",
+        rationale: "pdf.js text manifest items are capability checks for the retained pdf.js role, not the native default engine."
+      };
+    }
+    return {
+      scope: "robustness-corpus",
+      subsystem,
+      status: "needs-classification",
+      js: "Classify as a robustness input, pdf.js capability test, duplicate, or excluded rendering case.",
+      rationale: "Manifest entries are upstream corpus items; non-rendering failures should produce stable errors or targeted behavior tests."
+    };
+  }
+
+  if (lowerSourceFile.startsWith("pdfjs/test/integration/")) {
+    return {
+      scope: "excluded",
+      subsystem: "viewer-ui",
+      status: "excluded",
+      js: "PDF.js browser viewer integration behavior is outside the pdfplumber.js public API.",
+      rationale: "Integration tests primarily cover viewer UI, visual layers, editors, and browser interactions not exposed by this library."
+    };
+  }
+
+  if (lowerSourceFile.startsWith("pdfjs/test/unit/")) {
+    if (["runtime"].includes(subsystem) || /api_spec|document_spec/.test(lowerSourceFile)) {
+      return {
+        scope: "runtime-adaptation",
+        subsystem,
+        status: "needs-adapted-js-test",
+        js: "Adapt where it affects browser ESM, ArrayBuffer, Blob, URL, worker, or fetch behavior.",
+        rationale: "Runtime-facing pdf.js behavior matters only where pdfplumber.js accepts browser and Node inputs."
+      };
+    }
+    if (subsystem === "viewer-ui" || /viewer|editor|history|link_service|text_layer|canvas_factory|svg_factory|xfa|scripting|app_options/.test(lowerSourceFile)) {
+      return {
+        scope: "excluded",
+        subsystem: "viewer-ui",
+        status: "excluded",
+        js: "PDF.js viewer/editor/layer unit behavior is not a pdfplumber.js extraction API.",
+        rationale: "Viewer UI, editor, XFA display, and rendering-layer helpers are outside the supported public API."
+      };
+    }
+    return {
+      scope: "pdfjs-capability",
+      subsystem,
+      status: "needs-adapted-js-test",
+      js: "Adapt only for pdf.js capabilities used or exposed by pdfplumber.js; otherwise reclassify as excluded or duplicate.",
+      rationale: "The goal allows pdf.js only for named tested roles, so retained capabilities need explicit coverage."
+    };
+  }
+
+  if (lowerSourceFile.startsWith("pdfjs/test/font/")) {
+    if (!lowerSourceFile.endsWith("_spec.js")) {
+      return {
+        scope: "excluded",
+        subsystem: "text",
+        status: "excluded",
+        js: "PDF.js font-test harness support file, not an exposed extraction behavior.",
+        rationale: "Harness assets are retained by upstream but do not define a pdfplumber.js public API item."
+      };
+    }
+    return {
+      scope: "pdfjs-capability",
+      subsystem: "text",
+      status: "needs-adapted-js-test",
+      js: "Adapt only if the pdf.js font capability remains a named fallback or differential capability.",
+      rationale: "Font parser behavior is a pdf.js capability contract only where pdfplumber.js depends on it."
+    };
+  }
+
+  return {
+    scope: "excluded",
+    subsystem,
+    status: "needs-classification",
+    js: "Unclassified upstream item; refine the dashboard generator.",
+    rationale: "Fallback classification used to prevent omission."
+  };
+}
+
+function makeRow({ source, behavior, kind }) {
+  const classification = classify(source, behavior, kind);
+  if (!allowedScopes.has(classification.scope)) {
+    throw new Error(`Invalid scope ${classification.scope} for ${source}`);
+  }
+  return {
+    source,
+    asserted_behavior: behavior,
+    scope: classification.scope,
+    subsystem: classification.subsystem,
+    js_test_or_reason: classification.js,
+    status: classification.status,
+    rationale: classification.rationale
+  };
+}
+
+function pythonDocstringAfter(lines, index) {
+  for (let i = index + 1; i < Math.min(lines.length, index + 5); i += 1) {
+    const trimmed = lines[i].trim();
+    if (!trimmed) continue;
+    const match = /^(?:[rubfRUBF]*)("""|''')(.+?)(?:\1)?$/.exec(trimmed);
+    if (match) return firstSentence(match[2]);
+    return "";
+  }
+  return "";
+}
+
+function inventoryPythonTests(root) {
+  const files = walk(path.join(repoRoot, root));
+  const rows = [];
+  for (const file of files) {
+    const relative = rel(file);
+    if (!relative.endsWith(".py") || !path.basename(relative).startsWith("test_")) {
+      rows.push(
+        makeRow({
+          source: relative,
+          behavior: `Upstream support/fixture file: ${path.basename(relative)}`,
+          kind: "support"
+        })
+      );
+      continue;
+    }
+
+    const text = read(file);
+    const lines = text.split(/\r?\n/);
+    let currentClass = "";
+    let found = 0;
+    for (let i = 0; i < lines.length; i += 1) {
+      const classMatch = /^class\s+([A-Za-z_][\w]*)/.exec(lines[i]);
+      if (classMatch) currentClass = classMatch[1];
+      const match = /^(\s*)def\s+(test_[A-Za-z_]\w*)\s*\(/.exec(lines[i]);
+      if (!match) continue;
+      const indent = match[1].length;
+      const name = currentClass && indent > 0 ? `${currentClass}.${match[2]}` : match[2];
+      const doc = pythonDocstringAfter(lines, i);
+      rows.push(
+        makeRow({
+          source: `${relative}:${i + 1}`,
+          behavior: firstSentence(doc || name.replaceAll("_", " ")),
+          kind: "test"
+        })
+      );
+      found += 1;
+    }
+    if (!found) {
+      rows.push(
+        makeRow({
+          source: relative,
+          behavior: `Upstream test/support file with no direct test function inventory: ${path.basename(relative)}`,
+          kind: "support"
+        })
+      );
+    }
+  }
+  return rows;
+}
+
+function inventoryPdfjsManifest() {
+  const source = "pdfjs/test/test_manifest.json";
+  const manifest = JSON.parse(read(path.join(repoRoot, source)));
+  return manifest.map((entry) => {
+    const pageRange = [entry.firstPage, entry.lastPage].filter((value) => value != null).join("-");
+    const bits = [
+      entry.id,
+      `file=${entry.file}`,
+      `type=${entry.type ?? "unspecified"}`,
+      entry.rounds ? `rounds=${entry.rounds}` : "",
+      entry.link ? "linked" : "",
+      pageRange ? `pages=${pageRange}` : "",
+      entry.partial ? "partial render region" : ""
+    ].filter(Boolean);
+    return makeRow({
+      source: `${source}#${entry.id}`,
+      behavior: bits.join("; "),
+      kind: "manifest"
+    });
+  });
+}
+
+function inventoryJsSpecs(root) {
+  const dir = path.join(repoRoot, root);
+  const files = fs.existsSync(dir) ? walk(dir) : [];
+  const rows = [];
+  for (const file of files) {
+    const relative = rel(file);
+    if (!/\.(js|mjs)$/.test(relative)) {
+      rows.push(
+        makeRow({
+          source: relative,
+          behavior: `Upstream support/fixture file: ${path.basename(relative)}`,
+          kind: "support"
+        })
+      );
+      continue;
+    }
+
+    const text = read(file);
+    const testPattern = /\b(?:it|test)\s*(?:\.\w+)?\s*\(\s*(["'`])([^"'`]+)\1/g;
+    let match;
+    let found = 0;
+    while ((match = testPattern.exec(text))) {
+      rows.push(
+        makeRow({
+          source: `${relative}:${lineNumberForOffset(text, match.index)}`,
+          behavior: firstSentence(match[2]),
+          kind: "test"
+        })
+      );
+      found += 1;
+    }
+    if (!found) {
+      rows.push(
+        makeRow({
+          source: relative,
+          behavior: `Upstream JS support/spec file with no direct it()/test() inventory: ${path.basename(relative)}`,
+          kind: "support"
+        })
+      );
+    }
+  }
+  return rows;
+}
+
+const rows = [
+  ...inventoryPythonTests("pdfplumber-python/tests"),
+  ...inventoryPythonTests("pdfminer-six/tests"),
+  ...inventoryPdfjsManifest(),
+  ...inventoryJsSpecs("pdfjs/test/unit"),
+  ...inventoryJsSpecs("pdfjs/test/font"),
+  ...inventoryJsSpecs("pdfjs/test/integration")
+].sort((a, b) => a.source.localeCompare(b.source));
+
+fs.mkdirSync(outDir, { recursive: true });
+const tsv = [columns.join("\t"), ...rows.map((row) => columns.map((column) => cleanCell(row[column])).join("\t"))].join("\n") + "\n";
+fs.writeFileSync(rowsPath, tsv);
+
+const byScope = new Map();
+const byStatus = new Map();
+for (const row of rows) {
+  byScope.set(row.scope, (byScope.get(row.scope) ?? 0) + 1);
+  byStatus.set(row.status, (byStatus.get(row.status) ?? 0) + 1);
+}
+
+function countTable(title, counts) {
+  const lines = [`## ${title}`, "", "| Value | Rows |", "| --- | ---: |"];
+  for (const [key, value] of [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    lines.push(`| ${key} | ${value} |`);
+  }
+  return lines.join("\n");
+}
+
+const summary = [
+  "# Upstream Contract Dashboard",
+  "",
+  "This dashboard is generated by `npm run contract:dashboard`. It inventories every current upstream item from:",
+  "",
+  "- `pdfplumber-python/tests`",
+  "- `pdfminer-six/tests`",
+  "- `pdfjs/test/test_manifest.json`",
+  "- `pdfjs/test/unit`",
+  "- `pdfjs/test/font`",
+  "- `pdfjs/test/integration`",
+  "",
+  "Rows live in [`dashboard.tsv`](./dashboard.tsv). The generator keeps classifications conservative: rows marked `needs-adapted-js-test` or `needs-classification` are not considered complete contract coverage.",
+  "",
+  `Generated rows: ${rows.length}`,
+  "",
+  countTable("Rows By Scope", byScope),
+  "",
+  countTable("Rows By Status", byStatus),
+  ""
+].join("\n");
+fs.writeFileSync(summaryPath, summary);
+
+console.log(`Wrote ${rows.length} rows to ${rel(rowsPath)}`);
