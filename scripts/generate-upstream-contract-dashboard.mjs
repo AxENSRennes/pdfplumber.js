@@ -156,6 +156,7 @@ const pdfplumberCompatCoveredTests = new Map(
     ["pdfplumber-python/tests/test_dedupe_chars.py", "Test.test extract words", "dedupe-chars-primary"],
     ["pdfplumber-python/tests/test_dedupe_chars.py", "Test.test extract text", "dedupe-chars-primary"],
     ["pdfplumber-python/tests/test_dedupe_chars.py", "Test.test extract text2", "dedupe-chars"],
+    ["pdfplumber-python/tests/test_dedupe_chars.py", "Test.test extra attrs", "dedupe-extra-attrs"],
     ["pdfplumber-python/tests/test_issues.py", "Test.test issue 53", "table-text-layout"],
     ["pdfplumber-python/tests/test_issues.py", "Test.test issue 140", "table-lines-strict"],
     ["pdfplumber-python/tests/test_issues.py", "Test.test issue 598", "ligatures"],

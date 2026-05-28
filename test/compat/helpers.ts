@@ -90,6 +90,22 @@ function firstWordCharsSummary(words: Array<Record<string, unknown>>): Record<st
   };
 }
 
+async function dedupeExtraAttrsLines(selectedPage: PDFPlumberPage): Promise<Record<string, string[]>> {
+  const specs: Array<[string, string[] | null]> = [
+    ["no_dedupe", null],
+    ["none", []],
+    ["size", ["size"]],
+    ["fontname", ["fontname"]],
+    ["size_fontname", ["size", "fontname"]]
+  ];
+  const out: Record<string, string[]> = {};
+  for (const [name, extraAttrs] of specs) {
+    const page = extraAttrs === null ? selectedPage : selectedPage.dedupeChars({ tolerance: 2, extra_attrs: extraAttrs });
+    out[name] = (await valueOf(page.extractText({ y_tolerance: 5 }))).split("\n");
+  }
+  return out;
+}
+
 function ctmSummary(char: Record<string, unknown>): Record<string, unknown> {
   const matrix = char.matrix;
   if (!Array.isArray(matrix) || matrix.length !== 6) {
@@ -212,6 +228,9 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
           break;
         case "page.dedupe.extractText.line":
           actual = textLine(await valueOf(selectedPage.dedupeChars(check.args ?? {}).extractText(check.args ?? {})), (check.args?.line as number | undefined) ?? -1);
+          break;
+        case "page.dedupeExtraAttrsLines":
+          actual = await dedupeExtraAttrsLines(selectedPage);
           break;
         case "page.extractWords":
           actual = await valueOf(selectedPage.extractWords(check.args ?? {}));

@@ -1,6 +1,6 @@
 {
   "reference": {
-    "generatedAt": "2026-05-28T01:04:49.126687+00:00",
+    "generatedAt": "2026-05-28T01:07:26.357631+00:00",
     "pdfminerVersion": "20260107",
     "pdfplumberCommit": "98041536932ce85d18a1fba80d9db0686b831d9d",
     "pdfplumberVersion": "0.11.9"
@@ -6044,6 +6044,68 @@
       ],
       "id": "dedupe-chars-primary",
       "pdf": "issue-71-duplicate-chars.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "fontname": [
+              "Simple",
+              "Duplicated",
+              "FFoonntt",
+              "Size",
+              "IIttaalliicc",
+              "WWeeiigghhtt",
+              "HHoorrizizoonntatal ls shhifitft",
+              "VVeerrttiiccaall sshhiifftt"
+            ],
+            "no_dedupe": [
+              "Simple",
+              "DDuupplliiccaatteedd",
+              "FFoonntt",
+              "SSiizzee",
+              "IIttaalliicc",
+              "WWeeiigghhtt",
+              "HHoorrizizoonntatal ls shhifitft",
+              "VVeerrttiiccaall sshhiifftt"
+            ],
+            "none": [
+              "Simple",
+              "Duplicated",
+              "Font",
+              "Size",
+              "Italic",
+              "Weight",
+              "HHoorrizizoonntatal ls shhifitft",
+              "VVeerrttiiccaall sshhiifftt"
+            ],
+            "size": [
+              "Simple",
+              "Duplicated",
+              "Font",
+              "SSiizzee",
+              "Italic",
+              "Weight",
+              "HHoorrizizoonntatal ls shhifitft",
+              "VVeerrttiiccaall sshhiifftt"
+            ],
+            "size_fontname": [
+              "Simple",
+              "Duplicated",
+              "FFoonntt",
+              "SSiizzee",
+              "IIttaalliicc",
+              "WWeeiigghhtt",
+              "HHoorrizizoonntatal ls shhifitft",
+              "VVeerrttiiccaall sshhiifftt"
+            ]
+          },
+          "page": 0,
+          "type": "page.dedupeExtraAttrsLines"
+        }
+      ],
+      "id": "dedupe-extra-attrs",
+      "pdf": "issue-1114-dedupe-chars.pdf"
     },
     {
       "checks": [

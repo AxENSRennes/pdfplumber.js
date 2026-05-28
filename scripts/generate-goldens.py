@@ -137,6 +137,21 @@ def table_cell_line(table_data: List[List[Optional[str]]], row: int, col: int, i
     return None if value is None else value.split("\n")[index]
 
 
+def dedupe_extra_attrs_lines(page: Any) -> Dict[str, List[str]]:
+    specs = [
+        ("no_dedupe", None),
+        ("none", ()),
+        ("size", ("size",)),
+        ("fontname", ("fontname",)),
+        ("size_fontname", ("size", "fontname")),
+    ]
+    out: Dict[str, List[str]] = {}
+    for name, keys in specs:
+        filtered_page = page if keys is None else page.dedupe_chars(tolerance=2, extra_attrs=keys)
+        out[name] = filtered_page.extract_text(y_tolerance=5).splitlines()
+    return out
+
+
 def first_word_chars_summary(words: List[Dict[str, Any]]) -> Dict[str, Any]:
     first = words[0]
     chars = first.get("chars")
@@ -614,6 +629,16 @@ def build_scenarios() -> List[Dict[str, Any]]:
                 make_check("page.dedupe.extractWords", slim_words(pdf.pages[0].dedupe_chars().extract_words()[-1:]), page=0, args={"slice": [-1]}),
                 make_check("page.extractText.line", text_line(pdf.pages[0].extract_text()), page=0, args={"line": -1}),
                 make_check("page.dedupe.extractText.line", text_line(pdf.pages[0].dedupe_chars().extract_text()), page=0, args={"line": -1}),
+            ],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "dedupe-extra-attrs",
+            "issue-1114-dedupe-chars.pdf",
+            lambda pdf: [
+                make_check("page.dedupeExtraAttrsLines", dedupe_extra_attrs_lines(pdf.pages[0]), page=0),
             ],
         )
     )
