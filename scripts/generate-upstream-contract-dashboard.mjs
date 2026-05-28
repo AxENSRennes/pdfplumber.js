@@ -572,6 +572,29 @@ function classify(source, behavior, kind) {
         "The low-level native font-size test verifies that digit-only text lines in the upstream font-size fixture expose character sizes whose rounded values match pdfminer LTChar.size."
       );
     }
+    if (
+      lowerSourceFile.includes("pdfminer-six/tests/test_highlevel_extracttext.py") &&
+      (
+        lowerBehavior.includes("testextractpages.test line margin") ||
+        lowerBehavior.includes("testextractpages.test no boxes flow")
+      )
+    ) {
+      return passedNativeCompatGate(
+        subsystem,
+        "test/lowlevel/layout-compat.test.ts",
+        "The low-level native layout tests compare JS laparams text boxes against pdfminer extract_pages output for simple4 line_margin thresholds and boxes_flow=None."
+      );
+    }
+    if (
+      lowerSourceFile.includes("pdfminer-six/tests/test_layout.py") &&
+      lowerBehavior.includes("regression test for issue #449")
+    ) {
+      return passedNativeCompatGate(
+        subsystem,
+        "test/lowlevel/layout-compat.test.ts",
+        "The low-level native layout tests compare JS laparams text boxes against pdfminer extract_pages output for issue-449 horizontal and vertical empty-character fixtures."
+      );
+    }
     if (lowerSourceFile.includes("pdfminer-six/tests/test_pdfminer_crypto.py")) {
       if (lowerBehavior.includes("arcfour") || lowerBehavior.includes("unpad aes")) {
         return passedNativeCompatGate(
