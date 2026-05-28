@@ -1,4 +1,5 @@
 import type { BBox, PDFObject, PDFPlumberPage, Point } from "./types.js";
+import { namedError } from "./errors.js";
 import { extractTextFromChars } from "./text.js";
 import {
   cleanBBox,
@@ -20,6 +21,26 @@ type TablePage = Pick<PDFPlumberPage, "page_number" | "bbox" | "chars" | "edges"
 
 const TEXT_EDGE_CLUSTER_TOLERANCE = 1 - 1e-12;
 const TEXT_VERTICAL_EDGE_CLUSTER_TOLERANCE = 1;
+const TABLE_STRATEGIES = new Set(["lines", "lines_strict", "text", "explicit"]);
+const CORE_TABLE_SETTINGS = new Set([
+  "vertical_strategy",
+  "horizontal_strategy",
+  "explicit_vertical_lines",
+  "explicit_horizontal_lines",
+  "snap_tolerance",
+  "snap_x_tolerance",
+  "snap_y_tolerance",
+  "join_tolerance",
+  "join_x_tolerance",
+  "join_y_tolerance",
+  "edge_min_length",
+  "edge_min_length_prefilter",
+  "min_words_vertical",
+  "min_words_horizontal",
+  "intersection_tolerance",
+  "intersection_x_tolerance",
+  "intersection_y_tolerance"
+]);
 
 export class TableAxisGroup {
   [index: number]: BBox | null;
@@ -126,6 +147,7 @@ export interface TableSettings {
 }
 
 export function resolveTableSettings(options: Record<string, unknown> = {}): TableSettings {
+  if (!isPlainRecord(options)) throw namedError("ValueError", `Cannot resolve settings: ${String(options)}`);
   const snapTolerance = Number(options.snap_tolerance ?? 3);
   const joinTolerance = Number(options.join_tolerance ?? 3);
   const intersectionTolerance = Number(options.intersection_tolerance ?? 3);
@@ -133,14 +155,36 @@ export function resolveTableSettings(options: Record<string, unknown> = {}): Tab
   const core: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(options)) {
     if (key.startsWith("text_")) textSettings[key.slice(5)] = value;
-    else core[key] = value;
+    else if (CORE_TABLE_SETTINGS.has(key)) core[key] = value;
+    else throw new TypeError(`Unknown table setting: ${key}`);
   }
   textSettings.x_tolerance ??= textSettings.tolerance ?? 3;
   textSettings.y_tolerance ??= textSettings.tolerance ?? 3;
   delete textSettings.tolerance;
+  const verticalStrategy = String(core.vertical_strategy ?? "lines");
+  const horizontalStrategy = String(core.horizontal_strategy ?? "lines");
+  if (!TABLE_STRATEGIES.has(verticalStrategy)) throw namedError("ValueError", `vertical_strategy must be one of {lines,lines_strict,text,explicit}`);
+  if (!TABLE_STRATEGIES.has(horizontalStrategy)) throw namedError("ValueError", `horizontal_strategy must be one of {lines,lines_strict,text,explicit}`);
+  for (const [key, value] of Object.entries({
+    snap_tolerance: snapTolerance,
+    join_tolerance: joinTolerance,
+    intersection_tolerance: intersectionTolerance,
+    snap_x_tolerance: core.snap_x_tolerance ?? snapTolerance,
+    snap_y_tolerance: core.snap_y_tolerance ?? snapTolerance,
+    join_x_tolerance: core.join_x_tolerance ?? joinTolerance,
+    join_y_tolerance: core.join_y_tolerance ?? joinTolerance,
+    edge_min_length: core.edge_min_length ?? 3,
+    edge_min_length_prefilter: core.edge_min_length_prefilter ?? 1,
+    min_words_vertical: core.min_words_vertical ?? 3,
+    min_words_horizontal: core.min_words_horizontal ?? 1,
+    intersection_x_tolerance: core.intersection_x_tolerance ?? intersectionTolerance,
+    intersection_y_tolerance: core.intersection_y_tolerance ?? intersectionTolerance
+  })) {
+    if (Number(value) < 0) throw namedError("ValueError", `Table setting '${key}' cannot be negative`);
+  }
   return {
-    vertical_strategy: String(core.vertical_strategy ?? "lines"),
-    horizontal_strategy: String(core.horizontal_strategy ?? "lines"),
+    vertical_strategy: verticalStrategy,
+    horizontal_strategy: horizontalStrategy,
     explicit_vertical_lines: Array.isArray(core.explicit_vertical_lines) ? (core.explicit_vertical_lines as Array<PDFObject | number>) : [],
     explicit_horizontal_lines: Array.isArray(core.explicit_horizontal_lines) ? (core.explicit_horizontal_lines as Array<PDFObject | number>) : [],
     snap_x_tolerance: Number(core.snap_x_tolerance ?? snapTolerance),
@@ -155,6 +199,10 @@ export function resolveTableSettings(options: Record<string, unknown> = {}): Tab
     intersection_y_tolerance: Number(core.intersection_y_tolerance ?? intersectionTolerance),
     text_settings: textSettings
   };
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function snapEdges(edges: PDFObject[], xTolerance: number, yTolerance: number): PDFObject[] {
@@ -353,6 +401,16 @@ export class TableFinder {
   }
 
   getEdges(page: TablePage, settings: TableSettings): PDFObject[] {
+    for (const orientation of ["vertical", "horizontal"] as const) {
+      const strategy = orientation === "vertical" ? settings.vertical_strategy : settings.horizontal_strategy;
+      const lines = orientation === "vertical" ? settings.explicit_vertical_lines : settings.explicit_horizontal_lines;
+      if (strategy === "explicit" && lines.length < 2) {
+        throw namedError(
+          "ValueError",
+          `If ${orientation}_strategy == 'explicit', explicit_${orientation}_lines must be specified as a list/tuple of two or more floats/ints.`
+        );
+      }
+    }
     const needsWords = settings.vertical_strategy === "text" || settings.horizontal_strategy === "text";
     const words = needsWords ? page.extractWords(settings.text_settings) : [];
     const explicitV = settings.explicit_vertical_lines.flatMap((desc) => (typeof desc === "number" ? [cleanObject({ object_type: "edge", page_number: page.page_number, x0: desc, x1: desc, top: page.bbox[1], bottom: page.bbox[3], height: page.bbox[3] - page.bbox[1], width: 0, orientation: "v" })] : objToEdges(desc).filter((e) => e.orientation === "v")));

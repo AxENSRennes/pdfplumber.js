@@ -173,6 +173,7 @@ const pdfplumberCompatCoveredTests = new Map(
     ["pdfplumber-python/tests/test_nics_report.py", "Test.test explicit horizontal", "nics-explicit-horizontal"],
     ["pdfplumber-python/tests/test_nics_report.py", "Test.test plain", "nics-plain-table-and-month"],
     ["pdfplumber-python/tests/test_nics_report.py", "Test.test text only strategy", "nics-table-text-only-strategy"],
+    ["pdfplumber-python/tests/test_table.py", "Test.test table settings errors", "table-settings-errors"],
     ["pdfplumber-python/tests/test_table.py", "Test.test edges strict", "table-lines-strict"],
     ["pdfplumber-python/tests/test_table.py", "Test.test rows and columns", "table-rows-and-columns"],
     ["pdfplumber-python/tests/test_table.py", "Test.test explicit desc decimalization", "table-explicit-desc-decimalization"],

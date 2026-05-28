@@ -18,6 +18,7 @@ OUT = ROOT / "test" / "fixtures" / "goldens" / "pdfplumber-compat.json"
 sys.path.insert(0, str(PY_REF))
 
 import pdfplumber  # noqa: E402
+from pdfplumber import table  # noqa: E402
 from pdfplumber import utils  # noqa: E402
 from pdfplumber.ctm import CTM  # noqa: E402
 
@@ -236,6 +237,24 @@ def table_rows_columns_summary(page: Any) -> Dict[str, Any]:
             "column1": col,
         }
     )
+
+
+def capture_error_name(fn: Callable[[], Any]) -> Optional[str]:
+    try:
+        fn()
+    except Exception as exc:
+        return type(exc).__name__
+    return None
+
+
+def table_settings_error_summary(page: Any) -> Dict[str, Optional[str]]:
+    return {
+        "non_mapping": capture_error_name(lambda: table.TableFinder(page, tuple())),
+        "unknown_setting": capture_error_name(lambda: table.TableFinder(page, {"strategy": "x"}).get_edges()),
+        "invalid_vertical_strategy": capture_error_name(lambda: table.TableFinder(page, {"vertical_strategy": "x"})),
+        "explicit_vertical_lines": capture_error_name(lambda: table.TableFinder(page, {"vertical_strategy": "explicit", "explicit_vertical_lines": []})),
+        "negative_join_tolerance": capture_error_name(lambda: table.TableFinder(page, {"join_tolerance": -1}).get_edges()),
+    }
 
 
 def dedupe_extra_attrs_lines(page: Any) -> Dict[str, List[str]]:
@@ -803,6 +822,16 @@ def build_scenarios() -> List[Dict[str, Any]]:
             "issue-140-example.pdf",
             lambda pdf: [
                 make_check("page.tableRowsColumnsSummary", table_rows_columns_summary(pdf.pages[0]), page=0),
+            ],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "table-settings-errors",
+            "pdffill-demo.pdf",
+            lambda pdf: [
+                make_check("page.tableSettingsErrorSummary", table_settings_error_summary(pdf.pages[0]), page=0),
             ],
         )
     )

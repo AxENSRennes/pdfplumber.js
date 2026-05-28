@@ -38,6 +38,11 @@ async function valueOf<T>(value: T | Promise<T>): Promise<T> {
   return await value;
 }
 
+function tableOptions(args: Record<string, unknown> = {}): Record<string, unknown> {
+  const { cells: _cells, col: _col, line: _line, row: _row, ...options } = args;
+  return options;
+}
+
 function page(document: PDFPlumberDocument, index = 0): PDFPlumberPage {
   const selected = document.pages[index];
   if (!selected) {
@@ -214,6 +219,25 @@ async function tableRowsColumnsSummary(selectedPage: PDFPlumberPage): Promise<Re
     column_count: table.columns.length,
     row0,
     column1
+  };
+}
+
+function captureErrorName(fn: () => unknown): string | null {
+  try {
+    fn();
+  } catch (error) {
+    return error instanceof Error ? error.name : typeof error;
+  }
+  return null;
+}
+
+function tableSettingsErrorSummary(selectedPage: PDFPlumberPage): Record<string, string | null> {
+  return {
+    non_mapping: captureErrorName(() => selectedPage.extractTables([] as unknown as Record<string, unknown>)),
+    unknown_setting: captureErrorName(() => selectedPage.extractTables({ strategy: "x" })),
+    invalid_vertical_strategy: captureErrorName(() => selectedPage.extractTables({ vertical_strategy: "x" })),
+    explicit_vertical_lines: captureErrorName(() => selectedPage.extractTables({ vertical_strategy: "explicit", explicit_vertical_lines: [] })),
+    negative_join_tolerance: captureErrorName(() => selectedPage.extractTables({ join_tolerance: -1 }))
   };
 }
 
@@ -396,6 +420,9 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
         case "page.tableRowsColumnsSummary":
           actual = await tableRowsColumnsSummary(selectedPage);
           break;
+        case "page.tableSettingsErrorSummary":
+          actual = tableSettingsErrorSummary(selectedPage);
+          break;
         case "page.extractWords":
           actual = await valueOf(selectedPage.extractWords(check.args ?? {}));
           break;
@@ -409,11 +436,11 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
           actual = await valueOf(selectedPage.search(String(check.args?.pattern), check.args ?? {}));
           break;
         case "page.extractTable":
-          actual = await valueOf(selectedPage.extractTable(check.args ?? {}));
+          actual = await valueOf(selectedPage.extractTable(tableOptions(check.args)));
           break;
         case "page.extractTable.cellLine":
           actual = tableCellLine(
-            await valueOf(selectedPage.extractTable(check.args ?? {})),
+            await valueOf(selectedPage.extractTable(tableOptions(check.args))),
             (check.args?.row as number | undefined) ?? 0,
             (check.args?.col as number | undefined) ?? 0,
             (check.args?.line as number | undefined) ?? -1
@@ -421,7 +448,7 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
           break;
         case "page.dedupe.extractTable.cellLine":
           actual = tableCellLine(
-            await valueOf(selectedPage.dedupeChars(check.args ?? {}).extractTable(check.args ?? {})),
+            await valueOf(selectedPage.dedupeChars(check.args ?? {}).extractTable(tableOptions(check.args))),
             (check.args?.row as number | undefined) ?? 0,
             (check.args?.col as number | undefined) ?? 0,
             (check.args?.line as number | undefined) ?? -1
@@ -554,14 +581,14 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
           actual = await valueOf(selectedPage.crop(check.bbox as BBox, {
             relative: check.relative,
             strict: check.strict
-          }).extractTable(check.args ?? {}));
+          }).extractTable(tableOptions(check.args)));
           break;
         case "page.crop.extractTableSummary":
           actual = tableSampleSummary(
             await valueOf(selectedPage.crop(check.bbox as BBox, {
               relative: check.relative,
               strict: check.strict
-            }).extractTable(check.args ?? {})),
+            }).extractTable(tableOptions(check.args))),
             (check.args?.cells as number[][] | undefined) ?? []
           );
           break;
@@ -569,7 +596,7 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
           actual = nicsPlainTableSummary(await valueOf(selectedPage.crop(check.bbox as BBox, {
             relative: check.relative,
             strict: check.strict
-          }).extractTable(check.args ?? {})));
+          }).extractTable(tableOptions(check.args))));
           break;
         case "page.annots":
           actual = Array.isArray(check.expected) ? selectedPage.annots.slice(0, check.expected.length) : selectedPage.annots;
