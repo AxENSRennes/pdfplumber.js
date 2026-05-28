@@ -288,6 +288,16 @@ function classify(source, behavior, kind) {
     };
   }
 
+  if (lowerSourceFile.includes("pdfplumber-python/tests/test_structure.py")) {
+    return {
+      scope: "excluded",
+      subsystem: "marked-content",
+      status: "excluded",
+      js: "Python PDFStructTree, pdf.structure_tree, page.structure_tree, and structure-element search/bbox helpers are not exposed by the pdfplumber.js public API.",
+      rationale: "pdfplumber.js exposes marked-content `mcid` and `tag` fields on extracted objects; full tagged-PDF structure tree traversal is outside the documented stable surface and is covered separately only where it affects object extraction."
+    };
+  }
+
   if (lowerSourceFile.includes("pdfplumber-python/tests/test_oss_fuzz.py")) {
     return {
       scope: "robustness-corpus",
