@@ -1,6 +1,6 @@
 {
   "reference": {
-    "generatedAt": "2026-05-28T01:20:50.918094+00:00",
+    "generatedAt": "2026-05-28T01:27:08.080069+00:00",
     "pdfminerVersion": "20260107",
     "pdfplumberCommit": "98041536932ce85d18a1fba80d9db0686b831d9d",
     "pdfplumberVersion": "0.11.9"
@@ -4966,6 +4966,39 @@
         }
       ],
       "id": "table-lines-strict",
+      "pdf": "issue-140-example.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "cell_count": 45,
+            "column1": [
+              "UPC code",
+              "0085648100305",
+              "0085648100380",
+              "0085648100303",
+              "0085648100300"
+            ],
+            "column_count": 9,
+            "row0": [
+              "Line no",
+              "UPC code",
+              "Location",
+              "Item Description",
+              "Item Quantity",
+              "Bill Amount",
+              "Accrued Amount",
+              "Handling Rate",
+              "PO number"
+            ],
+            "row_count": 5
+          },
+          "page": 0,
+          "type": "page.tableRowsColumnsSummary"
+        }
+      ],
+      "id": "table-rows-and-columns",
       "pdf": "issue-140-example.pdf"
     },
     {

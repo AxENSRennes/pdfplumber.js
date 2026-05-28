@@ -192,15 +192,22 @@ export class PdfPlumberPageImpl implements PDFPlumberPage {
     return this.find_tables(options);
   }
 
+  find_table(options: Record<string, unknown> = {}): Table | null {
+    return largestTable(this.find_tables(options));
+  }
+
+  findTable(options: Record<string, unknown> = {}): Table | null {
+    return this.find_table(options);
+  }
+
   extract_table(options: Record<string, unknown> = {}): Array<Array<string | null>> | null {
     return this.extractTable(options);
   }
 
   extractTable(options: Record<string, unknown> = {}): Array<Array<string | null>> | null {
     const settings = resolveTableSettings(options);
-    const tables = this.find_tables(options);
-    if (!tables.length) return null;
-    const largest = [...tables].sort((a, b) => b.cells.length - a.cells.length || a.bbox[1] - b.bbox[1] || a.bbox[0] - b.bbox[0])[0];
+    const largest = largestTable(this.find_tables(options));
+    if (!largest) return null;
     return largest.extract(settings.text_settings);
   }
 
@@ -297,4 +304,8 @@ class ValueError extends Error {
     super(message);
     this.name = "ValueError";
   }
+}
+
+function largestTable(tables: Table[]): Table | null {
+  return [...tables].sort((a, b) => b.cells.length - a.cells.length || a.bbox[1] - b.bbox[1] || a.bbox[0] - b.bbox[0])[0] ?? null;
 }

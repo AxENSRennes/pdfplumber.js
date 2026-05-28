@@ -223,6 +223,21 @@ def nics_explicit_horizontal_summary(page: Any) -> Dict[str, Any]:
     )
 
 
+def table_rows_columns_summary(page: Any) -> Dict[str, Any]:
+    table = page.find_table()
+    row = [page.crop(bbox).extract_text() for bbox in table.rows[0].cells]
+    col = [page.crop(bbox).extract_text() for bbox in table.columns[1].cells]
+    return clean(
+        {
+            "cell_count": len(table.cells),
+            "row_count": len(table.rows),
+            "column_count": len(table.columns),
+            "row0": row,
+            "column1": col,
+        }
+    )
+
+
 def dedupe_extra_attrs_lines(page: Any) -> Dict[str, List[str]]:
     specs = [
         ("no_dedupe", None),
@@ -778,6 +793,16 @@ def build_scenarios() -> List[Dict[str, Any]]:
                     args={"vertical_strategy": "lines_strict", "horizontal_strategy": "lines_strict"},
                 ),
                 make_check("page.crop.extractTable", pdf.pages[0].crop((0, 0, pdf.pages[0].width, 122)).extract_table(), page=0, bbox=(0, 0, pdf.pages[0].width, 122)),
+            ],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "table-rows-and-columns",
+            "issue-140-example.pdf",
+            lambda pdf: [
+                make_check("page.tableRowsColumnsSummary", table_rows_columns_summary(pdf.pages[0]), page=0),
             ],
         )
     )

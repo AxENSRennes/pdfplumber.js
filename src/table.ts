@@ -21,6 +21,20 @@ type TablePage = Pick<PDFPlumberPage, "page_number" | "bbox" | "chars" | "edges"
 const TEXT_EDGE_CLUSTER_TOLERANCE = 1 - 1e-12;
 const TEXT_VERTICAL_EDGE_CLUSTER_TOLERANCE = 1;
 
+export class TableAxisGroup {
+  [index: number]: BBox | null;
+
+  constructor(readonly cells: Array<BBox | null>) {
+    cells.forEach((cell, index) => {
+      this[index] = cell;
+    });
+  }
+
+  get length(): number {
+    return this.cells.length;
+  }
+}
+
 export class Table {
   constructor(
     readonly page: TablePage,
@@ -56,8 +70,16 @@ export class Table {
     return rows;
   }
 
-  get rows(): Array<Array<BBox | null>> {
+  private rowCells(): Array<Array<BBox | null>> {
     return this.groups(0);
+  }
+
+  get rows(): TableAxisGroup[] {
+    return this.rowCells().map((cells) => new TableAxisGroup(cells));
+  }
+
+  get columns(): TableAxisGroup[] {
+    return this.groups(1).map((cells) => new TableAxisGroup(cells));
   }
 
   extract(options: Record<string, unknown> = {}): Array<Array<string | null>> {
@@ -66,7 +88,7 @@ export class Table {
       const hMid = (Number(char.x0) + Number(char.x1)) / 2;
       return hMid >= bbox[0] && hMid < bbox[2] && vMid >= bbox[1] && vMid < bbox[3];
     };
-    return this.rows.map((row) => {
+    return this.rowCells().map((row) => {
       const rowBBox = objectsToBBox(row.filter((cell): cell is BBox => cell !== null).map((cell) => ({ object_type: "cell", page_number: this.page.page_number, x0: cell[0], top: cell[1], x1: cell[2], bottom: cell[3] })));
       const rowChars = this.page.chars.filter((char) => charInBBox(char, rowBBox));
       return row.map((cell) => {

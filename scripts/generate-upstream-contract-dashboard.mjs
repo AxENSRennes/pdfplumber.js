@@ -174,6 +174,7 @@ const pdfplumberCompatCoveredTests = new Map(
     ["pdfplumber-python/tests/test_nics_report.py", "Test.test plain", "nics-plain-table-and-month"],
     ["pdfplumber-python/tests/test_nics_report.py", "Test.test text only strategy", "nics-table-text-only-strategy"],
     ["pdfplumber-python/tests/test_table.py", "Test.test edges strict", "table-lines-strict"],
+    ["pdfplumber-python/tests/test_table.py", "Test.test rows and columns", "table-rows-and-columns"],
     ["pdfplumber-python/tests/test_table.py", "Test.test text tolerance", "table-text-strategy-and-tolerance"],
     ["pdfplumber-python/tests/test_table.py", "Test.test text layout", "table-text-layout"],
     ["pdfplumber-python/tests/test_table.py", "Test.test table curves", "table-curves"],

@@ -153,7 +153,7 @@ function tablesEqual(a: Array<Array<string | null>>, b: Array<Array<string | nul
 async function nicsExplicitHorizontalSummary(selectedPage: PDFPlumberPage): Promise<Record<string, unknown>> {
   const cropped = selectedPage.crop([0, 80, selectedPage.width, 475]);
   const table = (await valueOf(cropped.findTables({ horizontal_strategy: "text", vertical_strategy: "text" })))[0];
-  const rows = table.rows as Array<Array<BBox | null>>;
+  const rows = table.rows.map((row) => row.cells);
   const hPositions = rows.map((row) => row[0]?.[1] ?? 0);
   hPositions.push(rows[rows.length - 1]?.[0]?.[3] ?? 0);
   const explicit = (await valueOf(cropped.findTables({
@@ -188,6 +188,32 @@ async function nicsExplicitHorizontalSummary(selectedPage: PDFPlumberPage): Prom
       "-1,0": base[base.length - 1]?.[0],
       "-1,22": base[base.length - 1]?.[22]
     }
+  };
+}
+
+async function tableRowsColumnsSummary(selectedPage: PDFPlumberPage): Promise<Record<string, unknown>> {
+  const table = await valueOf(selectedPage.findTable());
+  if (!table) {
+    return {
+      cell_count: 0,
+      row_count: 0,
+      column_count: 0,
+      row0: [],
+      column1: []
+    };
+  }
+  const row0 = await Promise.all(
+    table.rows[0].cells.map(async (bbox) => (bbox ? await valueOf(selectedPage.crop(bbox).extractText()) : null))
+  );
+  const column1 = await Promise.all(
+    table.columns[1].cells.map(async (bbox) => (bbox ? await valueOf(selectedPage.crop(bbox).extractText()) : null))
+  );
+  return {
+    cell_count: table.cells.length,
+    row_count: table.rows.length,
+    column_count: table.columns.length,
+    row0,
+    column1
   };
 }
 
@@ -366,6 +392,9 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
         }
         case "page.nicsExplicitHorizontalSummary":
           actual = await nicsExplicitHorizontalSummary(selectedPage);
+          break;
+        case "page.tableRowsColumnsSummary":
+          actual = await tableRowsColumnsSummary(selectedPage);
           break;
         case "page.extractWords":
           actual = await valueOf(selectedPage.extractWords(check.args ?? {}));

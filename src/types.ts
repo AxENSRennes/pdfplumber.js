@@ -84,6 +84,8 @@ export interface PDFPlumberPage {
   extractTable(options?: Record<string, unknown>): (Array<Array<string | null>> | null) | Promise<Array<Array<string | null>> | null>;
   extract_tables(options?: Record<string, unknown>): Array<Array<Array<string | null>>> | Promise<Array<Array<Array<string | null>>>>;
   extractTables(options?: Record<string, unknown>): Array<Array<Array<string | null>>> | Promise<Array<Array<Array<string | null>>>>;
+  find_table(options?: Record<string, unknown>): Table | null | Promise<Table | null>;
+  findTable(options?: Record<string, unknown>): Table | null | Promise<Table | null>;
   find_tables(options?: Record<string, unknown>): Table[] | Promise<Table[]>;
   findTables(options?: Record<string, unknown>): Table[] | Promise<Table[]>;
 }
