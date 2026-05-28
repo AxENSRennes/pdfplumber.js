@@ -49,7 +49,8 @@ export class PdfPlumberPageImpl implements PDFPlumberPage {
     readonly bleedbox?: BBox,
     readonly trimbox?: BBox,
     readonly extraObjects: Record<string, PDFObject[]> = {},
-    private readonly annotsError: Error | null = null
+    private readonly annotsError: Error | null = null,
+    readonly label: string | null = null
   ) {
     this.pageNumber = page_number;
     this._annots = annots;
@@ -187,7 +188,8 @@ export class PdfPlumberPageImpl implements PDFPlumberPage {
       this.bleedbox,
       this.trimbox,
       this.extraObjects,
-      this.annotsError
+      this.annotsError,
+      this.label
     );
   }
 
@@ -292,7 +294,8 @@ export class PdfPlumberPageImpl implements PDFPlumberPage {
       this.bleedbox,
       this.trimbox,
       Object.fromEntries(entries.filter(([key]) => !["char", "line", "rect", "curve", "image"].includes(key))),
-      this.annotsError
+      this.annotsError,
+      this.label
     );
     page.objects = Object.fromEntries(entries);
     return page;

@@ -4,7 +4,7 @@ import { METADATA_KEYS } from "./constants.js";
 import { PdfPlumberDocumentImpl } from "./document.js";
 import { buildLayoutObjects } from "./layout.js";
 import { collectGraphicsHintsFromContent } from "./pdf/content.js";
-import { parsePdfDocument } from "./pdf/document.js";
+import { parsePageLabelsLikePdfminer, parsePdfDocument } from "./pdf/document.js";
 import { asArray, isRef } from "./pdf/primitives.js";
 import {
   extractPageContent,
@@ -171,6 +171,7 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
   const selected = new Set(options.pages ?? Array.from({ length: pdf.numPages }, (_, i) => i + 1));
   const maxSelectedPage = selected.size ? Math.max(...selected) : 0;
   const pageTotal = pdf.numPages;
+  const pageLabels = parsePageLabelsLikePdfminer(store, pageTotal);
   for (let pageNumber = 1; pageNumber <= pageTotal; pageNumber += 1) {
     if (pageNumber > maxSelectedPage) break;
     const pdfPage = await pdf.getPage(pageNumber);
@@ -271,7 +272,8 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
         boxes.bleedbox,
         boxes.trimbox,
         extraObjects,
-        annotsError
+        annotsError,
+        pageLabels?.[pageNumber - 1] ?? null
       )
     );
     doctopOffset += boxes.height;

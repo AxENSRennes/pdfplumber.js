@@ -595,6 +595,22 @@ function classify(source, behavior, kind) {
         rationale: "The stable JS API covers browser-capable PDF inputs and extraction objects, while Python converter output stream mode detection is not exposed by this library."
       };
     }
+    if (
+      (
+        lowerSourceFile.includes("pdfminer-six/tests/test_pdfdocument.py") &&
+        (lowerBehavior.includes("testpdfdocument.test page labels") || lowerBehavior.includes("testpdfdocument.test no page labels"))
+      ) ||
+      (
+        lowerSourceFile.includes("pdfminer-six/tests/test_pdfpage.py") &&
+        lowerBehavior.includes("testpdfpage.test page labels")
+      )
+    ) {
+      return passedNativeCompatGate(
+        subsystem,
+        "test/lowlevel/page-labels-compat.test.ts",
+        "The low-level native page-label tests verify pdfminer-compatible PageLabels number-tree parsing, missing-label behavior, and public page.label values against the upstream pagelabels fixture."
+      );
+    }
     if (lowerSourceFile.includes("pdfminer-six/tests/test_utils.py")) {
       if (lowerBehavior.includes("openfilename")) {
         return {

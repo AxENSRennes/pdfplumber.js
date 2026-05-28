@@ -41,6 +41,7 @@ export interface SearchResult {
 export interface PDFPlumberPage {
   page_number: number;
   pageNumber: number;
+  label: string | null;
   width: number;
   height: number;
   bbox: BBox;

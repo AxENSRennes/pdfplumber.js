@@ -1,4 +1,6 @@
-import { asArray, asName, asNumber, isRef, isStream } from "./primitives.js";
+import { decodePdfStringLikePdfminer } from "../pdf-strings.js";
+import { formatIntAlphaLikePdfminer, formatIntRomanLikePdfminer } from "../utils.js";
+import { asArray, asDict, asName, asNumber, isRef, isStream, latin1Bytes } from "./primitives.js";
 import type { PdfArray, PdfDict, PdfIndirectObject, PdfPrimitive, PdfRef, PdfStream } from "./primitives.js";
 import { findKeywordOutsideSyntax, parseObject } from "./parser.js";
 import { pdfNumbersFromString } from "./tokenizer.js";
@@ -38,6 +40,15 @@ export class PdfObjectStore {
     return value;
   }
 
+  getCatalog(): PdfDict | undefined {
+    for (const objectNumber of this.rawObjects.keys()) {
+      const value = this.getObject(objectNumber)?.value;
+      const dict = value instanceof Map ? value : isStream(value) ? value.dict : undefined;
+      if (asName(dict?.get("Type")) === "Catalog") return dict;
+    }
+    return undefined;
+  }
+
   getStream(objectNumber: number): PdfStream | undefined {
     return this.getObject(objectNumber)?.stream;
   }
@@ -66,6 +77,76 @@ export class PdfObjectStore {
     if (Array.isArray(contents)) return contents.map((item) => decodeOne(item)).join("\n");
     return decodeOne(contents);
   }
+}
+
+function resolvedDict(store: PdfObjectStore, value: PdfPrimitive | undefined): PdfDict | undefined {
+  const resolved = store.resolve(value);
+  return asDict(resolved) ?? (isStream(resolved) ? resolved.dict : undefined);
+}
+
+function resolvedArray(store: PdfObjectStore, value: PdfPrimitive | undefined): PdfArray | undefined {
+  return asArray(store.resolve(value));
+}
+
+function resolvedNumber(store: PdfObjectStore, value: PdfPrimitive | undefined): number | undefined {
+  return asNumber(store.resolve(value));
+}
+
+function labelPrefixLikePdfminer(value: PdfPrimitive | undefined): string {
+  const resolved = storelessString(value);
+  return resolved == null ? "" : decodePdfStringLikePdfminer(latin1Bytes(resolved));
+}
+
+function storelessString(value: PdfPrimitive | undefined): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function formatPageLabelLikePdfminer(value: number, style: string | undefined): string {
+  if (style == null) return "";
+  if (style === "D") return String(value);
+  if (style === "R") return formatIntRomanLikePdfminer(value).toUpperCase();
+  if (style === "r") return formatIntRomanLikePdfminer(value);
+  if (style === "A") return formatIntAlphaLikePdfminer(value).toUpperCase();
+  if (style === "a") return formatIntAlphaLikePdfminer(value);
+  return "";
+}
+
+function pageLabelRanges(store: PdfObjectStore, tree: PdfDict | undefined): Array<[number, PdfDict]> {
+  const out: Array<[number, PdfDict]> = [];
+  const visit = (node: PdfDict | undefined): void => {
+    if (!node) return;
+    const nums = resolvedArray(store, node.get("Nums"));
+    if (nums) {
+      for (let index = 0; index + 1 < nums.length; index += 2) {
+        const pageIndex = resolvedNumber(store, nums[index]);
+        const dict = resolvedDict(store, nums[index + 1]);
+        if (pageIndex != null && dict) out.push([pageIndex, dict]);
+      }
+    }
+    for (const kid of resolvedArray(store, node.get("Kids")) ?? []) visit(resolvedDict(store, kid));
+  };
+  visit(tree);
+  return out.sort((a, b) => a[0] - b[0]);
+}
+
+export function parsePageLabelsLikePdfminer(store: PdfObjectStore, pageCount: number): string[] | null {
+  const labelsTree = resolvedDict(store, store.getCatalog()?.get("PageLabels"));
+  if (!labelsTree) return null;
+  const ranges = pageLabelRanges(store, labelsTree);
+  if (!ranges.length) return null;
+  if (ranges[0][0] !== 0) ranges.unshift([0, new Map()]);
+  const out: string[] = [];
+  for (let rangeIndex = 0; rangeIndex < ranges.length && out.length < pageCount; rangeIndex += 1) {
+    const [start, dict] = ranges[rangeIndex];
+    const end = Math.min(ranges[rangeIndex + 1]?.[0] ?? pageCount, pageCount);
+    const style = asName(store.resolve(dict.get("S")));
+    const prefix = labelPrefixLikePdfminer(store.resolve(dict.get("P")));
+    const first = resolvedNumber(store, dict.get("St")) ?? 1;
+    for (let pageIndex = start; pageIndex < end && pageIndex < pageCount; pageIndex += 1) {
+      out[pageIndex] = `${prefix}${formatPageLabelLikePdfminer(first + pageIndex - start, style)}`;
+    }
+  }
+  return Array.from({ length: pageCount }, (_unused, index) => out[index] ?? "");
 }
 
 function findObjectEnd(raw: string, start: number): number {
