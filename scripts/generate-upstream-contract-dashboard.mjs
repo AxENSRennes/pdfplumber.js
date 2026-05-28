@@ -565,6 +565,13 @@ function classify(source, behavior, kind) {
         "The low-level native tests verify pdfminer-compatible Type0/CID CMap-name normalization and writing-mode behavior for Identity, DLIdent, OneByteIdentity, H/V stream encodings, literal-string CMapName values, and missing encoding defaults."
       );
     }
+    if (lowerSourceFile.includes("pdfminer-six/tests/test_font_size.py")) {
+      return passedNativeCompatGate(
+        subsystem,
+        "test/lowlevel/font-size-compat.test.ts",
+        "The low-level native font-size test verifies that digit-only text lines in the upstream font-size fixture expose character sizes whose rounded values match pdfminer LTChar.size."
+      );
+    }
     if (lowerSourceFile.includes("pdfminer-six/tests/test_pdfminer_crypto.py")) {
       if (lowerBehavior.includes("arcfour") || lowerBehavior.includes("unpad aes")) {
         return passedNativeCompatGate(
