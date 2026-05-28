@@ -147,6 +147,34 @@ def table_sample_summary(table_data: List[List[Optional[str]]], cells: List[List
     )
 
 
+def nics_plain_table_summary(table_data: List[List[Optional[str]]]) -> Dict[str, Any]:
+    def parse_value(index: int, value: Optional[str]) -> Optional[int | str]:
+        if index == 0:
+            return value
+        if value in (None, ""):
+            return None
+        return int(value.replace(",", ""))
+
+    parsed = [[parse_value(index, value) for index, value in enumerate(row)] for row in table_data]
+    column_checks = {}
+    for index in range(1, len(parsed[0])):
+        total = parsed[-1][index] or 0
+        colsum = sum((row[index] or 0) for row in parsed)
+        column_checks[str(index)] = {
+            "total": total,
+            "colsum": colsum,
+            "matches_double_total": colsum == total * 2,
+        }
+    return clean(
+        {
+            "row_count": len(table_data),
+            "column_count": len(table_data[0]) if table_data else 0,
+            "all_columns_match_double_total": all(value["matches_double_total"] for value in column_checks.values()),
+            "sample_column_checks": {key: column_checks[key] for key in ["1", "22", "24"] if key in column_checks},
+        }
+    )
+
+
 def dedupe_extra_attrs_lines(page: Any) -> Dict[str, List[str]]:
     specs = [
         ("no_dedupe", None),
@@ -370,6 +398,56 @@ def build_scenarios() -> List[Dict[str, Any]]:
             "nics-filter-min-char-size",
             "nics-background-checks-2015-11.pdf",
             nics_filter_checks,
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "nics-document-edges",
+            "nics-background-checks-2015-11.pdf",
+            lambda pdf: [
+                make_check(
+                    "pdf.edgeCounts",
+                    {
+                        "vertical_edges": len(pdf.vertical_edges),
+                        "horizontal_edges": len(pdf.horizontal_edges),
+                        "edges": len(pdf.edges),
+                    },
+                )
+            ],
+        )
+    )
+
+    def nics_plain_checks(pdf: Any) -> List[Dict[str, Any]]:
+        page = pdf.pages[0]
+        cropped = page.crop((0, 80, page.width, 485))
+        table_data = cropped.extract_table(
+            {
+                "horizontal_strategy": "text",
+                "explicit_vertical_lines": [min(c["x0"] for c in cropped.chars)],
+                "intersection_tolerance": 5,
+            }
+        )
+        return [
+            make_check(
+                "page.crop.extractTableNumericSummary",
+                nics_plain_table_summary(table_data),
+                page=0,
+                bbox=(0, 80, page.width, 485),
+                args={
+                    "horizontal_strategy": "text",
+                    "explicit_vertical_lines": [min(c["x0"] for c in cropped.chars)],
+                    "intersection_tolerance": 5,
+                },
+            ),
+            make_check("page.withinBbox.extractText", page.within_bbox((0, 35, page.width, 65)).extract_text(), page=0, bbox=(0, 35, page.width, 65)),
+        ]
+
+    scenarios.append(
+        scenario(
+            "nics-plain-table-and-month",
+            "nics-background-checks-2015-11.pdf",
+            nics_plain_checks,
         )
     )
 

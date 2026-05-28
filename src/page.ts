@@ -20,6 +20,8 @@ export class PdfPlumberPageImpl implements PDFPlumberPage {
   rect_edges: PDFObject[];
   curve_edges: PDFObject[];
   edges: PDFObject[];
+  horizontal_edges: PDFObject[];
+  vertical_edges: PDFObject[];
   textboxhorizontals: PDFObject[];
   textlinehorizontals: PDFObject[];
   textboxverticals: PDFObject[];
@@ -68,6 +70,8 @@ export class PdfPlumberPageImpl implements PDFPlumberPage {
     this.rect_edges = rects.flatMap(rectToEdges);
     this.curve_edges = curves.flatMap(curveToEdges);
     this.edges = [...this.rect_edges, ...this.curve_edges, ...lines.map(lineToEdge)];
+    this.horizontal_edges = this.edges.filter((edge) => edge.orientation === "h");
+    this.vertical_edges = this.edges.filter((edge) => edge.orientation === "v");
   }
 
   get annots(): PDFObject[] {

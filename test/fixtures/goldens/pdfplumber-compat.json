@@ -1,6 +1,6 @@
 {
   "reference": {
-    "generatedAt": "2026-05-28T01:13:35.607296+00:00",
+    "generatedAt": "2026-05-28T01:17:07.272141+00:00",
     "pdfminerVersion": "20260107",
     "pdfplumberCommit": "98041536932ce85d18a1fba80d9db0686b831d9d",
     "pdfplumberVersion": "0.11.9"
@@ -1595,6 +1595,76 @@
         }
       ],
       "id": "nics-filter-min-char-size",
+      "pdf": "nics-background-checks-2015-11.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "edges": 1208,
+            "horizontal_edges": 508,
+            "vertical_edges": 700
+          },
+          "type": "pdf.edgeCounts"
+        }
+      ],
+      "id": "nics-document-edges",
+      "pdf": "nics-background-checks-2015-11.pdf"
+    },
+    {
+      "checks": [
+        {
+          "args": {
+            "explicit_vertical_lines": [
+              43.2
+            ],
+            "horizontal_strategy": "text",
+            "intersection_tolerance": 5
+          },
+          "bbox": [
+            0,
+            80,
+            1008,
+            485
+          ],
+          "expected": {
+            "all_columns_match_double_total": true,
+            "column_count": 25,
+            "row_count": 56,
+            "sample_column_checks": {
+              "1": {
+                "colsum": 1608012,
+                "matches_double_total": true,
+                "total": 804006
+              },
+              "22": {
+                "colsum": 90,
+                "matches_double_total": true,
+                "total": 45
+              },
+              "24": {
+                "colsum": 4472914,
+                "matches_double_total": true,
+                "total": 2236457
+              }
+            }
+          },
+          "page": 0,
+          "type": "page.crop.extractTableNumericSummary"
+        },
+        {
+          "bbox": [
+            0,
+            35,
+            1008,
+            65
+          ],
+          "expected": "November - 2015",
+          "page": 0,
+          "type": "page.withinBbox.extractText"
+        }
+      ],
+      "id": "nics-plain-table-and-month",
       "pdf": "nics-background-checks-2015-11.pdf"
     },
     {

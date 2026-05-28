@@ -3,6 +3,9 @@ import { aggregateObjects } from "./utils.js";
 
 export class PdfPlumberDocumentImpl implements PDFPlumberDocument {
   objects: Record<string, PDFObject[]>;
+  edges: PDFObject[];
+  horizontal_edges: PDFObject[];
+  vertical_edges: PDFObject[];
   private _annots: PDFObject[] | null = null;
   private _hyperlinks: PDFObject[] | null = null;
 
@@ -13,6 +16,9 @@ export class PdfPlumberDocumentImpl implements PDFPlumberDocument {
     private readonly closeMode: "cleanup" | "destroy" = "destroy"
   ) {
     this.objects = aggregateObjects(pages);
+    this.edges = pages.flatMap((page) => page.edges);
+    this.horizontal_edges = this.edges.filter((edge) => edge.orientation === "h");
+    this.vertical_edges = this.edges.filter((edge) => edge.orientation === "v");
   }
 
   get annots(): PDFObject[] {

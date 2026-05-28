@@ -65,6 +65,8 @@ export interface PDFPlumberPage {
   rect_edges: PDFObject[];
   curve_edges: PDFObject[];
   edges: PDFObject[];
+  horizontal_edges: PDFObject[];
+  vertical_edges: PDFObject[];
   extract_text(options?: Record<string, unknown>): string | Promise<string>;
   extractText(options?: Record<string, unknown>): string | Promise<string>;
   extract_words(options?: Record<string, unknown>): PDFObject[] | Promise<PDFObject[]>;
@@ -92,6 +94,9 @@ export interface PDFPlumberDocument {
   objects: Record<string, PDFObject[]>;
   annots: PDFObject[];
   hyperlinks: PDFObject[];
+  edges: PDFObject[];
+  horizontal_edges: PDFObject[];
+  vertical_edges: PDFObject[];
   close(): void | Promise<void>;
 }
 

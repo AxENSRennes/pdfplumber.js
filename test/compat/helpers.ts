@@ -113,6 +113,39 @@ function tableSampleSummary(table: Array<Array<string | null>> | null, cells: nu
   };
 }
 
+function nicsPlainTableSummary(table: Array<Array<string | null>> | null): Record<string, unknown> {
+  if (!table?.length) {
+    return {
+      row_count: 0,
+      column_count: 0,
+      all_columns_match_double_total: false,
+      sample_column_checks: {}
+    };
+  }
+  const parseValue = (index: number, value: string | null): number | string | null => {
+    if (index === 0) return value;
+    if (value == null || value === "") return null;
+    return Number(value.replaceAll(",", ""));
+  };
+  const parsed = table.map((row) => row.map((value, index) => parseValue(index, value)));
+  const columnChecks: Record<string, Record<string, unknown>> = {};
+  for (let index = 1; index < parsed[0].length; index += 1) {
+    const total = Number(parsed[parsed.length - 1][index] ?? 0);
+    const colsum = parsed.reduce((sum, row) => sum + Number(row[index] ?? 0), 0);
+    columnChecks[String(index)] = {
+      total,
+      colsum,
+      matches_double_total: colsum === total * 2
+    };
+  }
+  return {
+    row_count: table.length,
+    column_count: table[0].length,
+    all_columns_match_double_total: Object.values(columnChecks).every((value) => value.matches_double_total),
+    sample_column_checks: Object.fromEntries(["1", "22", "24"].filter((key) => key in columnChecks).map((key) => [key, columnChecks[key]]))
+  };
+}
+
 function firstWordCharsSummary(words: Array<Record<string, unknown>>): Record<string, unknown> {
   const first = words[0] ?? {};
   const chars = first.chars;
@@ -220,6 +253,13 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
           break;
         case "pdf.hyperlinks.count":
           actual = document.hyperlinks.length;
+          break;
+        case "pdf.edgeCounts":
+          actual = {
+            vertical_edges: document.vertical_edges.length,
+            horizontal_edges: document.horizontal_edges.length,
+            edges: document.edges.length
+          };
           break;
         case "page.geometry":
           actual = pageGeometry(selectedPage);
@@ -385,6 +425,12 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
             strict: check.strict
           }));
           break;
+        case "page.withinBbox.extractText":
+          actual = await valueOf(selectedPage.withinBbox(check.bbox as BBox, {
+            relative: check.relative,
+            strict: check.strict
+          }).extractText(check.args ?? {}));
+          break;
         case "page.crop.filter.objectCounts": {
           const objectType = String(check.args?.objectType ?? "");
           const cropped = selectedPage.crop(check.bbox as BBox, {
@@ -441,6 +487,12 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
             }).extractTable(check.args ?? {})),
             (check.args?.cells as number[][] | undefined) ?? []
           );
+          break;
+        case "page.crop.extractTableNumericSummary":
+          actual = nicsPlainTableSummary(await valueOf(selectedPage.crop(check.bbox as BBox, {
+            relative: check.relative,
+            strict: check.strict
+          }).extractTable(check.args ?? {})));
           break;
         case "page.annots":
           actual = Array.isArray(check.expected) ? selectedPage.annots.slice(0, check.expected.length) : selectedPage.annots;
