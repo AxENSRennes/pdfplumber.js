@@ -268,6 +268,16 @@ function classify(source, behavior, kind) {
     };
   }
 
+  if (lowerSourceFile.includes("pdfplumber-python/tests/test_convert.py")) {
+    return {
+      scope: "excluded",
+      subsystem: subsystem === "cli" ? "cli" : "general",
+      status: "excluded",
+      js: "Python JSON/CSV conversion helpers and CLI output are not exposed by the pdfplumber.js extraction API.",
+      rationale: "The supported JS public API returns extraction objects directly; Python-only export helpers and CLI formatting are outside this library's stable surface."
+    };
+  }
+
   if (lowerSourceFile.includes("pdfminer-six/tests/test_tools_")) {
     return {
       scope: "excluded",
