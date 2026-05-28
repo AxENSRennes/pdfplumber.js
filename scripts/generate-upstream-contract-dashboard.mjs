@@ -587,6 +587,16 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
     };
   }
 
+  if (sourceFile.endsWith("primitives_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "parser",
+      status: "excluded",
+      js: "PDF.js primitive object classes are not exposed by pdfplumber.js.",
+      rationale: "These rows validate raw PDF.js Dict, Ref, Name, Cmd, cache, and XRef helper APIs; pdfplumber.js exposes public extraction objects and has separate native pdfminer-backed parser tests for its own low-level behavior."
+    };
+  }
+
   if (
     sourceFile.endsWith("annotation_spec.js") &&
     /\b(?:render|printing|print|save|compress and save|create a new|update an existing|added|new free|annotation storage|js sandbox)\b/.test(lowerBehavior)
