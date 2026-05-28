@@ -437,6 +437,26 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
     };
   }
 
+  if (sourceFile.endsWith("stream_spec.js") && lowerBehavior === "should decode simple predictor data") {
+    return {
+      scope: "native-engine",
+      subsystem: "streams",
+      status: "passed",
+      js: "test/lowlevel/streams.test.ts",
+      rationale: "The native stream decoder now applies Flate DecodeParms PNG predictors using the pdfminer apply_png_predictor rule, with the adapted test deriving the expected bytes from pdfminer rather than hard-coded PDF.js output."
+    };
+  }
+
+  if (sourceFile.endsWith("operator_list_dependencies_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "viewer-ui",
+      status: "excluded",
+      js: "PDF.js operator-list dependency tracking for rendering debug instrumentation is not exposed by pdfplumber.js.",
+      rationale: "This row uses PDF.js StepperManager, page.render(), recordOperations, canvas rendering, and dependency maps for pattern painting; pdfplumber.js exposes extracted geometry/colors rather than renderer operation dependency graphs."
+    };
+  }
+
   if (sourceFile.endsWith("ui_utils_spec.js")) {
     return {
       scope: "excluded",

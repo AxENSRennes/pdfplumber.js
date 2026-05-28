@@ -1,4 +1,5 @@
 import { deflateSync } from "node:zlib";
+import { execFileSync } from "node:child_process";
 
 import { describe, expect, it } from "vitest";
 
@@ -6,6 +7,18 @@ import { decodePdfStream } from "../../src/pdf.js";
 
 function latin1(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("latin1");
+}
+
+function pdfminerPngPredictorOracle(bytes: number[], options: { predictor: number; colors: number; columns: number; bitsPerComponent: number }): string {
+  const code = `
+import json
+from pdfminer.utils import apply_png_predictor
+data = bytes(${JSON.stringify(bytes)})
+result = apply_png_predictor(${options.predictor}, ${options.colors}, ${options.columns}, ${options.bitsPerComponent}, data)
+print(json.dumps(list(result)))
+`;
+  const result = execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" });
+  return latin1(Uint8Array.from(JSON.parse(result) as number[]));
 }
 
 describe("low-level PDF stream decoding", () => {
@@ -51,6 +64,25 @@ describe("low-level PDF stream decoding", () => {
 
     const flateHex = deflateSync(Buffer.from("chained", "latin1")).toString("hex");
     expect(decodePdfStream(`1 0 obj\n<< /Filter [/ASCIIHexDecode /FlateDecode] >>\nstream\n${flateHex}>\nendstream\nendobj`)).toBe("chained");
+  });
+
+  it("applies Flate PNG predictor DecodeParms like pdfminer", () => {
+    const examples = [
+      { bytes: [2, 100, 3, 2, 1, 255, 2, 1, 255], options: { predictor: 12, colors: 1, columns: 2, bitsPerComponent: 8 } },
+      { bytes: [0, 0b10101010, 2, 0b00001111], options: { predictor: 12, colors: 1, columns: 8, bitsPerComponent: 1 } }
+    ];
+
+    for (const example of examples) {
+      const compressed = latin1(deflateSync(Uint8Array.from(example.bytes)));
+      const objectText = `1 0 obj
+<< /Filter /FlateDecode /DecodeParms << /Predictor ${example.options.predictor} /Colors ${example.options.colors} /BitsPerComponent ${example.options.bitsPerComponent} /Columns ${example.options.columns} >> >>
+stream
+${compressed}
+endstream
+endobj`;
+
+      expect(decodePdfStream(objectText)).toBe(pdfminerPngPredictorOracle(example.bytes, example.options));
+    }
   });
 
   it("does not treat malformed or absent streams as decoded content", () => {

@@ -1,6 +1,6 @@
 import { decompressSync } from "fflate";
 
-import { asArray, asName, isName, latin1String } from "./primitives.js";
+import { asArray, asDict, asName, asNumber, isName, latin1String } from "./primitives.js";
 import type { PdfDict, PdfPrimitive, PdfStream } from "./primitives.js";
 import { parseObject } from "./parser.js";
 
@@ -9,6 +9,88 @@ function filterNames(filterValue: PdfPrimitive | undefined): string[] {
   const array = asArray(filterValue);
   if (!array) return [];
   return array.map((item) => asName(item)).filter((name): name is string => name != null);
+}
+
+function decodeParams(stream: PdfStream, index: number): PdfDict | undefined {
+  const params = stream.dict.get("DecodeParms") ?? stream.dict.get("DP");
+  const array = asArray(params);
+  if (array) return asDict(array[index]);
+  return asDict(params);
+}
+
+function dictNumber(dict: PdfDict, key: string, fallback: number): number {
+  return asNumber(dict.get(key)) ?? fallback;
+}
+
+function paethPredictor(left: number, above: number, upperLeft: number): number {
+  const estimate = left + above - upperLeft;
+  const leftDistance = Math.abs(estimate - left);
+  const aboveDistance = Math.abs(estimate - above);
+  const upperLeftDistance = Math.abs(estimate - upperLeft);
+  if (leftDistance <= aboveDistance && leftDistance <= upperLeftDistance) return left;
+  return aboveDistance <= upperLeftDistance ? above : upperLeft;
+}
+
+function applyTiffPredictor(bytes: Uint8Array, colors: number, columns: number, bitsPerComponent: number): Uint8Array {
+  if (bitsPerComponent !== 8) return bytes;
+  const bytesPerPixel = Math.floor((colors * bitsPerComponent) / 8);
+  const rowLength = columns * bytesPerPixel;
+  if (!Number.isInteger(rowLength) || rowLength <= 0) return bytes;
+  const out: number[] = [];
+  for (let rowOffset = 0; rowOffset < bytes.length; rowOffset += rowLength) {
+    const raw: number[] = [];
+    const row = bytes.subarray(rowOffset, rowOffset + rowLength);
+    for (let i = 0; i < row.length; i += 1) {
+      const prior = i >= bytesPerPixel ? raw[i - bytesPerPixel] : 0;
+      raw.push((row[i] + prior) & 0xff);
+    }
+    out.push(...raw);
+  }
+  return Uint8Array.from(out);
+}
+
+function applyPngPredictor(bytes: Uint8Array, colors: number, columns: number, bitsPerComponent: number): Uint8Array {
+  if (bitsPerComponent !== 8 && bitsPerComponent !== 1) return bytes;
+  const rowLength = Math.floor((colors * columns * bitsPerComponent) / 8);
+  const bytesPerPixel = Math.floor((colors * bitsPerComponent) / 8);
+  if (rowLength <= 0) return bytes;
+
+  const out: number[] = [];
+  let priorRow = new Uint8Array(rowLength);
+  for (let rowOffset = 0; rowOffset < bytes.length; rowOffset += rowLength + 1) {
+    const filterType = bytes[rowOffset];
+    const encoded = bytes.subarray(rowOffset + 1, rowOffset + 1 + rowLength);
+    const raw = new Uint8Array(encoded.length);
+    for (let i = 0; i < encoded.length; i += 1) {
+      const left = i >= bytesPerPixel && bytesPerPixel > 0 ? raw[i - bytesPerPixel] : 0;
+      const above = priorRow[i] ?? 0;
+      const upperLeft = i >= bytesPerPixel && bytesPerPixel > 0 ? (priorRow[i - bytesPerPixel] ?? 0) : 0;
+      const predictor =
+        filterType === 0 ? 0 :
+        filterType === 1 ? left :
+        filterType === 2 ? above :
+        filterType === 3 ? Math.floor((left + above) / 2) :
+        filterType === 4 ? paethPredictor(left, above, upperLeft) :
+        null;
+      if (predictor == null) return bytes;
+      raw[i] = (encoded[i] + predictor) & 0xff;
+    }
+    out.push(...raw);
+    priorRow = raw;
+  }
+  return Uint8Array.from(out);
+}
+
+function applyPredictor(bytes: Uint8Array, params: PdfDict | undefined): Uint8Array {
+  if (!params) return bytes;
+  const predictor = dictNumber(params, "Predictor", 1);
+  if (predictor === 1) return bytes;
+  const colors = dictNumber(params, "Colors", 1);
+  const columns = dictNumber(params, "Columns", 1);
+  const bitsPerComponent = dictNumber(params, "BitsPerComponent", 8);
+  if (predictor === 2) return applyTiffPredictor(bytes, colors, columns, bitsPerComponent);
+  if (predictor >= 10) return applyPngPredictor(bytes, colors, columns, bitsPerComponent);
+  return bytes;
 }
 
 function ascii85Decode(value: string): Uint8Array {
@@ -121,7 +203,9 @@ function lzwDecode(bytes: Uint8Array): Uint8Array {
 
 export function decodeStream(stream: PdfStream): Uint8Array {
   let bytes = stream.data;
-  for (const filter of filterNames(stream.dict.get("Filter"))) {
+  const filters = filterNames(stream.dict.get("Filter"));
+  for (let index = 0; index < filters.length; index += 1) {
+    const filter = filters[index];
     if (filter === "ASCII85Decode" || filter === "A85") bytes = ascii85Decode(latin1String(bytes));
     else if (filter === "ASCIIHexDecode" || filter === "AHx") bytes = asciiHexDecode(latin1String(bytes));
     else if (filter === "RunLengthDecode" || filter === "RL") bytes = runLengthDecode(bytes);
@@ -133,6 +217,7 @@ export function decodeStream(stream: PdfStream): Uint8Array {
         return new Uint8Array();
       }
     }
+    bytes = applyPredictor(bytes, decodeParams(stream, index));
   }
   return bytes;
 }
