@@ -111,6 +111,22 @@ const passedPdfjsManifestTextPublicIds = new Set([
   "zero_descent"
 ]);
 
+const classifiedPdfjsManifestTextBackendGaps = new Map([
+  ["issue11403-text", "cid-text-normalization"],
+  ["issue14415", "layout-ordering"],
+  ["issue14497", "layout-ordering"],
+  ["issue14999", "layout-ordering"],
+  ["issue18059-text", "cid-text-normalization"],
+  ["issue18117-text", "malformed-content-recovery"],
+  ["issue2017-text", "glyph-decoding"],
+  ["issue4550-text", "glyph-decoding"],
+  ["issue6901-text", "cid-text-normalization"],
+  ["issue7580-text", "glyph-decoding"],
+  ["operator-in-TJ-array", "malformed-content-recovery"],
+  ["tracemonkey-extract_0_2_12", "glyph-decoding"],
+  ["tracemonkey-text", "glyph-decoding"]
+]);
+
 function slash(value) {
   return value.split(path.sep).join("/");
 }
@@ -1456,6 +1472,16 @@ function classify(source, behavior, kind) {
         rationale: "The public extraction API test compares selected PDF.js text/extract manifest fixtures against Python pdfplumber for page dimensions, extracted text, char counts, and word counts."
       };
     }
+    if (classifiedPdfjsManifestTextBackendGaps.has(manifestId)) {
+      const category = classifiedPdfjsManifestTextBackendGaps.get(manifestId);
+      return {
+        scope: "pdfjs-capability",
+        subsystem: "text",
+        status: "backend-gap",
+        js: "test/lowlevel/pdfjs-text-manifest-gaps.test.ts",
+        rationale: `Classified retained pdf.js text capability mismatch (${category}) against the Python pdfplumber/pdfminer oracle; the diagnostic test records current char/word divergence so the row is no longer unknown, but it remains non-complete until the native text path matches the oracle or the capability is removed.`
+      };
+    }
     if (/\b(eq|fbf|print|annotation-layer|text-layer)\b/.test(lowerBehavior)) {
       return {
         scope: "excluded",
@@ -1763,7 +1789,7 @@ const summary = [
   "- `pdfjs/test/font`",
   "- `pdfjs/test/integration`",
   "",
-  "Rows live in [`dashboard.tsv`](./dashboard.tsv). The generator keeps classifications conservative: rows marked `needs-adapted-js-test` or `needs-classification` are not considered complete contract coverage.",
+  "Rows live in [`dashboard.tsv`](./dashboard.tsv). The generator keeps classifications conservative: rows marked `needs-adapted-js-test`, `needs-classification`, or `backend-gap` are not considered complete contract coverage.",
   "",
   `Generated rows: ${rows.length}`,
   "",
