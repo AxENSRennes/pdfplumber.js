@@ -38,10 +38,12 @@ export function parseCompressedCMapJsonLikePdfminer(bytes: Uint8Array): Pdfminer
 }
 
 export class CMapLikePdfminer {
+  readonly attrs: Map<string, unknown>;
   readonly code2cid: Code2CidMap;
   readonly vertical: boolean;
 
   constructor(readonly name: string, data: PdfminerCMapJson) {
+    this.attrs = new Map([["CMapName", name]]);
     const converted = convertCode2CidKeysLikePdfminer(data.CODE2CID ?? {});
     this.code2cid = converted instanceof Map ? converted : new Map();
     this.vertical = data.IS_VERTICAL === true;

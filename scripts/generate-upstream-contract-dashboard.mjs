@@ -623,6 +623,20 @@ function classify(source, behavior, kind) {
         "The low-level native string/glyph tests verify pdfminer-compatible PDFFont width defaults and get_widths parsing for list, range, and object-reference width definitions."
       );
     }
+    if (lowerSourceFile.includes("pdfminer-six/tests/test_pdffont.py") && lowerBehavior.includes("test if cmap file is read from pdfminer/cmap")) {
+      return passedNativeCompatGate(
+        subsystem,
+        "test/lowlevel/cmapdb-compat.test.ts",
+        "The low-level native CMapDB test verifies pdfminer-compatible loading of the UniGB-UCS2-H cmap asset, restored CMapName metadata, integer CODE2CID keys, writing mode, and byte decoding."
+      );
+    }
+    if (lowerSourceFile.includes("pdfminer-six/tests/test_pdffont.py") && lowerBehavior.includes("test cmap font 12")) {
+      return passedNativeCompatGate(
+        subsystem,
+        "test/lowlevel/cmap-font-compat.test.ts",
+        "The low-level native CMap font fixture test compares JS extraction against pdfminer extract_pages output for the issue-598 CMap-font PDF using detect_vertical, char_margin, all_texts, and boxes_flow settings."
+      );
+    }
     if (
       lowerSourceFile.includes("pdfminer-six/tests/test_converter.py") &&
       (
