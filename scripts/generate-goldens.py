@@ -175,6 +175,54 @@ def nics_plain_table_summary(table_data: List[List[Optional[str]]]) -> Dict[str,
     )
 
 
+def nics_explicit_horizontal_summary(page: Any) -> Dict[str, Any]:
+    cropped = page.crop((0, 80, page.width, 475))
+    table = cropped.find_tables({"horizontal_strategy": "text", "vertical_strategy": "text"})[0]
+    h_positions = [row.cells[0][1] for row in table.rows] + [table.rows[-1].cells[0][3]]
+    explicit = cropped.find_tables(
+        {
+            "horizontal_strategy": "explicit",
+            "vertical_strategy": "text",
+            "explicit_horizontal_lines": h_positions,
+        }
+    )[0]
+    h_objects = [
+        {
+            "x0": 0,
+            "x1": page.width,
+            "width": page.width,
+            "top": h,
+            "bottom": h,
+            "object_type": "line",
+        }
+        for h in h_positions
+    ]
+    explicit_objects = cropped.find_tables(
+        {
+            "horizontal_strategy": "explicit",
+            "vertical_strategy": "text",
+            "explicit_horizontal_lines": h_objects,
+        }
+    )[0]
+    base = table.extract()
+    return clean(
+        {
+            "h_count": len(h_positions),
+            "first_h": h_positions[0],
+            "last_h": h_positions[-1],
+            "shape": [len(base), len(base[0]) if base else 0],
+            "numbers_equal": base == explicit.extract(),
+            "objects_equal": base == explicit_objects.extract(),
+            "samples": {
+                "0,0": base[0][0],
+                "0,22": base[0][22],
+                "-1,0": base[-1][0],
+                "-1,22": base[-1][22],
+            },
+        }
+    )
+
+
 def dedupe_extra_attrs_lines(page: Any) -> Dict[str, List[str]]:
     specs = [
         ("no_dedupe", None),
@@ -468,6 +516,16 @@ def build_scenarios() -> List[Dict[str, Any]]:
                     bbox=(0, 80, pdf.pages[0].width, 475),
                     args={"horizontal_strategy": "text", "vertical_strategy": "text", "cells": [[0, 0], [0, 22], [-1, 0], [-1, 22]]},
                 )
+            ],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "nics-explicit-horizontal",
+            "nics-background-checks-2015-11.pdf",
+            lambda pdf: [
+                make_check("page.nicsExplicitHorizontalSummary", nics_explicit_horizontal_summary(pdf.pages[0]), page=0),
             ],
         )
     )

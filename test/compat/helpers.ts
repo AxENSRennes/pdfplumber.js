@@ -146,6 +146,51 @@ function nicsPlainTableSummary(table: Array<Array<string | null>> | null): Recor
   };
 }
 
+function tablesEqual(a: Array<Array<string | null>>, b: Array<Array<string | null>>): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+async function nicsExplicitHorizontalSummary(selectedPage: PDFPlumberPage): Promise<Record<string, unknown>> {
+  const cropped = selectedPage.crop([0, 80, selectedPage.width, 475]);
+  const table = (await valueOf(cropped.findTables({ horizontal_strategy: "text", vertical_strategy: "text" })))[0];
+  const rows = table.rows as Array<Array<BBox | null>>;
+  const hPositions = rows.map((row) => row[0]?.[1] ?? 0);
+  hPositions.push(rows[rows.length - 1]?.[0]?.[3] ?? 0);
+  const explicit = (await valueOf(cropped.findTables({
+    horizontal_strategy: "explicit",
+    vertical_strategy: "text",
+    explicit_horizontal_lines: hPositions
+  })))[0];
+  const hObjects = hPositions.map((top) => ({
+    x0: 0,
+    x1: selectedPage.width,
+    width: selectedPage.width,
+    top,
+    bottom: top,
+    object_type: "line"
+  }));
+  const explicitObjects = (await valueOf(cropped.findTables({
+    horizontal_strategy: "explicit",
+    vertical_strategy: "text",
+    explicit_horizontal_lines: hObjects
+  })))[0];
+  const base = table.extract();
+  return {
+    h_count: hPositions.length,
+    first_h: hPositions[0],
+    last_h: hPositions[hPositions.length - 1],
+    shape: [base.length, base[0]?.length ?? 0],
+    numbers_equal: tablesEqual(base, explicit.extract()),
+    objects_equal: tablesEqual(base, explicitObjects.extract()),
+    samples: {
+      "0,0": base[0]?.[0],
+      "0,22": base[0]?.[22],
+      "-1,0": base[base.length - 1]?.[0],
+      "-1,22": base[base.length - 1]?.[22]
+    }
+  };
+}
+
 function firstWordCharsSummary(words: Array<Record<string, unknown>>): Record<string, unknown> {
   const first = words[0] ?? {};
   const chars = first.chars;
@@ -319,6 +364,9 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
           actual = pageObjectCounts(selectedPage.filter((object) => object.object_type !== "char" || Number(object.size) >= minSize));
           break;
         }
+        case "page.nicsExplicitHorizontalSummary":
+          actual = await nicsExplicitHorizontalSummary(selectedPage);
+          break;
         case "page.extractWords":
           actual = await valueOf(selectedPage.extractWords(check.args ?? {}));
           break;
