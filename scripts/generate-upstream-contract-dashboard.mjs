@@ -110,6 +110,16 @@ function passedBrowserInputGate(subsystem) {
   };
 }
 
+function passedPublicInputGate(subsystem) {
+  return {
+    scope: "runtime-adaptation",
+    subsystem,
+    status: "passed",
+    js: "test/smoke/api-shape.test.ts; test/browser/pdfplumber.browser.spec.ts",
+    rationale: "The public API smoke test verifies Node file-path input, and the Playwright browser ESM gate verifies ArrayBuffer, Blob, URL object, and URL string inputs against the same public extraction summary."
+  };
+}
+
 function passedPdfplumberCompatGate(subsystem, scenario) {
   return {
     scope: "public-api",
@@ -293,6 +303,21 @@ function classify(source, behavior, kind) {
       js: "Python JSON/CSV conversion helpers and CLI output are not exposed by the pdfplumber.js extraction API.",
       rationale: "The supported JS public API returns extraction objects directly; Python-only export helpers and CLI formatting are outside this library's stable surface."
     };
+  }
+
+  if (lowerSourceFile.includes("pdfplumber-python/tests/test_basics.py")) {
+    if (lowerBehavior === "test.test loading pathobj" || lowerBehavior === "test.test loading fileobj") {
+      return passedPublicInputGate("runtime");
+    }
+    if (lowerBehavior === "test.test bad fileobj") {
+      return {
+        scope: "robustness-corpus",
+        subsystem: "runtime",
+        status: "needs-adapted-js-test",
+        js: "Add a public open() robustness test for empty or invalid PDF inputs that either raises the documented stable error or proves matching extraction behavior.",
+        rationale: "The upstream row covers failed file loading plus Python file-object lifetime semantics; JS does not expose Python file objects, but invalid public inputs need a stable open() outcome."
+      };
+    }
   }
 
   if (lowerSourceFile.includes("pdfplumber-python/tests/test_repair.py")) {
