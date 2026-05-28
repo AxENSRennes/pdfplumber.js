@@ -113,6 +113,17 @@ export class PdfPlumberPageImpl implements PDFPlumberPage {
     return charsToTextMap(this.chars, { layout_bbox: this.bbox, ...options }).search(pattern, options);
   }
 
+  extract_text_lines(options: Record<string, unknown> = {}): SearchResult[] {
+    return this.extractTextLines(options);
+  }
+
+  extractTextLines(options: Record<string, unknown> = {}): SearchResult[] {
+    const defaults = { layout_bbox: this.bbox };
+    if (!("layout_width_chars" in options)) Object.assign(defaults, { layout_width: this.width });
+    if (!("layout_height_chars" in options)) Object.assign(defaults, { layout_height: this.height });
+    return charsToTextMap(this.chars, { ...defaults, ...options }).extractTextLines(options);
+  }
+
   filter(testFunction: (object: PDFObject) => boolean): PDFPlumberPage {
     const entries = this.objectEntries().map(([key, value]) => [key, value.filter(testFunction)] as [string, PDFObject[]]);
     return this.derivedPageFromEntries(

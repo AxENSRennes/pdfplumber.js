@@ -207,9 +207,27 @@ const pdfplumberCompatCoveredTests = new Map(
     ["pdfplumber-python/tests/test_utils.py", "Test.test x tolerance ratio", "x-tolerance-ratio"],
     ["pdfplumber-python/tests/test_utils.py", "Test.test extract words", "words-directions-and-extra-attrs"],
     ["pdfplumber-python/tests/test_utils.py", "Test.test extract words return chars", "extract-words-return-chars"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test text rotation", "text-rotation"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test text rotation layout", "text-rotation-layout"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test text render directions", "text-render-directions"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test invalid directions", "text-render-directions"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test extra attrs", "text-extra-attrs"],
     ["pdfplumber-python/tests/test_utils.py", "Test.test extract words punctuation", "punctuation-splitting"],
     ["pdfplumber-python/tests/test_utils.py", "Test.test extract text punctuation", "punctuation-splitting"],
-    ["pdfplumber-python/tests/test_utils.py", "Test.test search string", "search-and-text-lines"]
+    ["pdfplumber-python/tests/test_utils.py", "Test.test text flow", "text-flow"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test text flow overlapping", "text-flow-overlapping"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test text flow words mixed lines", "text-flow-words-mixed-lines"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test extract text", "search-and-text-lines"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test extract text blank", "extract-text-nochars"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test extract text layout", "search-and-text-lines"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test extract text layout cropped", "extract-text-layout-cropped"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test extract text layout widths", "extract-text-layout-widths"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test extract text nochars", "extract-text-nochars"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test search regex compiled", "search-and-text-lines"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test search regex uncompiled", "search-and-text-lines"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test search string", "search-and-text-lines"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test extract text lines", "search-and-text-lines"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test handle empty and whitespace search results", "search-and-text-lines"]
   ].map(([file, behavior, scenario]) => [`${file}|${behavior.toLowerCase()}`, scenario])
 );
 

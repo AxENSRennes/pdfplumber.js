@@ -72,9 +72,6 @@ export function isVerticalCMapNameLikePdfminer(name: string | undefined): boolea
 }
 
 export function shouldEmulatePdfminerOpenError(ctx: PdfminerCompatContext): Error | null {
-  if (/\/Type\s*\/Sig\b/.test(ctx.raw) && /\/ByteRange\s*\[/.test(ctx.raw) && /\/Prev\s+\d+/.test(ctx.raw) && /\/DigestLocation\s*\[/.test(ctx.raw)) {
-    return namedError("MalformedPDFException", "maximum recursion depth exceeded");
-  }
   return null;
 }
 

@@ -46,8 +46,16 @@ export class TextMap {
     const returnChars = options.return_chars !== false;
     let regex: RegExp;
     if (pattern instanceof RegExp) {
-      if (!regexOption) throw new Error("Cannot pass a compiled search pattern and regex=false together.");
-      if (!caseOption) throw new Error("Cannot pass a compiled search pattern and case=false together.");
+      if (!regexOption) {
+        const error = new Error("Cannot pass a compiled search pattern and regex=false together.");
+        error.name = "ValueError";
+        throw error;
+      }
+      if (!caseOption) {
+        const error = new Error("Cannot pass a compiled search pattern and case=false together.");
+        error.name = "ValueError";
+        throw error;
+      }
       regex = pattern.global ? pattern : new RegExp(pattern.source, `${pattern.flags}g`);
     } else {
       const source = regexOption ? pattern : pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -74,6 +82,16 @@ export class TextMap {
     }
     return out;
   }
+
+  extractTextLines(options: Record<string, unknown> = {}): SearchResult[] {
+    const strip = options.strip !== false;
+    const pattern = strip ? / *([^\n]+?) *(?:\n|$)/g : /([^\n]+)/g;
+    return this.search(pattern, {
+      main_group: 1,
+      return_chars: options.return_chars !== false,
+      return_groups: false
+    });
+  }
 }
 
 export class WordMap {
@@ -98,6 +116,16 @@ export class WordMap {
     const useTextFlow = Boolean(options.use_text_flow);
     const presorted = Boolean(options.presorted);
     const expansions = options.expand_ligatures === false ? {} : LIGATURES;
+    if (layout && "layout_width" in options && "layout_width_chars" in options) {
+      const error = new Error("Cannot pass both layout_width and layout_width_chars.");
+      error.name = "ValueError";
+      throw error;
+    }
+    if (layout && "layout_height" in options && "layout_height_chars" in options) {
+      const error = new Error("Cannot pass both layout_height and layout_height_chars.");
+      error.name = "ValueError";
+      throw error;
+    }
     validateDirections(lineDirRender, charDirRender);
 
     const textmap: Array<[string, PDFObject | null]> = [];

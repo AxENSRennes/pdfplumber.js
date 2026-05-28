@@ -9,6 +9,8 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timezone
+from itertools import groupby
+from operator import itemgetter
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -265,6 +267,197 @@ def text_flow_match_summary(page: Any) -> Dict[str, Any]:
         "text_head": text[:100],
         "words_head": words[:100],
         "heads_match": text[:100] == words[:100],
+    }
+
+
+TEXT_ROTATIONS = {
+    "0": ("ltr", "ttb"),
+    "-0": ("rtl", "ttb"),
+    "180": ("rtl", "btt"),
+    "-180": ("ltr", "btt"),
+    "90": ("ttb", "rtl"),
+    "-90": ("btt", "rtl"),
+    "270": ("btt", "ltr"),
+    "-270": ("ttb", "ltr"),
+}
+
+
+def text_rotation_summary(pdf: Any) -> Dict[str, Any]:
+    expected = utils.text.extract_text(pdf.pages[0].chars)
+    matches = {}
+    for index, (rotation, (char_dir, line_dir)) in enumerate(TEXT_ROTATIONS.items()):
+        if index == 0:
+            continue
+        page = pdf.pages[index].filter(lambda obj: obj.get("text") != " ")
+        output = utils.text.extract_text(
+            x_tolerance=2,
+            y_tolerance=2,
+            chars=page.chars,
+            char_dir=char_dir,
+            line_dir=line_dir,
+            char_dir_rotated=char_dir,
+            line_dir_rotated=line_dir,
+            char_dir_render="ltr",
+            line_dir_render="ttb",
+        )
+        matches[rotation] = output == expected
+    return {"base_head": expected[:120], "matches": matches}
+
+
+def text_rotation_layout_summary(pdf: Any) -> Dict[str, Any]:
+    def meets_expectations(text: str) -> bool:
+        a = re.search("opens with a news report", text)
+        b = re.search("having been transferred", text)
+        return bool(a and b and (a.start() < b.start()))
+
+    matches = {}
+    for index, (rotation, (char_dir, line_dir)) in enumerate(TEXT_ROTATIONS.items()):
+        page = pdf.pages[index].filter(lambda obj: obj.get("text") != " ")
+        output = page.extract_text(
+            layout=True,
+            x_tolerance=2,
+            y_tolerance=2,
+            char_dir=char_dir,
+            line_dir=line_dir,
+            char_dir_rotated=char_dir,
+            line_dir_rotated=line_dir,
+            char_dir_render="ltr",
+            line_dir_render="ttb",
+            y_density=14,
+        )
+        matches[rotation] = meets_expectations(output)
+    return matches
+
+
+def text_render_directions_summary(page: Any) -> Dict[str, str]:
+    outputs = {}
+    for line_dir in ["ttb", "btt", "ltr", "rtl"]:
+        for char_dir in ["ltr", "rtl"] if line_dir in ["ttb", "btt"] else ["ttb", "btt"]:
+            outputs[f"{line_dir}/{char_dir}"] = page.extract_text(line_dir_render=line_dir, char_dir_render=char_dir)
+    return outputs
+
+
+def invalid_directions_summary(page: Any) -> Dict[str, Optional[str]]:
+    checks = {
+        "line_invalid": {"line_dir": "xxx", "char_dir": "ltr"},
+        "char_invalid": {"line_dir": "ttb", "char_dir": "a"},
+        "line_char_incompatible": {"line_dir": "rtl", "char_dir": "ltr"},
+        "line_char_axis_incompatible": {"line_dir": "ttb", "char_dir": "btt"},
+        "rotated_incompatible": {"line_dir_rotated": "ttb", "char_dir_rotated": "btt"},
+        "render_incompatible": {"line_dir_render": "ttb", "char_dir_render": "btt"},
+    }
+    return {name: error_name(lambda options=options: page.extract_text(**options)) for name, options in checks.items()}
+
+
+def extra_attrs_text_summary(page: Any) -> Dict[str, Any]:
+    return {
+        "default": page.extract_text(),
+        "color": page.extract_text(extra_attrs=["non_stroking_color"]),
+        "fontname": page.extract_text(extra_attrs=["fontname"]),
+        "color_fontname": page.extract_text(extra_attrs=["non_stroking_color", "fontname"]),
+        "layout_flow_error": error_name(
+            lambda: page.extract_text(
+                layout=True,
+                use_text_flow=True,
+                extra_attrs=["non_stroking_color", "fontname"],
+            )
+        ),
+    }
+
+
+def words_to_text(words: List[Dict[str, Any]]) -> str:
+    grouped = groupby(words, key=itemgetter("top"))
+    lines = [" ".join(word["text"] for word in grp) for top, grp in grouped]
+    return "\n".join(lines)
+
+
+def text_flow_summary(page: Any) -> Dict[str, bool]:
+    target = (
+        "The FAA proposes to\n"
+        "supersede Airworthiness Directive (AD)\n"
+        "2018–23–51, which applies to all The\n"
+        "Boeing Company Model 737–8 and 737–\n"
+        "9 (737 MAX) airplanes. Since AD 2018–\n"
+    )
+    return {
+        "target_in_flow": target in words_to_text(page.extract_words(use_text_flow=True)),
+        "target_in_default": target in words_to_text(page.extract_words()),
+    }
+
+
+def text_flow_overlapping_summary(page: Any) -> Dict[str, bool]:
+    using_flow = page.extract_text(use_text_flow=True, layout=True, x_tolerance=1)
+    not_using_flow = page.extract_text(layout=True, x_tolerance=1)
+    return {
+        "flow_has_payment": bool(re.search("2015 RICE PAYMENT 26406576 0 1207631 Cr", using_flow)),
+        "flow_has_bad_merge": bool(re.search("124644,06155766", using_flow)),
+        "default_has_payment": bool(re.search("2015 RICE PAYMENT 26406576 0 1207631 Cr", not_using_flow)),
+        "default_has_bad_merge": bool(re.search("124644,06155766", not_using_flow)),
+    }
+
+
+def text_flow_words_mixed_lines_summary(page: Any) -> Dict[str, bool]:
+    texts = set(word["text"] for word in page.extract_words(use_text_flow=True))
+    return {
+        "has_claim": "claim" in texts,
+        "has_lence": "lence" in texts,
+        "has_claimlence": "claimlence" in texts,
+    }
+
+
+def extract_text_lines_summary(page: Any) -> Dict[str, Any]:
+    results = page.extract_text_lines()
+    alt = page.extract_text_lines(layout=True, strip=False, return_chars=False)
+    stripped = page.extract_text_lines(layout=True)
+    return {
+        "count": len(results),
+        "first_has_chars": "chars" in results[0],
+        "first_text": results[0]["text"],
+        "alt_first_has_chars": "chars" in alt[0],
+        "alt_first_text": alt[0]["text"],
+        "line10_text": results[10]["text"],
+        "alt_line10_text": alt[10]["text"],
+        "stripped_line10_text": stripped[10]["text"],
+    }
+
+
+def layout_widths_summary(page: Any) -> Dict[str, Any]:
+    text = page.extract_text(layout=True, layout_width_chars=75)
+    return {
+        "all_lines_75": all(len(line) == 75 for line in text.splitlines()),
+        "width_conflict": error_name(lambda: page.extract_text(layout=True, layout_width=300, layout_width_chars=50)),
+        "height_conflict": error_name(lambda: page.extract_text(layout=True, layout_height=300, layout_height_chars=50)),
+    }
+
+
+def charless_text_summary(page: Any) -> Dict[str, str]:
+    charless = page.filter(lambda obj: obj["object_type"] != "char")
+    return {
+        "plain": charless.extract_text(),
+        "layout": charless.extract_text(layout=True),
+    }
+
+
+def search_regex_compiled_summary(page: Any) -> Dict[str, Any]:
+    results = page.search(re.compile(r"supreme\s+(\w+)", re.I))
+    return {
+        "first_two": [{"text": r["text"], "groups": list(r["groups"])} for r in results[:2]],
+        "regex_false_error": error_name(lambda: page.search(re.compile(r"x"), regex=False)),
+        "case_false_error": error_name(lambda: page.search(re.compile(r"x"), case=False)),
+    }
+
+
+def search_regex_uncompiled_summary(page: Any) -> Dict[str, Any]:
+    results = page.search(r"supreme\s+(\w+)", case=False)
+    return [{"text": r["text"], "groups": list(r["groups"])} for r in results[:2]]
+
+
+def search_empty_summary(page: Any) -> Dict[str, int]:
+    return {
+        "newline_regex": len(page.search("\n", regex=True)),
+        "newline_literal": len(page.search("\n", regex=False)),
+        "optional_empty": len(page.search("(sdfsd)?")),
+        "empty": len(page.search("")),
     }
 
 
@@ -1022,6 +1215,41 @@ def build_scenarios() -> List[Dict[str, Any]]:
 
     scenarios.append(
         scenario(
+            "text-extra-attrs",
+            "extra-attrs-example.pdf",
+            lambda pdf: [make_check("page.extraAttrsTextSummary", extra_attrs_text_summary(pdf.pages[0]), page=0)],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "text-rotation",
+            "issue-848.pdf",
+            lambda pdf: [make_check("pdf.textRotationSummary", text_rotation_summary(pdf))],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "text-rotation-layout",
+            "issue-848.pdf",
+            lambda pdf: [make_check("pdf.textRotationLayoutSummary", text_rotation_layout_summary(pdf))],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "text-render-directions",
+            "line-char-render-example.pdf",
+            lambda pdf: [
+                make_check("page.textRenderDirectionsSummary", text_render_directions_summary(pdf.pages[0]), page=0),
+                make_check("page.invalidDirectionsSummary", invalid_directions_summary(pdf.pages[0]), page=0),
+            ],
+        )
+    )
+
+    scenarios.append(
+        scenario(
             "x-tolerance-ratio",
             "issue-987-test.pdf",
             lambda pdf: [
@@ -1064,9 +1292,62 @@ def build_scenarios() -> List[Dict[str, Any]]:
             "scotus-transcript-p1.pdf",
             lambda pdf: [
                 make_check("page.extractText", pdf.pages[0].extract_text(), page=0),
+                make_check("page.extractText", pdf.pages[0].extract_text(layout=True), page=0, args={"layout": True}),
+                make_check("page.extractTextLinesSummary", extract_text_lines_summary(pdf.pages[0]), page=0),
+                make_check("page.searchRegexCompiledSummary", search_regex_compiled_summary(pdf.pages[0]), page=0),
+                make_check("page.searchRegexUncompiledSummary", search_regex_uncompiled_summary(pdf.pages[0]), page=0),
+                make_check("page.searchEmptySummary", search_empty_summary(pdf.pages[0]), page=0),
                 make_check("page.search", [clean(r) for r in pdf.pages[0].search("Roberts", regex=False)[:5]], page=0, args={"pattern": "Roberts", "regex": False}),
                 make_check("page.crop.extractText", pdf.pages[0].crop((0, 0, pdf.pages[0].width, 120)).extract_text(), page=0, bbox=(0, 0, pdf.pages[0].width, 120)),
             ],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "extract-text-layout-cropped",
+            "scotus-transcript-p1.pdf",
+            lambda pdf: [make_check("page.crop.extractText", pdf.pages[0].crop((90, 70, pdf.pages[0].width, 300)).extract_text(layout=True), page=0, bbox=(90, 70, pdf.pages[0].width, 300), args={"layout": True})],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "extract-text-layout-widths",
+            "scotus-transcript-p1.pdf",
+            lambda pdf: [make_check("page.layoutWidthsSummary", layout_widths_summary(pdf.pages[0]), page=0)],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "extract-text-nochars",
+            "pdffill-demo.pdf",
+            lambda pdf: [make_check("page.charlessTextSummary", charless_text_summary(pdf.pages[0]), page=0)],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "text-flow",
+            "federal-register-2020-17221.pdf",
+            lambda pdf: [make_check("page.textFlowSummary", text_flow_summary(pdf.pages[0]), page=0)],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "text-flow-overlapping",
+            "issue-912.pdf",
+            lambda pdf: [make_check("page.textFlowOverlappingSummary", text_flow_overlapping_summary(pdf.pages[0]), page=0)],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "text-flow-words-mixed-lines",
+            "issue-1279-example.pdf",
+            lambda pdf: [make_check("page.textFlowWordsMixedLinesSummary", text_flow_words_mixed_lines_summary(pdf.pages[0]), page=0)],
         )
     )
 

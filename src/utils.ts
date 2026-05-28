@@ -601,7 +601,15 @@ export function positionKey(dir: Dir, obj: PDFObject): number {
 }
 
 export function validateDirections(lineDir: Dir, charDir: Dir): void {
+  const valid = new Set(["ltr", "rtl", "ttb", "btt"]);
+  if (!valid.has(lineDir) || !valid.has(charDir)) {
+    const error = new Error(`Invalid text directions: ${lineDir}, ${charDir}`);
+    error.name = "ValueError";
+    throw error;
+  }
   if (new Set(lineDir).size === new Set([...lineDir, ...charDir]).size && [...lineDir].every((c) => charDir.includes(c))) {
-    throw new Error(`Incompatible text directions: ${lineDir}, ${charDir}`);
+    const error = new Error(`Incompatible text directions: ${lineDir}, ${charDir}`);
+    error.name = "ValueError";
+    throw error;
   }
 }

@@ -211,6 +211,208 @@ async function textFlowMatchSummary(selectedPage: PDFPlumberPage): Promise<Recor
   };
 }
 
+const textRotations: Array<[string, string, string]> = [
+  ["0", "ltr", "ttb"],
+  ["-0", "rtl", "ttb"],
+  ["180", "rtl", "btt"],
+  ["-180", "ltr", "btt"],
+  ["90", "ttb", "rtl"],
+  ["-90", "btt", "rtl"],
+  ["270", "btt", "ltr"],
+  ["-270", "ttb", "ltr"]
+];
+
+async function textRotationSummary(document: PDFPlumberDocument): Promise<Record<string, unknown>> {
+  const expected = await valueOf(document.pages[0].extractText());
+  const matches: Record<string, boolean> = {};
+  for (let index = 1; index < textRotations.length; index += 1) {
+    const [rotation, charDir, lineDir] = textRotations[index];
+    const page = document.pages[index].filter((object) => object.text !== " ");
+    const output = await valueOf(page.extractText({
+      x_tolerance: 2,
+      y_tolerance: 2,
+      char_dir: charDir,
+      line_dir: lineDir,
+      char_dir_rotated: charDir,
+      line_dir_rotated: lineDir,
+      char_dir_render: "ltr",
+      line_dir_render: "ttb"
+    }));
+    matches[rotation] = output === expected;
+  }
+  return { base_head: expected.slice(0, 120), matches };
+}
+
+async function textRotationLayoutSummary(document: PDFPlumberDocument): Promise<Record<string, boolean>> {
+  const out: Record<string, boolean> = {};
+  for (let index = 0; index < textRotations.length; index += 1) {
+    const [rotation, charDir, lineDir] = textRotations[index];
+    const page = document.pages[index].filter((object) => object.text !== " ");
+    const text = await valueOf(page.extractText({
+      layout: true,
+      x_tolerance: 2,
+      y_tolerance: 2,
+      char_dir: charDir,
+      line_dir: lineDir,
+      char_dir_rotated: charDir,
+      line_dir_rotated: lineDir,
+      char_dir_render: "ltr",
+      line_dir_render: "ttb",
+      y_density: 14
+    }));
+    const first = text.search(/opens with a news report/);
+    const second = text.search(/having been transferred/);
+    out[rotation] = first >= 0 && second >= 0 && first < second;
+  }
+  return out;
+}
+
+async function textRenderDirectionsSummary(selectedPage: PDFPlumberPage): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  for (const lineDir of ["ttb", "btt", "ltr", "rtl"]) {
+    const charDirs = lineDir === "ttb" || lineDir === "btt" ? ["ltr", "rtl"] : ["ttb", "btt"];
+    for (const charDir of charDirs) {
+      out[`${lineDir}/${charDir}`] = await valueOf(selectedPage.extractText({ line_dir_render: lineDir, char_dir_render: charDir }));
+    }
+  }
+  return out;
+}
+
+function invalidDirectionsSummary(selectedPage: PDFPlumberPage): Record<string, string | null> {
+  const checks: Record<string, Record<string, unknown>> = {
+    line_invalid: { line_dir: "xxx", char_dir: "ltr" },
+    char_invalid: { line_dir: "ttb", char_dir: "a" },
+    line_char_incompatible: { line_dir: "rtl", char_dir: "ltr" },
+    line_char_axis_incompatible: { line_dir: "ttb", char_dir: "btt" },
+    rotated_incompatible: { line_dir_rotated: "ttb", char_dir_rotated: "btt" },
+    render_incompatible: { line_dir_render: "ttb", char_dir_render: "btt" }
+  };
+  return Object.fromEntries(Object.entries(checks).map(([name, options]) => [name, captureErrorName(() => selectedPage.extractText(options))]));
+}
+
+async function extraAttrsTextSummary(selectedPage: PDFPlumberPage): Promise<Record<string, unknown>> {
+  return {
+    default: await valueOf(selectedPage.extractText()),
+    color: await valueOf(selectedPage.extractText({ extra_attrs: ["non_stroking_color"] })),
+    fontname: await valueOf(selectedPage.extractText({ extra_attrs: ["fontname"] })),
+    color_fontname: await valueOf(selectedPage.extractText({ extra_attrs: ["non_stroking_color", "fontname"] })),
+    layout_flow_error: captureErrorName(() => selectedPage.extractText({ layout: true, use_text_flow: true, extra_attrs: ["non_stroking_color", "fontname"] }))
+  };
+}
+
+function wordsToText(words: Array<Record<string, unknown>>): string {
+  const lines: string[] = [];
+  let currentTop: unknown = Symbol("unset");
+  let current: string[] = [];
+  for (const word of words) {
+    if (word.top !== currentTop) {
+      if (current.length) lines.push(current.join(" "));
+      currentTop = word.top;
+      current = [];
+    }
+    current.push(String(word.text ?? ""));
+  }
+  if (current.length) lines.push(current.join(" "));
+  return lines.join("\n");
+}
+
+async function textFlowSummary(selectedPage: PDFPlumberPage): Promise<Record<string, boolean>> {
+  const target = [
+    "The FAA proposes to",
+    "supersede Airworthiness Directive (AD)",
+    "2018–23–51, which applies to all The",
+    "Boeing Company Model 737–8 and 737–",
+    "9 (737 MAX) airplanes. Since AD 2018–",
+    ""
+  ].join("\n");
+  return {
+    target_in_flow: wordsToText(await valueOf(selectedPage.extractWords({ use_text_flow: true })) as Array<Record<string, unknown>>).includes(target),
+    target_in_default: wordsToText(await valueOf(selectedPage.extractWords()) as Array<Record<string, unknown>>).includes(target)
+  };
+}
+
+async function textFlowOverlappingSummary(selectedPage: PDFPlumberPage): Promise<Record<string, boolean>> {
+  const usingFlow = await valueOf(selectedPage.extractText({ use_text_flow: true, layout: true, x_tolerance: 1 }));
+  const notUsingFlow = await valueOf(selectedPage.extractText({ layout: true, x_tolerance: 1 }));
+  return {
+    flow_has_payment: /2015 RICE PAYMENT 26406576 0 1207631 Cr/.test(usingFlow),
+    flow_has_bad_merge: /124644,06155766/.test(usingFlow),
+    default_has_payment: /2015 RICE PAYMENT 26406576 0 1207631 Cr/.test(notUsingFlow),
+    default_has_bad_merge: /124644,06155766/.test(notUsingFlow)
+  };
+}
+
+async function textFlowWordsMixedLinesSummary(selectedPage: PDFPlumberPage): Promise<Record<string, boolean>> {
+  const texts = new Set((await valueOf(selectedPage.extractWords({ use_text_flow: true }))).map((word: PDFObject) => String(word.text)));
+  return {
+    has_claim: texts.has("claim"),
+    has_lence: texts.has("lence"),
+    has_claimlence: texts.has("claimlence")
+  };
+}
+
+async function extractTextLinesSummary(selectedPage: PDFPlumberPage): Promise<Record<string, unknown>> {
+  const results = await valueOf(selectedPage.extractTextLines());
+  const alt = await valueOf(selectedPage.extractTextLines({ layout: true, strip: false, return_chars: false }));
+  const stripped = await valueOf(selectedPage.extractTextLines({ layout: true }));
+  return {
+    count: results.length,
+    first_has_chars: Object.prototype.hasOwnProperty.call(results[0], "chars"),
+    first_text: results[0]?.text,
+    alt_first_has_chars: Object.prototype.hasOwnProperty.call(alt[0], "chars"),
+    alt_first_text: alt[0]?.text,
+    line10_text: results[10]?.text,
+    alt_line10_text: alt[10]?.text,
+    stripped_line10_text: stripped[10]?.text
+  };
+}
+
+async function layoutWidthsSummary(selectedPage: PDFPlumberPage): Promise<Record<string, unknown>> {
+  const text = await valueOf(selectedPage.extractText({ layout: true, layout_width_chars: 75 }));
+  return {
+    all_lines_75: text.split("\n").every((line) => line.length === 75),
+    width_conflict: captureErrorName(() => selectedPage.extractText({ layout: true, layout_width: 300, layout_width_chars: 50 })),
+    height_conflict: captureErrorName(() => selectedPage.extractText({ layout: true, layout_height: 300, layout_height_chars: 50 }))
+  };
+}
+
+async function charlessTextSummary(selectedPage: PDFPlumberPage): Promise<Record<string, string>> {
+  const charless = selectedPage.filter((object) => object.object_type !== "char");
+  return {
+    plain: await valueOf(charless.extractText()),
+    layout: await valueOf(charless.extractText({ layout: true }))
+  };
+}
+
+function slimSearchResult(result: Record<string, unknown>): Record<string, unknown> {
+  return {
+    text: result.text,
+    groups: result.groups
+  };
+}
+
+function searchRegexCompiledSummary(selectedPage: PDFPlumberPage): Record<string, unknown> {
+  const results = selectedPage.search(/supreme\s+(\w+)/i) as unknown as Array<Record<string, unknown>>;
+  return {
+    first_two: results.slice(0, 2).map(slimSearchResult),
+    regex_false_error: captureErrorName(() => selectedPage.search(/x/, { regex: false })),
+    case_false_error: captureErrorName(() => selectedPage.search(/x/, { case: false }))
+  };
+}
+
+function searchRegexUncompiledSummary(selectedPage: PDFPlumberPage): Array<Record<string, unknown>> {
+  return (selectedPage.search("supreme\\s+(\\w+)", { case: false }) as unknown as Array<Record<string, unknown>>).slice(0, 2).map(slimSearchResult);
+}
+
+async function searchEmptySummary(selectedPage: PDFPlumberPage): Promise<Record<string, number>> {
+  return {
+    newline_regex: (await valueOf(selectedPage.search("\n", { regex: true }))).length,
+    newline_literal: (await valueOf(selectedPage.search("\n", { regex: false }))).length,
+    optional_empty: (await valueOf(selectedPage.search("(sdfsd)?"))).length,
+    empty: (await valueOf(selectedPage.search(""))).length
+  };
+}
+
 function nicsPlainTableSummary(table: Array<Array<string | null>> | null): Record<string, unknown> {
   if (!table?.length) {
     return {
@@ -439,6 +641,12 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
         case "pdf.metadataChangesSummary":
           actual = metadataChangesSummary(document.metadata);
           break;
+        case "pdf.textRotationSummary":
+          actual = await textRotationSummary(document);
+          break;
+        case "pdf.textRotationLayoutSummary":
+          actual = await textRotationLayoutSummary(document);
+          break;
         case "pdf.objectCounts":
           actual = Object.fromEntries(Object.entries(document.objects).map(([key, value]) => [key, value.length]));
           break;
@@ -508,6 +716,42 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
           break;
         case "page.textFlowMatchSummary":
           actual = await textFlowMatchSummary(selectedPage);
+          break;
+        case "page.textRenderDirectionsSummary":
+          actual = await textRenderDirectionsSummary(selectedPage);
+          break;
+        case "page.invalidDirectionsSummary":
+          actual = invalidDirectionsSummary(selectedPage);
+          break;
+        case "page.extraAttrsTextSummary":
+          actual = await extraAttrsTextSummary(selectedPage);
+          break;
+        case "page.textFlowSummary":
+          actual = await textFlowSummary(selectedPage);
+          break;
+        case "page.textFlowOverlappingSummary":
+          actual = await textFlowOverlappingSummary(selectedPage);
+          break;
+        case "page.textFlowWordsMixedLinesSummary":
+          actual = await textFlowWordsMixedLinesSummary(selectedPage);
+          break;
+        case "page.extractTextLinesSummary":
+          actual = await extractTextLinesSummary(selectedPage);
+          break;
+        case "page.layoutWidthsSummary":
+          actual = await layoutWidthsSummary(selectedPage);
+          break;
+        case "page.charlessTextSummary":
+          actual = await charlessTextSummary(selectedPage);
+          break;
+        case "page.searchRegexCompiledSummary":
+          actual = searchRegexCompiledSummary(selectedPage);
+          break;
+        case "page.searchRegexUncompiledSummary":
+          actual = searchRegexUncompiledSummary(selectedPage);
+          break;
+        case "page.searchEmptySummary":
+          actual = await searchEmptySummary(selectedPage);
           break;
         case "page.extractText":
           actual = await valueOf(selectedPage.extractText(check.args ?? {}));

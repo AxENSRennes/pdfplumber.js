@@ -1,6 +1,6 @@
 {
   "reference": {
-    "generatedAt": "2026-05-28T02:01:12.570187+00:00",
+    "generatedAt": "2026-05-28T02:08:19.258247+00:00",
     "pdfminerVersion": "20260107",
     "pdfplumberCommit": "98041536932ce85d18a1fba80d9db0686b831d9d",
     "pdfplumberVersion": "0.11.9"
@@ -4698,6 +4698,95 @@
     {
       "checks": [
         {
+          "expected": {
+            "color": "Black RedArial",
+            "color_fontname": "Black Red Arial",
+            "default": "BlackRedArial",
+            "fontname": "BlackRed Arial",
+            "layout_flow_error": null
+          },
+          "page": 0,
+          "type": "page.extraAttrsTextSummary"
+        }
+      ],
+      "id": "text-extra-attrs",
+      "pdf": "extra-attrs-example.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "base_head": "The movie opens with a news report advertising the way of life in this future, which seems to be far from\nideal. Among o",
+            "matches": {
+              "-0": true,
+              "-180": true,
+              "-270": true,
+              "-90": true,
+              "180": true,
+              "270": true,
+              "90": true
+            }
+          },
+          "type": "pdf.textRotationSummary"
+        }
+      ],
+      "id": "text-rotation",
+      "pdf": "issue-848.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "-0": true,
+            "-180": true,
+            "-270": true,
+            "-90": true,
+            "0": true,
+            "180": true,
+            "270": true,
+            "90": true
+          },
+          "type": "pdf.textRotationLayoutSummary"
+        }
+      ],
+      "id": "text-rotation-layout",
+      "pdf": "issue-848.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "btt/ltr": "third line\nsecond line\nfirst line",
+            "btt/rtl": "enil driht\nenil dnoces\nenil tsrif",
+            "ltr/btt": " s \nfet\nich\nroi\nsnr\ntdd\n   \nlll\niii\nnnn\neee",
+            "ltr/ttb": "fst\nieh\nrci\nsor\ntnd\n d \nl l\nili\nnin\nene\n e ",
+            "rtl/btt": " s \ntef\nhci\nior\nrns\nddt\n   \nlll\niii\nnnn\neee",
+            "rtl/ttb": "tsf\nhei\nicr\nros\ndnt\n d \nl l\nili\nnin\nene\n e ",
+            "ttb/ltr": "first line\nsecond line\nthird line",
+            "ttb/rtl": "enil tsrif\nenil dnoces\nenil driht"
+          },
+          "page": 0,
+          "type": "page.textRenderDirectionsSummary"
+        },
+        {
+          "expected": {
+            "char_invalid": "ValueError",
+            "line_char_axis_incompatible": "ValueError",
+            "line_char_incompatible": "ValueError",
+            "line_invalid": "ValueError",
+            "render_incompatible": "ValueError",
+            "rotated_incompatible": "ValueError"
+          },
+          "page": 0,
+          "type": "page.invalidDirectionsSummary"
+        }
+      ],
+      "id": "text-render-directions",
+      "pdf": "line-char-render-example.pdf"
+    },
+    {
+      "checks": [
+        {
           "expected": "Big Te xt\nSmall Text",
           "page": 0,
           "type": "page.extractText"
@@ -5167,6 +5256,78 @@
         },
         {
           "args": {
+            "layout": true
+          },
+          "expected": "                                                                                    \n                                                                                    \n                                                                                    \n                                   Official - Subject to Final Review               \n                                                                                    \n             1      IN THE SUPREME COURT OF THE UNITED STATES                       \n                                                                                    \n             2   - - - - - - - - - - - - - - - - - x                                \n                                                                                    \n             3   MICHAEL A. KNOWLES,               :                                \n                                                                                    \n             4   WARDEN,                           :                                \n                                                                                    \n             5               Petitioner            :                                \n                                                                                    \n             6          v.                         :  No. 07-1315                   \n                                                                                    \n             7   ALEXANDRE MIRZAYANCE.             :                                \n                                                                                    \n             8   - - - - - - - - - - - - - - - - - x                                \n                                                                                    \n             9                          Washington, D.C.                            \n                                                                                    \n            10                          Tuesday, January 13, 2009                   \n                                                                                    \n            11                                                                      \n                                                                                    \n            12                 The above-entitled matter came on for oral           \n                                                                                    \n            13   argument before the Supreme Court of the United States             \n                                                                                    \n            14   at 1:01 p.m.                                                       \n                                                                                    \n            15   APPEARANCES:                                                       \n                                                                                    \n            16   STEVEN E. MERCER, ESQ., Deputy Attorney General, Los               \n                                                                                    \n            17      Angeles, Cal.; on behalf of the Petitioner.                     \n                                                                                    \n            18   CHARLES M. SEVILLA, ESQ., San Diego, Cal.; on behalf               \n                                                                                    \n            19      of the Respondent.                                              \n                                                                                    \n            20                                                                      \n                                                                                    \n            21                                                                      \n                                                                                    \n            22                                                                      \n                                                                                    \n            23                                                                      \n                                                                                    \n            24                                                                      \n                                                                                    \n            25                                                                      \n                                                                                    \n                                                                                    \n                                            1                                       \n                                    Alderson Reporting Company                      \n                                                                                    \n                                                                                    ",
+          "page": 0,
+          "type": "page.extractText"
+        },
+        {
+          "expected": {
+            "alt_first_has_chars": false,
+            "alt_first_text": "                                   Official - Subject to Final Review               ",
+            "alt_line10_text": "            10                          Tuesday, January 13, 2009                   ",
+            "count": 28,
+            "first_has_chars": true,
+            "first_text": "Official - Subject to Final Review",
+            "line10_text": "10 Tuesday, January 13, 2009",
+            "stripped_line10_text": "10                          Tuesday, January 13, 2009"
+          },
+          "page": 0,
+          "type": "page.extractTextLinesSummary"
+        },
+        {
+          "expected": {
+            "case_false_error": "ValueError",
+            "first_two": [
+              {
+                "groups": [
+                  "COURT"
+                ],
+                "text": "SUPREME COURT"
+              },
+              {
+                "groups": [
+                  "Court"
+                ],
+                "text": "Supreme Court"
+              }
+            ],
+            "regex_false_error": "ValueError"
+          },
+          "page": 0,
+          "type": "page.searchRegexCompiledSummary"
+        },
+        {
+          "expected": [
+            {
+              "groups": [
+                "COURT"
+              ],
+              "text": "SUPREME COURT"
+            },
+            {
+              "groups": [
+                "Court"
+              ],
+              "text": "Supreme Court"
+            }
+          ],
+          "page": 0,
+          "type": "page.searchRegexUncompiledSummary"
+        },
+        {
+          "expected": {
+            "empty": 0,
+            "newline_literal": 0,
+            "newline_regex": 0,
+            "optional_empty": 0
+          },
+          "page": 0,
+          "type": "page.searchEmptySummary"
+        },
+        {
+          "args": {
             "pattern": "Roberts",
             "regex": false
           },
@@ -5188,6 +5349,100 @@
       ],
       "id": "search-and-text-lines",
       "pdf": "scotus-transcript-p1.pdf"
+    },
+    {
+      "checks": [
+        {
+          "args": {
+            "layout": true
+          },
+          "bbox": [
+            90,
+            70,
+            612,
+            300
+          ],
+          "expected": " 1      IN THE SUPREME COURT OF THE UNITED STATES                       \n                                                                        \n 2   - - - - - - - - - - - - - - - - - x                                \n                                                                        \n 3   MICHAEL A. KNOWLES,               :                                \n                                                                        \n 4   WARDEN,                           :                                \n                                                                        \n 5               Petitioner            :                                \n                                                                        \n 6          v.                         :  No. 07-1315                   \n                                                                        \n 7   ALEXANDRE MIRZAYANCE.             :                                \n                                                                        \n 8   - - - - - - - - - - - - - - - - - x                                \n                                                                        \n 9                          Washington, D.C.                            \n                                                                        \n10                          Tuesday, January 13, 2009                   ",
+          "page": 0,
+          "type": "page.crop.extractText"
+        }
+      ],
+      "id": "extract-text-layout-cropped",
+      "pdf": "scotus-transcript-p1.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "all_lines_75": true,
+            "height_conflict": "ValueError",
+            "width_conflict": "ValueError"
+          },
+          "page": 0,
+          "type": "page.layoutWidthsSummary"
+        }
+      ],
+      "id": "extract-text-layout-widths",
+      "pdf": "scotus-transcript-p1.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "layout": "",
+            "plain": ""
+          },
+          "page": 0,
+          "type": "page.charlessTextSummary"
+        }
+      ],
+      "id": "extract-text-nochars",
+      "pdf": "pdffill-demo.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "target_in_default": false,
+            "target_in_flow": true
+          },
+          "page": 0,
+          "type": "page.textFlowSummary"
+        }
+      ],
+      "id": "text-flow",
+      "pdf": "federal-register-2020-17221.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "default_has_bad_merge": true,
+            "default_has_payment": false,
+            "flow_has_bad_merge": false,
+            "flow_has_payment": true
+          },
+          "page": 0,
+          "type": "page.textFlowOverlappingSummary"
+        }
+      ],
+      "id": "text-flow-overlapping",
+      "pdf": "issue-912.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "has_claim": true,
+            "has_claimlence": false,
+            "has_lence": true
+          },
+          "page": 0,
+          "type": "page.textFlowWordsMixedLinesSummary"
+        }
+      ],
+      "id": "text-flow-words-mixed-lines",
+      "pdf": "issue-1279-example.pdf"
     },
     {
       "checks": [
