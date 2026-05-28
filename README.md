@@ -7,9 +7,12 @@ The implementation target is native pdfminer-style parsing and extraction.
 PDF.js remains a named runtime dependency for PDF loading/operator capabilities
 that are covered by tests.
 
+The supported public surface is documented in
+[`docs/public-api.md`](docs/public-api.md).
+
 ## Installation
 
-This package is still private while parity work is in progress. Build locally:
+Install from npm once published, or build locally while parity work continues:
 
 ```sh
 npm install
@@ -35,8 +38,8 @@ try {
 
 Supported inputs:
 
-- Node: filesystem path, `URL`, `ArrayBuffer`, `Uint8Array`, `Blob`, and HTTP(S)
-  URL string.
+- Node: filesystem path, `file:` URL, HTTP(S) `URL`, `ArrayBuffer`,
+  `Uint8Array`, `Blob`, and HTTP(S) URL string.
 - Browser: `ArrayBuffer`, `Uint8Array`, `Blob`, `URL`, and URL string.
 
 Supported options:
@@ -47,6 +50,10 @@ Supported options:
 - `unicode_norm`: one of `NFC`, `NFKC`, `NFD`, or `NFKD`.
 - `raise_unicode_errors`: reserved for Python-compatible unicode error handling.
 
+The ESM package exports TypeScript types for public inputs, documents, pages,
+objects, search results, text/word/search/crop/dedupe options, and table
+settings.
+
 ## Document API
 
 `open()` resolves to a `PDFPlumberDocument`:
@@ -56,7 +63,8 @@ Supported options:
 - `objects`: document-level objects grouped by type.
 - `annots`: all page annotations.
 - `hyperlinks`: annotations with a URI.
-- `close()`: releases PDF.js resources.
+- `edges`, `horizontal_edges`, `vertical_edges`: document-level vector edges.
+- `close()`: releases runtime resources.
 
 ## Page API
 
@@ -67,6 +75,7 @@ Each page exposes pdfplumber-shaped geometry and objects:
   `trimbox`.
 - Object arrays: `chars`, `rects`, `lines`, `curves`, `images`, `annots`,
   `hyperlinks`, `rect_edges`, `curve_edges`, and `edges`.
+- Vector objects include pdfplumber-style `path` command arrays and `pts`.
 - Edge helpers: `horizontal_edges` and `vertical_edges`.
 - `objects`: object arrays grouped by `object_type`.
 
@@ -88,13 +97,16 @@ Extraction and transformation methods:
 
 Object dictionaries include pdfplumber-style fields where available, including
 coordinates, colors, vector state, marked-content `mcid`/`tag`, annotation
-fields, and image metadata such as `name`, `srcsize`, `colorspace`, and `bits`.
+fields including parsed annotation `data`, and image metadata such as `name`,
+`srcsize`, `imagemask`, `colorspace`, and `bits`.
 
 Table detection accepts pdfplumber-style table settings, including `lines`,
 `lines_strict`, `text`, and `explicit` `vertical_strategy` /
 `horizontal_strategy` values, explicit edge inputs, snap/join/intersection
 tolerances, minimum word thresholds, and `text_*` options forwarded to cell text
 extraction.
+`Table.rows` and `Table.columns` contain `TableAxisGroup` objects with `bbox`
+and `cells`.
 
 ## Compatibility Gates
 
@@ -103,8 +115,16 @@ Useful local checks:
 ```sh
 npm run typecheck
 npm test
+npm run test:compat
+npm run test:parity
+npm run test:stability:smoke
+npm run test:stability:real-cycles
+npm run test:stability
 npm run test:browser
+npm run package:check
+npm run audit:mupdf:check
 npm run contract:dashboard
+npm run contract:dashboard:check
 ```
 
 The upstream contract dashboard is generated at

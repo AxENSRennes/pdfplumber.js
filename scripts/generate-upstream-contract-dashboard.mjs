@@ -6,6 +6,7 @@ const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
 const outDir = path.join(repoRoot, "docs", "upstream-contract-dashboard");
 const rowsPath = path.join(outDir, "dashboard.tsv");
 const summaryPath = path.join(outDir, "README.md");
+const checkMode = process.argv.includes("--check");
 
 const allowedScopes = new Set([
   "public-api",
@@ -16,6 +17,7 @@ const allowedScopes = new Set([
   "duplicate",
   "excluded"
 ]);
+const completeStatuses = new Set(["passed", "excluded"]);
 
 const columns = [
   "source",
@@ -49,6 +51,7 @@ const passedPdfjsManifestLoadRobustnessIds = new Set([
   "bug1260585",
   "bug1755201",
   "bug1766987",
+  "bug1820909",
   "bug1823296",
   "bug1847733",
   "bug1978317",
@@ -57,12 +60,19 @@ const passedPdfjsManifestLoadRobustnessIds = new Set([
   "bug867484",
   "bug886717",
   "bug900822",
+  "ecma262-pdf",
+  "bug951051",
   "complexttffont-pdf",
+  "f1040",
+  "f1040_2022.pdf",
+  "hmm-pdf",
   "html5-canvas-cheat-sheet-load",
   "hudsonsurvey",
+  "ibwa-bad",
   "issue10004",
   "issue10272",
   "issue11518",
+  "issue13132",
   "issue11922",
   "issue1249-load",
   "issue1293",
@@ -73,13 +83,20 @@ const passedPdfjsManifestLoadRobustnessIds = new Set([
   "issue16119",
   "issue16863",
   "issue17554",
+  "issue1729",
   "issue17856",
+  "issue1878",
+  "issue1940",
   "issue18503",
   "issue18986",
   "issue19281",
+  "issue2853",
+  "issue3248",
+  "issue5509",
   "issue1985",
   "issue19835",
   "issue2129",
+  "issue2627",
   "issue3848",
   "issue4387",
   "issue4461-load",
@@ -93,15 +110,23 @@ const passedPdfjsManifestLoadRobustnessIds = new Set([
   "issue7665",
   "jai-pdf",
   "liveprogramming",
+  "ocs",
   "openoffice-pdf",
   "openofficearabiccidtruetype-pdf",
   "openofficecidtruetype-pdf",
+  "pdfspec-load",
+  "pr4606",
+  "pr4731",
   "scan-bad",
-  "txt2pdf"
+  "shavian-load",
+  "txt2pdf",
+  "vesta-bad"
 ]);
 
 const passedPdfjsManifestTextPublicIds = new Set([
   "arabiccidtruetype-text",
+  "bug1130815-text",
+  "bug931481",
   "bug1245391-text",
   "bug1513120-text",
   "bug1627427",
@@ -116,24 +141,35 @@ const passedPdfjsManifestTextPublicIds = new Set([
   "issue1045",
   "issue10529",
   "issue11016",
+  "issue1127-text",
+  "issue11403-text",
   "issue11651-text",
   "issue11656",
   "issue11713",
   "issue12909",
   "issue13845",
   "issue14048",
+  "issue14415",
+  "issue14497",
   "issue14627",
+  "issue14999",
+  "issue15352",
   "issue15516",
   "issue15629",
   "issue15910",
   "issue16221-text",
   "issue16224-text",
   "issue16843-text",
+  "issue18059-text",
+  "issue18117-text",
+  "issue1936-text",
   "issue19624-text",
   "issue19954",
   "issue19800-text",
   "issue19848-text",
   "issue20930-text",
+  "operator-in-TJ-array",
+  "issue2017-text",
   "issue4665-text",
   "issue4684-text",
   "issue5421-text",
@@ -146,41 +182,75 @@ const passedPdfjsManifestTextPublicIds = new Set([
   "issue6387-text",
   "issue6605",
   "issue6612-text",
+  "issue6901-text",
   "issue6962",
   "issue7180-text",
   "issue7492-text",
+  "issue7580-text",
   "issue7878",
   "issue8229",
   "issue8372-text",
   "issue8702-text",
+  "issue2770-text",
+  "issue3064-text",
   "issue3925",
+  "issue4550-text",
   "issue9186",
+  "mao-text",
   "issue9655-text",
+  "preistabelle-text",
+  "reduced_planck_constant",
   "rotated-text",
   "simpletype3font-text",
+  "taro-text",
+  "tracemonkey-extract_0_2_12",
+  "tracemonkey-text",
   "zero_descent"
 ]);
 
-const classifiedPdfjsManifestTextBackendGaps = new Map([
-  ["issue11403-text", "cid-text-normalization"],
-  ["issue14415", "layout-ordering"],
-  ["issue14497", "layout-ordering"],
-  ["issue14999", "layout-ordering"],
-  ["issue15352", "layout-ordering"],
-  ["issue18059-text", "cid-text-normalization"],
-  ["issue1936-text", "glyph-decoding"],
-  ["issue18117-text", "malformed-content-recovery"],
-  ["issue2017-text", "glyph-decoding"],
-  ["issue4550-text", "glyph-decoding"],
-  ["issue6901-text", "cid-text-normalization"],
-  ["issue7580-text", "glyph-decoding"],
-  ["operator-in-TJ-array", "malformed-content-recovery"],
-  ["reduced_planck_constant", "glyph-decoding"],
-  ["tracemonkey-extract_0_2_12", "glyph-decoding"],
-  ["tracemonkey-text", "glyph-decoding"]
-]);
+const classifiedPdfjsManifestTextBackendGaps = new Map([]);
 
 const passedPythonSupportFixtures = new Map([
+  [
+    "pdfplumber-python/tests/pdfs/annotations-rotated-180.pdf",
+    {
+      subsystem: "annotations",
+      js: "test/parity/pdfplumber.parity.test.ts (PDFPLUMBER_JS_RUN_PARITY=1, corpus/default/annotations-rotated-180.pdf); test/lowlevel/annotation-compat.test.ts",
+      rationale: "The Python-generated parity scenario and low-level annotation compatibility test cover rotated annotation geometry, decoded fields, and parsed annotation data dictionaries against Python pdfplumber goldens."
+    }
+  ],
+  [
+    "pdfplumber-python/tests/pdfs/annotations-rotated-270.pdf",
+    {
+      subsystem: "annotations",
+      js: "test/parity/pdfplumber.parity.test.ts (PDFPLUMBER_JS_RUN_PARITY=1, corpus/default/annotations-rotated-270.pdf); test/lowlevel/annotation-compat.test.ts",
+      rationale: "The Python-generated parity scenario and low-level annotation compatibility test cover rotated annotation geometry, decoded fields, and parsed annotation data dictionaries against Python pdfplumber goldens."
+    }
+  ],
+  [
+    "pdfplumber-python/tests/pdfs/annotations-rotated-90.pdf",
+    {
+      subsystem: "annotations",
+      js: "test/parity/pdfplumber.parity.test.ts (PDFPLUMBER_JS_RUN_PARITY=1, corpus/default/annotations-rotated-90.pdf); test/lowlevel/annotation-compat.test.ts",
+      rationale: "The Python-generated parity scenario and low-level annotation compatibility test cover rotated annotation geometry, decoded fields, and parsed annotation data dictionaries against Python pdfplumber goldens."
+    }
+  ],
+  [
+    "pdfplumber-python/tests/pdfs/annotations.pdf",
+    {
+      subsystem: "annotations",
+      js: "test/parity/pdfplumber.parity.test.ts (PDFPLUMBER_JS_RUN_PARITY=1, corpus/default/annotations.pdf); test/lowlevel/annotation-compat.test.ts",
+      rationale: "The Python-generated parity scenario and low-level annotation compatibility test cover document/page annotations, popup contents, parsed annotation data dictionaries, text extraction, and word summaries against Python pdfplumber goldens."
+    }
+  ],
+  [
+    "pdfplumber-python/tests/pdfs/annotations-unicode-issues.pdf",
+    {
+      subsystem: "annotations",
+      js: "test/parity/pdfplumber.parity.test.ts (PDFPLUMBER_JS_RUN_PARITY=1, corpus/default/annotations-unicode-issues.pdf)",
+      rationale: "The Python-generated parity scenario for this upstream Unicode annotation fixture passes against the public API document snapshot, covering annotation text and extracted page summaries against Python pdfplumber goldens."
+    }
+  ],
   [
     "pdfplumber-python/tests/comparisons/scotus-transcript-p1-cropped.txt",
     {
@@ -202,11 +272,43 @@ const passedPythonSupportFixtures = new Map([
     }
   ],
   [
+    "pdfplumber-python/tests/pdfs/empty.pdf",
+    {
+      subsystem: "pages",
+      js: "test/parity/pdfplumber.parity.test.ts (PDFPLUMBER_JS_RUN_PARITY=1, corpus/default/empty.pdf)",
+      rationale: "The Python-generated parity scenario for this upstream empty PDF fixture passes against the public API document snapshot, verifying page-count and empty-object behavior against Python pdfplumber goldens."
+    }
+  ],
+  [
+    "pdfplumber-python/tests/pdfs/chelsea_pdta.pdf",
+    {
+      subsystem: "images",
+      js: "test/parity/pdfplumber.parity.test.ts (PDFPLUMBER_JS_RUN_PARITY=1, corpus/default/chelsea_pdta.pdf); test/lowlevel/real-fixtures.test.ts; test/lowlevel/image-metadata-compat.test.ts",
+      rationale: "The Python-generated corpus/default document snapshot passes against current Python pdfplumber goldens, including image metadata and image bbox precision; the low-level fixture and image-metadata tests pin pdfminer-style srcsize, imagemask, bits, colorspace, and image-width rounding rules that affect public image summaries."
+    }
+  ],
+  [
+    "pdfplumber-python/tests/pdfs/federal-register-2020-17221.pdf",
+    {
+      subsystem: "annotations",
+      js: "test/parity/pdfplumber.parity.test.ts (PDFPLUMBER_JS_RUN_PARITY=1, corpus/default/federal-register-2020-17221.pdf); test/lowlevel/real-fixtures.test.ts",
+      rationale: "The Python-generated corpus/default scenario now matches Python pdfplumber's stable MalformedPDFException for a widget signature annotation whose signature reference points back to the document catalog; the low-level fixture test verifies the public page.annots/pdf.annots error behavior."
+    }
+  ],
+  [
+    "pdfplumber-python/tests/pdfs/extra-attrs-example.pdf",
+    {
+      subsystem: "text",
+      js: "test/parity/pdfplumber.parity.test.ts (PDFPLUMBER_JS_RUN_PARITY=1, corpus/default/extra-attrs-example.pdf)",
+      rationale: "The Python-generated corpus/default document snapshot for this upstream fixture passes against current Python pdfplumber goldens, covering char samples and word extraction for extra-attribute text inputs."
+    }
+  ],
+  [
     "pdfplumber-python/tests/pdfs/issue-203-decimalize.pdf",
     {
       subsystem: "images",
-      js: "test/lowlevel/real-fixtures.test.ts",
-      rationale: "The low-level real-fixture test verifies that this upstream pdfplumber image-mask fixture exposes stable image metadata and transforms through the public page.images API."
+      js: "test/lowlevel/real-fixtures.test.ts; test/lowlevel/image-metadata-compat.test.ts",
+      rationale: "The low-level real-fixture and image-metadata tests verify that this upstream pdfplumber image-mask fixture exposes stable image metadata, including imagemask=true for mask XObjects, and transforms through the public page.images API."
     }
   ],
   [
@@ -226,6 +328,54 @@ const passedPythonSupportFixtures = new Map([
     }
   ],
   [
+    "pdfplumber-python/tests/pdfs/issue-1114-dedupe-chars.pdf",
+    {
+      subsystem: "text",
+      js: "test/parity/pdfplumber.parity.test.ts (PDFPLUMBER_JS_RUN_PARITY=1, dedupe/extra-attrs)",
+      rationale: "The Python-generated parity scenario for this upstream dedupe fixture passes through the public page.dedupeChars() API with extra_attrs options against Python pdfplumber goldens."
+    }
+  ],
+  [
+    "pdfplumber-python/tests/pdfs/issue-1181.pdf",
+    {
+      subsystem: "table",
+      js: "test/parity/pdfplumber.parity.test.ts (PDFPLUMBER_JS_RUN_PARITY=1, table/mediabox-offset)",
+      rationale: "The Python-generated parity scenario for this upstream mediabox-offset fixture passes through public table extraction against Python pdfplumber goldens."
+    }
+  ],
+  [
+    "pdfplumber-python/tests/pdfs/issue-1279-example.pdf",
+    {
+      subsystem: "text",
+      js: "test/lowlevel/real-fixtures.test.ts (metadata); test/parity/pdfplumber.parity.test.ts (PDFPLUMBER_JS_RUN_PARITY=1, corpus/default/issue-1279-example.pdf)",
+      rationale: "The low-level real-fixture test verifies pdfminer-compatible trailer Info metadata for this incremental-update PDF, and the Python-generated corpus/default document snapshot passes with the current Python pdfplumber word-extraction hash."
+    }
+  ],
+  [
+    "pdfplumber-python/tests/pdfs/issue-53-example.pdf",
+    {
+      subsystem: "table",
+      js: "test/parity/pdfplumber.parity.test.ts (PDFPLUMBER_JS_RUN_PARITY=1, table/text-layout)",
+      rationale: "The Python-generated parity scenario for this upstream table fixture passes through extractTable({ text_layout: true }) against Python pdfplumber goldens."
+    }
+  ],
+  [
+    "pdfplumber-python/tests/pdfs/issue-336-example.pdf",
+    {
+      subsystem: "table",
+      js: "test/parity/pdfplumber.parity.test.ts (PDFPLUMBER_JS_RUN_PARITY=1, table/order-issue-336)",
+      rationale: "The Python-generated parity scenario for this upstream table-ordering fixture passes through the public extractTables() API against Python pdfplumber goldens."
+    }
+  ],
+  [
+    "pdfplumber-python/tests/pdfs/issue-466-example.pdf",
+    {
+      subsystem: "table",
+      js: "test/parity/pdfplumber.parity.test.ts (PDFPLUMBER_JS_RUN_PARITY=1, table/mixed-strategy-issue-466)",
+      rationale: "The Python-generated parity scenario for this upstream mixed-strategy table fixture passes through public table extraction options against Python pdfplumber goldens."
+    }
+  ],
+  [
     "pdfplumber-python/tests/pdfs/nics-background-checks-2015-11.pdf",
     {
       subsystem: "pages",
@@ -242,11 +392,19 @@ const passedPythonSupportFixtures = new Map([
     }
   ],
   [
+    "pdfplumber-python/tests/pdfs/password-example.pdf",
+    {
+      subsystem: "security",
+      js: "test/parity/pdfplumber.parity.test.ts (PDFPLUMBER_JS_RUN_PARITY=1, corpus/default/password-example.pdf)",
+      rationale: "The Python-generated parity scenario for this upstream password fixture passes against the public API document snapshot, verifying password-protected open behavior and extracted page summary data against Python pdfplumber goldens."
+    }
+  ],
+  [
     "pdfplumber-python/tests/pdfs/scotus-transcript-p1.pdf",
     {
       subsystem: "runtime",
       js: "test/smoke/api-shape.test.ts; test/browser/pdfplumber.browser.spec.ts",
-      rationale: "The public API and browser ESM smoke tests use this upstream pdfplumber fixture to verify search/text behavior plus Node/browser extraction parity for ArrayBuffer, Blob, and URL inputs."
+      rationale: "The public API and browser ESM smoke tests use this upstream pdfplumber fixture to verify search/text behavior plus Node/browser extraction parity for ArrayBuffer, Uint8Array, Blob, and URL inputs."
     }
   ],
   [
@@ -268,6 +426,61 @@ const passedPythonSupportFixtures = new Map([
     }
   ]
 ]);
+
+const passedCorpusSnapshotFixtureNames = new Set([
+  "150109DSP-Milw-505-90D.pdf",
+  "2023-06-20-PV.pdf",
+  "WARN-Report-for-7-1-2015-to-03-25-2016.pdf",
+  "cupertino_usd_4-6-16.pdf",
+  "extra-attrs-example.pdf",
+  "figure_structure.pdf",
+  "hello_structure.pdf",
+  "image_structure.pdf",
+  "issue-1054-example.pdf",
+  "issue-1147-example.pdf",
+  "issue-13-151201DSP-Fond-581-90D.pdf",
+  "issue-140-example.pdf",
+  "issue-192-example.pdf",
+  "issue-316-example.pdf",
+  "issue-33-lorem-ipsum.pdf",
+  "issue-336-example.pdf",
+  "issue-461-example.pdf",
+  "issue-463-example.pdf",
+  "issue-598-example.pdf",
+  "issue-67-example.pdf",
+  "issue-71-duplicate-chars.pdf",
+  "issue-842-example.pdf",
+  "issue-848.pdf",
+  "issue-90-example.pdf",
+  "issue-905.pdf",
+  "issue-912.pdf",
+  "issue-982-example.pdf",
+  "issue-987-test.pdf",
+  "la-precinct-bulletin-2014-p1.pdf",
+  "line-char-render-example.pdf",
+  "malformed-from-issue-932.pdf",
+  "mcid_example.pdf",
+  "nics-background-checks-2015-11-rotated.pdf",
+  "pdffill-demo.pdf",
+  "pdf_structure.pdf",
+  "pr-136-example.pdf",
+  "pr-138-example.pdf",
+  "pr-88-example.pdf",
+  "senate-expenditures.pdf",
+  "table-curves-example.pdf",
+  "test-punkt.pdf",
+  "word365_structure.pdf"
+]);
+
+for (const fixtureName of passedCorpusSnapshotFixtureNames) {
+  const source = `pdfplumber-python/tests/pdfs/${fixtureName}`;
+  if (passedPythonSupportFixtures.has(source)) continue;
+  passedPythonSupportFixtures.set(source, {
+    subsystem: fixtureName === "line-char-render-example.pdf" ? "vectors" : "general",
+    js: `test/parity/pdfplumber.parity.test.ts (PDFPLUMBER_JS_RUN_PARITY=1, corpus/default/${fixtureName})`,
+    rationale: "The Python-generated corpus/default document.snapshot scenario passes against current Python pdfplumber goldens, covering the public page/object summaries, extracted text, and extracted words exposed for this upstream fixture."
+  });
+}
 
 for (const source of parityCorpusFixtureSources()) {
   if (passedPythonSupportFixtures.has(source)) continue;
@@ -335,6 +548,7 @@ function cleanCell(value) {
   return String(value ?? "")
     .replace(/\r?\n/g, " ")
     .replace(/\t/g, " ")
+    .replace(/"/g, "'")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -345,6 +559,53 @@ function lineNumberForOffset(text, offset) {
     if (text.charCodeAt(i) === 10) line += 1;
   }
   return line;
+}
+
+function parseJsStringLiteral(text, offset) {
+  const quote = text[offset];
+  if (quote !== '"' && quote !== "'" && quote !== "`") return null;
+  let value = "";
+  for (let i = offset + 1; i < text.length; i += 1) {
+    const char = text[i];
+    if (char === "\\") {
+      value += char;
+      if (i + 1 < text.length) {
+        value += text[i + 1];
+        i += 1;
+      }
+      continue;
+    }
+    if (char === quote) return { value, end: i + 1 };
+    value += char;
+  }
+  return null;
+}
+
+function skipJsWhitespace(text, offset) {
+  let i = offset;
+  while (i < text.length && /\s/.test(text[i])) i += 1;
+  return i;
+}
+
+function directJsTestNameAt(text, offset) {
+  let i = text.indexOf("(", offset);
+  if (i < 0) return "";
+  i = skipJsWhitespace(text, i + 1);
+  const parts = [];
+  let literal = parseJsStringLiteral(text, i);
+  if (!literal) return "";
+  parts.push(literal.value);
+  i = literal.end;
+  while (true) {
+    i = skipJsWhitespace(text, i);
+    if (text[i] !== "+") break;
+    i = skipJsWhitespace(text, i + 1);
+    literal = parseJsStringLiteral(text, i);
+    if (!literal) break;
+    parts.push(literal.value);
+    i = literal.end;
+  }
+  return parts.join("");
 }
 
 function detectSubsystem(source, behavior) {
@@ -379,7 +640,7 @@ function passedBrowserInputGate(subsystem) {
     subsystem,
     status: "passed",
     js: "test/browser/pdfplumber.browser.spec.ts",
-    rationale: "The Playwright browser ESM gate runs Chromium, Firefox, and WebKit against the built package and verifies ArrayBuffer, Blob, and URL inputs against validated Node extraction results."
+    rationale: "The Playwright browser ESM gate runs Chromium, Firefox, and WebKit against the built package and verifies ArrayBuffer, Uint8Array, Blob, and URL inputs against validated Node extraction results."
   };
 }
 
@@ -389,7 +650,7 @@ function passedPublicInputGate(subsystem) {
     subsystem,
     status: "passed",
     js: "test/smoke/api-shape.test.ts; test/browser/pdfplumber.browser.spec.ts",
-    rationale: "The public API smoke test verifies Node file-path input, and the Playwright browser ESM gate verifies ArrayBuffer, Blob, URL object, and URL string inputs against the same public extraction summary."
+    rationale: "The public API smoke test verifies Node file-path input, and the Playwright browser ESM gate verifies ArrayBuffer, Uint8Array, Blob, URL object, and URL string inputs against the same public extraction summary."
   };
 }
 
@@ -414,6 +675,24 @@ function passedPdfjsPublicApiGate(subsystem, rationale) {
 }
 
 function passedPdfplumberCompatGate(subsystem, scenario) {
+  if (scenario === "marked-content-ids") {
+    return {
+      scope: "public-api",
+      subsystem,
+      status: "passed",
+      js: `test/compat/pdfplumber.compat.test.ts (${scenario}); test/lowlevel/marked-content-compat.test.ts`,
+      rationale: "The compat gate compares the upstream MCID behavior against Python pdfplumber goldens, and the low-level marked-content test verifies mcid/tag summaries on chars, vectors, images, and tag-only artifacts against live Python pdfplumber."
+    };
+  }
+  if (scenario === "table-rows-and-columns") {
+    return {
+      scope: "public-api",
+      subsystem,
+      status: "passed",
+      js: `test/compat/pdfplumber.compat.test.ts (${scenario}); test/lowlevel/table-compat.test.ts`,
+      rationale: "The compat gate compares table row/column extraction against Python pdfplumber goldens, and the low-level table compatibility test verifies public TableAxisGroup bbox/cells for rows and columns against live Python pdfplumber."
+    };
+  }
   return {
     scope: "public-api",
     subsystem,
@@ -1056,7 +1335,7 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
   if (sourceFile.endsWith("annotation_spec.js") && /^should correctly parse a uri action/.test(lowerBehavior)) {
     return passedPdfjsPublicApiGate(
       "annotations",
-      "The Python-backed public API test builds URI link annotations for absolute, protocol-less, and UTF-8 literal-string URLs, then verifies JS annots and hyperlinks match Python pdfplumber uri, contents, title, and geometry."
+      "The Python-backed public API and low-level annotation tests build URI link annotations and verify JS annots/hyperlinks match Python pdfplumber uri, contents, title, geometry, and parsed annotation data semantics."
     );
   }
 
@@ -1066,7 +1345,7 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
   ) {
     return passedPdfjsPublicApiGate(
       "annotations",
-      "The Python-backed public API test verifies authored annotation contents, title, and rectangle-derived geometry through the pdfplumber-shaped annots and hyperlinks objects."
+      "The Python-backed public API and low-level annotation tests verify authored annotation contents, title, rectangle-derived geometry, null contents for absent /Contents, and parsed annotation data dictionaries through pdfplumber-shaped annots and hyperlinks objects."
     );
   }
 
@@ -1079,7 +1358,7 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
       subsystem: "annotations",
       status: "excluded",
       js: "PDF.js annotation factory IDs, destinations, viewer actions, widget action URLs, popup inheritance, and internal setter validation are not exposed by pdfplumber.js.",
-      rationale: "The public annotation API exposes pdfplumber-compatible geometry plus simple uri/title/contents fields. It does not expose PDF.js annotation IDs, destination/action objects, JavaScript URL recovery, widget button actions, popup reply inheritance internals, or Annotation class setter/defaulting behavior."
+      rationale: "The public annotation API exposes pdfplumber-compatible geometry, uri/title/contents fields, and raw parsed annotation data. It does not expose PDF.js annotation IDs, destination/action objects, JavaScript URL recovery, widget button actions, popup reply inheritance internals, or Annotation class setter/defaulting behavior."
     };
   }
 
@@ -1093,8 +1372,8 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
       scope: "excluded",
       subsystem: "annotations",
       status: "excluded",
-      js: "Detailed PDF.js annotation/form widget properties are not exposed by pdfplumber.js.",
-      rationale: "The public annotation API exposes geometry plus simple uri/title/contents fields; it does not expose PDF.js quadpoints, form field state, widget choices, border/style/color/date/reply-state, line/ink detail, or file-attachment payload parsing."
+      js: "PDF.js-normalized annotation/form widget property APIs are not exposed by pdfplumber.js; pdfplumber-style raw annotation data is covered by test/lowlevel/annotation-compat.test.ts.",
+      rationale: "The public annotation API exposes pdfplumber-compatible geometry, uri/title/contents fields, and parsed raw annotation data. It does not expose PDF.js normalized quadpoint validation, field-name inheritance, appearance/rendering state, editor/save semantics, or file-attachment payload APIs."
     };
   }
 
@@ -1178,7 +1457,7 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
     if (/^gets annotations$/.test(lowerBehavior)) {
       return passedPdfjsPublicApiGate(
         "annotations",
-        "The Python-backed public API test verifies annotation count, geometry, contents, uri, title, and hyperlink aggregation for the PDF.js basic API fixture through pdfplumber-shaped public objects."
+        "The Python-backed public API and low-level annotation tests verify annotation count, geometry, contents, uri, title, parsed data, and hyperlink aggregation through pdfplumber-shaped public objects."
       );
     }
     if (/^gets annotations containing relative urls/.test(lowerBehavior)) {
@@ -1562,7 +1841,7 @@ function classify(source, behavior, kind) {
       return passedNativeCompatGate(
         subsystem,
         "test/lowlevel/path-paint-compat.test.ts",
-        "The low-level native path-painting tests verify pdfminer-compatible path classification for lines, rectangles, curves, quadrilateral edge cases, Bezier endpoints/raw paths, dash style, missing initial move handling, and upstream fixture line widths."
+        "The low-level native path-painting tests verify pdfminer-compatible path classification for lines, rectangles, curves, quadrilateral edge cases, Bezier endpoints/raw paths, public vector pts/path commands against Python pdfplumber, dash style, missing initial move handling, and upstream fixture line widths."
       );
     }
     if (
@@ -1625,7 +1904,7 @@ function classify(source, behavior, kind) {
           subsystem,
           status: "excluded",
           js: "pdfminer open_filename is Python path/file-object wrapper behavior; pdfplumber.js browser-capable input adaptation is covered by public open() runtime tests.",
-          rationale: "The stable goal excludes Python-only behavior, while the JS public API separately verifies ArrayBuffer, Blob, URL, and Node file inputs."
+          rationale: "The stable goal excludes Python-only behavior, while the JS public API separately verifies ArrayBuffer, Uint8Array, Blob, URL, and Node file inputs."
         };
       }
       if (
@@ -1686,7 +1965,7 @@ function classify(source, behavior, kind) {
         subsystem: "text",
         status: "backend-gap",
         js: "test/lowlevel/pdfjs-text-manifest-gaps.test.ts",
-        rationale: `Classified retained pdf.js text capability mismatch (${category}) against the Python pdfplumber/pdfminer oracle; the diagnostic test records current char/word divergence so the row is no longer unknown, but it remains non-complete until the native text path matches the oracle or the capability is removed.`
+        rationale: `Classified retained pdf.js text capability mismatch (${category}) against the Python pdfplumber/pdfminer oracle; the diagnostic test records the current text-order divergence so the row is no longer unknown, but it remains non-complete until the native text path matches the oracle or the capability is removed.`
       };
     }
     if (/\b(eq|fbf|print|annotation-layer|text-layer)\b/.test(lowerBehavior)) {
@@ -1761,7 +2040,7 @@ function classify(source, behavior, kind) {
         scope: "runtime-adaptation",
         subsystem,
         status: "needs-adapted-js-test",
-        js: "Adapt where it affects browser ESM, ArrayBuffer, Blob, URL, worker, or fetch behavior.",
+        js: "Adapt where it affects browser ESM, ArrayBuffer, Uint8Array, Blob, URL, worker, or fetch behavior.",
         rationale: "Runtime-facing pdf.js behavior matters only where pdfplumber.js accepts browser and Node inputs."
       };
     }
@@ -1930,14 +2209,15 @@ function inventoryJsSpecs(root) {
     }
 
     const text = read(file);
-    const testPattern = /\b(?:it|test)\s*(?:\.\w+)?\s*\(\s*(["'`])([^"'`]+)\1/g;
+    const testPattern = /\b(?:it|test)\s*(?:\.\w+)?\s*\(\s*(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|`((?:\\.|[^`\\])*)`)/g;
     let match;
     let found = 0;
     while ((match = testPattern.exec(text))) {
+      const behavior = directJsTestNameAt(text, match.index) || (match[1] ?? match[2] ?? match[3]);
       rows.push(
         makeRow({
           source: `${relative}:${lineNumberForOffset(text, match.index)}`,
-          behavior: firstSentence(match[2]),
+          behavior: firstSentence(behavior),
           kind: "test"
         })
       );
@@ -1965,15 +2245,48 @@ const rows = [
   ...inventoryJsSpecs("pdfjs/test/integration")
 ].sort((a, b) => a.source.localeCompare(b.source));
 
-fs.mkdirSync(outDir, { recursive: true });
 const tsv = [columns.join("\t"), ...rows.map((row) => columns.map((column) => cleanCell(row[column])).join("\t"))].join("\n") + "\n";
-fs.writeFileSync(rowsPath, tsv);
 
 const byScope = new Map();
 const byStatus = new Map();
 for (const row of rows) {
   byScope.set(row.scope, (byScope.get(row.scope) ?? 0) + 1);
   byStatus.set(row.status, (byStatus.get(row.status) ?? 0) + 1);
+}
+
+function validateRowsForContract(rows) {
+  const errors = [];
+  const seenSources = new Set();
+  for (const row of rows) {
+    for (const column of columns) {
+      if (!String(row[column] ?? "").trim()) errors.push(`${row.source || "(missing source)"} has an empty ${column} cell`);
+    }
+    if (seenSources.has(row.source)) errors.push(`duplicate dashboard source row: ${row.source}`);
+    seenSources.add(row.source);
+    if (!allowedScopes.has(row.scope)) errors.push(`${row.source} uses invalid scope ${row.scope}`);
+    if (!completeStatuses.has(row.status)) {
+      errors.push(`${row.source} is incomplete with status ${row.status}`);
+    }
+    if (row.scope === "excluded" && row.status !== "excluded") {
+      errors.push(`${row.source} has excluded scope but non-excluded status ${row.status}`);
+    }
+    if (row.scope !== "excluded" && row.status !== "passed") {
+      errors.push(`${row.source} has non-excluded scope ${row.scope} without passed status`);
+    }
+    if (row.scope === "duplicate" && !/\btest\//.test(row.js_test_or_reason)) {
+      errors.push(`${row.source} duplicate row must reference the covering JS test`);
+    }
+    const testRefs = [...String(row.js_test_or_reason).matchAll(/\btest\/[A-Za-z0-9_./-]+\.(?:test|spec)\.(?:ts|tsx|js|mjs)\b/g)].map((match) => match[0]);
+    if (row.status === "passed" && testRefs.length === 0) {
+      errors.push(`${row.source} passed row must reference at least one local JS test`);
+    }
+    for (const testRef of testRefs) {
+      if (!fs.existsSync(path.join(repoRoot, testRef))) {
+        errors.push(`${row.source} references missing JS test ${testRef}`);
+      }
+    }
+  }
+  return errors;
 }
 
 function countTable(title, counts) {
@@ -1996,7 +2309,7 @@ const summary = [
   "- `pdfjs/test/font`",
   "- `pdfjs/test/integration`",
   "",
-  "Rows live in [`dashboard.tsv`](./dashboard.tsv). The generator keeps classifications conservative: rows marked `needs-adapted-js-test`, `needs-classification`, or `backend-gap` are not considered complete contract coverage.",
+  "Rows live in [`dashboard.tsv`](./dashboard.tsv). The generator keeps classifications conservative: rows marked `needs-adapted-js-test`, `needs-classification`, `backend-gap`, or any other non-`passed`/`excluded` status are not considered complete contract coverage, and `npm run contract:dashboard:check` fails if such a row is generated.",
   "",
   `Generated rows: ${rows.length}`,
   "",
@@ -2005,6 +2318,32 @@ const summary = [
   countTable("Rows By Status", byStatus),
   ""
 ].join("\n");
-fs.writeFileSync(summaryPath, summary);
 
-console.log(`Wrote ${rows.length} rows to ${rel(rowsPath)}`);
+if (checkMode) {
+  const mismatches = [];
+  const validationErrors = validateRowsForContract(rows);
+  for (const [file, expected] of [
+    [rowsPath, tsv],
+    [summaryPath, summary]
+  ]) {
+    const actual = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
+    if (actual !== expected) mismatches.push(rel(file));
+  }
+  if (mismatches.length) {
+    console.error(`Upstream contract dashboard is stale: ${mismatches.join(", ")}`);
+    console.error("Run `npm run contract:dashboard` to regenerate it.");
+    process.exitCode = 1;
+  } else if (validationErrors.length) {
+    console.error("Upstream contract dashboard has incomplete or malformed rows:");
+    for (const error of validationErrors.slice(0, 25)) console.error(`- ${error}`);
+    if (validationErrors.length > 25) console.error(`... ${validationErrors.length - 25} more`);
+    process.exitCode = 1;
+  } else {
+    console.log(`Verified ${rows.length} upstream contract rows in ${rel(rowsPath)}`);
+  }
+} else {
+  fs.mkdirSync(outDir, { recursive: true });
+  fs.writeFileSync(rowsPath, tsv);
+  fs.writeFileSync(summaryPath, summary);
+  console.log(`Wrote ${rows.length} rows to ${rel(rowsPath)}`);
+}

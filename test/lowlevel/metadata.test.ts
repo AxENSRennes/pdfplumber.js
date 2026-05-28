@@ -49,6 +49,39 @@ describe("low-level PDF metadata and page boxes", () => {
     });
   });
 
+  it("uses the latest indirect object generation for trailer Info metadata", () => {
+    const raw = [
+      "%PDF-1.7",
+      "4 0 obj",
+      "<< /Type /Font /BaseFont /WrongMetadata >>",
+      "endobj",
+      "xref",
+      "0 1",
+      "0000000000 65535 f",
+      "trailer",
+      "<< /Size 5 /Root 1 0 R /Prev 100 >>",
+      "startxref",
+      "0",
+      "%%EOF",
+      "4 0 obj",
+      "<< /Author (Latest Author) /Title (Latest Title) >>",
+      "endobj",
+      "xref",
+      "0 1",
+      "0000000000 65535 f",
+      "trailer",
+      "<< /Size 5 /Root 1 0 R /Info 4 0 R /Prev 200 >>",
+      "startxref",
+      "100",
+      "%%EOF"
+    ].join("\n");
+
+    expect(parseInfoMetadata(raw, new Map())).toMatchObject({
+      Author: "Latest Author",
+      Title: "Latest Title"
+    });
+  });
+
   it("normalizes crop/media boxes and rotation into pdfplumber coordinates", () => {
     expect(
       resolvePageBoxes({ view: [0, 0, 200, 100], rotate: 0 }, "1 0 obj\n<< /MediaBox [0 0 200 100] /CropBox [10 20 190 90] >>\nendobj")

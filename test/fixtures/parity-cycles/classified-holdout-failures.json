@@ -1,0 +1,13 @@
+[
+  {
+    "id": "cycle-14/holdout/c14-116-financial-report-fdic-2024-ar-p3",
+    "cycle": 14,
+    "phase": "holdout",
+    "subsystem": "image-metadata",
+    "classification": "upstream-compatible-limitation",
+    "failurePath": "$.pages[0].objectSamples.image.samples[0].doctop",
+    "expectedDelta": 0.000377,
+    "messageIncludes": "$.pages[0].objectSamples.image.samples[0].doctop",
+    "rationale": "Single cycle-14 holdout image doctop drift below one thousandth of a point; text, words, object counts, image metadata shape, and the other 19 holdout page cases remain matched. The cycle is classified under the goal's at-most-one-holdout-failure rule, not used to tune implementation."
+  }
+]

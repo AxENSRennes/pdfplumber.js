@@ -134,6 +134,22 @@ with pdfplumber.open(${JSON.stringify(path)}) as pdf:
   }
 }
 
+function pdfplumberVectorPathOracle(path: string): Record<string, unknown[]> {
+  const code = `
+import json
+import pdfplumber
+
+with pdfplumber.open(${JSON.stringify(path)}) as pdf:
+    page = pdf.pages[0]
+    print(json.dumps({
+        "lines": [{"pts": line.get("pts"), "path": line.get("path")} for line in page.lines],
+        "rects": [{"pts": rect.get("pts"), "path": rect.get("path")} for rect in page.rects],
+        "curves": [{"pts": curve.get("pts"), "path": curve.get("path")} for curve in page.curves],
+    }, default=str))
+`;
+  return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as Record<string, unknown[]>;
+}
+
 function types(path: PdfminerPathOp[]): string[] {
   return paintPathLikePdfminer(path).map((item) => item.type);
 }
@@ -222,6 +238,12 @@ describe("low-level pdfminer path painting compatibility", () => {
     expect(paintPathLikePdfminer([["l", 72.41, 433.89], ["l", 82.41, 433.89], ["h"]])).toEqual([]);
   });
 
+  it("keeps standalone move-only paths but ignores compound move-only subpaths like pdfminer", () => {
+    expect(types([["m", 0, 0]])).toEqual(pdfminerPaintPathOracle([["m", 0, 0]]).types);
+    expect(types([["m", 0, 0], ["m", 1, 1]])).toEqual(pdfminerPaintPathOracle([["m", 0, 0], ["m", 1, 1]]).types);
+    expect(types([["m", 0, 0], ["l", 1, 1], ["m", 2, 2]])).toEqual(pdfminerPaintPathOracle([["m", 0, 0], ["l", 1, 1], ["m", 2, 2]]).types);
+  });
+
   it("matches pdfminer line counts and line widths on upstream path fixtures", async () => {
     for (const path of ["pdfminer-six/samples/contrib/pr-00530-ml-lines.pdf", "pdfminer-six/samples/contrib/issue_1165_linewidth.pdf"]) {
       const expected = pdfminerFixtureOracle(path);
@@ -232,6 +254,21 @@ describe("low-level pdfminer path painting compatibility", () => {
       } finally {
         await pdf.close();
       }
+    }
+  });
+
+  it("exposes pdfplumber-style vector pts and path commands through public objects", async () => {
+    const path = "test/fixtures/micro-pdfs/vector-objects.pdf";
+    const expected = pdfplumberVectorPathOracle(path);
+    const pdf = await open(path);
+    try {
+      expect({
+        lines: pdf.pages[0].lines.map((line) => ({ pts: line.pts, path: line.path })),
+        rects: pdf.pages[0].rects.map((rect) => ({ pts: rect.pts, path: rect.path })),
+        curves: pdf.pages[0].curves.map((curve) => ({ pts: curve.pts, path: curve.path }))
+      }).toEqual(expected);
+    } finally {
+      await pdf.close();
     }
   });
 

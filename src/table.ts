@@ -1,4 +1,4 @@
-import type { BBox, PDFObject, PDFPlumberPage, Point } from "./types.js";
+import type { BBox, PDFObject, PDFPlumberPage, Point, TableOptions, TextOptions, WordOptions } from "./types.js";
 import { namedError } from "./errors.js";
 import { extractTextFromChars } from "./text.js";
 import {
@@ -16,7 +16,7 @@ import {
 } from "./utils.js";
 
 type TablePage = Pick<PDFPlumberPage, "page_number" | "bbox" | "chars" | "edges"> & {
-  extractWords(options?: Record<string, unknown>): PDFObject[];
+  extractWords(options?: WordOptions): PDFObject[];
 };
 
 const TEXT_EDGE_CLUSTER_TOLERANCE = 1 - 1e-12;
@@ -44,8 +44,17 @@ const CORE_TABLE_SETTINGS = new Set([
 
 export class TableAxisGroup {
   [index: number]: BBox | null;
+  readonly bbox: BBox;
 
   constructor(readonly cells: Array<BBox | null>) {
+    const present = cells.filter((cell): cell is BBox => cell !== null);
+    if (!present.length) throw namedError("ValueError", "Cannot create a table row or column without cells");
+    this.bbox = [
+      Math.min(...present.map((cell) => cell[0])),
+      Math.min(...present.map((cell) => cell[1])),
+      Math.max(...present.map((cell) => cell[2])),
+      Math.max(...present.map((cell) => cell[3]))
+    ];
     cells.forEach((cell, index) => {
       this[index] = cell;
     });
@@ -103,7 +112,7 @@ export class Table {
     return this.groups(1).map((cells) => new TableAxisGroup(cells));
   }
 
-  extract(options: Record<string, unknown> = {}): Array<Array<string | null>> {
+  extract(options: TextOptions = {}): Array<Array<string | null>> {
     const charInBBox = (char: PDFObject, bbox: BBox): boolean => {
       const vMid = (Number(char.top) + Number(char.bottom)) / 2;
       const hMid = (Number(char.x0) + Number(char.x1)) / 2;
@@ -143,10 +152,10 @@ export interface TableSettings {
   min_words_horizontal: number;
   intersection_x_tolerance: number;
   intersection_y_tolerance: number;
-  text_settings: Record<string, unknown>;
+  text_settings: TextOptions;
 }
 
-export function resolveTableSettings(options: Record<string, unknown> = {}): TableSettings {
+export function resolveTableSettings(options: TableOptions = {}): TableSettings {
   if (!isPlainRecord(options)) throw namedError("ValueError", `Cannot resolve settings: ${String(options)}`);
   const snapTolerance = Number(options.snap_tolerance ?? 3);
   const joinTolerance = Number(options.join_tolerance ?? 3);
@@ -197,7 +206,7 @@ export function resolveTableSettings(options: Record<string, unknown> = {}): Tab
     min_words_horizontal: Number(core.min_words_horizontal ?? 1),
     intersection_x_tolerance: Number(core.intersection_x_tolerance ?? intersectionTolerance),
     intersection_y_tolerance: Number(core.intersection_y_tolerance ?? intersectionTolerance),
-    text_settings: textSettings
+    text_settings: textSettings as TextOptions
   };
 }
 
@@ -392,7 +401,7 @@ function cellsToTables(cells: BBox[]): BBox[][] {
 export class TableFinder {
   readonly tables: Table[];
 
-  constructor(page: TablePage, options: Record<string, unknown> = {}) {
+  constructor(page: TablePage, options: TableOptions = {}) {
     const settings = resolveTableSettings(options);
     const edges = this.getEdges(page, settings);
     const intersections = edgesToIntersections(edges, settings.intersection_x_tolerance, settings.intersection_y_tolerance);

@@ -5,6 +5,7 @@ import { PdfPlumberDocumentImpl } from "./document.js";
 import { buildLayoutObjects } from "./layout.js";
 import { collectGraphicsHintsFromContent } from "./pdf/content.js";
 import { parsePageLabelsLikePdfminer, parsePdfDocument } from "./pdf/document.js";
+import { namedError } from "./errors.js";
 import { asArray, isRef } from "./pdf/primitives.js";
 import {
   extractPageContent,
@@ -23,7 +24,7 @@ import {
   parseInfoMetadata,
   resolvePageBoxes
 } from "./pdf.js";
-import type { Matrix, OpenOptions, PDFInput, PDFPlumberDocument, PDFPlumberPage } from "./types.js";
+import type { Matrix, OpenOptions, PDFInput, PDFObject, PDFPlumberDocument, PDFPlumberPage } from "./types.js";
 
 interface InputBytes {
   data: Uint8Array;
@@ -31,9 +32,25 @@ interface InputBytes {
 }
 
 let nodePdfjsAssetOptions: Record<string, string> | null = null;
+let nodeReadFile: ((filePath: string) => Promise<Uint8Array>) | null = null;
+let nodeFileURLToPath: ((url: string | URL) => string) | null = null;
 
 function isNodeRuntime(): boolean {
   return typeof process !== "undefined" && process.versions?.node != null;
+}
+
+async function importNodeBuiltin(name: string): Promise<any> {
+  if (!isNodeRuntime()) throw new Error("Node builtins are only available in Node.js");
+  const importer = Function("specifier", "return import(specifier)") as (specifier: string) => Promise<any>;
+  return importer(`node:${name}`);
+}
+
+function urlProtocol(input: string): string | null {
+  try {
+    return new URL(input).protocol;
+  } catch {
+    return null;
+  }
 }
 
 function bytesToLatin1(bytes: Uint8Array): string {
@@ -49,16 +66,26 @@ function isBlobInput(input: PDFInput): input is Blob {
   return typeof Blob !== "undefined" && input instanceof Blob;
 }
 
-async function readNodeFileBytes(input: string): Promise<Uint8Array | null> {
-  if (!isNodeRuntime()) return null;
-  try {
-    const [{ access, readFile }, path] = await Promise.all([import("node:fs/promises"), import("node:path")]);
-    const resolved = path.resolve(input);
-    await access(resolved);
-    return new Uint8Array(await readFile(resolved));
-  } catch {
-    return null;
+async function readNodeFileBytes(input: string): Promise<Uint8Array> {
+  if (!isNodeRuntime()) throw new Error("Filesystem paths are only supported in Node.js");
+  if (!nodeReadFile) {
+    const { readFile } = await importNodeBuiltin("fs/promises");
+    nodeReadFile = readFile;
   }
+  const readFile = nodeReadFile;
+  if (!readFile) throw new Error("Node file reader is unavailable");
+  return new Uint8Array(await readFile(input));
+}
+
+async function nodeFilePathFromUrl(input: string | URL): Promise<string> {
+  if (!isNodeRuntime()) throw new Error("File URLs are only supported in Node.js");
+  if (!nodeFileURLToPath) {
+    const { fileURLToPath } = await importNodeBuiltin("url");
+    nodeFileURLToPath = fileURLToPath;
+  }
+  const fileURLToPath = nodeFileURLToPath;
+  if (!fileURLToPath) throw new Error("Node file URL adapter is unavailable");
+  return fileURLToPath(input);
 }
 
 async function fetchBytes(url: string): Promise<Uint8Array> {
@@ -69,12 +96,17 @@ async function fetchBytes(url: string): Promise<Uint8Array> {
 
 async function inputToBytes(input: PDFInput): Promise<InputBytes> {
   if (typeof input === "string") {
-    const fileBytes = await readNodeFileBytes(input);
-    const bytes = fileBytes ?? (await fetchBytes(input));
+    const protocol = urlProtocol(input);
+    const bytes =
+      protocol === "http:" || protocol === "https:"
+        ? await fetchBytes(input)
+        : protocol === "file:"
+          ? await readNodeFileBytes(await nodeFilePathFromUrl(input))
+          : await readNodeFileBytes(input);
     return { data: bytes, raw: bytesToLatin1(bytes) };
   }
   if (input instanceof URL) {
-    const bytes = await fetchBytes(input.href);
+    const bytes = input.protocol === "file:" ? await readNodeFileBytes(await nodeFilePathFromUrl(input)) : await fetchBytes(input.href);
     return { data: bytes, raw: bytesToLatin1(bytes) };
   }
   if (isBlobInput(input)) {
@@ -96,7 +128,7 @@ function ensurePdfjsWorkerConfigured(): void {
 async function pdfjsAssetOptions(): Promise<Record<string, string>> {
   if (!isNodeRuntime()) return {};
   if (nodePdfjsAssetOptions) return nodePdfjsAssetOptions;
-  const [{ createRequire }, path] = await Promise.all([import("node:module"), import("node:path")]);
+  const [{ createRequire }, path] = await Promise.all([importNodeBuiltin("module"), importNodeBuiltin("path")]);
   const require = createRequire(import.meta.url);
   const pdfjsRoot = path.dirname(require.resolve("pdfjs-dist/package.json"));
   nodePdfjsAssetOptions = {
@@ -115,6 +147,15 @@ function transformOpsMatch(rawTransforms: Matrix[], operatorTransforms: Matrix[]
   });
 }
 
+function charText(objects: PDFObject[]): string {
+  return objects.map((object) => String(object.text ?? "")).join("");
+}
+
+function nativeFallbackPreservesPdfjsText(nativeChars: PDFObject[], pdfjsChars: PDFObject[]): boolean {
+  if (!nativeChars.length || !pdfjsChars.length || nativeChars.length <= pdfjsChars.length) return false;
+  return charText(nativeChars).includes(charText(pdfjsChars));
+}
+
 function sortAnnotationsByRawPageOrder(annotationList: any[], pageModel: ReturnType<ReturnType<typeof parsePdfDocument>["getPageModel"]> | undefined, store: ReturnType<typeof parsePdfDocument>): any[] | null {
   const annots = asArray(store.resolve(pageModel?.dict?.get("Annots")));
   const objectOrder = annots?.filter(isRef).map((ref) => ref.objectNumber) ?? [];
@@ -128,6 +169,31 @@ function sortAnnotationsByRawPageOrder(annotationList: any[], pageModel: ReturnT
   return withRanks
     .sort((a, b) => (a.rank ?? Number.POSITIVE_INFINITY) - (b.rank ?? Number.POSITIVE_INFINITY) || a.index - b.index)
     .map((item) => item.annotation);
+}
+
+function annotationResolutionErrorLikePdfminer(pageModel: ReturnType<ReturnType<typeof parsePdfDocument>["getPageModel"]> | undefined, store: ReturnType<typeof parsePdfDocument>): Error | null {
+  const annots = pageModel?.dict?.get("Annots");
+  if (annots == null) return null;
+  const annotationArray = asArray(store.resolve(annots));
+  if (!annotationArray) return namedError("MalformedPDFException", "maximum recursion depth exceeded");
+
+  const catalogObjectNumbers = new Set(
+    [...store.rawObjects.entries()]
+      .filter(([, objectText]) => /\/Type\s*\/Catalog\b/.test(objectText))
+      .map(([objectNumber]) => objectNumber)
+  );
+  for (const annotationRef of annotationArray) {
+    if (!isRef(annotationRef)) continue;
+    const annotationObject = store.getRawObjectText(annotationRef.objectNumber) ?? "";
+    if (!/\/Subtype\s*\/Widget\b/.test(annotationObject) || !/\/FT\s*\/Sig\b/.test(annotationObject)) continue;
+    const signatureObjectNumber = Number(/\/V\s+(\d+)\s+\d+\s+R\b/.exec(annotationObject)?.[1] ?? Number.NaN);
+    const signatureObject = Number.isFinite(signatureObjectNumber) ? (store.getRawObjectText(signatureObjectNumber) ?? "") : "";
+    const dataRefs = [...signatureObject.matchAll(/\/Data\s+(\d+)\s+\d+\s+R\b/g)].map((match) => Number(match[1]));
+    if (dataRefs.some((objectNumber) => catalogObjectNumbers.has(objectNumber))) {
+      return namedError("MalformedPDFException", "maximum recursion depth exceeded");
+    }
+  }
+  return null;
 }
 
 export async function open(input: PDFInput, options: OpenOptions = {}): Promise<PDFPlumberDocument> {
@@ -181,6 +247,8 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
     const pageOwner = pageModel ?? pageObjectText;
     const pageFontResourceMap = parsePageFontResourceMap(pageOwner, store);
     const pageFontObjectNumbers = new Set(parsePageFontObjectNumbers(pageOwner, store));
+    const allReferencedPageFontsMissing =
+      pageFontObjectNumbers.size > 0 && [...pageFontObjectNumbers].every((objectNumber) => store.getObject(objectNumber) == null);
     const pageFontRecords = pageFontObjectNumbers.size
       ? [
           ...fontRecords.filter((record) => pageFontObjectNumbers.has(record.objectNumber)).map((record) => ({ ...record, pageScoped: true })),
@@ -248,7 +316,47 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
       boxes.mediabox[0],
       boxes.mediabox[1]
     );
-    if (nativeCMapChars.length) lowLevel.chars.splice(0, lowLevel.chars.length, ...nativeCMapChars);
+    if (nativeCMapChars.length) {
+      const nativeAllTextChars = extractPredefinedCMapCharsFromContent(
+        pageContent,
+        pageFontResourceMap,
+        pageFontRecords,
+        pageNumber,
+        boxes.width,
+        boxes.height,
+        boxes.rotate,
+        doctopOffset,
+        boxes.mediabox[0],
+        boxes.mediabox[1],
+        { includeSimpleText: true }
+      );
+      lowLevel.chars.splice(
+        0,
+        lowLevel.chars.length,
+        ...(nativeFallbackPreservesPdfjsText(nativeAllTextChars, nativeCMapChars) ? nativeAllTextChars : nativeCMapChars)
+      );
+    } else if (allReferencedPageFontsMissing) lowLevel.chars.splice(0, lowLevel.chars.length);
+    else {
+      const nativeMalformedTextChars = extractPredefinedCMapCharsFromContent(
+        pageContent,
+        pageFontResourceMap,
+        pageFontRecords,
+        pageNumber,
+        boxes.width,
+        boxes.height,
+        boxes.rotate,
+        doctopOffset,
+        boxes.mediabox[0],
+        boxes.mediabox[1],
+        { includeSimpleText: true }
+      );
+      if (
+        nativeFallbackPreservesPdfjsText(nativeMalformedTextChars, lowLevel.chars) ||
+        (nativeMalformedTextChars.length > lowLevel.chars.length * 2 && nativeMalformedTextChars.length >= lowLevel.chars.length + 100)
+      ) {
+        lowLevel.chars.splice(0, lowLevel.chars.length, ...nativeMalformedTextChars);
+      }
+    }
     const annotations = await pdfPage.getAnnotations({ intent: "display" }).catch(() => []);
     const annotationList = annotations as any[];
     const canSortAnnotationIds = annotationList.every((annot: any) => Number.isFinite(Number.parseInt(String(annot.id ?? ""), 10)));
@@ -259,7 +367,7 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
         : null;
     const rawOrIdSorted = rawOrderSorted ?? annotationIdSorted;
     const sortedAnnotations = rawOrIdSorted && rawOrIdSorted[0]?.subtype !== "Popup" ? rawOrIdSorted : annotationList;
-    const annotationError = annotationStringDecodeErrorLikePdfminer(
+    const annotationError = annotationResolutionErrorLikePdfminer(pageModel, store) ?? annotationStringDecodeErrorLikePdfminer(
       sortedAnnotations.map((annot: any) => {
         const objectNumber = Number.parseInt(String(annot.id ?? ""), 10);
         return Number.isFinite(objectNumber) ? rawObjects.get(objectNumber) : undefined;

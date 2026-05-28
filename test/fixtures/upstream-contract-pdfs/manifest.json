@@ -569,7 +569,7 @@
     "selectedPages": [
       1
     ],
-    "why": "Covers linked PDF.js text-manifest fixture issue15352 through the public text extraction API against Python pdfplumber."
+    "why": "Covers linked PDF.js text-manifest fixture issue15352 through the public text extraction API against Python pdfplumber, including TeX Type1 symbolic font glyph-name and CID fallback parity."
   },
   {
     "id": "pdfjs-issue16843-text",
@@ -648,6 +648,273 @@
     "why": "Covers linked PDF.js text-manifest fixture issue19954 through the public text extraction API against Python pdfplumber."
   },
   {
+    "id": "pdfjs-bug1130815",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-bug1130815.pdf",
+    "sourceUrl": "https://bug1130815.bmoattachments.org/attachment.cgi?id=8560958",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "text"
+    ],
+    "size": 652479,
+    "md5": "3ff3b550c3af766991b2a1b11d00de85",
+    "sha256": "8ac3d97048e0cf71c2c79da1eb606ad7104b53720b7cc2bea5b1067ab140557a",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js text-manifest fixture bug1130815 through the public text extraction API against Python pdfplumber, including malformed content recovery for page-1 text, chars, and words."
+  },
+  {
+    "id": "pdfjs-bug951051",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-bug951051.pdf",
+    "sourceUrl": "https://web.archive.org/web/20120618235740/http://www.intreprinzatorturism.ro/wp-content/uploads/2012/05/ITPR-studiu-online-5000-turisti-straini_martie-2012.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 719825,
+    "md5": "05d325a5112bd3f6022367dab7bc07b9",
+    "sha256": "58034708e892683259bb1ee5409f8ea3a667bf461836c4697c668f11629c80e5",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture bug951051 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-f1040",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-f1040.pdf",
+    "sourceUrl": "https://web.archive.org/web/20110918100215/http://www.irs.gov/pub/irs-pdf/f1040.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 299340,
+    "md5": "7323b50c6d28d959b8b4b92c469b2469",
+    "sha256": "c31e7592318c6e5de25657f75a0b8491962757d4a488df0accece3d07acb7118",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture f1040 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-f1040-2022",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-f1040_2022.pdf",
+    "sourceUrl": "https://web.archive.org/web/20230218015355/https://www.irs.gov/pub/irs-pdf/f1040.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "other"
+    ],
+    "size": 156045,
+    "md5": "1eec7137e471a3d68a20855a04293b5b",
+    "sha256": "7f7933e17b2701e8555164f18bd9d93e8891c7bc0d6e45d8df6d84a2cf78b48f",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js other-manifest fixture f1040_2022.pdf with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue1127",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue1127.pdf",
+    "sourceUrl": "https://web.archive.org/web/20160114105739/https://vmp.ethz.ch/pdfs/diplome/vordiplome/Block%201/Algorithmen_%26_Komplexitaet/AlgoKo_f08_Aufg.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "text"
+    ],
+    "size": 116237,
+    "md5": "4fb2be5ffefeafda4ba977de2a1bb4d8",
+    "sha256": "a5646c06827f1e548c604ec14e740895a804fb5836bc05229561c163a8689427",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js text-manifest fixture issue1127-text through the public text extraction API against Python pdfplumber."
+  },
+  {
+    "id": "pdfjs-bug1820909",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-bug1820909.pdf",
+    "sourceUrl": "https://www.unicode.org/charts/PDF/U31350.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Unicode code chart PDF",
+    "license": "Unicode charts terms via upstream linked public corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "other",
+      "unicode-chart"
+    ],
+    "size": 2477236,
+    "md5": "2e8e80393f7cc4b53e8b697818e965cf",
+    "sha256": "70789285c6d68c564aaaaf51eb4e73b14728bc223236619d06d67e9e26f9d078",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js other-manifest fixture bug1820909 with stable public open() behavior on a large Unicode CJK Extension H chart."
+  },
+  {
+    "id": "pdfjs-issue2770",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue2770.pdf",
+    "sourceUrl": "https://bugzilla.mozilla.org/attachment.cgi?id=718826",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "text"
+    ],
+    "size": 11281,
+    "md5": "36070d756d06eaa35c2227efb069fb1b",
+    "sha256": "fe4bf4ce1c39b038d2d162ddb8dd1bc12fbc4848480b1f5fa817220a27648911",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js text-manifest fixture issue2770 through the public text extraction API against Python pdfplumber, including pdfminer-style undefined CID placeholders for control character codes."
+  },
+  {
+    "id": "pdfjs-issue1729",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue1729.pdf",
+    "sourceUrl": "https://web.archive.org/web/20110915200237/http://www.environmentallights.com/files/documents/ir_light_hazard.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 754141,
+    "md5": "29b0eddc3e1dcb23a44384037032d470",
+    "sha256": "d050aaa8a9e61464732ee8a778b27924168dc9f83556e1f87f4c98c3945a1783",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture issue1729 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue1878",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue1878.pdf",
+    "sourceUrl": "https://web.archive.org/web/20150317000520/http://iau.org/static/scientific_meetings/postmr12.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 421812,
+    "md5": "b4fb0ce7c19368e7104dce3d0d34bcb3",
+    "sha256": "d096966cbad85e60c9205d5bc7d7a117b28d712b6ef011d748af669f9f83642d",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture issue1878 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue1940",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue1940.pdf",
+    "sourceUrl": "https://web.archive.org/web/20120105135646/http://www.parallax.com/dl/docs/prod/acc/memsickit.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 101666,
+    "md5": "4f0a0b92c1b5e6e86e1a82490087e6e5",
+    "sha256": "1378d3afe713c931e6c610496ffe45e4e1fd6cf29185ca5b06d1371b1e379cb0",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture issue1940 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue2853",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue2853.pdf",
+    "sourceUrl": "https://web.archive.org/web/20130818210913/http://www.celgene.de/Patienten/Newsletter-Epigenetik-201301.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 466786,
+    "md5": "9f0ad95ef0b243ee8813c4eca0f7a042",
+    "sha256": "fb332c2359a054b151f80f9a6e51cc20f2cc83fbff30d6d855da403bf6c2167b",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture issue2853 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue3248",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue3248.pdf",
+    "sourceUrl": "https://web.archive.org/web/20130203135942/http://www.kira-reviews.com/wp-content/uploads/2013/01/Scan0003.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 383006,
+    "md5": "970767ed68de46c316d74de67965999b",
+    "sha256": "b2539182eb17aaa9a5a237ad58788fc35ed171adaf484be8f952ac621e4e1ad0",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture issue3248 with stable public open() behavior, including an image-only first page with empty text."
+  },
+  {
+    "id": "pdfjs-issue5509",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue5509.pdf",
+    "sourceUrl": "https://web.archive.org/web/20140908142029/http://kieranhealy.org/files/papers/data-visualization.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 4364120,
+    "md5": "1975ef8db7355b1d691bc79d0749574b",
+    "sha256": "07e0e5ed1e057d38501257a4aa89251aeada9732e48aadcc9df568e87754509e",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture issue5509 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue3064",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue3064.pdf",
+    "sourceUrl": "https://bugzilla.mozilla.org/attachment.cgi?id=733257",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "text"
+    ],
+    "size": 77629,
+    "md5": "0307415b7d69b13acaf8bd4285d9544b",
+    "sha256": "b8c27843956344eefc627e0c658adef5f979741b00b4659b84885b4b24d1a3b0",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js text-manifest fixture issue3064 through the public text extraction API against Python pdfplumber."
+  },
+  {
     "id": "pdfjs-issue3925",
     "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue3925.pdf",
     "sourceUrl": "http://patentimages.storage.googleapis.com/pdfs/US4441207.pdf",
@@ -686,6 +953,64 @@
     "why": "Covers linked PDF.js text-manifest fixture issue9186 through the public text extraction API against Python pdfplumber."
   },
   {
+    "id": "pdfjs-shavian",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-shavian.pdf",
+    "sourceUrl": "https://www.unicode.org/charts/PDF/U10450.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Unicode code chart PDF",
+    "license": "Unicode charts terms via upstream linked public corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load",
+      "unicode-chart"
+    ],
+    "size": 124508,
+    "md5": "7ea69f0b1588947993f3f15390f3ca62",
+    "sha256": "333816106c05953c1c77256b2a91d5341fc85c212b544dae3edfe53dcdbb82b6",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture shavian-load with stable public open() behavior on a Unicode Shavian chart."
+  },
+  {
+    "id": "pdfjs-preistabelle",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-preistabelle.pdf",
+    "sourceUrl": "https://web.archive.org/web/20130903113659/http://www.fyve.de/downloads/Preistabelle_FYVE_Oktober_2010.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "text"
+    ],
+    "size": 145897,
+    "md5": "d2f0b2086160d4f3d325c79a5dc1fb4d",
+    "sha256": "a1ba902179e428e1778d13325baa483b872ebde53b7dd8c7afbf57a9acdbe3f1",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js text-manifest fixture preistabelle-text through the public text extraction API against Python pdfplumber, including WinAnsi Arial/Helvetica high-byte punctuation width parity for bullet-prefixed words."
+  },
+  {
+    "id": "pdfjs-vesta",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-vesta.pdf",
+    "sourceUrl": "https://web.archive.org/web/20140514052657/http://www-csag.ucsd.edu/~jburke/Vesta/Vesta_Overview.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 974976,
+    "md5": "0afebc109b7c17b95619ea3fab5eafe6",
+    "sha256": "36ff419d6efaba34db0fc32e38001a7b562f27efb4e1ff2d7c2b4ffc1711e67c",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture vesta-bad with stable public open() behavior."
+  },
+  {
     "id": "pdfjs-reduced_planck_constant",
     "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-reduced_planck_constant.pdf",
     "sourceUrl": "https://github.com/py-pdf/pypdf/files/12145090/hbar.pdf",
@@ -703,5 +1028,240 @@
       1
     ],
     "why": "Covers linked PDF.js text-manifest fixture reduced_planck_constant through the public text extraction API against Python pdfplumber."
+  },
+  {
+    "id": "pdfjs-bug931481",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-bug931481.pdf",
+    "sourceUrl": "https://web.archive.org/web/20141210054406/http://www.stronachinstitut.at/wp-content/uploads/2012/02/Nachbaur_CV5.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "text"
+    ],
+    "size": 8953,
+    "md5": "547de872cbb2ecc653ae83d5be7e5be9",
+    "sha256": "71b88bd3d64f604147f10a0b01c82f3601090e573c926494a7f13dbab3708c15",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js text-manifest fixture bug931481 through the public text extraction API against Python pdfplumber."
+  },
+  {
+    "id": "pdfjs-mao",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-mao.pdf",
+    "sourceUrl": "https://web.archive.org/web/20140501023554/http://www1.ihns.ac.cn/readers/mao.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "text",
+      "backend-gap"
+    ],
+    "size": 514593,
+    "md5": "797093d67c4d4d4231ac6e1fb66bf6c3",
+    "sha256": "05fbc5eefc7ae08ca50c1fea4e45e1a25742dbe3b2282772393869dd64570fe7",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js text-manifest fixture mao-text through the public text extraction API against Python pdfplumber, including Adobe-CNS1 B5pc-H ellipsis decoding parity."
+  },
+  {
+    "id": "pdfjs-TaroUTR50SortedList112",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-TaroUTR50SortedList112.pdf",
+    "sourceUrl": "https://web.archive.org/web/20150805202858/http://blogs.adobe.com/CCJKType/files/2012/07/TaroUTR50SortedList112.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "text"
+    ],
+    "size": 405258,
+    "md5": "ce63eab622ff473a43f8a8de85ef8a46",
+    "sha256": "f3fe4890fe26bd4ddc7a17b3db4837c60749cb57d3aca81d5b0a3d640c7c1797",
+    "selectedPages": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "why": "Covers linked PDF.js text-manifest fixture taro-text through the public text extraction API against Python pdfplumber on the first four pages selected by the upstream manifest."
+  },
+  {
+    "id": "pdfjs-ecma262",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-ecma262.pdf",
+    "sourceUrl": "https://web.archive.org/web/20110902042030/http://www.ecma-international.org/publications/files/ECMA-ST/Ecma-262.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 3067290,
+    "md5": "763ead98f535578842891e5574e0af0f",
+    "sha256": "14c5d6f60845cecb2aeb27e8717f2dc169eaf0ab300781d73083aa373fc03156",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture ecma262-pdf with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-hmm",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-hmm.pdf",
+    "sourceUrl": "https://web.archive.org/web/20130626074301/http://speech.tifr.res.in/tutorials/hmmTutorialBarbaraExercises.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 307146,
+    "md5": "e08467e60101ee5f4a59716e86db6dc9",
+    "sha256": "31ee526d2e6a2552ae92370a20330e8356f9c10c0fb61e163d82ad9c382944bf",
+    "selectedPages": [
+      1,
+      2
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture hmm-pdf with stable public open() behavior on the upstream-selected opening pages."
+  },
+  {
+    "id": "pdfjs-ibwa-bad",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-ibwa-bad.pdf",
+    "sourceUrl": "https://web.archive.org/web/20070317213312/http://www.bottledwater.org/public/pdf/IBWA05ModelCode_Mar2.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load",
+      "malformed"
+    ],
+    "size": 281559,
+    "md5": "6ca059d32b74ac2688ae06f727fee755",
+    "sha256": "99d71d462c2fc89fb2f83ac6c20411363ac3bbea8b2baf31c6eb6972fff458c4",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture ibwa-bad with stable public open() behavior despite repair warnings."
+  },
+  {
+    "id": "pdfjs-issue13132",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue13132.pdf",
+    "sourceUrl": "https://web.archive.org/web/20210324123420/https://assets.publishing.service.gov.uk/government/uploads/system/uploads/attachment_data/file/866023/IHT205_2004-2006.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "other"
+    ],
+    "size": 238504,
+    "md5": "1b28964b9188047bc6c786302c95029f",
+    "sha256": "d1794877fefccd0820f4ce3b8dd800aa391d5099684b39576f49f02166ffc496",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js other-manifest fixture issue13132 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue2627",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue2627.pdf",
+    "sourceUrl": "https://web.archive.org/web/20160117120444/http://borel.slu.edu/pub/metanet.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 3731370,
+    "md5": "1b6b2f19f4e1e1b926afb353b41fe6b2",
+    "sha256": "9b2e80312438590881b2425ef7e484ae75e4df69c63b6a6e67436e4a42956584",
+    "selectedPages": [
+      4
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture issue2627 with stable public open() behavior on the upstream-selected page."
+  },
+  {
+    "id": "pdfjs-ocs",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-ocs.pdf",
+    "sourceUrl": "https://web.archive.org/web/20100215194419/http://www.unibuc.ro/uploads_en/29535/10/Cyrillic_Alphabets-Chars.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 166749,
+    "md5": "2ade57e954ae7632749cf328daeaa7a8",
+    "sha256": "d9bfbc28897d5e57c11f9253d8cd08e1f49e927719e1927e302855c487f75695",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture ocs with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-pdf-reference-1-7",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-pdf-reference-1-7.pdf",
+    "sourceUrl": "https://web.archive.org/web/20151204084826/http://wwwimages.adobe.com/www.adobe.com/content/dam/Adobe/en/devnet/pdf/pdfs/pdf_reference_1-7.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load",
+      "large"
+    ],
+    "size": 32472771,
+    "md5": "dbdb23c939d2be09b43126c3c56060c7",
+    "sha256": "3377f6eae9d1bc117c8c47b32ea3177c4a36875d4581345a2ca5705315c60b68",
+    "selectedPages": [
+      500
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture pdfspec-load with stable public open() behavior for the large PDF 1.7 reference corpus item."
+  },
+  {
+    "id": "pdfjs-pr4606",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-pr4606.pdf",
+    "sourceUrl": "https://web.archive.org/web/20140411084003/http://www.prensalibre.com/multimedia/Terremoto-1976-Sismo-terremoto_del_76-guatemala-Teremoto-temblorgt_PREFIL20140203_0001.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 3991481,
+    "md5": "6574fde2314648600056bd0e229df98c",
+    "sha256": "d5df6e3a328ceb2675dd171d53b7d9c81f212a23beddc7ef0c6e54fc3a138fb0",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture pr4606 with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-pr4731",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-pr4731.pdf",
+    "sourceUrl": "https://web.archive.org/web/20150830132600/http://rudar.ruc.dk/bitstream/1800/12945/1/samlet-29Nov1035.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "load"
+    ],
+    "size": 4537483,
+    "md5": "0121642027e525c4b95357f1b5669e64",
+    "sha256": "c2f14937d842d22bb2418391358666d2fbdd017ceade670a56861e2824116ad9",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js load-manifest fixture pr4731 with stable public open() behavior."
   }
 ]

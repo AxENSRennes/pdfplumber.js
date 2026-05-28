@@ -48,6 +48,8 @@ describe("low-level pdfminer string, glyph, and compatibility behavior", () => {
   });
 
   it("maps glyph names, CIDs, control characters, and missing-font widths through pdfminer-like rules", () => {
+    expect(glyphNameToUnicodeLikePdfminer("hyphen")).toBe("-");
+    expect(glyphNameToUnicodeLikePdfminer("minus")).toBe("\u2212");
     expect(
       glyphTextLikePdfminer({
         originalCharCode: 33,
@@ -57,7 +59,153 @@ describe("low-level pdfminer string, glyph, and compatibility behavior", () => {
     ).toBe("\u2019");
 
     expect(glyphTextLikePdfminer({ originalCharCode: 321, glyphUnicode: "x", font: font({ cidFallback: true }) })).toBe("(cid:321)");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 32,
+        glyphUnicode: " ",
+        font: font({ hasToUnicode: false, fontRecord: { objectNumber: 1, baseFont: "LSXICB+CMR9", subtype: "Type1", hasToUnicode: false, symbolic: true, charSet: ["A"], firstChar: 11, widths: [] } })
+      })
+    ).toBe("(cid:32)");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 33,
+        glyphUnicode: "\u00ed",
+        font: font({
+          hasToUnicode: false,
+          fontRecord: { objectNumber: 1, baseFont: "DBCFPF+MSTT31c64e", subtype: "Type1", hasToUnicode: false, symbolic: true, encodingDifferences: { 33: "GED", 58: "GFA" }, firstChar: 1, widths: [] }
+        })
+      })
+    ).toBe("!");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 39,
+        glyphUnicode: "i",
+        font: font({
+          hasToUnicode: true,
+          fontRecord: { objectNumber: 1, baseFont: "KXINQC+AdvT905", subtype: "Type1", hasToUnicode: true, symbolic: true, encodingDifferences: { 39: "C105", 47: "C71" }, firstChar: 33, widths: [] }
+        })
+      })
+    ).toBe("\u2019");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 47,
+        glyphUnicode: "G",
+        font: font({
+          hasToUnicode: true,
+          fontRecord: { objectNumber: 1, baseFont: "KXINQC+AdvT905", subtype: "Type1", hasToUnicode: true, symbolic: true, encodingDifferences: { 39: "C105", 47: "C71" }, firstChar: 33, widths: [] }
+        })
+      })
+    ).toBe("/");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 241,
+        glyphUnicode: "\u00e6",
+        font: font({
+          hasToUnicode: false,
+          fontRecord: { objectNumber: 1, baseFont: "ArialMT", subtype: "TrueType", hasToUnicode: false, symbolic: false, firstChar: 32, widths: [] }
+        })
+      })
+    ).toBe("\u00f1");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 136,
+        glyphUnicode: "\u00e0",
+        font: font({
+          hasToUnicode: false,
+          fontRecord: { objectNumber: 1, baseFont: "HEJHEO+NewCenturySchlbk-Roman+2", subtype: "TrueType", hasToUnicode: false, symbolic: true, embeddedUnicodeMap: { 136: "\uf008" }, firstChar: 0, widths: [] }
+        })
+      })
+    ).toBe("\u02c6");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 141,
+        glyphUnicode: "\u00e7",
+        font: font({
+          hasToUnicode: false,
+          fontRecord: { objectNumber: 1, baseFont: "HEJHEO+NewCenturySchlbk-Roman+2", subtype: "TrueType", hasToUnicode: false, symbolic: true, embeddedUnicodeMap: { 141: "\uf00d" }, firstChar: 0, widths: [] }
+        })
+      })
+    ).toBe("(cid:141)");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 160,
+        glyphUnicode: "\u00a0",
+        font: font({
+          hasToUnicode: false,
+          fontRecord: { objectNumber: 1, baseFont: "Helvetica", subtype: "Type1", hasToUnicode: false, encodingDifferences: { 160: ".notdef" }, firstChar: 32, widths: [] }
+        })
+      })
+    ).toBe("(cid:160)");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 3,
+        glyphUnicode: "\u2217",
+        font: font({
+          hasToUnicode: false,
+          fontRecord: { objectNumber: 1, baseFont: "SJLUHL+CMSY6", subtype: "Type1", hasToUnicode: false, symbolic: true, charSet: ["asteriskmath"], firstChar: 3, widths: [639] }
+        })
+      })
+    ).toBe("\u2217");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 15,
+        glyphUnicode: "\u000f",
+        font: font({
+          hasToUnicode: false,
+          fontRecord: { objectNumber: 1, baseFont: "HJCXGN+CMSY7", subtype: "Type1", hasToUnicode: false, symbolic: true, charSet: ["bullet"], firstChar: 15, widths: [585.3] }
+        })
+      })
+    ).toBe("\u2022");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 163,
+        glyphUnicode: "\u00d7",
+        font: font({
+          hasToUnicode: false,
+          fontRecord: { objectNumber: 1, baseFont: "KHPFLE+MTSY", subtype: "Type1", hasToUnicode: false, symbolic: true, charSet: ["multiply"], firstChar: 0, widths: [] }
+        })
+      })
+    ).toBe("\u00a3");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 102,
+        glyphUnicode: "{",
+        font: font({
+          hasToUnicode: false,
+          fontRecord: { objectNumber: 1, baseFont: "KHPFLE+MTSY", subtype: "Type1", hasToUnicode: false, symbolic: true, charSet: ["braceleft"], firstChar: 0, widths: [] }
+        })
+      })
+    ).toBe("f");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 176,
+        glyphUnicode: "\u00a9",
+        font: font({
+          hasToUnicode: false,
+          fontRecord: { objectNumber: 1, baseFont: "KHPFLE+MTSY", subtype: "Type1", hasToUnicode: false, symbolic: true, charSet: ["copyright"], firstChar: 0, widths: [] }
+        })
+      })
+    ).toBe("(cid:176)");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 126,
+        glyphUnicode: "\u210f",
+        font: font({ hasToUnicode: false, fontRecord: { objectNumber: 1, baseFont: "YSIEBR+MSBM10", subtype: "Type1", hasToUnicode: false, symbolic: true, charSet: ["planckover2pi1"], firstChar: 126, widths: [540.3] } })
+      })
+    ).toBe("(cid:126)");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 32,
+        glyphUnicode: " ",
+        font: font({ hasToUnicode: false, fontRecord: { objectNumber: 1, baseFont: "F", subtype: "Type1", hasToUnicode: false, symbolic: true, charSet: ["space"], firstChar: 32, widths: [] } })
+      })
+    ).toBe(" ");
     expect(glyphTextLikePdfminer({ originalCharCode: 65, glyphUnicode: "\u0001", font: font() })).toBe("A");
+    expect(glyphTextLikePdfminer({ originalCharCode: 0, glyphUnicode: "\u0000", font: font() })).toBe("(cid:0)");
+    expect(glyphTextLikePdfminer({ originalCharCode: 65, glyphUnicode: "\u0000", font: font() })).toBe("A");
+    expect(glyphTextLikePdfminer({ originalCharCode: 10, glyphUnicode: "\n", font: font() })).toBe("(cid:10)");
+    expect(glyphTextLikePdfminer({ originalCharCode: 2, glyphUnicode: "\n", font: font() })).toBe("\n");
+    expect(glyphTextLikePdfminer({ originalCharCode: 99, glyphUnicode: "\r", font: font({ fontname: "unknown", fontRecord: { objectNumber: 1, baseFont: "F", subtype: "Type3", firstChar: 45, widths: [] } }) })).toBe("\r");
     expect(glyphTextLikePdfminer({ originalCharCode: 13, glyphUnicode: "\r", font: font() })).toBe("(cid:13)");
     expect(glyphTextLikePdfminer({ originalCharCode: 121, glyphUnicode: "\r", font: font() })).toBe("y");
     expect(
@@ -77,6 +225,46 @@ describe("low-level pdfminer string, glyph, and compatibility behavior", () => {
         font: font({ hasToUnicode: false, fontRecord: { objectNumber: 1, baseFont: "ISOCPEUR", subtype: "Type0", hasToUnicode: false, firstChar: 0, widths: [] } })
       })
     ).toBe("(cid:142)");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 0xa14b,
+        glyphUnicode: "\u22ef",
+        font: font({
+          hasToUnicode: false,
+          fontRecord: {
+            objectNumber: 1,
+            baseFont: "DFKaiShu-Md-HK-BF",
+            subtype: "Type0",
+            cidCoding: "Adobe-CNS1",
+            encodingName: "B5pc-H",
+            hasToUnicode: false,
+            symbolic: true,
+            firstChar: 0,
+            widths: []
+          }
+        })
+      })
+    ).toBe("\u2026");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 0xa14b,
+        glyphUnicode: "\u22ef",
+        font: font({
+          hasToUnicode: false,
+          fontRecord: {
+            objectNumber: 1,
+            baseFont: "DFMing-Md-HK-BF",
+            subtype: "Type0",
+            cidCoding: "Adobe-CNS1",
+            encodingName: "ETen-B5-H",
+            hasToUnicode: false,
+            symbolic: true,
+            firstChar: 0,
+            widths: []
+          }
+        })
+      })
+    ).toBe("\u2026");
 
     expect(
       glyphWidthLikePdfminer(
@@ -88,6 +276,95 @@ describe("low-level pdfminer string, glyph, and compatibility behavior", () => {
         { originalCharCode: 33, width: 999 }
       )
     ).toBe(333);
+    expect(
+      glyphWidthLikePdfminer(
+        font({
+          fontname: "Helvetica",
+          hasToUnicode: false,
+          fontRecord: { objectNumber: 1, baseFont: "Arial", subtype: "TrueType", encodingName: "WinAnsiEncoding", hasToUnicode: false, firstChar: 32, widths: [] }
+        }),
+        { originalCharCode: 149, unicode: "\u2022", width: 750 }
+      )
+    ).toBe(350);
+    expect(
+      glyphWidthLikePdfminer(
+        font({
+          fontname: "Helvetica",
+          hasToUnicode: false,
+          fontRecord: { objectNumber: 1, baseFont: "Arial", subtype: "TrueType", encodingName: "WinAnsiEncoding", hasToUnicode: false, firstChar: 32, widths: [] }
+        }),
+        { originalCharCode: 150, unicode: "\u2013", width: 750 }
+      )
+    ).toBe(556);
+    expect(
+      glyphWidthLikePdfminer(
+        font({
+          fontname: "Helvetica",
+          hasToUnicode: false,
+          fontRecord: { objectNumber: 1, baseFont: "Arial", subtype: "TrueType", encodingName: "WinAnsiEncoding", hasToUnicode: false, firstChar: 32, widths: [] }
+        }),
+        { originalCharCode: 128, unicode: "\u20ac", width: 750 }
+      )
+    ).toBe(0);
+  });
+
+  it("recovers TeX symbolic Type1 text through pdfminer-style glyph-name and CID fallbacks", () => {
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 121,
+        glyphUnicode: "y",
+        font: font({ fontRecord: { objectNumber: 1, baseFont: "VBZNJT+txsys", subtype: "Type1", hasToUnicode: true, symbolic: true, charSet: ["bar", "dagger", "slash"], firstChar: 0, widths: [] } })
+      })
+    ).toBe("\u2020");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 106,
+        glyphUnicode: "j",
+        font: font({ fontRecord: { objectNumber: 1, baseFont: "VBZNJT+txsys", subtype: "Type1", hasToUnicode: true, symbolic: true, charSet: ["bar", "dagger", "slash"], firstChar: 0, widths: [] } })
+      })
+    ).toBe("|");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 157,
+        glyphUnicode: "\u009d",
+        font: font({ fontRecord: { objectNumber: 1, baseFont: "VBZNJT+txsys", subtype: "Type1", hasToUnicode: true, symbolic: true, charSet: ["bar", "dagger", "slash"], firstChar: 0, widths: [] } })
+      })
+    ).toBe("/");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 12,
+        glyphUnicode: "\f",
+        font: font({ fontRecord: { objectNumber: 1, baseFont: "VBZNJT+txsys", subtype: "Type1", hasToUnicode: true, symbolic: true, charSet: ["bar", "dagger", "slash"], firstChar: 0, widths: [] } })
+      })
+    ).toBe("(cid:12)");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 149,
+        glyphUnicode: "\u0095",
+        font: font({ fontRecord: { objectNumber: 1, baseFont: "VPSDBU+NewTXMI", subtype: "Type1", hasToUnicode: true, symbolic: true, charSet: ["period", "greater"], firstChar: 17, widths: [] } })
+      })
+    ).toBe(".");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 161,
+        glyphUnicode: "\u00a1",
+        font: font({ fontRecord: { objectNumber: 1, baseFont: "VPSDBU+NewTXMI", subtype: "Type1", hasToUnicode: true, symbolic: true, charSet: ["period", "greater"], firstChar: 17, widths: [] } })
+      })
+    ).toBe(">");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 38,
+        glyphUnicode: "&",
+        font: font({ fontRecord: { objectNumber: 1, baseFont: "MBVNDY+txsya", subtype: "Type1", hasToUnicode: true, symbolic: true, charSet: ["greaterorsimilar", "lessorsimilar"], firstChar: 38, widths: [] } })
+      })
+    ).toBe("(cid:38)");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 46,
+        glyphUnicode: ".",
+        font: font({ fontRecord: { objectNumber: 1, baseFont: "MBVNDY+txsya", subtype: "Type1", hasToUnicode: true, symbolic: true, charSet: ["greaterorsimilar", "lessorsimilar"], firstChar: 38, widths: [] } })
+      })
+    ).toBe("(cid:46)");
   });
 
   it("handles PDFFont width defaults and get_widths lists like pdfminer", () => {

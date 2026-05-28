@@ -1,6 +1,8 @@
 import type { Table } from "./table.js";
 
 export type BBox = readonly [number, number, number, number];
+export type Dir = "ttb" | "btt" | "ltr" | "rtl";
+export type TableStrategy = "lines" | "lines_strict" | "text" | "explicit";
 
 export type PDFInput = string | URL | ArrayBuffer | Blob | Uint8Array;
 
@@ -26,6 +28,96 @@ export interface PDFObject {
   height?: number;
   text?: string;
   [key: string]: unknown;
+}
+
+export interface LimitSliceOptions {
+  limit?: number;
+  slice?: readonly [number, number];
+}
+
+export interface WordOptions extends LimitSliceOptions {
+  x_tolerance?: number;
+  y_tolerance?: number;
+  x_tolerance_ratio?: number | null;
+  y_tolerance_ratio?: number | null;
+  keep_blank_chars?: boolean;
+  use_text_flow?: boolean;
+  horizontal_ltr?: boolean;
+  vertical_ttb?: boolean;
+  line_dir?: Dir;
+  char_dir?: Dir;
+  line_dir_rotated?: Dir;
+  char_dir_rotated?: Dir;
+  extra_attrs?: readonly string[];
+  split_at_punctuation?: boolean | string;
+  expand_ligatures?: boolean;
+  return_chars?: boolean;
+}
+
+export interface TextOptions extends WordOptions {
+  layout?: boolean;
+  layout_width?: number;
+  layout_height?: number;
+  layout_width_chars?: number;
+  layout_height_chars?: number;
+  layout_bbox?: BBox;
+  x_density?: number;
+  y_density?: number;
+  x_shift?: number;
+  y_shift?: number;
+  line_dir_render?: Dir;
+  char_dir_render?: Dir;
+  presorted?: boolean;
+}
+
+export interface ExtractTextOptions extends TextOptions {
+  dedupe_chars?: boolean;
+}
+
+export interface SearchOptions extends TextOptions {
+  regex?: boolean;
+  case?: boolean;
+  main_group?: number;
+  return_groups?: boolean;
+  return_chars?: boolean;
+}
+
+export interface TextLineOptions extends TextOptions {
+  strip?: boolean;
+  return_chars?: boolean;
+}
+
+export interface CropOptions {
+  relative?: boolean;
+  strict?: boolean;
+}
+
+export interface DedupeOptions {
+  tolerance?: number;
+  extra_attrs?: readonly string[];
+}
+
+export type ExplicitTableLine = number | PDFObject;
+
+export interface TableOptions {
+  vertical_strategy?: TableStrategy;
+  horizontal_strategy?: TableStrategy;
+  explicit_vertical_lines?: readonly ExplicitTableLine[];
+  explicit_horizontal_lines?: readonly ExplicitTableLine[];
+  snap_tolerance?: number;
+  snap_x_tolerance?: number;
+  snap_y_tolerance?: number;
+  join_tolerance?: number;
+  join_x_tolerance?: number;
+  join_y_tolerance?: number;
+  edge_min_length?: number;
+  edge_min_length_prefilter?: number;
+  min_words_vertical?: number;
+  min_words_horizontal?: number;
+  intersection_tolerance?: number;
+  intersection_x_tolerance?: number;
+  intersection_y_tolerance?: number;
+  [textOption: `text_${string}`]: unknown;
 }
 
 export interface SearchResult {
@@ -68,29 +160,29 @@ export interface PDFPlumberPage {
   edges: PDFObject[];
   horizontal_edges: PDFObject[];
   vertical_edges: PDFObject[];
-  extract_text(options?: Record<string, unknown>): string | Promise<string>;
-  extractText(options?: Record<string, unknown>): string | Promise<string>;
-  extract_words(options?: Record<string, unknown>): PDFObject[] | Promise<PDFObject[]>;
-  extractWords(options?: Record<string, unknown>): PDFObject[] | Promise<PDFObject[]>;
-  search(pattern: string | RegExp, options?: Record<string, unknown>): SearchResult[] | Promise<SearchResult[]>;
-  extract_text_lines(options?: Record<string, unknown>): SearchResult[] | Promise<SearchResult[]>;
-  extractTextLines(options?: Record<string, unknown>): SearchResult[] | Promise<SearchResult[]>;
+  extract_text(options?: ExtractTextOptions): string | Promise<string>;
+  extractText(options?: ExtractTextOptions): string | Promise<string>;
+  extract_words(options?: WordOptions): PDFObject[] | Promise<PDFObject[]>;
+  extractWords(options?: WordOptions): PDFObject[] | Promise<PDFObject[]>;
+  search(pattern: string | RegExp, options?: SearchOptions): SearchResult[] | Promise<SearchResult[]>;
+  extract_text_lines(options?: TextLineOptions): SearchResult[] | Promise<SearchResult[]>;
+  extractTextLines(options?: TextLineOptions): SearchResult[] | Promise<SearchResult[]>;
   filter(testFunction: (object: PDFObject) => boolean): PDFPlumberPage;
-  crop(bbox: BBox, options?: { relative?: boolean; strict?: boolean }): PDFPlumberPage;
-  within_bbox(bbox: BBox, options?: { relative?: boolean; strict?: boolean }): PDFPlumberPage;
-  withinBbox(bbox: BBox, options?: { relative?: boolean; strict?: boolean }): PDFPlumberPage;
-  outside_bbox(bbox: BBox, options?: { relative?: boolean; strict?: boolean }): PDFPlumberPage;
-  outsideBbox(bbox: BBox, options?: { relative?: boolean; strict?: boolean }): PDFPlumberPage;
-  dedupe_chars(options?: Record<string, unknown>): PDFPlumberPage;
-  dedupeChars(options?: Record<string, unknown>): PDFPlumberPage;
-  extract_table(options?: Record<string, unknown>): (Array<Array<string | null>> | null) | Promise<Array<Array<string | null>> | null>;
-  extractTable(options?: Record<string, unknown>): (Array<Array<string | null>> | null) | Promise<Array<Array<string | null>> | null>;
-  extract_tables(options?: Record<string, unknown>): Array<Array<Array<string | null>>> | Promise<Array<Array<Array<string | null>>>>;
-  extractTables(options?: Record<string, unknown>): Array<Array<Array<string | null>>> | Promise<Array<Array<Array<string | null>>>>;
-  find_table(options?: Record<string, unknown>): Table | null | Promise<Table | null>;
-  findTable(options?: Record<string, unknown>): Table | null | Promise<Table | null>;
-  find_tables(options?: Record<string, unknown>): Table[] | Promise<Table[]>;
-  findTables(options?: Record<string, unknown>): Table[] | Promise<Table[]>;
+  crop(bbox: BBox, options?: CropOptions): PDFPlumberPage;
+  within_bbox(bbox: BBox, options?: CropOptions): PDFPlumberPage;
+  withinBbox(bbox: BBox, options?: CropOptions): PDFPlumberPage;
+  outside_bbox(bbox: BBox, options?: CropOptions): PDFPlumberPage;
+  outsideBbox(bbox: BBox, options?: CropOptions): PDFPlumberPage;
+  dedupe_chars(options?: DedupeOptions): PDFPlumberPage;
+  dedupeChars(options?: DedupeOptions): PDFPlumberPage;
+  extract_table(options?: TableOptions): (Array<Array<string | null>> | null) | Promise<Array<Array<string | null>> | null>;
+  extractTable(options?: TableOptions): (Array<Array<string | null>> | null) | Promise<Array<Array<string | null>> | null>;
+  extract_tables(options?: TableOptions): Array<Array<Array<string | null>>> | Promise<Array<Array<Array<string | null>>>>;
+  extractTables(options?: TableOptions): Array<Array<Array<string | null>>> | Promise<Array<Array<Array<string | null>>>>;
+  find_table(options?: TableOptions): Table | null | Promise<Table | null>;
+  findTable(options?: TableOptions): Table | null | Promise<Table | null>;
+  find_tables(options?: TableOptions): Table[] | Promise<Table[]>;
+  findTables(options?: TableOptions): Table[] | Promise<Table[]>;
 }
 
 export interface PDFPlumberDocument {
@@ -105,7 +197,6 @@ export interface PDFPlumberDocument {
   close(): void | Promise<void>;
 }
 
-export type Dir = "ttb" | "btt" | "ltr" | "rtl";
 export type Matrix = [number, number, number, number, number, number];
 export type Point = [number, number];
 export type MutableBBox = [number, number, number, number];
@@ -190,6 +281,7 @@ export interface GraphicsState {
 
 export interface ParsedPath {
   points: Point[];
+  operations: Array<[string, ...Point[]]>;
   closed: boolean;
   hasCurve: boolean;
   lastOp: number;
@@ -212,6 +304,7 @@ export interface ImageResource {
   height?: number;
   bits?: number;
   colorspace?: unknown[];
+  imagemask?: boolean | null;
 }
 
 export interface PdfEncryption {

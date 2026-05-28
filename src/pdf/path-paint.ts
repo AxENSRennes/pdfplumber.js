@@ -23,6 +23,7 @@ interface Subpath {
   closed: boolean;
   hasCurve: boolean;
   start: Point;
+  trailingMove: boolean;
 }
 
 function samePoint(a: Point, b: Point): boolean {
@@ -53,7 +54,7 @@ function parseSubpaths(path: PdfminerPathOp[]): Subpath[] {
   for (const op of path) {
     if (op[0] === "m") {
       const point: Point = [op[1], op[2]];
-      current = { points: [point], original_path: [["m", point]], closed: false, hasCurve: false, start: point };
+      current = { points: [point], original_path: [["m", point]], closed: false, hasCurve: false, start: point, trailingMove: out.length > 0 };
       out.push(current);
     } else if (op[0] === "l") {
       const point: Point = [op[1], op[2]];
@@ -89,8 +90,9 @@ function parseSubpaths(path: PdfminerPathOp[]): Subpath[] {
 }
 
 export function paintPathLikePdfminer(path: PdfminerPathOp[], options: { dashing_style?: unknown } = {}): PaintedPathLikePdfminer[] {
-  return parseSubpaths(path)
-    .filter((subpath) => subpath.points.length >= 2)
+  const subpaths = parseSubpaths(path);
+  return subpaths
+    .filter((subpath) => subpath.points.length >= 2 || subpaths.length === 1)
     .map((subpath): PaintedPathLikePdfminer => {
       const unique = uniquePoints(subpath.points);
       const type: PaintedPathLikePdfminer["type"] = subpath.hasCurve ? "curve" : unique.length === 2 ? "line" : isAxisAlignedRect(subpath.points, subpath.closed) ? "rect" : "curve";

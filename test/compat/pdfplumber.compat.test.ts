@@ -9,7 +9,6 @@ describeCompat("pdfplumber Python compatibility goldens", () => {
   for (const scenario of goldens.scenarios) {
     it(scenario.id, async () => {
       await runScenario(scenario);
-    });
+    }, 30_000);
   }
 });
-

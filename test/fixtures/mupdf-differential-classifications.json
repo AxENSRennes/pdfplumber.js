@@ -1,0 +1,92 @@
+[
+  {
+    "pdf": "test/fixtures/external-pdfs/pdfjs-identity-to-unicode-map.pdf",
+    "page": 1,
+    "subsystem": "text",
+    "classification": "intentional-difference",
+    "summary": "MuPDF and pdfplumber.js agree on character count and normalized text, while MuPDF's structured-text line box produces different raw line-break/text similarity and top/bottom coordinates.",
+    "evidence": "node scripts/compare-mupdf-backend.mjs --pages 1 reports char delta 0 and normalizedSimilarity 1; pdfplumber.js remains tied to Python pdfplumber/pdfminer goldens for this PDF.js Unicode-map fixture.",
+    "rationale": "MuPDF is a differential check only. The retained JS behavior follows the Python oracle for public text and geometry extraction rather than MuPDF structured-text line-box placement."
+  },
+  {
+    "pdf": "test/fixtures/external-pdfs/pdfjs-truetype-without-cmap.pdf",
+    "page": 1,
+    "subsystem": "text",
+    "classification": "intentional-difference",
+    "summary": "MuPDF and pdfplumber.js agree on character count and normalized text, with width/top coordinate deltas from differing font metric fallback behavior.",
+    "evidence": "node scripts/compare-mupdf-backend.mjs --pages 1 reports char delta 0 and normalizedSimilarity 1; Python/pdfminer-backed upstream regression parity is the oracle for the JS extraction path.",
+    "rationale": "The delta is retained as a MuPDF metric-model observation and is not used to tune JS output away from pdfminer-compatible font behavior."
+  },
+  {
+    "pdf": "test/fixtures/external-pdfs/pdfjs-type3-word-spacing.pdf",
+    "page": 1,
+    "subsystem": "text",
+    "classification": "intentional-difference",
+    "summary": "MuPDF emits Type3 glyph-shape symbols where pdfplumber.js exposes the pdfminer-compatible decoded text stream.",
+    "evidence": "node scripts/compare-mupdf-backend.mjs --pages 1 reports char delta 0 with text mismatches such as MuPDF square/triangle glyphs versus JS letters; PDF.js Type3 word-spacing parity coverage exercises this upstream regression through Python-golden JS tests.",
+    "rationale": "For extraction, decoded text from the Python oracle is preferred over MuPDF's visual glyph-symbol representation."
+  },
+  {
+    "pdf": "test/fixtures/external-pdfs/pdfjs-arabic-cidtruetype.pdf",
+    "page": 1,
+    "subsystem": "text",
+    "classification": "intentional-difference",
+    "summary": "MuPDF and pdfplumber.js expose different Arabic visual/logical ordering and glyph positioning for this CID TrueType fixture.",
+    "evidence": "node scripts/compare-mupdf-backend.mjs --pages 1 reports char delta 0 with bidi-order text mismatches; the JS path is covered by PDF.js manifest text compatibility against Python pdfplumber/pdfminer.",
+    "rationale": "MuPDF's ordering is useful as a differential signal, but pdfplumber.js keeps the Python-oracle extraction order for this retained text capability."
+  },
+  {
+    "pdf": "test/fixtures/external-pdfs/verapdf-pdfua-table-pass.pdf",
+    "page": 1,
+    "subsystem": "table",
+    "classification": "intentional-difference",
+    "summary": "MuPDF includes a trailing whitespace character and does not expose the same public table/vector summaries as pdfplumber.js.",
+    "evidence": "node scripts/compare-mupdf-backend.mjs --pages 1 reports char delta -1 with late whitespace offset; real-cycle Python goldens assert document snapshots, words, text, and table summaries for the VeraPDF table corpus.",
+    "rationale": "The JS result follows Python pdfplumber structured extraction, including table/vector summaries, while MuPDF is kept as a non-oracle comparison."
+  },
+  {
+    "pdf": "test/fixtures/external-pdfs/pdfjs-bitmap-mmr.pdf",
+    "page": 1,
+    "subsystem": "image-metadata",
+    "classification": "duplicate-coverage",
+    "summary": "MuPDF and pdfplumber.js agree that the page is image-only with one image and no text.",
+    "evidence": "node scripts/compare-mupdf-backend.mjs --pages 1 reports char delta 0, normalizedSimilarity 1, and one image in both engines; image metadata is covered by public and real-cycle tests.",
+    "rationale": "No actionable MuPDF delta remains for this default differential case; existing image metadata tests cover the extraction behavior."
+  },
+  {
+    "pdf": "test/fixtures/external-pdfs/pdfjs-annotation-text-widget.pdf",
+    "page": 1,
+    "subsystem": "annotations",
+    "classification": "intentional-difference",
+    "summary": "MuPDF exposes widgets separately from annotations, while pdfplumber.js exposes pdfplumber-shaped annotation objects and vector curves.",
+    "evidence": "node scripts/compare-mupdf-backend.mjs --pages 1 reports 7 MuPDF widgets and 7 JS annots with matching normalized text; annotation extraction is covered by Python-backed public API tests.",
+    "rationale": "The public JS annotation shape follows pdfplumber rather than MuPDF's widget/link object taxonomy."
+  },
+  {
+    "pdf": "test/fixtures/external-holdout-pdfs/pdfjs-issue6068.pdf",
+    "page": 1,
+    "subsystem": "text",
+    "classification": "duplicate-coverage",
+    "summary": "MuPDF and pdfplumber.js agree on character count and normalized text for the compared page.",
+    "evidence": "node scripts/compare-mupdf-backend.mjs --pages 1 reports char delta 0 and normalizedSimilarity 1; the case is included in real-cycle Python-golden coverage.",
+    "rationale": "The MuPDF comparison is an additional differential signal only; the extraction contract is already covered by Python-oracle tests."
+  },
+  {
+    "pdf": "test/fixtures/external-holdout-pdfs/cms-1500.pdf",
+    "page": 1,
+    "subsystem": "text",
+    "classification": "intentional-difference",
+    "summary": "MuPDF and pdfplumber.js differ on form title ordering and vector taxonomy for the CMS form page.",
+    "evidence": "node scripts/compare-mupdf-backend.mjs --pages 1 reports matching char count with normalizedSimilarity 0.836 and large JS vector counts; form/vector extraction is covered through Python-golden real-cycle cases.",
+    "rationale": "The JS behavior remains tied to pdfminer-style ordering and pdfplumber vector objects, while MuPDF provides non-oracle layout contrast."
+  },
+  {
+    "pdf": "test/fixtures/external-holdout-pdfs/boj-semiannual-2024-jp.pdf",
+    "page": 1,
+    "subsystem": "text",
+    "classification": "intentional-difference",
+    "summary": "MuPDF and pdfplumber.js differ on Japanese spacing/order and character count for the compared report page.",
+    "evidence": "node scripts/compare-mupdf-backend.mjs --pages 1 reports char delta -4 and normalizedSimilarity 0.811; Japanese/CJK real-document extraction is covered by Python-golden cycle cases.",
+    "rationale": "MuPDF's structured-text grouping is not the oracle. The JS extraction behavior remains governed by pdfplumber/pdfminer parity."
+  }
+]

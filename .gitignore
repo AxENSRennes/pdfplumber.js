@@ -1,6 +1,7 @@
 node_modules/
 dist/
 coverage/
+test-results/
 .venv/
 wsl_venv/
 .pytest_cache/

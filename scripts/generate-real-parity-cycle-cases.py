@@ -6,6 +6,7 @@ import importlib.util
 import json
 import pathlib
 import sys
+import urllib.parse
 from collections import defaultdict, deque
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List
@@ -60,6 +61,7 @@ def load_entries() -> List[Dict[str, Any]]:
                 {
                     **entry,
                     "pageCount": page_count,
+                    "metadata": metadata,
                     "producer": metadata.get("Producer"),
                     "creator": metadata.get("Creator"),
                     "title": metadata.get("Title"),
@@ -239,10 +241,13 @@ def manifest_entry(cycle: int, phase: str, ordinal: int, case: Dict[str, Any]) -
     entry = case["entry"]
     path = ROOT / entry["localPath"]
     page_index = int(case["pageIndex"])
+    parsed_source = urllib.parse.urlparse(entry.get("sourceUrl") or "")
     return {
         "id": f"cycle-{cycle:02d}/{phase}/c{cycle:02d}-{ordinal:03d}-{case['behavior']}-{entry['id']}-p{page_index + 1}",
         "sourceDocumentId": entry["id"],
         "localPath": entry["localPath"],
+        "origin": f"{parsed_source.scheme}://{parsed_source.netloc}" if parsed_source.scheme and parsed_source.netloc else entry.get("source"),
+        "corpus": entry.get("source"),
         "sourceUrl": entry.get("sourceUrl"),
         "source": entry.get("source"),
         "sourceManifest": entry.get("manifest"),
@@ -252,6 +257,7 @@ def manifest_entry(cycle: int, phase: str, ordinal: int, case: Dict[str, Any]) -
         "categories": sorted(set(entry.get("categories", []) + [case["behavior"], f"cycle-{cycle:02d}", phase, "real-document"])),
         "selectedPages": [page_index],
         "pageCount": entry["pageCount"],
+        "metadata": entry.get("metadata") or {},
         "producer": entry.get("producer"),
         "creator": entry.get("creator"),
         "title": entry.get("title"),
@@ -298,7 +304,10 @@ def write_cycle(cycle: int, working: List[Dict[str, Any]], holdout: List[Dict[st
 
 
 def parse_cycle_list(value: str) -> List[int]:
-    cycles = [int(item.strip()) for item in value.split(",") if item.strip()]
+    parts = [item.strip() for item in value.split(",") if item.strip()]
+    cycles = [int(item) for item in parts if item.isdecimal()]
+    if len(cycles) != len(parts):
+        raise ValueError(f"Cycle list must contain only comma-separated integers: {value}")
     if not cycles:
         raise ValueError("At least one cycle number is required")
     return cycles
@@ -330,8 +339,8 @@ def existing_case_keys(cycles: Iterable[int]) -> set[tuple[str, int]]:
 
 
 def main() -> None:
-    cycles = parse_cycle_list(arg_value("--cycles", "10,11,12"))
-    exclude_cycles = parse_cycle_list(arg_value("--exclude-cycles", "7,8,9"))
+    cycles = parse_cycle_list(arg_value("--cycles", "12,13,14"))
+    exclude_cycles = parse_cycle_list(arg_value("--exclude-cycles", "7,8,9,10,11"))
     all_candidates = candidates(load_entries())
     if len(all_candidates) < 360:
         raise RuntimeError(f"Need at least 360 real selected-page candidates, found {len(all_candidates)}")

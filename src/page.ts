@@ -1,4 +1,4 @@
-import type { BBox, PDFObject, PDFPlumberPage, SearchResult } from "./types.js";
+import type { BBox, CropOptions, DedupeOptions, ExtractTextOptions, PDFObject, PDFPlumberPage, SearchOptions, TableOptions, TextLineOptions, WordOptions } from "./types.js";
 import { Table, TableFinder, resolveTableSettings } from "./table.js";
 import { charsToTextMap, dedupeChars, WordExtractor } from "./text.js";
 import { applyLimitSlice } from "./layout.js";
@@ -85,11 +85,11 @@ export class PdfPlumberPageImpl implements PDFPlumberPage {
     return this._hyperlinks;
   }
 
-  extract_text(options: Record<string, unknown> = {}): string {
+  extract_text(options: ExtractTextOptions = {}): string {
     return this.extractText(options);
   }
 
-  extractText(options: Record<string, unknown> = {}): string {
+  extractText(options: ExtractTextOptions = {}): string {
     if (options.dedupe_chars) {
       const { dedupe_chars: _dedupe, ...rest } = options;
       return (this.dedupe_chars() as PdfPlumberPageImpl).extractText(rest);
@@ -100,25 +100,25 @@ export class PdfPlumberPageImpl implements PDFPlumberPage {
     return charsToTextMap(this.chars, { ...defaults, ...options }).as_string;
   }
 
-  extract_words(options: Record<string, unknown> = {}): PDFObject[] {
+  extract_words(options: WordOptions = {}): PDFObject[] {
     return this.extractWords(options);
   }
 
-  extractWords(options: Record<string, unknown> = {}): PDFObject[] {
+  extractWords(options: WordOptions = {}): PDFObject[] {
     const { limit: _limit, slice: _slice, return_chars: returnChars, ...extractOptions } = options;
     const words = new WordExtractor(extractOptions).extractWords(this.chars, Boolean(returnChars));
     return applyLimitSlice(words, options);
   }
 
-  search(pattern: string | RegExp, options: Record<string, unknown> = {}): SearchResult[] {
+  search(pattern: string | RegExp, options: SearchOptions = {}) {
     return charsToTextMap(this.chars, { layout_bbox: this.bbox, ...options }).search(pattern, options);
   }
 
-  extract_text_lines(options: Record<string, unknown> = {}): SearchResult[] {
+  extract_text_lines(options: TextLineOptions = {}) {
     return this.extractTextLines(options);
   }
 
-  extractTextLines(options: Record<string, unknown> = {}): SearchResult[] {
+  extractTextLines(options: TextLineOptions = {}) {
     const defaults = { layout_bbox: this.bbox };
     if (!("layout_width_chars" in options)) Object.assign(defaults, { layout_width: this.width });
     if (!("layout_height_chars" in options)) Object.assign(defaults, { layout_height: this.height });
@@ -140,33 +140,33 @@ export class PdfPlumberPageImpl implements PDFPlumberPage {
     );
   }
 
-  crop(bbox: BBox, options: { relative?: boolean; strict?: boolean } = {}): PDFPlumberPage {
+  crop(bbox: BBox, options: CropOptions = {}): PDFPlumberPage {
     const actual = options.relative ? cleanBBox([this.bbox[0] + bbox[0], this.bbox[1] + bbox[1], this.bbox[0] + bbox[2], this.bbox[1] + bbox[3]]) : cleanBBox(bbox);
     this.validateProposedBBox(actual, options.strict);
     return this.withFilteredObjects(actual, cropToBBox, actual);
   }
 
-  within_bbox(bbox: BBox, options: { relative?: boolean; strict?: boolean } = {}): PDFPlumberPage {
+  within_bbox(bbox: BBox, options: CropOptions = {}): PDFPlumberPage {
     const actual = options.relative ? cleanBBox([this.bbox[0] + bbox[0], this.bbox[1] + bbox[1], this.bbox[0] + bbox[2], this.bbox[1] + bbox[3]]) : cleanBBox(bbox);
     this.validateProposedBBox(actual, options.strict);
     return this.withFilteredObjects(actual, withinBBox, actual);
   }
 
-  withinBbox(bbox: BBox, options: { relative?: boolean; strict?: boolean } = {}): PDFPlumberPage {
+  withinBbox(bbox: BBox, options: CropOptions = {}): PDFPlumberPage {
     return this.within_bbox(bbox, options);
   }
 
-  outside_bbox(bbox: BBox, options: { relative?: boolean; strict?: boolean } = {}): PDFPlumberPage {
+  outside_bbox(bbox: BBox, options: CropOptions = {}): PDFPlumberPage {
     const actual = options.relative ? cleanBBox([this.bbox[0] + bbox[0], this.bbox[1] + bbox[1], this.bbox[0] + bbox[2], this.bbox[1] + bbox[3]]) : cleanBBox(bbox);
     this.validateProposedBBox(actual, options.strict);
     return this.withFilteredObjects(actual, outsideBBox, this.bbox);
   }
 
-  outsideBbox(bbox: BBox, options: { relative?: boolean; strict?: boolean } = {}): PDFPlumberPage {
+  outsideBbox(bbox: BBox, options: CropOptions = {}): PDFPlumberPage {
     return this.outside_bbox(bbox, options);
   }
 
-  dedupe_chars(options: Record<string, unknown> = {}): PDFPlumberPage {
+  dedupe_chars(options: DedupeOptions = {}): PDFPlumberPage {
     const tolerance = Number(options.tolerance ?? 1);
     const extraAttrs = Array.isArray(options.extra_attrs) ? options.extra_attrs.map(String) : ["fontname", "size"];
     return new PdfPlumberPageImpl(
@@ -193,42 +193,42 @@ export class PdfPlumberPageImpl implements PDFPlumberPage {
     );
   }
 
-  dedupeChars(options: Record<string, unknown> = {}): PDFPlumberPage {
+  dedupeChars(options: DedupeOptions = {}): PDFPlumberPage {
     return this.dedupe_chars(options);
   }
 
-  find_tables(options: Record<string, unknown> = {}): Table[] {
+  find_tables(options: TableOptions = {}): Table[] {
     return new TableFinder(this, options).tables;
   }
 
-  findTables(options: Record<string, unknown> = {}): Table[] {
+  findTables(options: TableOptions = {}): Table[] {
     return this.find_tables(options);
   }
 
-  find_table(options: Record<string, unknown> = {}): Table | null {
+  find_table(options: TableOptions = {}): Table | null {
     return largestTable(this.find_tables(options));
   }
 
-  findTable(options: Record<string, unknown> = {}): Table | null {
+  findTable(options: TableOptions = {}): Table | null {
     return this.find_table(options);
   }
 
-  extract_table(options: Record<string, unknown> = {}): Array<Array<string | null>> | null {
+  extract_table(options: TableOptions = {}): Array<Array<string | null>> | null {
     return this.extractTable(options);
   }
 
-  extractTable(options: Record<string, unknown> = {}): Array<Array<string | null>> | null {
+  extractTable(options: TableOptions = {}): Array<Array<string | null>> | null {
     const settings = resolveTableSettings(options);
     const largest = largestTable(this.find_tables(options));
     if (!largest) return null;
     return largest.extract(settings.text_settings);
   }
 
-  extract_tables(options: Record<string, unknown> = {}): Array<Array<Array<string | null>>> {
+  extract_tables(options: TableOptions = {}): Array<Array<Array<string | null>>> {
     return this.extractTables(options);
   }
 
-  extractTables(options: Record<string, unknown> = {}): Array<Array<Array<string | null>>> {
+  extractTables(options: TableOptions = {}): Array<Array<Array<string | null>>> {
     const settings = resolveTableSettings(options);
     return this.find_tables(options).map((table) => table.extract(settings.text_settings));
   }

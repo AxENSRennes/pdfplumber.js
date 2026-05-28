@@ -66,10 +66,192 @@ describe("low-level parsing against imported PDF fixtures", () => {
     }
   });
 
+  it("uses trailer Info metadata from the latest incremental object revision", async () => {
+    const pdf = await open(path.join(repoRoot, "pdfplumber-python/tests/pdfs/issue-1279-example.pdf"));
+    try {
+      expect(pdf.metadata).toMatchObject({
+        Author: "Dan Carter",
+        Creator: "Finale 2012",
+        Producer: "Adobe Mac PDF Plug-in",
+        Title: "018TheVoiceofGod000.mus"
+      });
+      expect(pdf.metadata.BaseFont).toBeUndefined();
+    } finally {
+      await pdf.close();
+    }
+  });
+
+  it("keeps pdfminer byte-repr font names for invalid UTF-8 PDF names", async () => {
+    const pdf = await open(path.join(repoRoot, "pdfplumber-python/tests/pdfs/issue-842-example.pdf"));
+    try {
+      const fontnames = new Set(pdf.pages[0].chars.map((char) => String(char.fontname)));
+      expect(fontnames).toContain("b'KXAQYK+\\xba\\xda\\xcc\\xe5'");
+      expect(fontnames).toContain("b'DTLNCR+\\xb7\\xc2\\xcb\\xce_GB2312'");
+    } finally {
+      await pdf.close();
+    }
+  });
+
+  it("uses ToUnicode CMap control characters before CID fallback", async () => {
+    const pdf = await open(path.join(repoRoot, "pdfplumber-python/tests/pdfs/test-punkt.pdf"));
+    try {
+      expect(pdf.pages[0].chars.at(-1)?.text).toBe("\n");
+      expect(await pdf.pages[0].extractText()).toBe("https://dell-research-harvard.github.io/HJDataset/");
+      expect((await pdf.pages[0].extractWords({ split_at_punctuation: true })).map((word) => word.text)).toHaveLength(16);
+    } finally {
+      await pdf.close();
+    }
+  });
+
+  it("keeps overlapping trailing blanks from splitting the preceding word", async () => {
+    const pdf = await open(path.join(repoRoot, "pdfplumber-python/tests/pdfs/pr-136-example.pdf"));
+    try {
+      const text = await pdf.pages[0].extractText();
+      const words = await pdf.pages[0].extractWords();
+      expect(text).toContain("Hangzhou,China");
+      expect(text).not.toContain("Hangzhou,Chin a");
+      expect(words.map((word) => word.text)).toContain("XxRd.,Hangzhou,China");
+    } finally {
+      await pdf.close();
+    }
+  }, 15_000);
+
+  it("splits words at pdfplumber's exact x-tolerance boundary", async () => {
+    const pdf = await open(path.join(repoRoot, "pdfplumber-python/tests/pdfs/issue-336-example.pdf"));
+    try {
+      const text = await pdf.pages[0].extractText();
+      const words = await pdf.pages[0].extractWords();
+      expect(text).toContain("第 7.9条");
+      expect(text).toContain("4.0 公顷/处。");
+      expect(text).toContain("第 7.10条");
+      expect(text).toContain("第 7.11条");
+      expect(words).toHaveLength(155);
+    } finally {
+      await pdf.close();
+    }
+  });
+
+  it("uses raw subset TimesNewRoman sizes for extra_attrs grouping", async () => {
+    const pdf = await open(path.join(repoRoot, "pdfplumber-python/tests/pdfs/issue-192-example.pdf"));
+    try {
+      const words = await pdf.pages[0].extractWords({ extra_attrs: ["size"], vertical_ttb: false });
+      expect(words).toHaveLength(373);
+      expect(words.slice(333, 345).map((word) => word.text)).toEqual([
+        "A",
+        "A",
+        "A",
+        "Ab",
+        "abbabaabbg",
+        "A",
+        "Ab",
+        "abbabaabbg",
+        "babbaabab",
+        "babbaabab",
+        "A",
+        "A"
+      ]);
+    } finally {
+      await pdf.close();
+    }
+  });
+
+  it("classifies filled and stroked axis-aligned closed paths as rects", async () => {
+    const pdf = await open(path.join(repoRoot, "pdfplumber-python/tests/pdfs/issue-1147-example.pdf"));
+    try {
+      expect(pdf.pages[0].curves).toHaveLength(0);
+      expect(pdf.pages[0].rects).toHaveLength(35);
+    } finally {
+      await pdf.close();
+    }
+  });
+
+  it("restores form graphics state around XObject drawing like pdfminer", async () => {
+    const pdf = await open(path.join(repoRoot, "test/fixtures/external-holdout-pdfs/arxiv-attention-1706.03762.pdf"), { pages: [15] });
+    try {
+      expect(pdf.pages[0].rects.at(-1)?.linewidth).toBe(0);
+      expect(pdf.pages[0].rects.at(-2)?.linewidth).toBe(0);
+    } finally {
+      await pdf.close();
+    }
+  });
+
   it("drops trailing move-only subpaths when counting curves like pdfminer", async () => {
     const pdf = await open(path.join(repoRoot, "pdfplumber-python/tests/pdfs/issue-71-duplicate-chars-2.pdf"));
     try {
       expect(pdf.pages[0].curves).toHaveLength(69);
+    } finally {
+      await pdf.close();
+    }
+  });
+
+  it("keeps standalone move-only stroked paths as curves", async () => {
+    const pdf = await open(path.join(repoRoot, "pdfplumber-python/tests/pdfs/pdffill-demo.pdf"));
+    try {
+      expect(pdf.pages[6].curves).toHaveLength(37);
+      expect(pdf.pages.flatMap((page) => page.curves)).toHaveLength(135);
+      expect(pdf.pages[6].rects.at(-1)?.linewidth).toBe(1);
+    } finally {
+      await pdf.close();
+    }
+  });
+
+  it("keeps image dimensions at pdfminer bbox precision", async () => {
+    const pdf = await open(path.join(repoRoot, "pdfplumber-python/tests/pdfs/chelsea_pdta.pdf"));
+    try {
+      expect(pdf.pages[7].images).toHaveLength(29);
+      expect(pdf.pages[7].images[15].width).toBe(85.1499995);
+    } finally {
+      await pdf.close();
+    }
+  });
+
+  it("maps single-glyph symbolic Type1 bullets and avoids JS-only decimal spacing", async () => {
+    const publishable = await open(path.join(repoRoot, "test/fixtures/external-pdfs/arxiv-publaynet-1908.07836.pdf"), { pages: [2] });
+    try {
+      const text = await publishable.pages[0].extractText();
+      expect(text).toContain("\u2022 Sorted:");
+      expect(text).not.toContain("(cid:15) Sorted:");
+    } finally {
+      await publishable.close();
+    }
+
+    const boj = await open(path.join(repoRoot, "test/fixtures/external-holdout-pdfs/boj-semiannual-2024-jp.pdf"), { pages: [83] });
+    try {
+      const text = await boj.pages[0].extractText();
+      expect(text).toContain("それぞれ 1.9兆円、5.5兆円となっ");
+      expect(text).not.toContain("1.9 兆円");
+    } finally {
+      await boj.close();
+    }
+  });
+
+  it("suppresses PDF.js-recovered text when all page font objects are missing like pdfminer", async () => {
+    const pdf = await open(path.join(repoRoot, "pdfjs/test/pdfs/operator-in-TJ-array.pdf"));
+    try {
+      expect(pdf.pages[0].chars).toHaveLength(0);
+      expect(await pdf.pages[0].extractText()).toBe("");
+      expect(await pdf.pages[0].extractWords()).toHaveLength(0);
+    } finally {
+      await pdf.close();
+    }
+  });
+
+  it("suppresses Type0 text when pdfminer falls back to an empty unsupported Encoding CMap", async () => {
+    const pdf = await open(path.join(repoRoot, "pdfjs/test/pdfs/issue18117.pdf"));
+    try {
+      expect(pdf.pages[0].chars).toHaveLength(0);
+      expect(await pdf.pages[0].extractText()).toBe("");
+      expect(await pdf.pages[0].extractWords()).toHaveLength(0);
+    } finally {
+      await pdf.close();
+    }
+  });
+
+  it("raises pdfminer-compatible errors for malformed annotation entries", async () => {
+    const pdf = await open(path.join(repoRoot, "pdfplumber-python/tests/pdfs/federal-register-2020-17221.pdf"));
+    try {
+      expect(() => pdf.pages[0].annots).toThrow(/maximum recursion depth exceeded/);
+      expect(() => pdf.annots).toThrow(/maximum recursion depth exceeded/);
     } finally {
       await pdf.close();
     }

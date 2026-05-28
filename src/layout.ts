@@ -1,7 +1,7 @@
-import type { BBox, PDFObject } from "./types.js";
+import type { BBox, PDFObject, WordOptions } from "./types.js";
 import { cleanObject, clusterObjectsSimple, objectsToBBox } from "./utils.js";
 
-export function applyLimitSlice(words: PDFObject[], options: Record<string, unknown>): PDFObject[] {
+export function applyLimitSlice(words: PDFObject[], options: WordOptions): PDFObject[] {
   let out = words;
   if (Array.isArray(options.slice)) {
     const [start, end] = options.slice.map(Number);

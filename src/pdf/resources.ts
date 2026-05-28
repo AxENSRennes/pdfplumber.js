@@ -18,7 +18,7 @@ import {
 import type { PdfArray, PdfDict, PdfIndirectObject, PdfPrimitive, PdfRef, PdfStream } from "./primitives.js";
 import { decodePdfName } from "./primitives.js";
 import { decodePdfStreamText, decodeStream, decodeStreamToLatin1 } from "./streams.js";
-import { tokenizePdf } from "./tokenizer.js";
+import { tokenizePdf, type PdfToken } from "./tokenizer.js";
 
 export type PdfResourceContext = PdfObjectStore | Map<number, string>;
 export type PdfResourceOwner = PdfPageModel | PdfIndirectObject | PdfDict | string | undefined;
@@ -80,6 +80,11 @@ function resolvedArray(store: PdfObjectStore, value: PdfPrimitive | undefined): 
 
 function resolvedNumber(store: PdfObjectStore, value: PdfPrimitive | undefined): number | undefined {
   return asNumber(resolveOne(store, value));
+}
+
+function resolvedBoolean(store: PdfObjectStore, value: PdfPrimitive | undefined): boolean | undefined {
+  const resolved = resolveOne(store, value);
+  return typeof resolved === "boolean" ? resolved : undefined;
 }
 
 function resolveToStream(store: PdfObjectStore, value: PdfPrimitive | undefined): { objectNumber?: number; stream: PdfStream } | undefined {
@@ -355,14 +360,118 @@ function imageColorSpace(store: PdfObjectStore, value: PdfPrimitive | undefined,
   return undefined;
 }
 
-function imageResource(store: PdfObjectStore, name: string, stream: PdfStream): ImageResource {
+function dictNumberAny(store: PdfObjectStore, dict: PdfDict, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = resolvedNumber(store, dict.get(key));
+    if (value != null) return value;
+  }
+  return undefined;
+}
+
+function dictBooleanAny(store: PdfObjectStore, dict: PdfDict, keys: string[]): boolean | undefined {
+  for (const key of keys) {
+    const value = resolvedBoolean(store, dict.get(key));
+    if (value != null) return value;
+  }
+  return undefined;
+}
+
+function imageColorSpaceAny(store: PdfObjectStore, dict: PdfDict, keys: string[]): unknown[] | undefined {
+  for (const key of keys) {
+    const value = imageColorSpace(store, dict.get(key));
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function imageResourceFromDict(store: PdfObjectStore, name: string, dict: PdfDict): ImageResource {
   return {
     name,
-    width: resolvedNumber(store, stream.dict.get("Width")),
-    height: resolvedNumber(store, stream.dict.get("Height")),
-    bits: resolvedNumber(store, stream.dict.get("BitsPerComponent")),
-    colorspace: imageColorSpace(store, stream.dict.get("ColorSpace")) ?? [null]
+    width: dictNumberAny(store, dict, ["Width", "W"]),
+    height: dictNumberAny(store, dict, ["Height", "H"]),
+    bits: dictNumberAny(store, dict, ["BitsPerComponent", "BPC"]) ?? 1,
+    colorspace: imageColorSpaceAny(store, dict, ["ColorSpace", "CS"]) ?? [null],
+    imagemask: dictBooleanAny(store, dict, ["ImageMask", "IM"]) ?? null
   };
+}
+
+function imageResource(store: PdfObjectStore, name: string, stream: PdfStream): ImageResource {
+  return imageResourceFromDict(store, name, stream.dict);
+}
+
+function inlineImageKey(name: string): string {
+  const aliases: Record<string, string> = {
+    BPC: "BPC",
+    CS: "CS",
+    H: "H",
+    IM: "IM",
+    W: "W",
+    BitsPerComponent: "BitsPerComponent",
+    ColorSpace: "ColorSpace",
+    Height: "Height",
+    ImageMask: "ImageMask",
+    Width: "Width"
+  };
+  return aliases[name] ?? name;
+}
+
+function tokenPrimitive(tokens: PdfToken[], index: number): { value: PdfPrimitive; next: number } | null {
+  const token = tokens[index];
+  if (!token) return null;
+  if (token.type === "number") return { value: token.value, next: index + 1 };
+  if (token.type === "name") return { value: token.value, next: index + 1 };
+  if (token.type === "string" || token.type === "hexString") return { value: token.value, next: index + 1 };
+  if (token.type === "keyword" && token.value === "true") return { value: true, next: index + 1 };
+  if (token.type === "keyword" && token.value === "false") return { value: false, next: index + 1 };
+  if (token.type !== "arrayStart") return null;
+  const values: PdfArray = [];
+  let cursor = index + 1;
+  while (cursor < tokens.length && tokens[cursor]?.type !== "arrayEnd") {
+    const item = tokenPrimitive(tokens, cursor);
+    if (!item) {
+      cursor += 1;
+      continue;
+    }
+    values.push(item.value);
+    cursor = item.next;
+  }
+  return { value: values, next: tokens[cursor]?.type === "arrayEnd" ? cursor + 1 : cursor };
+}
+
+function findInlineImages(store: PdfObjectStore, content: string): Array<{ start: number; end: number; image: ImageResource }> {
+  const tokens = tokenizePdf(content);
+  const images: Array<{ start: number; end: number; image: ImageResource }> = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i];
+    if (token.type !== "keyword" || token.value !== "BI") continue;
+    const dict: PdfDict = new Map();
+    let cursor = i + 1;
+    while (cursor < tokens.length) {
+      const current = tokens[cursor];
+      if (current.type === "keyword" && current.value === "ID") break;
+      if (current.type !== "name") {
+        cursor += 1;
+        continue;
+      }
+      const value = tokenPrimitive(tokens, cursor + 1);
+      if (!value) {
+        cursor += 1;
+        continue;
+      }
+      dict.set(inlineImageKey(current.value.name), value.value);
+      cursor = value.next;
+    }
+    const hasWidth = dict.has("W") || dict.has("Width");
+    const hasHeight = dict.has("H") || dict.has("Height");
+    if (hasWidth && hasHeight) {
+      images.push({
+        start: token.start,
+        end: tokens[cursor]?.end ?? token.end,
+        image: imageResourceFromDict(store, `inline-image-${images.length + 1}`, dict)
+      });
+    }
+  }
+  return images;
 }
 
 function collectDrawnImages(
@@ -375,7 +484,15 @@ function collectDrawnImages(
   if (depth > 8) return [];
   const xobjects = xObjectMap(store, resources);
   const images: ImageResource[] = [];
-  for (const draw of findDrawOperations(content)) {
+  const imageOps = [
+    ...findDrawOperations(content).map((draw) => ({ ...draw, kind: "xobject" as const })),
+    ...findInlineImages(store, content).map((draw) => ({ ...draw, kind: "inline" as const }))
+  ].sort((a, b) => a.start - b.start);
+  for (const draw of imageOps) {
+    if (draw.kind === "inline") {
+      images.push(draw.image);
+      continue;
+    }
     const value = xobjects.get(draw.name);
     const target = resolveToStream(store, value);
     if (!target) {
@@ -627,6 +744,59 @@ function embeddedUnicodeMap(store: PdfObjectStore, descriptor: PdfDict | undefin
   return trueTypeGlyphUnicodeMap(decodeStream(fontFile.stream));
 }
 
+function hexToCode(value: string): number {
+  return Number.parseInt(value.replace(/\s+/g, ""), 16);
+}
+
+function hexToUtf16Text(value: string): string {
+  const hex = value.replace(/\s+/g, "");
+  let out = "";
+  for (let i = 0; i < hex.length - 3; i += 4) {
+    out += String.fromCharCode(Number.parseInt(hex.slice(i, i + 4), 16));
+  }
+  return out;
+}
+
+function incrementUtf16Text(value: string, offset: number): string {
+  if (!value.length || offset === 0) return value;
+  const chars = [...value];
+  const last = chars[chars.length - 1].charCodeAt(0) + offset;
+  chars[chars.length - 1] = String.fromCharCode(last);
+  return chars.join("");
+}
+
+function parseToUnicodeMap(store: PdfObjectStore, fontDict: PdfDict): Record<number, string> | undefined {
+  const stream = resolveToStream(store, fontDict.get("ToUnicode"));
+  if (!stream) return undefined;
+  const text = decodeStreamToLatin1(stream.stream);
+  const out: Record<number, string> = {};
+
+  for (const block of text.matchAll(/beginbfchar([\s\S]*?)endbfchar/g)) {
+    for (const match of block[1].matchAll(/<([0-9A-Fa-f\s]+)>\s*<([0-9A-Fa-f\s]+)>/g)) {
+      out[hexToCode(match[1])] = hexToUtf16Text(match[2]);
+    }
+  }
+
+  for (const block of text.matchAll(/beginbfrange([\s\S]*?)endbfrange/g)) {
+    for (const match of block[1].matchAll(/<([0-9A-Fa-f\s]+)>\s*<([0-9A-Fa-f\s]+)>\s*<([0-9A-Fa-f\s]+)>/g)) {
+      const start = hexToCode(match[1]);
+      const end = hexToCode(match[2]);
+      const target = hexToUtf16Text(match[3]);
+      for (let code = start; code <= end; code += 1) out[code] = incrementUtf16Text(target, code - start);
+    }
+
+    for (const match of block[1].matchAll(/<([0-9A-Fa-f\s]+)>\s*<([0-9A-Fa-f\s]+)>\s*\[([\s\S]*?)\]/g)) {
+      const start = hexToCode(match[1]);
+      const values = Array.from(match[3].matchAll(/<([0-9A-Fa-f\s]+)>/g), (item) => hexToUtf16Text(item[1]));
+      values.forEach((value, index) => {
+        out[start + index] = value;
+      });
+    }
+  }
+
+  return Object.keys(out).length ? out : undefined;
+}
+
 export function parseFontRecords(context: PdfResourceContext): FontRecord[] {
   const store = toStore(context);
   const fonts: FontRecord[] = [];
@@ -645,7 +815,7 @@ export function parseFontRecords(context: PdfResourceContext): FontRecord[] {
     const descent = resolvedNumber(store, descriptor?.get("Descent"));
     const encodingDifferences = parseEncodingDifferences(store, fontDict.get("Encoding"));
     const firstChar = resolvedNumber(store, fontDict.get("FirstChar")) ?? 0;
-    const unicodeMap = embeddedUnicodeMap(store, descriptor);
+    const unicodeMap = parseToUnicodeMap(store, fontDict) ?? embeddedUnicodeMap(store, descriptor);
     fonts.push({
       objectNumber,
       baseFont,

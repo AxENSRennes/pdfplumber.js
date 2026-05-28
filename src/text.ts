@@ -1,5 +1,5 @@
 import { DEFAULT_X_DENSITY, DEFAULT_X_TOLERANCE, DEFAULT_Y_DENSITY, DEFAULT_Y_TOLERANCE, LIGATURES, PUNCTUATION } from "./constants.js";
-import type { BBox, Dir, PDFObject, SearchResult } from "./types.js";
+import type { BBox, Dir, PDFObject, SearchOptions, SearchResult, TextLineOptions, TextOptions, WordOptions } from "./types.js";
 import {
   bboxOriginKey,
   cleanNumber,
@@ -38,7 +38,7 @@ export class TextMap {
     return lines.join("\n");
   }
 
-  search(pattern: string | RegExp, options: Record<string, unknown> = {}): SearchResult[] {
+  search(pattern: string | RegExp, options: SearchOptions = {}): SearchResult[] {
     const regexOption = options.regex !== false;
     const caseOption = options.case !== false;
     const mainGroup = Number(options.main_group ?? 0);
@@ -83,7 +83,7 @@ export class TextMap {
     return out;
   }
 
-  extractTextLines(options: Record<string, unknown> = {}): SearchResult[] {
+  extractTextLines(options: TextLineOptions = {}): SearchResult[] {
     const strip = options.strip !== false;
     const pattern = strip ? / *([^\n]+?) *(?:\n|$)/g : /([^\n]+)/g;
     return this.search(pattern, {
@@ -97,7 +97,7 @@ export class TextMap {
 export class WordMap {
   constructor(readonly tuples: Array<[PDFObject, PDFObject[]]>) {}
 
-  toTextMap(options: Record<string, unknown> = {}): TextMap {
+  toTextMap(options: TextOptions = {}): TextMap {
     const layout = Boolean(options.layout);
     const layoutWidth = Number(options.layout_width ?? 0);
     const layoutHeight = Number(options.layout_height ?? 0);
@@ -240,7 +240,7 @@ function extraAttrGroupValue(char: PDFObject, attr: string): unknown {
   const value = char[attr];
   if (attr === "size") {
     const text = String(char.text ?? "");
-    if (typeof value === "number" && /^(?:Diwan|TraditionalArabic|TimesNewRoman)/i.test(String(char.fontname ?? ""))) return value;
+    if (typeof value === "number" && /^(?:[A-Z]{6}\+)?(?:Diwan|TraditionalArabic|TimesNewRoman)/i.test(String(char.fontname ?? ""))) return value;
     if (typeof value === "number" && !char.upright && /Times.*Bold/i.test(String(char.fontname ?? "")) && value < 5 && /^[A-Za-z0-9]$/u.test(text)) return cleanNumber(value);
     if (typeof value === "number" && (char.upright || /[\u0590-\u08ff\ufb50-\ufdff\ufe70-\ufeff]/u.test(text))) return cleanNumber(value);
     if (typeof value === "number" && !/bold/i.test(String(char.fontname ?? ""))) return cleanNumber(value);
@@ -324,7 +324,7 @@ export class WordExtractor {
   readonly splitAtPunctuation: string;
   readonly expansions: Record<string, string>;
 
-  constructor(options: Record<string, unknown> = {}) {
+  constructor(options: WordOptions = {}) {
     this.xTolerance = Number(options.x_tolerance ?? DEFAULT_X_TOLERANCE);
     this.yTolerance = Number(options.y_tolerance ?? DEFAULT_Y_TOLERANCE);
     this.xToleranceRatio = options.x_tolerance_ratio == null ? null : Number(options.x_tolerance_ratio);
@@ -420,7 +420,7 @@ export class WordExtractor {
         cx = -Number(curr.bottom);
       }
     }
-    return cx < ax - 1e-6 || cx > bx + x + 1e-9 || Math.abs(cy - ay) > y;
+    return cx < ax || cx > bx + x || Math.abs(cy - ay) > y;
   }
 
   *iterCharsToWords(chars: PDFObject[], direction: Dir): Generator<PDFObject[]> {
@@ -433,21 +433,10 @@ export class WordExtractor {
       const text = char.text ?? "";
       if (!this.keepBlankChars && /^\s$/u.test(text)) {
         const prev = current[current.length - 1];
-        const beforePrev = current[current.length - 2];
-        if (
-          direction === "ltr" &&
-          prev &&
-          beforePrev &&
-          Number(char.x0) <= Number(prev.x0) + 1e-6 &&
-          Number(char.x1) < Number(prev.x1) - 1e-6 &&
-          Number(beforePrev.x1) > Number(char.x0) + 1e-6
-        ) {
-          const last = current.pop()!;
-          yield* flush(last);
-          continue;
-        }
         if (
           prev &&
+          prev.upright &&
+          /^\s$/u.test(String(prev.text ?? "")) &&
           Math.abs(Number(char.width ?? Number(char.x1) - Number(char.x0))) <= 1e-9 &&
           Math.abs(Number(char.top) - Number(prev.top)) <= 1e-6 &&
           Number(char.x0) <= Number(prev.x0) + 1e-6 &&
@@ -551,7 +540,7 @@ export class WordExtractor {
   }
 }
 
-export function charsToTextMap(chars: PDFObject[], options: Record<string, unknown> = {}): TextMap {
+export function charsToTextMap(chars: PDFObject[], options: TextOptions = {}): TextMap {
   if (!chars.length) return new TextMap([], "ttb", "ltr");
   const fullOptions = {
     ...options,
@@ -562,7 +551,7 @@ export function charsToTextMap(chars: PDFObject[], options: Record<string, unkno
   return extractor.extractWordMap(chars).toTextMap(fullOptions);
 }
 
-export function extractTextFromChars(chars: PDFObject[], options: Record<string, unknown> = {}): string {
+export function extractTextFromChars(chars: PDFObject[], options: TextOptions = {}): string {
   if (!chars.length) return "";
   if (options.layout) return charsToTextMap(chars, options).as_string;
   const extractor = new WordExtractor(options);

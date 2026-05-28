@@ -23,8 +23,8 @@ function char(text: string, x0: number, x1: number): PDFObject {
 }
 
 describe("text extraction tolerance parity", () => {
-  it("does not split a word when floating point noise barely exceeds x_tolerance", () => {
-    expect(extractTextFromChars([char("1", 399.31, 405.54999999999995), char("兆", 408.55, 421.03)])).toBe("1兆");
+  it("splits a word when the computed gap exceeds x_tolerance like pdfplumber", () => {
+    expect(extractTextFromChars([char("1", 399.31, 405.54999999999995), char("兆", 408.55, 421.03)])).toBe("1 兆");
   });
 
   it("still splits a word when the gap meaningfully exceeds x_tolerance", () => {
@@ -46,5 +46,30 @@ describe("text extraction tolerance parity", () => {
 
     const words = new WordExtractor({ horizontal_ltr: false }).extractWords(chars);
     expect(words.map((word) => word.text)).toEqual(["AB", "CD"]);
+  });
+
+  it("keeps zero-width rotated blanks as word separators", () => {
+    const chars = ["A", " ", "B"].map((text) => ({
+      ...char(text, 10, 10),
+      width: 0,
+      height: 0,
+      size: 0,
+      upright: false
+    }));
+
+    const words = new WordExtractor().extractWords(chars);
+    expect(words.map((word) => word.text)).toEqual(["A", "B"]);
+  });
+
+  it("keeps zero-width upright blanks after text as word separators", () => {
+    const chars = ["A", " ", "B"].map((text) => ({
+      ...char(text, 10, 10),
+      width: 0,
+      height: 0,
+      size: 0
+    }));
+
+    const words = new WordExtractor().extractWords(chars);
+    expect(words.map((word) => word.text)).toEqual(["A", "B"]);
   });
 });

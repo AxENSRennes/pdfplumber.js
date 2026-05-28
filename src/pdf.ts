@@ -1,14 +1,14 @@
 import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 
 import { DEFAULT_FONT_ASCENT, DEFAULT_FONT_DESCENT, FONT_UNITS_PER_EM, METADATA_KEYS, STANDARD_FONT_METRICS } from "./constants.js";
-import { glyphTextFromPdfJsGlyph, glyphWidthLikePdfminer } from "./font-decoding.js";
+import { glyphNameToUnicodeLikePdfminer, glyphTextFromPdfJsGlyph, glyphWidthLikePdfminer } from "./font-decoding.js";
 import { decodePredefinedCMapUnicodeLikePdfminer } from "./pdf/cmapdb.js";
 import { collectGraphicsHintsFromContent, patternColorValueLikePdfminer } from "./pdf/content.js";
 import { parsePdfObjectsCompat } from "./pdf/document.js";
 import { parseObject, parseOperatorStream } from "./pdf/parser.js";
 import { decodePdfName as decodePdfNamePrimitive } from "./pdf/primitives.js";
 import { isName, isRef, isStream, latin1Bytes } from "./pdf/primitives.js";
-import type { PdfPrimitive } from "./pdf/primitives.js";
+import type { PdfArray, PdfDict, PdfPrimitive, PdfStream } from "./pdf/primitives.js";
 import {
   extractPageContent as extractPageContentStructured,
   parseColorSpaceResources as parseColorSpaceResourcesStructured,
@@ -17,7 +17,8 @@ import {
   parsePageFontObjectNumbers as parsePageFontObjectNumbersStructured
 } from "./pdf/resources.js";
 import { decodePdfStreamText } from "./pdf/streams.js";
-import { pdfNumbersFromString } from "./pdf/tokenizer.js";
+import { pdfNumbersFromString, tokenizePdf } from "./pdf/tokenizer.js";
+import type { PdfToken } from "./pdf/tokenizer.js";
 import { decodePdfLiteralBytesAsUtf8ThenUtf16, decodePdfStringLikePdfminer, parsePdfDictBytes, parsePdfLiteralStringBytes } from "./pdf-strings.js";
 import type {
   BBox,
@@ -256,7 +257,11 @@ function parseInfoDictionary(text: string, objects: Map<number, string>, raw: st
 }
 
 function pdfObjectText(raw: string, objects: Map<number, string>, objectNumber: number): string | undefined {
-  return objects.get(objectNumber) ?? raw.match(new RegExp(`${objectNumber}\\s+\\d+\\s+obj[\\s\\S]*?endobj`))?.[0];
+  const parsed = objects.get(objectNumber);
+  if (parsed) return parsed;
+  const matches = Array.from(raw.matchAll(new RegExp(`(?:^|[\\r\\n])${objectNumber}\\s+\\d+\\s+obj\\b[\\s\\S]*?endobj`, "g")));
+  const latest = matches.at(-1)?.[0];
+  return latest?.replace(/^[\r\n]/, "");
 }
 
 function decodePdfStringBytes(bytes: number[]): string {
@@ -287,6 +292,18 @@ function settleCyrillicGlyphEdge(text: string, value: number): number {
   const fraction = scaled - Math.floor(scaled);
   if (Math.abs(fraction - 0.499499) <= 0.000002) return value + Math.sign(value || 1) * 1e-6;
   return value;
+}
+
+function settleJapaneseWordHalfWidthEdge(font: MappedFont, text: string, value: number): number {
+  if (!/MS-Mincho/i.test(font.fontname) || !/^[0-9.]$/.test(text) || !Number.isFinite(value)) return value;
+  return cleanNumber(value);
+}
+
+function settleZeroWidthFormatGlyph(obj: PDFObject): void {
+  if (obj.text !== "\u200b" || Number(obj.width) !== 0) return;
+  obj.x0 = cleanNumber(Number(obj.x0));
+  obj.x1 = cleanNumber(Number(obj.x1));
+  obj.width = 0;
 }
 
 function settleHorizontalGlyphBBoxToMatrixOrigin(font: MappedFont, obj: PDFObject): void {
@@ -499,6 +516,18 @@ function shouldUseCidFallback(record: FontRecord | undefined): boolean {
   return record.charSet.every((name) => cidOnlyGlyphNames.has(name));
 }
 
+function shouldSuppressTextForPdfminerUnsupportedCMap(font: MappedFont): boolean {
+  const record = font.fontRecord;
+  return shouldSuppressFontRecordTextForPdfminerUnsupportedCMap(record);
+}
+
+function shouldSuppressFontRecordTextForPdfminerUnsupportedCMap(record: FontRecord | undefined): boolean {
+  if (record?.subtype !== "Type0") return false;
+  // pdfminer.pdffont.PDFCIDFont.get_cmap_from_spec falls back to an empty CMap
+  // when CMapDB cannot load the Type0 Encoding CMap; Uni-Utf8-H/V is not shipped.
+  return /^Uni-Utf8-[HV]$/i.test(record.encodingName ?? "");
+}
+
 function mapFonts(pdfPage: any, styles: Record<string, any>, fontRecords: FontRecord[], fontIds: string[]): Map<string, MappedFont> {
   const mapped = new Map<string, MappedFont>();
   const used = new Set<number>();
@@ -551,7 +580,93 @@ const HELVETICA_WIDTHS: Record<string, number> = {
   r: 333
 };
 
+const STANDARD_ENCODING_HIGH_BYTES: Record<number, string> = {
+  161: "\u00a1",
+  162: "\u00a2",
+  163: "\u00a3",
+  164: "\u2044",
+  165: "\u00a5",
+  166: "\u0192",
+  167: "\u00a7",
+  168: "\u00a4",
+  169: "'",
+  170: "\u201c",
+  171: "\u00ab",
+  172: "\u2039",
+  173: "\u203a",
+  174: "\ufb01",
+  175: "\ufb02",
+  177: "\u2013",
+  178: "\u2020",
+  179: "\u2021",
+  180: "\u00b7",
+  182: "\u00b6",
+  183: "\u2022",
+  184: "\u201a",
+  185: "\u201e",
+  186: "\u201d",
+  187: "\u00bb",
+  188: "\u2026",
+  189: "\u2030",
+  191: "\u00bf",
+  193: "`",
+  194: "\u00b4",
+  195: "\u02c6",
+  196: "\u02dc",
+  197: "\u00af",
+  198: "\u02d8",
+  199: "\u02d9",
+  200: "\u00a8",
+  202: "\u02da",
+  203: "\u00b8",
+  205: "\u02dd",
+  206: "\u02db",
+  207: "\u02c7",
+  208: "\u2014",
+  225: "\u00c6",
+  227: "\u00aa",
+  232: "\u0141",
+  233: "\u00d8",
+  234: "\u0152",
+  235: "\u00ba",
+  241: "\u00e6",
+  245: "\u0131",
+  248: "\u0142",
+  249: "\u00f8",
+  250: "\u0153",
+  251: "\u00df"
+};
+
+let macRomanDecoder: TextDecoder | null | undefined;
+
+function decodeMacRomanByte(byte: number): string {
+  if (macRomanDecoder === undefined) {
+    try {
+      macRomanDecoder = new TextDecoder("macintosh");
+    } catch {
+      macRomanDecoder = null;
+    }
+  }
+  return macRomanDecoder?.decode(Uint8Array.of(byte)) ?? String.fromCharCode(byte);
+}
+
+function nativeSimpleEncodingTextLikePdfminer(font: FontRecord | undefined, byte: number): string {
+  const differenceText = glyphNameToUnicodeLikePdfminer(font?.encodingDifferences?.[byte]);
+  if (differenceText != null) return differenceText;
+  if (font?.encodingName === "MacRomanEncoding") return decodeMacRomanByte(byte);
+  if (byte >= 32 && byte <= 126) {
+    if (byte === 39) return "\u2019";
+    if (byte === 96) return "\u2018";
+    return String.fromCharCode(byte);
+  }
+  if (!font?.encodingName || font.encodingName === "StandardEncoding") return STANDARD_ENCODING_HIGH_BYTES[byte] ?? `(cid:${byte})`;
+  return `(cid:${byte})`;
+}
+
 function standardWidthForNativeFallback(font: FontRecord | undefined, byte: number): number {
+  if (!font) return 0;
+  const recordWidth = font?.widths[byte - font.firstChar];
+  if (recordWidth != null && recordWidth > 0) return recordWidth;
   if (/^Helvetica(?:$|-)/.test(font?.baseFont ?? "")) {
     return HELVETICA_WIDTHS[String.fromCharCode(byte)] ?? 500;
   }
@@ -575,6 +690,128 @@ function nativeFontAdvance(font: FontRecord | undefined, bytes: Uint8Array, font
   return (width * fontSize * textHScale) / FONT_UNITS_PER_EM;
 }
 
+const PDFMINER_OPERATOR_ARITY: Record<string, number> = {
+  q: 0,
+  Q: 0,
+  cm: 6,
+  w: 1,
+  J: 1,
+  j: 1,
+  M: 1,
+  d: 2,
+  ri: 1,
+  i: 1,
+  gs: 1,
+  m: 2,
+  l: 2,
+  c: 6,
+  v: 4,
+  y: 4,
+  h: 0,
+  re: 4,
+  S: 0,
+  s: 0,
+  f: 0,
+  F: 0,
+  "f*": 0,
+  B: 0,
+  "B*": 0,
+  b: 0,
+  "b*": 0,
+  n: 0,
+  W: 0,
+  "W*": 0,
+  BT: 0,
+  ET: 0,
+  Tc: 1,
+  Tw: 1,
+  Tz: 1,
+  TL: 1,
+  Tf: 2,
+  Tr: 1,
+  Ts: 1,
+  Td: 2,
+  TD: 2,
+  Tm: 6,
+  "T*": 0,
+  Tj: 1,
+  TJ: 1,
+  "'": 1,
+  "\"": 3,
+  G: 1,
+  g: 1,
+  RG: 3,
+  rg: 3,
+  K: 4,
+  k: 4,
+  CS: 1,
+  cs: 1,
+  sh: 1,
+  Do: 1,
+  MP: 1,
+  DP: 2,
+  BMC: 1,
+  BDC: 2,
+  EMC: 0
+};
+
+const VARIABLE_COLOR_OPERATORS = new Set(["SC", "SCN", "sc", "scn"]);
+
+function primitiveFromTokenStream(tokens: PdfToken[], cursor: { index: number }): PdfPrimitive | undefined {
+  const token = tokens[cursor.index++];
+  if (!token) return undefined;
+  if (token.type === "number") return token.value;
+  if (token.type === "name") return token.value;
+  if (token.type === "string" || token.type === "hexString") return token.value;
+  if (token.type === "arrayStart") {
+    const values: PdfPrimitive[] = [];
+    while (cursor.index < tokens.length && tokens[cursor.index]?.type !== "arrayEnd") {
+      const value = primitiveFromTokenStream(tokens, cursor);
+      if (value !== undefined) values.push(value);
+    }
+    if (tokens[cursor.index]?.type === "arrayEnd") cursor.index += 1;
+    return values;
+  }
+  if (token.type === "dictStart") {
+    const dict = new Map<string, PdfPrimitive>();
+    while (cursor.index < tokens.length && tokens[cursor.index]?.type !== "dictEnd") {
+      const key = tokens[cursor.index++];
+      if (key?.type !== "name") continue;
+      const value = primitiveFromTokenStream(tokens, cursor);
+      if (value !== undefined) dict.set(key.value.name, value);
+    }
+    if (tokens[cursor.index]?.type === "dictEnd") cursor.index += 1;
+    return dict;
+  }
+  return undefined;
+}
+
+function parseOperatorStreamLikePdfminer(source: string): Array<{ operator: string; args: PdfPrimitive[] }> {
+  const tokens = tokenizePdf(source);
+  const cursor = { index: 0 };
+  const stack: PdfPrimitive[] = [];
+  const operations: Array<{ operator: string; args: PdfPrimitive[] }> = [];
+  while (cursor.index < tokens.length) {
+    const token = tokens[cursor.index];
+    if (token?.type === "keyword") {
+      cursor.index += 1;
+      if (VARIABLE_COLOR_OPERATORS.has(token.value)) {
+        stack.pop();
+        operations.push({ operator: token.value, args: [] });
+        continue;
+      }
+      const arity = PDFMINER_OPERATOR_ARITY[token.value];
+      if (arity == null) continue;
+      const args = arity ? stack.splice(Math.max(0, stack.length - arity)) : [];
+      if (args.length === arity) operations.push({ operator: token.value, args });
+      continue;
+    }
+    const value = primitiveFromTokenStream(tokens, cursor);
+    if (value !== undefined) stack.push(value);
+  }
+  return operations;
+}
+
 export function extractPredefinedCMapCharsFromContent(
   pageContent: string,
   fontResourceMap: Map<string, number>,
@@ -585,11 +822,12 @@ export function extractPredefinedCMapCharsFromContent(
   pageRotate: number,
   doctopOffset: number,
   pageX0 = 0,
-  pageTop = 0
+  pageTop = 0,
+  options: { includeSimpleText?: boolean } = {}
 ): PDFObject[] {
   const fontByResource = new Map<string, FontRecord | undefined>();
   for (const [name, objectNumber] of fontResourceMap) fontByResource.set(name, fontRecords.find((record) => record.objectNumber === objectNumber));
-  const ops = parseOperatorStream(pageContent);
+  const ops = options.includeSimpleText ? parseOperatorStreamLikePdfminer(pageContent) : parseOperatorStream(pageContent);
   const state = {
     ctm: [1, 0, 0, 1, 0, 0] as Matrix,
     textMatrix: [1, 0, 0, 1, 0, 0] as Matrix,
@@ -598,11 +836,11 @@ export function extractPredefinedCMapCharsFromContent(
     lineX: 0,
     lineY: 0,
     fontResource: "",
-    fontSize: 1,
+    fontSize: 0,
     textRise: 0,
     textHScale: 1
   };
-  const stack: Matrix[] = [];
+  const stack: Array<typeof state> = [];
   const chars: PDFObject[] = [];
   const coordOffset: Point = [pageX0, pageTop];
   let sawTarget = false;
@@ -612,7 +850,8 @@ export function extractPredefinedCMapCharsFromContent(
     const vertical = font?.vertical === true;
     const xStart = vertical ? state.x - 0.5 * state.fontSize : state.x;
     const xEnd = vertical ? xStart + state.fontSize : state.x + advance;
-    const yStart = vertical ? state.y + state.textRise - 0.88 * state.fontSize : state.y + state.textRise + (standardFontMetrics(font?.baseFont)?.descent ?? DEFAULT_FONT_DESCENT) * state.fontSize;
+    const descent = font ? (standardFontMetrics(font.baseFont)?.descent ?? DEFAULT_FONT_DESCENT) : 0;
+    const yStart = vertical ? state.y + state.textRise - 0.88 * state.fontSize : state.y + state.textRise + descent * state.fontSize;
     const yEnd = vertical ? yStart + state.fontSize : yStart + state.fontSize;
     const rawBBox = bboxFromPoints([
       applyMatrix([xStart, yStart], matrix),
@@ -624,6 +863,7 @@ export function extractPredefinedCMapCharsFromContent(
     const glyphMatrix = cleanMatrix(matrixToPageMatrix([matrix[0], matrix[1], matrix[2], matrix[3], matrixE, matrixF], pageWidth, pageHeight, pageRotate));
     glyphMatrix[4] = cleanNumber(glyphMatrix[4] - pageX0);
     glyphMatrix[5] = cleanNumber(glyphMatrix[5] + pageTop);
+    const upright = glyphMatrix[0] * glyphMatrix[3] * state.textHScale > 0 && glyphMatrix[1] * glyphMatrix[2] <= 0;
     const obj = rectFromPdfBBox(
       rawBBox,
       pageWidth,
@@ -636,7 +876,7 @@ export function extractPredefinedCMapCharsFromContent(
         text,
         fontname: font?.vertical && font.hasToUnicode === false ? "unknown" : (font?.baseFont ?? "unknown"),
         adv: cleanNumber(advance),
-        upright: true,
+        upright,
         matrix: glyphMatrix,
         ncs: "DeviceGray",
         non_stroking_color: [0],
@@ -656,7 +896,7 @@ export function extractPredefinedCMapCharsFromContent(
     if (!texts.length) {
       for (const byte of bytes) {
         const advance = (standardWidthForNativeFallback(font, byte) * state.fontSize * state.textHScale) / FONT_UNITS_PER_EM;
-        pushChar(String.fromCharCode(byte), font, advance);
+        if (options.includeSimpleText && !shouldSuppressFontRecordTextForPdfminerUnsupportedCMap(font)) pushChar(nativeSimpleEncodingTextLikePdfminer(font, byte), font, advance);
         state.x += advance;
       }
       return;
@@ -672,11 +912,11 @@ export function extractPredefinedCMapCharsFromContent(
     const args = op.args;
     switch (op.operator) {
       case "q":
-        stack.push(cloneMatrix(state.ctm));
+        stack.push({ ...state, ctm: cloneMatrix(state.ctm), textMatrix: cloneMatrix(state.textMatrix) });
         break;
       case "Q": {
         const restored = stack.pop();
-        if (restored) state.ctm = restored;
+        if (restored) Object.assign(state, { ...restored, ctm: cloneMatrix(restored.ctm), textMatrix: cloneMatrix(restored.textMatrix) });
         break;
       }
       case "cm":
@@ -688,8 +928,10 @@ export function extractPredefinedCMapCharsFromContent(
         state.y = state.lineY = 0;
         break;
       case "Tf":
-        state.fontResource = isName(args[0]) ? args[0].name : "";
-        state.fontSize = Math.abs(Number(args[1] ?? 1));
+        if (args.length >= 1) state.fontResource = isName(args[0]) ? args[0].name : "";
+        if (args.length >= 2 && Number.isFinite(Number(args[1]))) {
+          state.fontSize = Math.abs(Number(args[1]));
+        }
         break;
       case "Tz":
         state.textHScale = Number(args[0] ?? 100) / 100;
@@ -705,20 +947,24 @@ export function extractPredefinedCMapCharsFromContent(
         state.y = state.lineY += ty;
         break;
       }
-      case "Tm":
-        if (args.length >= 6) state.textMatrix = args.slice(0, 6).map((value) => snapPdfOperand(Number(value))) as Matrix;
-        state.x = state.lineX = 0;
-        state.y = state.lineY = 0;
+      case "Tm": {
+        const matrixArgs = args.slice(0, 6).map(Number);
+        if (matrixArgs.length === 6 && matrixArgs.every(Number.isFinite)) {
+          state.textMatrix = matrixArgs.map((value) => snapPdfOperand(value)) as Matrix;
+          state.x = state.lineX = 0;
+          state.y = state.lineY = 0;
+        }
         break;
+      }
       case "T*":
         state.x = state.lineX;
         state.y = state.lineY;
         break;
       case "Tj":
-        for (const bytes of textSeqBytes(args[0])) showBytes(bytes);
+        for (const bytes of textSeqBytes(args.at(-1))) showBytes(bytes);
         break;
       case "TJ":
-        for (const item of Array.isArray(args[0]) ? args[0] : []) {
+        for (const item of Array.isArray(args.at(-1)) ? args.at(-1) as unknown[] : []) {
           if (typeof item === "number") {
             if (currentFont()?.vertical) state.y += (item * state.fontSize) / FONT_UNITS_PER_EM;
             else state.x -= (item * state.fontSize * state.textHScale) / FONT_UNITS_PER_EM;
@@ -730,16 +976,16 @@ export function extractPredefinedCMapCharsFromContent(
       case "'":
         state.x = state.lineX;
         state.y = state.lineY;
-        for (const bytes of textSeqBytes(args[0])) showBytes(bytes);
+        for (const bytes of textSeqBytes(args.at(-1))) showBytes(bytes);
         break;
       case "\"":
         state.x = state.lineX;
         state.y = state.lineY;
-        for (const bytes of textSeqBytes(args[2])) showBytes(bytes);
+        for (const bytes of textSeqBytes(args.at(-1))) showBytes(bytes);
         break;
     }
   }
-  return sawTarget ? chars : [];
+  return sawTarget || options.includeSimpleText ? chars : [];
 }
 
 function cloneState(state: GraphicsState): GraphicsState {
@@ -784,23 +1030,32 @@ function parseDrawPath(data: ArrayLike<number>): ParsedPath[] {
     const op = data[i++];
     if (op === 0) {
       const point: Point = [Number(data[i++]), Number(data[i++])];
-      current = { points: [point], closed: false, hasCurve: false, lastOp: op, trailingMove: paths.length > 0 };
+      current = { points: [point], operations: [["m", point]], closed: false, hasCurve: false, lastOp: op, trailingMove: paths.length > 0 };
       start = point;
       paths.push(current);
     } else if (op === 1) {
-      current?.points.push([Number(data[i++]), Number(data[i++])]);
-      if (current) current.lastOp = op;
-    } else if (op === 2) {
-      i += 4;
-      current?.points.push([Number(data[i++]), Number(data[i++])]);
+      const point: Point = [Number(data[i++]), Number(data[i++])];
+      current?.points.push(point);
       if (current) {
+        current.operations.push(["l", point]);
+        current.lastOp = op;
+      }
+    } else if (op === 2) {
+      const control1: Point = [Number(data[i++]), Number(data[i++])];
+      const control2: Point = [Number(data[i++]), Number(data[i++])];
+      const point: Point = [Number(data[i++]), Number(data[i++])];
+      current?.points.push(point);
+      if (current) {
+        current.operations.push(["c", control1, control2, point]);
         current.hasCurve = true;
         current.lastOp = op;
       }
     } else if (op === 3) {
-      i += 2;
-      current?.points.push([Number(data[i++]), Number(data[i++])]);
+      const control: Point = [Number(data[i++]), Number(data[i++])];
+      const point: Point = [Number(data[i++]), Number(data[i++])];
+      current?.points.push(point);
       if (current) {
+        current.operations.push(["y", control, point]);
         current.hasCurve = true;
         current.lastOp = op;
       }
@@ -816,6 +1071,7 @@ function parseDrawPath(data: ArrayLike<number>): ParsedPath[] {
             current.points.push(start);
           }
         }
+        current.operations.push(["h"]);
         current.lastOp = op;
       }
     } else if (op === 5) {
@@ -824,8 +1080,16 @@ function parseDrawPath(data: ArrayLike<number>): ParsedPath[] {
       const width = Number(data[i++]);
       const height = Number(data[i++]);
       const point: Point = [x, y];
+      const operations: Array<[string, ...Point[]]> = [
+        ["m", point],
+        ["l", [x + width, y]],
+        ["l", [x + width, y + height]],
+        ["l", [x, y + height]],
+        ["h"]
+      ];
       current = {
         points: [point, [x + width, y], [x + width, y + height], [x, y + height], point],
+        operations,
         closed: true,
         hasCurve: false,
         lastOp: op,
@@ -1062,8 +1326,8 @@ export function extractPageObjects(
         state.ctm = multiplyMatrix(state.ctm, transformOps[transformIndex++] ?? (args as Matrix));
         break;
       case pdfjs.OPS.paintFormXObjectBegin:
+        stack.push(cloneState(state));
         if (applyFormXObjectMatrices) {
-          stack.push(cloneState(state));
           const formMatrix = Array.from(args?.[0] ?? []).map((value) => Number(value)) as Matrix;
           if (formMatrix.length === 6 && formMatrix.every(Number.isFinite)) {
             state.ctm = multiplyMatrix(state.ctm, formMatrix);
@@ -1072,10 +1336,8 @@ export function extractPageObjects(
         }
         break;
       case pdfjs.OPS.paintFormXObjectEnd: {
-        if (applyFormXObjectMatrices) {
-          const restored = stack.pop();
-          if (restored) Object.assign(state, restored);
-        }
+        const restored = stack.pop();
+        if (restored) Object.assign(state, restored);
         break;
       }
       case pdfjs.OPS.setLineWidth:
@@ -1241,6 +1503,7 @@ export function extractPageObjects(
         const textHScale = state.textHScale * state.fontDirection;
         let x = 0;
         let needCharSpacing = false;
+        const suppressText = shouldSuppressTextForPdfminerUnsupportedCMap(font);
         const spacingDelta = (value: number): number => font.vertical ? -value * state.fontDirection : value * state.fontDirection;
         for (let glyphIndex = 0; glyphIndex < glyphs.length; glyphIndex += 1) {
           const glyph = glyphs[glyphIndex];
@@ -1292,12 +1555,9 @@ export function extractPageObjects(
             const originY = state.y + state.textRise;
             const [matrixE, matrixF] = contentPoint(applyMatrix([originX, originY], matrix));
             const glyphMatrix = cleanMatrix(matrixToPageMatrix([matrix[0], matrix[1], matrix[2], matrix[3], matrixE, matrixF], pageWidth, pageHeight, pageRotate));
-            const upright =
-              pageRotate === 90 || pageRotate === 270
-                ? Math.abs(matrix[0]) < 1e-6 && Math.abs(matrix[3]) < 1e-6
-                : matrix[0] * matrix[3] * textHScale > 0 && matrix[1] * matrix[2] <= 0;
             glyphMatrix[4] = cleanNumber(softenHalfMicro(glyphMatrix[4] - pageX0));
             glyphMatrix[5] = cleanNumber(softenHalfMicro(glyphMatrix[5] + pageTop));
+            const upright = glyphMatrix[0] * glyphMatrix[3] * state.textHScale > 0 && glyphMatrix[1] * glyphMatrix[2] <= 0;
             const obj = rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "char", doctopOffset, {
               text: partText,
               fontname: font.fontname,
@@ -1336,12 +1596,18 @@ export function extractPageObjects(
               obj.x1 = settledCyrillicX1;
               obj.width = settledCyrillicX1 - Number(obj.x0);
             }
+            const settledJapaneseX1 = settleJapaneseWordHalfWidthEdge(font, partText, Number(obj.x1));
+            if (settledJapaneseX1 !== obj.x1) {
+              obj.x1 = settledJapaneseX1;
+              obj.width = settledJapaneseX1 - Number(obj.x0);
+            }
+            settleZeroWidthFormatGlyph(obj);
             obj.size = font.vertical ? obj.width : obj.height;
             settleHorizontalGlyphBBoxToMatrixOrigin(font, obj);
             const rawSizeKey = font.vertical ? `${rawSize}:${obj.x0}:${obj.x1}` : `${rawSize}:${obj.y0}:${obj.y1}`;
             Object.defineProperty(obj, "__pdfplumber_raw_size", { value: rawSize, enumerable: false });
             Object.defineProperty(obj, "__pdfplumber_raw_size_key", { value: rawSizeKey, enumerable: false });
-            chars.push(obj);
+            if (!suppressText) chars.push(obj);
           }
           x += advance;
           if (glyph.isSpace) x += spacingDelta(state.wordSpacing);
@@ -1396,8 +1662,22 @@ export function extractPageObjects(
           const operandPoints = rawPath ? path.points : path.points.map(snapPathOperandPoint);
           const transformed = operandPoints.map((point) => contentPoint(applyMatrix(point, state.ctm)));
           const pagePoints = transformed.map((point) => pointToPageCoords(point, pageWidth, pageHeight, pageRotate).map(cleanNumber) as Point);
-          return { path, transformed, pagePoints };
+          const pathOperationPoint = (point: Point): Point => {
+            const operandPoint = rawPath ? point : snapPathOperandPoint(point);
+            const transformedPoint = contentPoint(applyMatrix(operandPoint, state.ctm));
+            return pointToPageCoords(transformedPoint, pageWidth, pageHeight, pageRotate).map(cleanNumber) as Point;
+          };
+          const pagePath: Array<[string, ...Point[]]> = path.operations.map(([command, ...points]) => [command, ...points.map(pathOperationPoint)]);
+          return { path, transformed, pagePoints, pagePath };
         });
+        const samePoint = (a: Point | undefined, b: Point | undefined): boolean => a != null && b != null && cleanNumber(a[0]) === cleanNumber(b[0]) && cleanNumber(a[1]) === cleanNumber(b[1]);
+        const rectPts = (points: Point[], pagePath: Array<[string, ...Point[]]>): Point[] =>
+          pagePath.at(-1)?.[0] === "h" && samePoint(points[0], points.at(-1)) ? points.slice(0, -1) : points;
+        const linePts = (points: Point[]): Point[] => points.map((point) => pointToPageCoords(point, pageWidth, pageHeight, pageRotate).map(cleanNumber) as Point);
+        const segmentLinePath = (points: Point[]): Array<[string, ...Point[]]> => {
+          const pts = linePts(points);
+          return pts.length >= 2 ? [["m", pts[0]], ["l", pts[1]]] : [];
+        };
         const pointKey = (points: Point[]): string | null => {
           const first = points[0];
           if (!first) return null;
@@ -1410,11 +1690,11 @@ export function extractPageObjects(
             .map(({ transformed }) => pointKey(transformed))
             .filter((key): key is string => key != null)
         );
-        for (const { path, transformed, pagePoints } of pathEntries) {
+        for (const { path, transformed, pagePoints, pagePath } of pathEntries) {
           const inferRectFromGeometry = rawPath === undefined;
-          if (path.trailingMove && !path.closed && !path.hasCurve && transformed.length === 1) continue;
+          if (paths.length > 1 && !path.closed && !path.hasCurve && transformed.length === 1) continue;
           if (transformed.length < 2) {
-            if (transformed.length === 1 && (isFill || (isStroke && vectorExtras.tag === "Artifact"))) {
+            if (transformed.length === 1 && (isFill || isStroke)) {
               if (!path.closed && closedSinglePointKeys.has(pointKey(transformed) ?? "")) continue;
               const rawBBox = pathBBox(transformed);
               const pts = pagePoints;
@@ -1423,6 +1703,7 @@ export function extractPageObjects(
               curves.push(
                 rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
                   pts,
+                  path: pagePath,
                   closepath: path.closed,
                   ...vectorExtras
                 }, coordOffset)
@@ -1434,15 +1715,23 @@ export function extractPageObjects(
             const rawBBox = pathBBox(transformed);
             if (path.closed || path.hasCurve || transformed.length > 2) {
               const lineEndpoints = !path.hasCurve ? collinearPathEndpoints(transformed) : null;
-              if (lineEndpoints && vectorExtras.tag !== "P" && transformed.length === 2) {
+              if (lineEndpoints && vectorExtras.tag !== "P" && (transformed.length === 2 || (transformed.length === 3 && path.explicitClose))) {
                 const rawLineBBox = pathBBox(lineEndpoints);
-                lines.push(rectFromPdfBBox(rawLineBBox, pageWidth, pageHeight, pageRotate, pageNumber, "line", doctopOffset, path.closed ? vectorExtras : lineExtras, coordOffset));
+                lines.push(
+                  rectFromPdfBBox(rawLineBBox, pageWidth, pageHeight, pageRotate, pageNumber, "line", doctopOffset, {
+                    pts: linePts(lineEndpoints),
+                    path: pagePath,
+                    ...(path.closed ? vectorExtras : lineExtras)
+                  }, coordOffset)
+                );
               } else if (
                 isAxisAlignedRect({ ...path, points: transformed }, inferRectFromGeometry || (path.closed && transformed.length === 5)) ||
                 isAxisAlignedRect({ ...path, points: pagePoints }, inferRectFromGeometry || transformed.length === 5)
               ) {
                 rects.push(
                   rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "rect", doctopOffset, {
+                    pts: rectPts(pagePoints, pagePath),
+                    path: pagePath,
                     ...vectorExtras,
                     linewidth: isStroke ? linewidth : 0
                   }, coordOffset)
@@ -1451,6 +1740,7 @@ export function extractPageObjects(
                 curves.push(
 	                  rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
 	                    pts: pagePoints,
+                      path: pagePath,
 	                    closepath: path.closed,
 	                    ...vectorExtras
 	                  }, coordOffset)
@@ -1459,7 +1749,14 @@ export function extractPageObjects(
             } else {
               for (let p = 0; p < transformed.length - 1; p += 1) {
                 const rawLineBBox = pathBBox([transformed[p], transformed[p + 1]]);
-                lines.push(rectFromPdfBBox(rawLineBBox, pageWidth, pageHeight, pageRotate, pageNumber, "line", doctopOffset, lineExtras, coordOffset));
+                const segment = [transformed[p], transformed[p + 1]] as Point[];
+                lines.push(
+                  rectFromPdfBBox(rawLineBBox, pageWidth, pageHeight, pageRotate, pageNumber, "line", doctopOffset, {
+                    pts: linePts(segment),
+                    path: segmentLinePath(segment),
+                    ...lineExtras
+                  }, coordOffset)
+                );
               }
             }
           } else if (isFill) {
@@ -1468,6 +1765,7 @@ export function extractPageObjects(
               const pts = pagePoints;
               const curve = rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
                 pts,
+                path: pagePath,
                 closepath: path.closed,
                 ...vectorExtras,
                 linewidth
@@ -1478,31 +1776,35 @@ export function extractPageObjects(
               continue;
             }
             const lineEndpoints = !path.hasCurve ? collinearPathEndpoints(transformed) : null;
+            const fillOnlyRectLinewidth = !isStroke && vectorExtras.tag === "OC" ? 0 : isStroke || state.lineWidthSet ? linewidth : 0;
             if (lineEndpoints && (transformed.length === 2 || (transformed.length === 3 && path.explicitClose))) {
               const rawLineBBox = pathBBox(lineEndpoints);
-              lines.push(rectFromPdfBBox(rawLineBBox, pageWidth, pageHeight, pageRotate, pageNumber, "line", doctopOffset, vectorExtras, coordOffset));
+              lines.push(
+                rectFromPdfBBox(rawLineBBox, pageWidth, pageHeight, pageRotate, pageNumber, "line", doctopOffset, {
+                  pts: linePts(lineEndpoints),
+                  path: pagePath,
+                  ...vectorExtras
+                }, coordOffset)
+              );
             } else if (
               !(rawPath && path.fromRect && vectorExtras.tag === "Figure" && linewidth > 0 && !isStroke && typeof vectorExtras.non_stroking_color === "number") &&
-              isAxisAlignedRect({ ...path, points: transformed }, inferRectFromGeometry || (!isStroke && transformed.length === 5))
+              isAxisAlignedRect({ ...path, points: transformed }, inferRectFromGeometry || transformed.length === 5)
             ) {
-              const strokeColor = vectorExtras.stroking_color;
-              const hasNonDefaultStrokeColor = Array.isArray(strokeColor)
-                ? strokeColor.some((component, index) => Number(component) !== (strokeColor.length === 4 && index === 3 ? 1 : 0))
-                : strokeColor !== 0;
-              const fillColor = vectorExtras.non_stroking_color;
-              const hasRgbWhiteFill = Array.isArray(fillColor) && fillColor.length === 3 && fillColor.every((component) => Number(component) === 1);
               rects.push(
                 rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "rect", doctopOffset, {
+                  pts: rectPts(pagePoints, pagePath),
+                  path: pagePath,
                   ...vectorExtras,
-                  linewidth: isStroke || (state.lineWidthSet && ((Math.abs(linewidth - 1) <= 1e-9 && (hasNonDefaultStrokeColor || hasRgbWhiteFill || vectorExtras.tag === "Document")) || (Math.abs(linewidth - 1) > 1e-9 && (linewidth <= 1 || linewidth > 10 || vectorExtras.tag !== "OC")))) ? linewidth : 0
+                  linewidth: fillOnlyRectLinewidth
                 }, coordOffset)
               );
             } else if (transformed.length > 0 && !(isStroke && !path.hasCurve && transformed.length > 1 && (rawBBox[0] === rawBBox[2] || rawBBox[1] === rawBBox[3]))) {
-	              const curve = rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
-	                pts: pagePoints,
-	                closepath: path.closed,
-	                ...vectorExtras,
-                linewidth: isStroke || state.lineWidthSet ? linewidth : 0
+              const curve = rectFromPdfBBox(rawBBox, pageWidth, pageHeight, pageRotate, pageNumber, "curve", doctopOffset, {
+                pts: pagePoints,
+                path: pagePath,
+                closepath: path.closed,
+                ...vectorExtras,
+                linewidth: fillOnlyRectLinewidth
               }, coordOffset);
               curves.push(curve);
             }
@@ -1553,11 +1855,9 @@ export function extractPageObjects(
             srcsize: srcWidth && srcHeight ? [srcWidth, srcHeight] : undefined,
             colorspace: resource?.colorspace,
             bits: resource?.bits,
+            imagemask: resource?.imagemask ?? null,
             ...markedExtras()
           }, coordOffset);
-        for (const key of ["width", "height"] as const) {
-          image[key] = softenHalfMicro(Number(image[key]));
-        }
         images.push(image);
         break;
       }
@@ -1586,16 +1886,80 @@ export function annotationToObject(
   const rawContentsFromObject = annotationObject ? readPdfDictStringLikePdfplumber(annotationObject, "Contents") : null;
   const rawTitle = annotationObject ? readPdfDictStringLikePdfplumber(annotationObject, "T") : null;
   const rawUri = annotationObject ? readAnnotationUriLikePdfplumber(annotationObject, objects) : null;
+  const data = annotationObject && objects ? annotationDataLikePdfplumber(annotationObject, objects) : undefined;
+  const contentsValue = rawContentsFromObject ?? (annotationObject && !pdfDictHasKey(annotationObject, "Contents") ? null : rawContents);
   const isTinyPopup = annotation.subtype === "Popup" && Math.abs(Number(rect[2]) - Number(rect[0])) <= 2 && Math.abs(Number(rect[3]) - Number(rect[1])) <= 2;
   return rectFromPdfBBox([rect[0], rect[1], rect[2], rect[3]], pageWidth, pageHeight, pageRotate, pageNumber, "annot", doctopOffset, {
     uri: annotationUri(annotation, rawUri),
     title: annotation.subtype === "Popup" ? null : optionalString(annotation.titleObj?.str ?? annotation.title ?? rawTitle ?? null),
     contents:
       (annotation.subtype === "Popup" && !isTinyPopup) ||
-      ((annotation.subtype === "Link" || annotation.subtype === "Widget" || (annotation.subtype === "Stamp" && pageRotate !== 0)) && (rawContentsFromObject ?? rawContents) === "")
+      ((annotation.subtype === "Link" || annotation.subtype === "Widget" || (annotation.subtype === "Stamp" && pageRotate !== 0)) && contentsValue === "")
         ? null
-        : pdfplumberContents(rawContentsFromObject ?? rawContents)
+        : pdfplumberContents(contentsValue),
+    ...(data ? { data } : {})
   });
+}
+
+function pythonBytesRepr(value: string): string {
+  const bytes = [...value].map((char) => char.charCodeAt(0) & 0xff);
+  const body = bytes
+    .map((byte) => {
+      if (byte === 0x09) return "\\t";
+      if (byte === 0x0a) return "\\n";
+      if (byte === 0x0d) return "\\r";
+      if (byte === 0x5c) return "\\\\";
+      if (byte === 0x27) return "\\'";
+      if (byte >= 0x20 && byte <= 0x7e) return String.fromCharCode(byte);
+      return `\\x${byte.toString(16).padStart(2, "0")}`;
+    })
+    .join("");
+  return `b'${body}'`;
+}
+
+function pdfStreamDataRepr(objectNumber: number | undefined, stream: PdfStream): string {
+  const attrs = Array.from(stream.dict.entries())
+    .filter(([key]) => ["Type", "Subtype", "FormType", "Length"].includes(key))
+    .map(([key, value]) => `'${key}': ${annotationPrimitiveData(value, new Map(), new Set(), 0)}`)
+    .join(", ");
+  return `<PDFStream(${objectNumber ?? "None"}): raw=${stream.rawData.length}, {${attrs}}>`;
+}
+
+function annotationPrimitiveData(
+  value: PdfPrimitive | undefined,
+  objects: Map<number, string>,
+  seen: Set<number>,
+  depth: number
+): unknown {
+  if (value == null || typeof value === "number" || typeof value === "boolean") return value ?? null;
+  if (typeof value === "string") return pythonBytesRepr(value);
+  if (isName(value)) return `/'${value.name}'`;
+  if (isStream(value)) return pdfStreamDataRepr(undefined, value);
+  if (isRef(value)) {
+    if (seen.has(value.objectNumber) || depth > 8) return `<PDFObjRef:${value.objectNumber}>`;
+    const object = parseObject(objects.get(value.objectNumber) ?? "");
+    if (!object) return `<PDFObjRef:${value.objectNumber}>`;
+    if (object.stream) return pdfStreamDataRepr(value.objectNumber, object.stream);
+    const nextSeen = new Set(seen);
+    nextSeen.add(value.objectNumber);
+    return annotationPrimitiveData(object.value, objects, nextSeen, depth + 1);
+  }
+  if (Array.isArray(value)) return (value as PdfArray).map((item) => annotationPrimitiveData(item, objects, seen, depth + 1));
+  if (value instanceof Map) {
+    return Object.fromEntries(
+      Array.from((value as PdfDict).entries())
+        .filter(([key]) => key !== "P")
+        .map(([key, item]) => [key, annotationPrimitiveData(item, objects, seen, depth + 1)])
+    );
+  }
+  return null;
+}
+
+function annotationDataLikePdfplumber(annotationObject: string, objects: Map<number, string>): Record<string, unknown> | null {
+  const parsed = parseObject(annotationObject);
+  const value = parsed?.value;
+  if (!(value instanceof Map)) return null;
+  return annotationPrimitiveData(value, objects, new Set(parsed ? [parsed.objectNumber] : []), 0) as Record<string, unknown>;
 }
 
 function annotationUri(annotation: any, rawUri: string | null): string | null {
@@ -1608,6 +1972,10 @@ function annotationUri(annotation: any, rawUri: string | null): string | null {
 function readPdfDictStringLikePdfplumber(objectText: string, key: string): string | null {
   const bytes = parsePdfDictBytes(objectText, key);
   return bytes ? decodePdfLiteralBytesAsUtf8ThenUtf16(bytes) : null;
+}
+
+function pdfDictHasKey(objectText: string, key: string): boolean {
+  return new RegExp(`/${key}(?:\\s|[\\[\\]<>()/%])`).test(objectText);
 }
 
 function readAnnotationUriLikePdfplumber(annotationObject: string, objects?: Map<number, string>): string | null {

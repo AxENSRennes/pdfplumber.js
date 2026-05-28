@@ -9,8 +9,6 @@ export type PdfToken =
   | { type: "keyword"; value: string; raw: string; start: number; end: number }
   | { type: "arrayStart" | "arrayEnd" | "dictStart" | "dictEnd"; raw: string; start: number; end: number };
 
-const NUMBER_RE = /^[-+]?(?:(?:\d+\.\d*)|(?:\.\d+)|(?:\d+))$/;
-
 export function isPdfWhitespace(char: string | undefined): boolean {
   return char == null || char === "\x00" || char === "\t" || char === "\n" || char === "\f" || char === "\r" || char === " ";
 }
@@ -35,6 +33,45 @@ function readBare(source: string, index: number): { raw: string; end: number } {
   const start = index;
   while (isRegularChar(source[index])) index += 1;
   return { raw: source.slice(start, index), end: index };
+}
+
+function isDigit(char: string | undefined): boolean {
+  return char != null && char >= "0" && char <= "9";
+}
+
+function isAlpha(char: string | undefined): boolean {
+  return char != null && ((char >= "A" && char <= "Z") || (char >= "a" && char <= "z"));
+}
+
+function isKeywordEnd(char: string | undefined): boolean {
+  return char == null || isPdfWhitespace(char) || "#/%[]()<>{}".includes(char);
+}
+
+function readNumberLikePdfminer(source: string, index: number): PdfToken | null {
+  const start = index;
+  if (source[index] === ".") {
+    index += 1;
+    while (isDigit(source[index])) index += 1;
+    const raw = source.slice(start, index);
+    const value = Number(raw);
+    return Number.isNaN(value) ? null : { type: "number", value, raw, start, end: index };
+  }
+  index += 1;
+  while (isDigit(source[index])) index += 1;
+  if (source[index] === ".") {
+    index += 1;
+    while (isDigit(source[index])) index += 1;
+  }
+  const raw = source.slice(start, index);
+  const value = Number(raw);
+  return Number.isNaN(value) ? null : { type: "number", value, raw, start, end: index };
+}
+
+function readKeywordLikePdfminer(source: string, index: number): PdfToken {
+  const start = index;
+  index += 1;
+  while (!isKeywordEnd(source[index])) index += 1;
+  return { type: "keyword", value: source.slice(start, index), raw: source.slice(start, index), start, end: index };
 }
 
 function readName(source: string, index: number): PdfToken {
@@ -146,14 +183,20 @@ export function tokenizePdf(source: string): PdfToken[] {
       continue;
     }
 
-    const bare = readBare(source, index);
-    if (!bare.raw) {
-      index += 1;
+    if (char === "-" || char === "+" || char === "." || isDigit(char)) {
+      const token = readNumberLikePdfminer(source, index);
+      if (token) tokens.push(token);
+      index = token?.end ?? index + 1;
       continue;
     }
-    if (NUMBER_RE.test(bare.raw)) tokens.push({ type: "number", value: Number(bare.raw), raw: bare.raw, start: index, end: bare.end });
-    else tokens.push({ type: "keyword", value: bare.raw, raw: bare.raw, start: index, end: bare.end });
-    index = bare.end;
+    if (isAlpha(char)) {
+      const token = readKeywordLikePdfminer(source, index);
+      tokens.push(token);
+      index = token.end;
+      continue;
+    }
+    tokens.push({ type: "keyword", value: char, raw: char, start: index, end: index + 1 });
+    index += 1;
   }
   return tokens;
 }

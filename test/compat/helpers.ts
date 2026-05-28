@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { expect } from "vitest";
-import { open, type BBox, type PDFObject, type PDFPlumberDocument, type PDFPlumberPage } from "../../src/index.js";
+import { open, type BBox, type Dir, type PDFObject, type PDFPlumberDocument, type PDFPlumberPage, type TableOptions } from "../../src/index.js";
 
 export interface GoldenCheck {
   type: string;
@@ -211,7 +211,7 @@ async function textFlowMatchSummary(selectedPage: PDFPlumberPage): Promise<Recor
   };
 }
 
-const textRotations: Array<[string, string, string]> = [
+const textRotations: Array<[string, Dir, Dir]> = [
   ["0", "ltr", "ttb"],
   ["-0", "rtl", "ttb"],
   ["180", "rtl", "btt"],
@@ -269,8 +269,8 @@ async function textRotationLayoutSummary(document: PDFPlumberDocument): Promise<
 
 async function textRenderDirectionsSummary(selectedPage: PDFPlumberPage): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
-  for (const lineDir of ["ttb", "btt", "ltr", "rtl"]) {
-    const charDirs = lineDir === "ttb" || lineDir === "btt" ? ["ltr", "rtl"] : ["ttb", "btt"];
+  for (const lineDir of ["ttb", "btt", "ltr", "rtl"] as const) {
+    const charDirs = lineDir === "ttb" || lineDir === "btt" ? (["ltr", "rtl"] as const) : (["ttb", "btt"] as const);
     for (const charDir of charDirs) {
       out[`${lineDir}/${charDir}`] = await valueOf(selectedPage.extractText({ line_dir_render: lineDir, char_dir_render: charDir }));
     }
@@ -462,6 +462,7 @@ async function nicsExplicitHorizontalSummary(selectedPage: PDFPlumberPage): Prom
     explicit_horizontal_lines: hPositions
   })))[0];
   const hObjects = hPositions.map((top) => ({
+    page_number: selectedPage.page_number,
     x0: 0,
     x1: selectedPage.width,
     width: selectedPage.width,
@@ -528,9 +529,9 @@ function captureErrorName(fn: () => unknown): string | null {
 
 function tableSettingsErrorSummary(selectedPage: PDFPlumberPage): Record<string, string | null> {
   return {
-    non_mapping: captureErrorName(() => selectedPage.extractTables([] as unknown as Record<string, unknown>)),
-    unknown_setting: captureErrorName(() => selectedPage.extractTables({ strategy: "x" })),
-    invalid_vertical_strategy: captureErrorName(() => selectedPage.extractTables({ vertical_strategy: "x" })),
+    non_mapping: captureErrorName(() => selectedPage.extractTables([] as unknown as TableOptions)),
+    unknown_setting: captureErrorName(() => selectedPage.extractTables({ strategy: "x" } as unknown as TableOptions)),
+    invalid_vertical_strategy: captureErrorName(() => selectedPage.extractTables({ vertical_strategy: "x" } as unknown as TableOptions)),
     explicit_vertical_lines: captureErrorName(() => selectedPage.extractTables({ vertical_strategy: "explicit", explicit_vertical_lines: [] })),
     negative_join_tolerance: captureErrorName(() => selectedPage.extractTables({ join_tolerance: -1 }))
   };

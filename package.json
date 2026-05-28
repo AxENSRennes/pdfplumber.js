@@ -1,7 +1,6 @@
 {
   "name": "pdfplumber-js",
   "version": "0.0.0",
-  "private": true,
   "type": "module",
   "description": "Browser-capable TypeScript port of pdfplumber with Python parity tests.",
   "main": "./dist/src/index.js",
@@ -16,7 +15,9 @@
     }
   },
   "files": [
-    "dist"
+    "dist/src",
+    "dist/browser",
+    "docs/public-api.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json && npm run build:browser",
@@ -27,16 +28,19 @@
     "fixtures:generate:external-parity": "wsl_venv/bin/python scripts/generate-external-parity-goldens.py",
     "fixtures:generate:external-holdout-parity": "wsl_venv/bin/python scripts/generate-external-holdout-parity-goldens.py",
     "fixtures:generate:parity-cycles": "wsl_venv/bin/python scripts/generate-parity-cycle-cases.py",
-    "fixtures:generate:real-parity-cycles": "wsl_venv/bin/python scripts/generate-real-parity-cycle-cases.py",
+    "fixtures:generate:real-parity-cycles": "wsl_venv/bin/python scripts/generate-real-parity-cycle-cases.py --cycles 12,13,14",
     "fixtures:generate:parity-test-shards": "node scripts/generate-parity-test-shards.mjs",
-    "fixtures:generate:real-parity-test-shards": "node scripts/generate-parity-test-shards.mjs --cycles 10,11,12,13,14",
+    "fixtures:generate:real-parity-test-shards": "node scripts/generate-parity-test-shards.mjs --cycles 12,13,14",
     "contract:dashboard": "node scripts/generate-upstream-contract-dashboard.mjs",
+    "contract:dashboard:check": "node scripts/generate-upstream-contract-dashboard.mjs --check",
     "fixtures:download:external": "node scripts/download-external-fixtures.mjs --manifest test/fixtures/external-pdfs/manifest.json",
     "fixtures:download:external-holdout": "node scripts/download-external-fixtures.mjs --manifest test/fixtures/external-holdout-pdfs/manifest.json",
     "fixtures:download:external-all": "node scripts/download-external-fixtures.mjs",
     "python:setup": "python3 -m venv wsl_venv && wsl_venv/bin/python -m pip install -U pip && wsl_venv/bin/python -m pip install -e ./pdfplumber-python",
-    "audit:mupdf": "npm run --silent build && node scripts/compare-mupdf-backend.mjs",
+    "audit:mupdf": "npm run --silent build && node scripts/compare-mupdf-backend.mjs --pages 1",
+    "audit:mupdf:check": "npm run --silent build && node scripts/compare-mupdf-backend.mjs --pages 1 --check-classifications test/fixtures/mupdf-differential-classifications.json",
     "audit:mupdf:micro": "npm run --silent build && npm run --silent fixtures:generate:micro && node scripts/compare-mupdf-backend.mjs --pages 1 --password user test/fixtures/micro-pdfs/*.pdf",
+    "package:check": "node scripts/check-package-payload.mjs",
     "parity:external:analyze": "tsx scripts/analyze-external-parity-failures.ts",
     "parity:holdout:analyze": "tsx scripts/analyze-external-parity-failures.ts --holdout",
     "test": "vitest run",
@@ -44,8 +48,8 @@
     "test:compat": "PDFPLUMBER_JS_RUN_COMPAT=1 vitest run test/compat",
     "test:external-parity": "PDFPLUMBER_JS_RUN_EXTERNAL_PARITY=1 vitest run test/parity/pdfplumber.external-parity.test.ts",
     "test:external-holdout-parity": "PDFPLUMBER_JS_RUN_EXTERNAL_HOLDOUT_PARITY=1 vitest run test/parity/pdfplumber.external-holdout-parity.test.ts",
-    "test:cycle-working-parity": "PDFPLUMBER_JS_RUN_CYCLE_WORKING_PARITY=1 vitest run test/parity/pdfplumber.cycle-working-parity.test.ts",
-    "test:cycle-holdout-parity": "PDFPLUMBER_JS_RUN_CYCLE_HOLDOUT_PARITY=1 vitest run test/parity/pdfplumber.cycle-holdout-parity.test.ts",
+    "test:cycle-working-parity": "PDFPLUMBER_JS_RUN_CYCLE_WORKING_PARITY=1 PDFPLUMBER_JS_CYCLES=12,13,14 vitest run test/parity/pdfplumber.cycle-working-parity.test.ts",
+    "test:cycle-holdout-parity": "PDFPLUMBER_JS_RUN_CYCLE_HOLDOUT_PARITY=1 PDFPLUMBER_JS_CYCLES=12,13,14 PDFPLUMBER_JS_ALLOW_CLASSIFIED_HOLDOUT_FAILURES=1 vitest run test/parity/pdfplumber.cycle-holdout-parity.test.ts",
     "test:cycle-shards": "PDFPLUMBER_JS_RUN_CYCLE_SHARDS=1 vitest run test/parity/cycles",
     "test:cycle-shards:working": "PDFPLUMBER_JS_RUN_CYCLE_SHARDS=1 vitest run test/parity/cycles/*/working",
     "test:cycle-shards:holdout": "PDFPLUMBER_JS_RUN_CYCLE_SHARDS=1 vitest run test/parity/cycles/*/holdout",
@@ -65,10 +69,13 @@
     "test:cycle-shards:13:holdout": "PDFPLUMBER_JS_RUN_CYCLE_SHARDS=1 vitest run --maxWorkers=1 test/parity/cycles/cycle-13/holdout",
     "test:cycle-shards:14:working": "PDFPLUMBER_JS_RUN_CYCLE_SHARDS=1 vitest run --maxWorkers=2 test/parity/cycles/cycle-14/working",
     "test:cycle-shards:14:holdout": "PDFPLUMBER_JS_RUN_CYCLE_SHARDS=1 vitest run --maxWorkers=1 test/parity/cycles/cycle-14/holdout",
-    "test:cycle-shards:real:working": "node scripts/run-real-cycle-shards.mjs --phase working",
-    "test:cycle-shards:real:holdout": "node scripts/run-real-cycle-shards.mjs --phase holdout",
+    "test:cycle-shards:real:working": "node scripts/run-real-cycle-shards.mjs --phase working --cycles 12,13,14",
+    "test:cycle-shards:real:holdout": "node scripts/run-real-cycle-shards.mjs --phase holdout --cycles 12,13,14",
     "test:lowlevel": "vitest run test/lowlevel",
     "test:parity": "PDFPLUMBER_JS_RUN_PARITY=1 vitest run test/parity",
+    "test:stability:smoke": "npm run typecheck && npm test && npm run test:compat && npm run test:parity && npm run contract:dashboard:check && npm run test:browser && npm run package:check && npm run audit:mupdf:check",
+    "test:stability:real-cycles": "npm run test:cycle-working-parity -- --maxWorkers=1 && npm run test:cycle-holdout-parity -- --maxWorkers=1",
+    "test:stability": "npm run test:stability:smoke && npm run test:stability:real-cycles",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

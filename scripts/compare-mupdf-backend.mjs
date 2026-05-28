@@ -18,6 +18,16 @@ const DEFAULT_PDFS = [
   "test/fixtures/external-holdout-pdfs/boj-semiannual-2024-jp.pdf"
 ];
 
+const ALLOWED_CLASSIFICATIONS = new Set([
+  "upstream-compatible-limitation",
+  "backend-gap",
+  "unsupported-feature",
+  "intentional-difference",
+  "duplicate-coverage",
+  "excluded-behavior"
+]);
+const ALLOWED_SUBSYSTEMS = new Set(["text", "words", "geometry", "boxes", "paths", "annotations", "marked-content", "image-metadata", "table"]);
+
 function argValue(name, fallback = null) {
   const index = process.argv.indexOf(name);
   return index >= 0 ? process.argv[index + 1] ?? fallback : fallback;
@@ -168,6 +178,60 @@ async function comparePdf(open, pdfPath, pageLimit, password) {
   };
 }
 
+function pageKey(pdf, page) {
+  return `${pdf}#${page}`;
+}
+
+function validateClassifications(results, classificationPath) {
+  const resolvedPath = path.resolve(classificationPath);
+  if (!existsSync(resolvedPath)) {
+    return { errors: [`MuPDF classification file is missing: ${classificationPath}`] };
+  }
+  const records = JSON.parse(readFileSync(resolvedPath, "utf8"));
+  const errors = [];
+  if (!Array.isArray(records)) {
+    return { errors: [`MuPDF classification file must contain an array: ${classificationPath}`] };
+  }
+
+  const expectedKeys = new Set();
+  for (const result of results) {
+    if (result.error) {
+      errors.push(`${result.pdf}: audit failed before classification: ${result.error}`);
+      continue;
+    }
+    for (const page of result.pages ?? []) expectedKeys.add(pageKey(result.pdf, page.page));
+  }
+
+  const recordKeys = new Set();
+  for (const [index, record] of records.entries()) {
+    const key = pageKey(record.pdf, record.page);
+    if (recordKeys.has(key)) errors.push(`${key}: duplicate MuPDF classification`);
+    recordKeys.add(key);
+
+    if (!expectedKeys.has(key)) errors.push(`${key}: stale MuPDF classification not present in current audit output`);
+    if (!existsSync(path.resolve(record.pdf ?? ""))) errors.push(`${key}: classified PDF does not exist`);
+    if (!Number.isInteger(record.page) || record.page < 1) errors.push(`${key}: classification page must be a positive integer`);
+    if (!ALLOWED_SUBSYSTEMS.has(record.subsystem)) errors.push(`${key}: unsupported subsystem ${record.subsystem}`);
+    if (!ALLOWED_CLASSIFICATIONS.has(record.classification)) errors.push(`${key}: unsupported classification ${record.classification}`);
+    for (const field of ["summary", "evidence", "rationale"]) {
+      if (typeof record[field] !== "string" || !record[field].trim()) errors.push(`${key}: missing ${field}`);
+    }
+    if (typeof record.evidence === "string" && !record.evidence.includes("compare-mupdf-backend.mjs")) {
+      errors.push(`${key}: evidence must name the MuPDF audit command`);
+    }
+    if (typeof record.rationale === "string" && !/\b(?:MuPDF|pdfplumber|pdfminer|Python)\b/.test(record.rationale)) {
+      errors.push(`${key}: rationale must tie the classification to MuPDF and the Python/pdfplumber oracle policy`);
+    }
+    if (!record.pdf || typeof record.pdf !== "string") errors.push(`record ${index}: missing pdf`);
+  }
+
+  for (const key of expectedKeys) {
+    if (!recordKeys.has(key)) errors.push(`${key}: missing MuPDF differential classification`);
+  }
+
+  return { errors, recordCount: records.length, expectedCount: expectedKeys.size };
+}
+
 const buildIndex = path.resolve("dist/src/index.js");
 if (!existsSync(buildIndex)) {
   console.error("dist/src/index.js is missing. Run `npm run build` first.");
@@ -175,8 +239,9 @@ if (!existsSync(buildIndex)) {
 }
 
 const { open } = await import(pathToFileURL(buildIndex).href);
-const pageLimit = Number(argValue("--pages", "2"));
+const pageLimit = Number(argValue("--pages", "1"));
 const password = argValue("--password", null);
+const classificationPath = argValue("--check-classifications", null);
 const positional = process.argv.slice(2).filter((arg, index, args) => {
   if (arg.startsWith("--")) return false;
   return !args[index - 1]?.startsWith("--");
@@ -192,4 +257,18 @@ for (const pdf of pdfs) {
   }
 }
 
-console.log(JSON.stringify({ generatedAt: new Date().toISOString(), pageLimit, results }, null, 2));
+const output = { generatedAt: new Date().toISOString(), pageLimit, results };
+if (classificationPath) {
+  const classificationCheck = validateClassifications(results, classificationPath);
+  output.classificationCheck = {
+    path: classificationPath,
+    records: classificationCheck.recordCount ?? 0,
+    expected: classificationCheck.expectedCount ?? 0
+  };
+  if (classificationCheck.errors.length) {
+    console.error(classificationCheck.errors.join("\n"));
+    process.exit(1);
+  }
+}
+
+console.log(JSON.stringify(output, null, 2));

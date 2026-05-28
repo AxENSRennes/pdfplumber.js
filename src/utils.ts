@@ -503,12 +503,13 @@ export function pythonBytesName(value: string): string {
   const bytes = Uint8Array.from([...value].map((char) => char.charCodeAt(0) & 0xff));
   const decoded = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
   if (decoded.includes("\uFFFD") === false && /[^\x20-\x7e]/.test(decoded)) return decoded;
-  return [...value].map((char) => {
+  const escaped = [...value].map((char) => {
     const code = char.charCodeAt(0) & 0xff;
     if (code === 0x5c) return "\\\\";
     if (code === 0x27) return "\\'";
     return code >= 0x20 && code <= 0x7e ? String.fromCharCode(code) : `\\x${code.toString(16).padStart(2, "0")}`;
   }).join("");
+  return `b'${escaped}'`;
 }
 
 export function rgbColor(value: unknown): number[] {

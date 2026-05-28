@@ -37,7 +37,8 @@ class PrimitiveParser {
       if (token.value === "true") return true;
       if (token.value === "false") return false;
       if (token.value === "null") return null;
-      return token.value;
+      if (token.value === "none") return token.value;
+      return undefined;
     }
     return undefined;
   }

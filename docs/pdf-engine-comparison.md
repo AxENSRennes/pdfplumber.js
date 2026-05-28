@@ -8,7 +8,27 @@ MuPDF.js is technically the stronger fit for reproducing pdfplumber's object mod
 
 PDF.js is the safer open-source dependency. It is Apache-2.0, widely deployed, and browser-first. It exposes page metadata, text content, annotations, structure trees, and operator lists. The downside is that the pdfplumber adapter would need to reconstruct more low-level drawing and glyph state manually from PDF.js operator lists.
 
-Recommended direction: keep the internal engine interface abstract, but use PDF.js as the default dependency unless AGPL/commercial licensing for MuPDF.js is acceptable. If exact table/geometry parity becomes more important than permissive licensing, MuPDF.js is the better engine.
+Recommended direction: keep the public API independent of engine choice and make
+native pdfminer-style parsing/extraction the implementation target. PDF.js may
+remain a named, tested runtime dependency for PDF loading/operator-list
+capabilities while those native subsystems are completed. MuPDF.js stays useful
+as a differential check, not as the primary oracle or default extraction path.
+
+The named PDF.js roles are deliberately narrow:
+
+- Opening PDF bytes in Node and browsers, including password handling and stable
+  runtime errors.
+- Browser worker packaging and runtime asset wiring for CMaps, standard fonts,
+  and WASM support files.
+- Transitional page metadata, text-content, operator-list, and annotation
+  retrieval used as internal inputs to pdfplumber-shaped extraction.
+- Operator-code constants used while interpreting text, color, vector, image,
+  and marked-content drawing operations.
+
+PDF.js is not a public engine selector or oracle. Public behavior is validated
+against Python `pdfplumber` and `pdfminer.six` wherever possible, and every
+PDF.js capability that remains in the contract is tracked as a named
+`pdfjs-capability` dashboard item.
 
 ## Licensing
 
@@ -146,7 +166,9 @@ This means MuPDF may normalize some box information differently from pdfminer/PD
 
 ## Decision
 
-For an open-source browser library, start with PDF.js and an internal engine abstraction:
+For an open-source browser library, keep the public API independent of backend
+selection and continue moving extraction semantics toward native
+pdfminer-style subsystems:
 
 ```ts
 interface PdfEngine {
@@ -163,5 +185,17 @@ interface EnginePage {
 
 Then build the pdfplumber object adapter on top of that.
 
-Keep MuPDF.js as an optional/prototype engine. If PDF.js path reconstruction proves too slow or inaccurate for tables, revisit MuPDF.js with an explicit licensing decision.
+Keep PDF.js only for named, tested runtime/operator capabilities that remain
+necessary, and keep MuPDF.js as an optional/prototype engine plus differential
+audit tool. If MuPDF.js ever becomes more than a diagnostic dependency, make an
+explicit licensing and public-contract decision first.
 
+## Differential Audit Classification
+
+MuPDF is not a primary oracle for this port. The local `audit:mupdf` scripts are
+diagnostic checks only; Python `pdfplumber` and `pdfminer.six` remain the
+behavior oracles. Deltas observed on the default MuPDF differential corpus are
+classified in `test/fixtures/mupdf-differential-classifications.json`, and the
+`audit:mupdf:check` command verifies that the current default MuPDF audit output
+has a fresh classification for every compared page before MuPDF evidence is used
+in completion claims.

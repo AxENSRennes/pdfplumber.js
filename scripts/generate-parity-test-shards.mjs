@@ -10,10 +10,12 @@ function parseCycles(argv) {
   const index = argv.indexOf("--cycles");
   const value = index === -1 ? "04,05,06" : argv[index + 1];
   if (!value) throw new Error("--cycles requires a comma-separated value");
-  return value
-    .split(",")
-    .map((part) => Number.parseInt(part.trim(), 10))
-    .filter(Number.isFinite);
+  const parts = value.split(",").map((part) => part.trim()).filter(Boolean);
+  const cycles = parts.map((part) => Number.parseInt(part, 10));
+  if (!cycles.length || cycles.some((cycle, index) => !Number.isFinite(cycle) || String(cycle).padStart(2, "0") !== parts[index].padStart(2, "0"))) {
+    throw new Error(`--cycles must be a comma-separated list of cycle numbers, received: ${value}`);
+  }
+  return cycles;
 }
 
 function cycleLabel(cycle) {
