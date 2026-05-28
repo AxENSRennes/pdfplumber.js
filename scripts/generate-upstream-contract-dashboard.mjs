@@ -110,6 +110,48 @@ function passedBrowserInputGate(subsystem) {
   };
 }
 
+function passedPdfplumberCompatGate(subsystem, scenario) {
+  return {
+    scope: "public-api",
+    subsystem,
+    status: "passed",
+    js: `test/compat/pdfplumber.compat.test.ts (${scenario})`,
+    rationale: "The compat gate compares the JS public API against Python pdfplumber-generated goldens for this upstream behavior."
+  };
+}
+
+const pdfplumberCompatCoveredTests = new Map(
+  [
+    ["pdfplumber-python/tests/test_basics.py", "Test.test metadata", "open-basic-objects-text-and-edges"],
+    ["pdfplumber-python/tests/test_basics.py", "Test.test pagecount", "open-basic-objects-text-and-edges"],
+    ["pdfplumber-python/tests/test_basics.py", "Test.test page number", "open-basic-objects-text-and-edges"],
+    ["pdfplumber-python/tests/test_basics.py", "Test.test objects", "open-basic-objects-text-and-edges"],
+    ["pdfplumber-python/tests/test_basics.py", "Test.test annots", "annotations-and-hyperlinks"],
+    ["pdfplumber-python/tests/test_basics.py", "Test.test outside bbox", "open-basic-objects-text-and-edges"],
+    ["pdfplumber-python/tests/test_basics.py", "Test.test rotation", "rotation-page-boxes"],
+    ["pdfplumber-python/tests/test_basics.py", "Test.test password", "password-open"],
+    ["pdfplumber-python/tests/test_basics.py", "Test.test unicode normalization", "unicode-normalization"],
+    ["pdfplumber-python/tests/test_basics.py", "Test.test load with custom laparams", "laparams-custom-layout"],
+    ["pdfplumber-python/tests/test_basics.py", "Test.test uncommon boxes", "uncommon-page-boxes"],
+    ["pdfplumber-python/tests/test_dedupe_chars.py", "Test.test extract text2", "dedupe-chars"],
+    ["pdfplumber-python/tests/test_issues.py", "Test.test issue 53", "table-text-layout"],
+    ["pdfplumber-python/tests/test_issues.py", "Test.test issue 140", "table-lines-strict"],
+    ["pdfplumber-python/tests/test_issues.py", "Test.test issue 598", "ligatures"],
+    ["pdfplumber-python/tests/test_issues.py", "Test.test issue 683", "dedupe-chars"],
+    ["pdfplumber-python/tests/test_issues.py", "Test.test issue 1181", "mediabox-offset-table-coordinates"],
+    ["pdfplumber-python/tests/test_mcids.py", "TestMCIDs.test mcids", "marked-content-ids"],
+    ["pdfplumber-python/tests/test_table.py", "Test.test edges strict", "table-lines-strict"],
+    ["pdfplumber-python/tests/test_table.py", "Test.test text tolerance", "table-text-strategy-and-tolerance"],
+    ["pdfplumber-python/tests/test_table.py", "Test.test text layout", "table-text-layout"],
+    ["pdfplumber-python/tests/test_table.py", "Test.test table curves", "table-curves"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test x tolerance ratio", "x-tolerance-ratio"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test extract words", "words-directions-and-extra-attrs"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test extract words punctuation", "punctuation-splitting"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test extract text punctuation", "punctuation-splitting"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test search string", "search-and-text-lines"]
+  ].map(([file, behavior, scenario]) => [`${file}|${behavior.toLowerCase()}`, scenario])
+);
+
 function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
   const lowerBehavior = behavior.toLowerCase();
 
@@ -237,6 +279,8 @@ function classify(source, behavior, kind) {
   }
 
   if (lowerSourceFile.startsWith("pdfplumber-python/tests/")) {
+    const compatScenario = pdfplumberCompatCoveredTests.get(`${lowerSourceFile}|${lowerBehavior}`);
+    if (compatScenario) return passedPdfplumberCompatGate(subsystem, compatScenario);
     return {
       scope: "public-api",
       subsystem,
