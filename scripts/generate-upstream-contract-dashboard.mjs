@@ -447,6 +447,16 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
     };
   }
 
+  if (sourceFile.endsWith("cmap_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "text",
+      status: "excluded",
+      js: "PDF.js CMapFactory, CMap, IdentityCMap, and cMapUrl loader internals are not exposed by pdfplumber.js; public CMap extraction is covered by pdfminer-backed tests.",
+      rationale: "These rows validate PDF.js private CMap parser tables, codespace lookup, usecmap attachment, CMapName/WMode properties, built-in bcmap loading, and API-parameter error messages. pdfplumber.js exposes decoded chars/text, font names, writing mode, and geometry rather than PDF.js CMap classes; pdfminer-compatible CMapDB loading, Identity CMap decoding, predefined CMap Unicode mapping, CMap font extraction, ToUnicode extraction, and CMap-name writing mode behavior are covered by test/lowlevel/cmapdb-compat.test.ts, test/lowlevel/strings-glyphs-compat.test.ts, test/lowlevel/fonts.test.ts, test/lowlevel/cmap-font-compat.test.ts, test/lowlevel/to-unicode-compat.test.ts, and high-level Python-golden extraction suites."
+    };
+  }
+
   if (sourceFile.endsWith("/parser_spec.js")) {
     return {
       scope: "excluded",
