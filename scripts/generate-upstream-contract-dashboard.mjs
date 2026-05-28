@@ -587,6 +587,18 @@ function classify(source, behavior, kind) {
     }
     if (
       lowerSourceFile.includes("pdfminer-six/tests/test_layout.py") &&
+      (lowerBehavior.includes("ltlayoutcontainer.group_textlines() should return all the lines") ||
+        lowerBehavior.includes("testfindneigbors.test find neighbors horizontal") ||
+        lowerBehavior.includes("testfindneigbors.test find neighbors vertical"))
+    ) {
+      return passedNativeCompatGate(
+        subsystem,
+        "test/lowlevel/layout-neighbor-compat.test.ts",
+        "The low-level native layout neighbor tests compare JS line-neighbor selection and non-clipped line grouping against live pdfminer.six oracles for the synthetic upstream LTTextLine cases."
+      );
+    }
+    if (
+      lowerSourceFile.includes("pdfminer-six/tests/test_layout.py") &&
       lowerBehavior.includes("regression test for issue #449")
     ) {
       return passedNativeCompatGate(

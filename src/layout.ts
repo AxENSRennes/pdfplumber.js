@@ -50,13 +50,18 @@ function objectFromChars(chars: PDFObject[], objectType: string, pageHeight: num
   });
 }
 
-type LayoutLineType = "textlinehorizontal" | "textlinevertical";
+export type LayoutLineLikePdfminerType = "textlinehorizontal" | "textlinevertical";
 
-interface LayoutLine {
-  type: LayoutLineType;
+export interface LayoutLineLikePdfminer {
+  type: LayoutLineLikePdfminerType;
+  obj: PDFObject;
+}
+
+type LayoutLineType = LayoutLineLikePdfminerType;
+
+interface LayoutLine extends LayoutLineLikePdfminer {
   chars: PDFObject[];
   text: string;
-  obj: PDFObject;
 }
 
 interface LayoutBox {
@@ -163,7 +168,7 @@ function lineObjectsOverlap(a: PDFObject, b: PDFObject): boolean {
   return Number(b.x0) <= Number(a.x1) && Number(a.x0) <= Number(b.x1) && Number(b.y0) <= Number(a.y1) && Number(a.y0) <= Number(b.y1);
 }
 
-function findLineNeighbors(line: LayoutLine, lines: LayoutLine[], ratio: number): LayoutLine[] {
+export function findLineNeighborsLikePdfminer<T extends LayoutLineLikePdfminer>(line: T, lines: T[], ratio: number): T[] {
   const obj = line.obj;
   if (line.type === "textlinehorizontal") {
     const d = ratio * Number(obj.height);
@@ -212,7 +217,7 @@ function groupLayoutLines(lines: LayoutLine[], pageHeight: number, doctopOffset:
 
   for (const line of lines) {
     const members: LayoutLine[] = [line];
-    for (const neighbor of findLineNeighbors(line, lines, lineMargin)) {
+    for (const neighbor of findLineNeighborsLikePdfminer(line, lines, lineMargin)) {
       members.push(neighbor);
       const existing = boxesByLine.get(neighbor);
       if (existing) {
