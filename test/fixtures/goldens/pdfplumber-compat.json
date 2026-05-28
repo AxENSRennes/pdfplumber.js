@@ -1,6 +1,6 @@
 {
   "reference": {
-    "generatedAt": "2026-05-28T00:58:56.878350+00:00",
+    "generatedAt": "2026-05-28T01:02:07.195080+00:00",
     "pdfminerVersion": "20260107",
     "pdfplumberCommit": "98041536932ce85d18a1fba80d9db0686b831d9d",
     "pdfplumberVersion": "0.11.9"
@@ -5927,6 +5927,94 @@
       ],
       "id": "dedupe-chars",
       "pdf": "issue-71-duplicate-chars-2.pdf"
+    },
+    {
+      "checks": [
+        {
+          "args": {
+            "col": 1,
+            "line": -1,
+            "row": 1
+          },
+          "expected": "微微软软 培培训训课课程程：： 名名模模意意义义一一些些有有意意义义一一些些",
+          "page": 0,
+          "type": "page.extractTable.cellLine"
+        },
+        {
+          "args": {
+            "col": 1,
+            "line": -1,
+            "row": 1
+          },
+          "expected": "微软 培训课程： 名模意义一些有意义一些",
+          "page": 0,
+          "type": "page.dedupe.extractTable.cellLine"
+        },
+        {
+          "args": {
+            "slice": [
+              -1
+            ]
+          },
+          "expected": [
+            {
+              "bottom": 802.960838,
+              "direction": "ltr",
+              "doctop": 794.356838,
+              "height": 8.604,
+              "text": "名名模模意意义义一一些些有有意意义义一一些些",
+              "top": 794.356838,
+              "upright": true,
+              "width": 94.848245,
+              "x0": 440.143428,
+              "x1": 534.991673
+            }
+          ],
+          "page": 0,
+          "type": "page.extractWords"
+        },
+        {
+          "args": {
+            "slice": [
+              -1
+            ]
+          },
+          "expected": [
+            {
+              "bottom": 802.960838,
+              "direction": "ltr",
+              "doctop": 794.356838,
+              "height": 8.604,
+              "text": "名模意义一些有意义一些",
+              "top": 794.356838,
+              "upright": true,
+              "width": 94.575169,
+              "x0": 440.143428,
+              "x1": 534.718597
+            }
+          ],
+          "page": 0,
+          "type": "page.dedupe.extractWords"
+        },
+        {
+          "args": {
+            "line": -1
+          },
+          "expected": "微微软软 培培训训课课程程：： 名名模模意意义义一一些些有有意意义义一一些些",
+          "page": 0,
+          "type": "page.extractText.line"
+        },
+        {
+          "args": {
+            "line": -1
+          },
+          "expected": "微软 培训课程： 名模意义一些有意义一些",
+          "page": 0,
+          "type": "page.dedupe.extractText.line"
+        }
+      ],
+      "id": "dedupe-chars-primary",
+      "pdf": "issue-71-duplicate-chars.pdf"
     },
     {
       "checks": [

@@ -128,6 +128,15 @@ def page_geometry(page: Any) -> Dict[str, Any]:
     )
 
 
+def text_line(text: str, index: int = -1) -> str:
+    return text.split("\n")[index]
+
+
+def table_cell_line(table_data: List[List[Optional[str]]], row: int, col: int, index: int = -1) -> Optional[str]:
+    value = table_data[row][col]
+    return None if value is None else value.split("\n")[index]
+
+
 def ctm_summary(char: Dict[str, Any]) -> Dict[str, Any]:
     ctm = CTM(*char["matrix"])
     return clean(
@@ -566,6 +575,21 @@ def build_scenarios() -> List[Dict[str, Any]]:
                 make_check("page.extractText", pdf.pages[0].extract_text(), page=0),
                 make_check("page.extractText", pdf.pages[0].dedupe_chars().extract_text(), page=0, args={"dedupe_chars": True}),
                 make_check("page.search", [clean(r) for r in pdf.pages[0].search(r"\\d+", regex=True)[:5]], page=0, args={"pattern": r"\\d+", "regex": True}),
+            ],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "dedupe-chars-primary",
+            "issue-71-duplicate-chars.pdf",
+            lambda pdf: [
+                make_check("page.extractTable.cellLine", table_cell_line(pdf.pages[0].extract_table(), 1, 1), page=0, args={"row": 1, "col": 1, "line": -1}),
+                make_check("page.dedupe.extractTable.cellLine", table_cell_line(pdf.pages[0].dedupe_chars().extract_table(), 1, 1), page=0, args={"row": 1, "col": 1, "line": -1}),
+                make_check("page.extractWords", slim_words(pdf.pages[0].extract_words()[-1:]), page=0, args={"slice": [-1]}),
+                make_check("page.dedupe.extractWords", slim_words(pdf.pages[0].dedupe_chars().extract_words()[-1:]), page=0, args={"slice": [-1]}),
+                make_check("page.extractText.line", text_line(pdf.pages[0].extract_text()), page=0, args={"line": -1}),
+                make_check("page.dedupe.extractText.line", text_line(pdf.pages[0].dedupe_chars().extract_text()), page=0, args={"line": -1}),
             ],
         )
     )

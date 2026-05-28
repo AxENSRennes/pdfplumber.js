@@ -66,6 +66,19 @@ function pageObjectCounts(selectedPage: PDFPlumberPage): Record<string, number> 
   return Object.fromEntries(Object.entries(selectedPage.objects).map(([key, value]) => [key, value.length]));
 }
 
+function itemAt<T>(items: T[], index: number): T | undefined {
+  return index < 0 ? items[items.length + index] : items[index];
+}
+
+function textLine(text: string, index: number): string | undefined {
+  return itemAt(text.split("\n"), index);
+}
+
+function tableCellLine(table: Array<Array<string | null>> | null, row: number, col: number, index: number): string | null | undefined {
+  const value = table?.[row]?.[col];
+  return value == null ? value : textLine(value, index);
+}
+
 function ctmSummary(char: Record<string, unknown>): Record<string, unknown> {
   const matrix = char.matrix;
   if (!Array.isArray(matrix) || matrix.length !== 6) {
@@ -183,14 +196,39 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
         case "page.extractText":
           actual = await valueOf(selectedPage.extractText(check.args ?? {}));
           break;
+        case "page.extractText.line":
+          actual = textLine(await valueOf(selectedPage.extractText(check.args ?? {})), (check.args?.line as number | undefined) ?? -1);
+          break;
+        case "page.dedupe.extractText.line":
+          actual = textLine(await valueOf(selectedPage.dedupeChars(check.args ?? {}).extractText(check.args ?? {})), (check.args?.line as number | undefined) ?? -1);
+          break;
         case "page.extractWords":
           actual = await valueOf(selectedPage.extractWords(check.args ?? {}));
+          break;
+        case "page.dedupe.extractWords":
+          actual = await valueOf(selectedPage.dedupeChars(check.args ?? {}).extractWords(check.args ?? {}));
           break;
         case "page.search":
           actual = await valueOf(selectedPage.search(String(check.args?.pattern), check.args ?? {}));
           break;
         case "page.extractTable":
           actual = await valueOf(selectedPage.extractTable(check.args ?? {}));
+          break;
+        case "page.extractTable.cellLine":
+          actual = tableCellLine(
+            await valueOf(selectedPage.extractTable(check.args ?? {})),
+            (check.args?.row as number | undefined) ?? 0,
+            (check.args?.col as number | undefined) ?? 0,
+            (check.args?.line as number | undefined) ?? -1
+          );
+          break;
+        case "page.dedupe.extractTable.cellLine":
+          actual = tableCellLine(
+            await valueOf(selectedPage.dedupeChars(check.args ?? {}).extractTable(check.args ?? {})),
+            (check.args?.row as number | undefined) ?? 0,
+            (check.args?.col as number | undefined) ?? 0,
+            (check.args?.line as number | undefined) ?? -1
+          );
           break;
         case "page.extractTables":
           actual = await valueOf(selectedPage.extractTables(check.args ?? {}));
