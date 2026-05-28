@@ -258,6 +258,75 @@ const excludedPdfplumberInternalHelperTests = new Set([
 function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
   const lowerBehavior = behavior.toLowerCase();
 
+  if (sourceFile.endsWith("core_utils_spec.js") && lowerBehavior === "handles one arraybuffer") {
+    return passedBrowserInputGate("runtime");
+  }
+
+  if (sourceFile.endsWith("pdf.worker_spec.js")) {
+    return {
+      ...passedBrowserInputGate("runtime"),
+      rationale: "The browser ESM gate proves the packaged PDF.js worker bundle is loadable and sufficient for public extraction in Chromium, Firefox, and WebKit."
+    };
+  }
+
+  if (sourceFile.endsWith("util_spec.js") && lowerBehavior === "correctly creates a valid url for allowed protocols") {
+    return passedBrowserInputGate("runtime");
+  }
+
+  if (sourceFile.endsWith("node_stream_spec.js")) {
+    return passedPublicInputGate("runtime");
+  }
+
+  if (/fetch_stream_spec|network_spec/.test(sourceFile)) {
+    return {
+      scope: "excluded",
+      subsystem: "runtime",
+      status: "excluded",
+      js: "Raw PDF.js network stream and range-reader behavior is not exposed by pdfplumber.js; public URL input is covered by the browser ESM gate.",
+      rationale: "pdfplumber.js accepts URLs through open(), but it does not expose PDF.js stream classes, range readers, redirect policy controls, or chunking internals."
+    };
+  }
+
+  if (/network_utils_spec|display_utils_spec/.test(sourceFile)) {
+    return {
+      scope: "excluded",
+      subsystem: "runtime",
+      status: "excluded",
+      js: "PDF.js filename, Fetch-protocol, and response-header helper functions are not public pdfplumber.js APIs.",
+      rationale: "The stable runtime contract is public open() input handling; low-level PDF.js URL/header helper utilities are not exposed."
+    };
+  }
+
+  if (sourceFile.endsWith("pdf_link_service_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "viewer-ui",
+      status: "excluded",
+      js: "PDF.js link-service viewer helpers are not exposed by pdfplumber.js.",
+      rationale: "pdfplumber.js returns extraction objects rather than viewer link-service state."
+    };
+  }
+
+  if (/xfa_parser_spec/.test(sourceFile)) {
+    return {
+      scope: "excluded",
+      subsystem: "viewer-ui",
+      status: "excluded",
+      js: "PDF.js XFA parser/display binding behavior is not exposed by pdfplumber.js.",
+      rationale: "XFA viewer form binding is outside the supported extraction API."
+    };
+  }
+
+  if (/annotation_spec|cff_parser_spec|cmap_spec|postscript_spec|primitives_spec/.test(sourceFile)) {
+    return {
+      scope: "pdfjs-capability",
+      subsystem,
+      status: "needs-adapted-js-test",
+      js: "Adapt only if this PDF.js parser capability remains a named dependency for extraction; otherwise reclassify as excluded or duplicate.",
+      rationale: "This is a retained PDF.js internal capability rather than browser/package runtime input behavior."
+    };
+  }
+
   if (sourceFile.endsWith("api_spec.js")) {
     if (/creates pdf doc from (url-string|url-object|url$|typedarray|arraybuffer)/.test(lowerBehavior)) {
       return passedBrowserInputGate("runtime");
@@ -320,16 +389,6 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
       status: "needs-adapted-js-test",
       js: "Adapt where document parsing behavior is retained by pdfplumber.js; otherwise reclassify rows as excluded or duplicate.",
       rationale: "PDF.js document core behavior matters only when it feeds public extraction behavior."
-    };
-  }
-
-  if (/node_stream_spec|fetch_stream_spec|network_spec|network_utils_spec/.test(sourceFile)) {
-    return {
-      scope: "runtime-adaptation",
-      subsystem: "runtime",
-      status: "needs-adapted-js-test",
-      js: "Adapt only for public open() URL/fetch/file behavior in Node and browsers.",
-      rationale: "Runtime stream behavior is relevant only through the pdfplumber.js input contract, not through raw PDF.js stream classes."
     };
   }
 
