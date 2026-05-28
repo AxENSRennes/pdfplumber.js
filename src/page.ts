@@ -6,6 +6,7 @@ import {
   cleanBBox,
   cropToBBox,
   curveToEdges,
+  getBBoxOverlap,
   lineToEdge,
   objectsByType,
   rectToEdges,
@@ -98,14 +99,31 @@ export class PdfPlumberPageImpl implements PDFPlumberPage {
     return charsToTextMap(this.chars, { layout_bbox: this.bbox, ...options }).search(pattern, options);
   }
 
+  filter(testFunction: (object: PDFObject) => boolean): PDFPlumberPage {
+    const entries = this.objectEntries().map(([key, value]) => [key, value.filter(testFunction)] as [string, PDFObject[]]);
+    return this.derivedPageFromEntries(
+      entries,
+      this.annots.filter(testFunction),
+      this.hyperlinks.filter(testFunction),
+      this.page_number,
+      this.width,
+      this.height,
+      this.bbox,
+      this.mediabox,
+      this.cropbox
+    );
+  }
+
   crop(bbox: BBox, options: { relative?: boolean; strict?: boolean } = {}): PDFPlumberPage {
     const actual = options.relative ? cleanBBox([this.bbox[0] + bbox[0], this.bbox[1] + bbox[1], this.bbox[0] + bbox[2], this.bbox[1] + bbox[3]]) : cleanBBox(bbox);
+    this.validateProposedBBox(actual, options.strict);
     return this.withFilteredObjects(actual, cropToBBox, actual);
   }
 
   within_bbox(bbox: BBox, options: { relative?: boolean; strict?: boolean } = {}): PDFPlumberPage {
     const actual = options.relative ? cleanBBox([this.bbox[0] + bbox[0], this.bbox[1] + bbox[1], this.bbox[0] + bbox[2], this.bbox[1] + bbox[3]]) : cleanBBox(bbox);
-    return this.withFilteredObjects(actual, withinBBox, this.bbox);
+    this.validateProposedBBox(actual, options.strict);
+    return this.withFilteredObjects(actual, withinBBox, actual);
   }
 
   withinBbox(bbox: BBox, options: { relative?: boolean; strict?: boolean } = {}): PDFPlumberPage {
@@ -114,6 +132,7 @@ export class PdfPlumberPageImpl implements PDFPlumberPage {
 
   outside_bbox(bbox: BBox, options: { relative?: boolean; strict?: boolean } = {}): PDFPlumberPage {
     const actual = options.relative ? cleanBBox([this.bbox[0] + bbox[0], this.bbox[1] + bbox[1], this.bbox[0] + bbox[2], this.bbox[1] + bbox[3]]) : cleanBBox(bbox);
+    this.validateProposedBBox(actual, options.strict);
     return this.withFilteredObjects(actual, outsideBBox, this.bbox);
   }
 
@@ -185,24 +204,83 @@ export class PdfPlumberPageImpl implements PDFPlumberPage {
     filter: (objects: PDFObject[], bbox: BBox) => PDFObject[],
     newBBox: BBox
   ): PDFPlumberPage {
-    return new PdfPlumberPageImpl(
+    const entries = this.objectEntries().map(([key, value]) => [key, filter(value, _bbox)] as [string, PDFObject[]]);
+    return this.derivedPageFromEntries(
+      entries,
+      filter(this.annots, _bbox),
+      filter(this.hyperlinks, _bbox),
       this.page_number,
       newBBox[2] - newBBox[0],
       newBBox[3] - newBBox[1],
       newBBox,
       this.mediabox,
-      this.cropbox,
-      filter(this.chars, _bbox),
-      filter(this.rects, _bbox),
-      filter(this.lines, _bbox),
-      filter(this.curves, _bbox),
-      filter(this.images, _bbox),
-      filter(this.annots, _bbox),
-      filter(this.hyperlinks, _bbox),
+      this.cropbox
+    );
+  }
+
+  private objectEntries(): Array<[string, PDFObject[]]> {
+    return [
+      ["char", this.chars],
+      ["line", this.lines],
+      ["rect", this.rects],
+      ["curve", this.curves],
+      ["image", this.images],
+      ...Object.entries(this.extraObjects)
+    ];
+  }
+
+  private derivedPageFromEntries(
+    entries: Array<[string, PDFObject[]]>,
+    annots: PDFObject[],
+    hyperlinks: PDFObject[],
+    pageNumber: number,
+    width: number,
+    height: number,
+    bbox: BBox,
+    mediabox: BBox,
+    cropbox: BBox
+  ): PDFPlumberPage {
+    const byType = new Map(entries);
+    const page = new PdfPlumberPageImpl(
+      pageNumber,
+      width,
+      height,
+      bbox,
+      mediabox,
+      cropbox,
+      byType.get("char") ?? [],
+      byType.get("rect") ?? [],
+      byType.get("line") ?? [],
+      byType.get("curve") ?? [],
+      byType.get("image") ?? [],
+      annots,
+      hyperlinks,
       this.doctopOffset,
       this.artbox,
       this.bleedbox,
-      this.trimbox
+      this.trimbox,
+      Object.fromEntries(entries.filter(([key]) => !["char", "line", "rect", "curve", "image"].includes(key))),
+      this.annotsError
     );
+    page.objects = Object.fromEntries(entries);
+    return page;
+  }
+
+  private validateProposedBBox(bbox: BBox, strict = true): void {
+    if (!strict) return;
+    const bboxArea = bbox[2] >= bbox[0] && bbox[3] >= bbox[1] ? (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) : Number.NaN;
+    if (!Number.isFinite(bboxArea)) throw new ValueError(`Bounding box ${JSON.stringify(bbox)} has a negative width or height.`);
+    if (bboxArea === 0) throw new ValueError(`Bounding box ${JSON.stringify(bbox)} has an area of zero.`);
+    const overlap = getBBoxOverlap(bbox, this.bbox);
+    if (!overlap) throw new ValueError(`Bounding box ${JSON.stringify(bbox)} is entirely outside parent page bounding box ${JSON.stringify(this.bbox)}`);
+    const overlapArea = (overlap[2] - overlap[0]) * (overlap[3] - overlap[1]);
+    if (overlapArea < bboxArea) throw new ValueError(`Bounding box ${JSON.stringify(bbox)} is not fully within parent page bounding box ${JSON.stringify(this.bbox)}`);
+  }
+}
+
+class ValueError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ValueError";
   }
 }

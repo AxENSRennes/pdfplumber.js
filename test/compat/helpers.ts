@@ -46,6 +46,26 @@ function page(document: PDFPlumberDocument, index = 0): PDFPlumberPage {
   return selected;
 }
 
+function pageGeometry(selectedPage: PDFPlumberPage): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries({
+      page_number: selectedPage.page_number,
+      width: selectedPage.width,
+      height: selectedPage.height,
+      bbox: selectedPage.bbox,
+      mediabox: selectedPage.mediabox,
+      cropbox: selectedPage.cropbox,
+      artbox: (selectedPage as PDFPlumberPage & { artbox?: BBox }).artbox,
+      bleedbox: (selectedPage as PDFPlumberPage & { bleedbox?: BBox }).bleedbox,
+      trimbox: (selectedPage as PDFPlumberPage & { trimbox?: BBox }).trimbox
+    }).filter(([, value]) => value !== undefined)
+  );
+}
+
+function pageObjectCounts(selectedPage: PDFPlumberPage): Record<string, number> {
+  return Object.fromEntries(Object.entries(selectedPage.objects).map(([key, value]) => [key, value.length]));
+}
+
 function roundTripComparable(value: unknown): unknown {
   return JSON.parse(JSON.stringify(value));
 }
@@ -110,22 +130,10 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
           actual = document.hyperlinks.length;
           break;
         case "page.geometry":
-          actual = Object.fromEntries(
-            Object.entries({
-            page_number: selectedPage.page_number,
-            width: selectedPage.width,
-            height: selectedPage.height,
-            bbox: selectedPage.bbox,
-              mediabox: selectedPage.mediabox,
-              cropbox: selectedPage.cropbox,
-              artbox: (selectedPage as PDFPlumberPage & { artbox?: BBox }).artbox,
-              bleedbox: (selectedPage as PDFPlumberPage & { bleedbox?: BBox }).bleedbox,
-              trimbox: (selectedPage as PDFPlumberPage & { trimbox?: BBox }).trimbox
-            }).filter(([, value]) => value !== undefined)
-          );
+          actual = pageGeometry(selectedPage);
           break;
         case "page.objectCounts":
-          actual = Object.fromEntries(Object.entries(selectedPage.objects).map(([key, value]) => [key, value.length]));
+          actual = pageObjectCounts(selectedPage);
           break;
         case "page.edgeCounts":
           actual = {
@@ -164,6 +172,90 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
             strict: check.strict
           }).extractText(check.args ?? {}));
           break;
+        case "page.crop.geometry":
+          actual = pageGeometry(selectedPage.crop(check.bbox as BBox, {
+            relative: check.relative,
+            strict: check.strict
+          }));
+          break;
+        case "page.crop.objectCounts":
+          actual = pageObjectCounts(selectedPage.crop(check.bbox as BBox, {
+            relative: check.relative,
+            strict: check.strict
+          }));
+          break;
+        case "page.crop.crop.geometry": {
+          const base = selectedPage.crop(check.args?.baseBbox as BBox);
+          actual = pageGeometry(base.crop(check.bbox as BBox, {
+            relative: check.relative,
+            strict: check.strict
+          }));
+          break;
+        }
+        case "page.crop.crop.objectCounts": {
+          const base = selectedPage.crop(check.args?.baseBbox as BBox);
+          actual = pageObjectCounts(base.crop(check.bbox as BBox, {
+            relative: check.relative,
+            strict: check.strict
+          }));
+          break;
+        }
+        case "page.withinBbox.geometry":
+          actual = pageGeometry(selectedPage.withinBbox(check.bbox as BBox, {
+            relative: check.relative,
+            strict: check.strict
+          }));
+          break;
+        case "page.crop.withinBbox.geometry": {
+          const base = selectedPage.crop(check.args?.baseBbox as BBox);
+          actual = pageGeometry(base.withinBbox(check.bbox as BBox, {
+            relative: check.relative,
+            strict: check.strict
+          }));
+          break;
+        }
+        case "page.withinBbox.objectCounts":
+          actual = pageObjectCounts(selectedPage.withinBbox(check.bbox as BBox, {
+            relative: check.relative,
+            strict: check.strict
+          }));
+          break;
+        case "page.crop.filter.objectCounts": {
+          const objectType = String(check.args?.objectType ?? "");
+          const cropped = selectedPage.crop(check.bbox as BBox, {
+            relative: check.relative,
+            strict: check.strict
+          });
+          actual = pageObjectCounts(cropped.filter((object) => object.object_type === objectType));
+          break;
+        }
+        case "page.crop.error": {
+          let errorName = null;
+          try {
+            selectedPage.crop(check.bbox as BBox, {
+              relative: check.relative,
+              strict: check.strict
+            });
+          } catch (error) {
+            errorName = error instanceof Error ? error.name : typeof error;
+          }
+          actual = errorName;
+          break;
+        }
+        case "page.crop.crop.error": {
+          const base = selectedPage.crop(check.args?.baseBbox as BBox);
+          let errorName = null;
+          try {
+            base.crop(check.bbox as BBox, {
+              relative: check.relative,
+              strict: check.strict
+            });
+          } catch (error) {
+            errorName = error instanceof Error ? error.name : typeof error;
+          }
+          actual = errorName;
+          break;
+        }
         case "page.outsideBbox.extractText":
           actual = await valueOf(selectedPage.outsideBbox(check.bbox as BBox, {
             relative: check.relative,

@@ -65,6 +65,7 @@ export interface PDFPlumberPage {
   extract_words(options?: Record<string, unknown>): PDFObject[] | Promise<PDFObject[]>;
   extractWords(options?: Record<string, unknown>): PDFObject[] | Promise<PDFObject[]>;
   search(pattern: string | RegExp, options?: Record<string, unknown>): SearchResult[] | Promise<SearchResult[]>;
+  filter(testFunction: (object: PDFObject) => boolean): PDFPlumberPage;
   crop(bbox: BBox, options?: { relative?: boolean; strict?: boolean }): PDFPlumberPage;
   within_bbox(bbox: BBox, options?: { relative?: boolean; strict?: boolean }): PDFPlumberPage;
   withinBbox(bbox: BBox, options?: { relative?: boolean; strict?: boolean }): PDFPlumberPage;

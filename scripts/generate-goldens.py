@@ -133,6 +133,14 @@ def make_check(type_: str, expected: Any, **kwargs: Any) -> Dict[str, Any]:
     return check
 
 
+def error_name(fn: Callable[[], Any]) -> Optional[str]:
+    try:
+        fn()
+    except Exception as exc:
+        return type(exc).__name__
+    return None
+
+
 def scenario(
     id_: str,
     pdf_name: str,
@@ -191,6 +199,53 @@ def build_scenarios() -> List[Dict[str, Any]]:
                 make_check("page.object", slim_obj(pdf.pages[0].rects[0]), page=0, args={"objectType": "rect", "index": 0}),
                 make_check("page.object", slim_obj(pdf.pages[0].chars[3358]), page=0, args={"objectType": "char", "index": 3358}),
             ],
+        )
+    )
+
+    def crop_filter_checks(pdf: Any) -> List[Dict[str, Any]]:
+        page = pdf.pages[0]
+        crop_bbox = (0, 0, 200, 200)
+        cropped = page.crop(crop_bbox)
+        within = page.within_bbox(crop_bbox)
+        filtered = cropped.filter(lambda obj: obj["object_type"] == "char")
+        bottom_bbox = (0, 0.8 * float(page.height), page.width, page.height)
+        small_crop = page.crop((10, 10, 40, 40))
+        relative_bbox = (10, 15, 20, 25)
+        bottom = page.crop(bottom_bbox)
+        crop_right_bbox = (page.width / 2, 0, page.width, page.height)
+        crop_right = page.crop(crop_right_bbox)
+        invalid_bboxes = [
+            (0, 0, 0, 0),
+            (0, 0, 10000, 10),
+            (-10, 0, 10, 10),
+            (100, 0, 0, 100),
+            (0, 100, 100, 0),
+        ]
+        return [
+            make_check("page.crop.geometry", page_geometry(cropped), page=0, bbox=crop_bbox),
+            make_check("page.crop.objectCounts", object_counts(cropped.objects), page=0, bbox=crop_bbox),
+            make_check("page.withinBbox.objectCounts", object_counts(within.objects), page=0, bbox=crop_bbox),
+            make_check("page.crop.filter.objectCounts", object_counts(filtered.objects), page=0, bbox=crop_bbox, args={"objectType": "char"}),
+            make_check("page.crop.crop.geometry", page_geometry(small_crop.crop(relative_bbox, relative=True)), page=0, bbox=relative_bbox, relative=True, args={"baseBbox": (10, 10, 40, 40)}),
+            make_check("page.crop.withinBbox.geometry", page_geometry(small_crop.within_bbox(relative_bbox, relative=True)), page=0, bbox=relative_bbox, relative=True, args={"baseBbox": (10, 10, 40, 40)}),
+            make_check("page.crop.crop.objectCounts", object_counts(bottom.crop((0, 0, 0.5 * float(bottom.width), bottom.height), relative=True).objects), page=0, bbox=(0, 0, 0.5 * float(bottom.width), bottom.height), relative=True, args={"baseBbox": bottom_bbox}),
+            make_check("page.crop.crop.objectCounts", object_counts(bottom.crop((0.5 * float(bottom.width), 0, bottom.width, bottom.height), relative=True).objects), page=0, bbox=(0.5 * float(bottom.width), 0, bottom.width, bottom.height), relative=True, args={"baseBbox": bottom_bbox}),
+            make_check("page.crop.crop.objectCounts", object_counts(crop_right.crop((0, 0, crop_right.width / 2, page.height), relative=True).objects), page=0, bbox=(0, 0, crop_right.width / 2, page.height), relative=True, args={"baseBbox": crop_right_bbox}),
+            *[
+                make_check("page.crop.error", error_name(lambda bbox=bbox: page.crop(bbox)), page=0, bbox=bbox)
+                for bbox in invalid_bboxes
+            ],
+            make_check("page.crop.crop.error", error_name(lambda: bottom.crop((0, 0, 0.5 * float(bottom.width), bottom.height))), page=0, bbox=(0, 0, 0.5 * float(bottom.width), bottom.height), args={"baseBbox": bottom_bbox}),
+            make_check("page.crop.crop.error", error_name(lambda: bottom.crop((0.5 * float(bottom.width), 0, bottom.width, bottom.height))), page=0, bbox=(0.5 * float(bottom.width), 0, bottom.width, bottom.height), args={"baseBbox": bottom_bbox}),
+            make_check("page.crop.error", error_name(lambda: page.crop((0, 0, page.width + 10, page.height + 10))), page=0, bbox=(0, 0, page.width + 10, page.height + 10)),
+            make_check("page.crop.geometry", page_geometry(page.crop((0, 0, page.width + 10, page.height + 10), strict=False)), page=0, bbox=(0, 0, page.width + 10, page.height + 10), strict=False),
+        ]
+
+    scenarios.append(
+        scenario(
+            "crop-filter-and-validation",
+            "nics-background-checks-2015-11.pdf",
+            crop_filter_checks,
         )
     )
 
