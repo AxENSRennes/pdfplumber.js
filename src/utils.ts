@@ -32,6 +32,26 @@ export function firstFinite(fallback: number, ...values: unknown[]): number {
   return fallback;
 }
 
+export function safeFloatLikePdfminer(value: unknown): number | null {
+  if (value == null) return null;
+  if (typeof value === "string" && value.trim() === "") return null;
+  try {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  } catch {
+    return null;
+  }
+}
+
+export function safeRectListLikePdfminer(value: unknown): MutableBBox | null {
+  if (value == null || typeof (value as Iterable<unknown>)[Symbol.iterator] !== "function") return null;
+  const values = Array.from(value as Iterable<unknown>).slice(0, 4);
+  if (values.length !== 4) return null;
+  const rect = values.map(safeFloatLikePdfminer);
+  if (rect.some((item) => item == null)) return null;
+  return rect as MutableBBox;
+}
+
 export function snapPdfCoordinate(value: number): number {
   if (!Number.isFinite(value)) return value;
   if (Math.abs(value) < 1) return value;

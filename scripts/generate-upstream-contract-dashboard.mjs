@@ -530,6 +530,13 @@ function classify(source, behavior, kind) {
   }
 
   if (lowerSourceFile.startsWith("pdfminer-six/tests/")) {
+    if (lowerSourceFile.includes("pdfminer-six/tests/test_casting.py")) {
+      return passedNativeCompatGate(
+        subsystem,
+        "test/lowlevel/geometry-compat.test.ts",
+        "The low-level native test verifies pdfminer-compatible safe_float and safe_rect_list casting for numeric, string, null, invalid object, oversized, short, and overlong rectangle inputs."
+      );
+    }
     if (lowerSourceFile.includes("pdfminer-six/tests/test_cmapdb.py")) {
       return passedNativeCompatGate(
         subsystem,
