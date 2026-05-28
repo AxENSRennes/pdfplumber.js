@@ -1,6 +1,6 @@
 {
   "reference": {
-    "generatedAt": "2026-05-28T00:56:36.788200+00:00",
+    "generatedAt": "2026-05-28T00:58:56.878350+00:00",
     "pdfminerVersion": "20260107",
     "pdfplumberCommit": "98041536932ce85d18a1fba80d9db0686b831d9d",
     "pdfplumberVersion": "0.11.9"
@@ -1102,6 +1102,93 @@
       ],
       "id": "basic-colors",
       "pdf": "nics-background-checks-2015-11.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "CreationDate": "D:20160405140805Z00'00'",
+            "Creator": "Word",
+            "Keywords": "",
+            "ModDate": "D:20160405140805Z00'00'",
+            "Producer": "Mac OS X 10.10.5 Quartz PDFContext",
+            "Title": "Microsoft Word - SPECIAL BOARD AGENDA 040616.doc"
+          },
+          "type": "pdf.metadata"
+        }
+      ],
+      "id": "list-metadata-load",
+      "pdf": "cupertino_usd_4-6-16.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": 2,
+          "type": "pdf.pageCount"
+        },
+        {
+          "expected": {
+            "bbox": [
+              0,
+              0,
+              792,
+              612
+            ],
+            "cropbox": [
+              0,
+              0,
+              792,
+              612
+            ],
+            "height": 612,
+            "mediabox": [
+              0,
+              0,
+              792,
+              612
+            ],
+            "page_number": 1,
+            "width": 792
+          },
+          "page": 0,
+          "type": "page.geometry"
+        },
+        {
+          "expected": {
+            "bbox": [
+              0,
+              0,
+              792,
+              612
+            ],
+            "cropbox": [
+              0,
+              0,
+              792,
+              612
+            ],
+            "height": 612,
+            "mediabox": [
+              0,
+              0,
+              792,
+              612
+            ],
+            "page_number": 3,
+            "width": 792
+          },
+          "page": 1,
+          "type": "page.geometry"
+        }
+      ],
+      "id": "pages-option-load",
+      "openOptions": {
+        "pages": [
+          1,
+          3
+        ]
+      },
+      "pdf": "WARN-Report-for-7-1-2015-to-03-25-2016.pdf"
     },
     {
       "checks": [

@@ -132,6 +132,7 @@ function passedPdfplumberCompatGate(subsystem, scenario) {
 
 const pdfplumberCompatCoveredTests = new Map(
   [
+    ["pdfplumber-python/tests/test_ca_warn_report.py", "Test.test page limiting", "pages-option-load"],
     ["pdfplumber-python/tests/test_basics.py", "Test.test metadata", "open-basic-objects-text-and-edges"],
     ["pdfplumber-python/tests/test_basics.py", "Test.test pagecount", "open-basic-objects-text-and-edges"],
     ["pdfplumber-python/tests/test_basics.py", "Test.test page number", "open-basic-objects-text-and-edges"],
@@ -157,6 +158,7 @@ const pdfplumberCompatCoveredTests = new Map(
     ["pdfplumber-python/tests/test_issues.py", "Test.test issue 598", "ligatures"],
     ["pdfplumber-python/tests/test_issues.py", "Test.test issue 683", "dedupe-chars"],
     ["pdfplumber-python/tests/test_issues.py", "Test.test issue 1181", "mediabox-offset-table-coordinates"],
+    ["pdfplumber-python/tests/test_list_metadata.py", "Test.test load", "list-metadata-load"],
     ["pdfplumber-python/tests/test_mcids.py", "TestMCIDs.test mcids", "marked-content-ids"],
     ["pdfplumber-python/tests/test_table.py", "Test.test edges strict", "table-lines-strict"],
     ["pdfplumber-python/tests/test_table.py", "Test.test text tolerance", "table-text-strategy-and-tolerance"],

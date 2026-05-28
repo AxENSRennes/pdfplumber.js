@@ -218,6 +218,29 @@ def build_scenarios() -> List[Dict[str, Any]]:
         )
     )
 
+    scenarios.append(
+        scenario(
+            "list-metadata-load",
+            "cupertino_usd_4-6-16.pdf",
+            lambda pdf: [
+                make_check("pdf.metadata", metadata_subset(pdf.metadata)),
+            ],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "pages-option-load",
+            "WARN-Report-for-7-1-2015-to-03-25-2016.pdf",
+            lambda pdf: [
+                make_check("pdf.pageCount", len(pdf.pages)),
+                make_check("page.geometry", page_geometry(pdf.pages[0]), page=0),
+                make_check("page.geometry", page_geometry(pdf.pages[1]), page=1),
+            ],
+            open_options={"pages": [1, 3]},
+        )
+    )
+
     def crop_filter_checks(pdf: Any) -> List[Dict[str, Any]]:
         page = pdf.pages[0]
         crop_bbox = (0, 0, 200, 200)
