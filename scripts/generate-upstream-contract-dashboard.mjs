@@ -558,6 +558,20 @@ function classify(source, behavior, kind) {
         "The low-level native tests verify pdfminer-compatible Type0/CID CMap-name normalization and writing-mode behavior for Identity, DLIdent, OneByteIdentity, H/V stream encodings, literal-string CMapName values, and missing encoding defaults."
       );
     }
+    if (lowerSourceFile.includes("pdfminer-six/tests/test_pdfminer_crypto.py")) {
+      if (lowerBehavior.includes("arcfour") || lowerBehavior.includes("unpad aes")) {
+        return passedNativeCompatGate(
+          subsystem,
+          "test/lowlevel/crypto-compat.test.ts",
+          "The low-level native crypto tests verify pdfminer-compatible RC4 and AES padding behavior used by encrypted stream handling."
+        );
+      }
+      return passedNativeCompatGate(
+        subsystem,
+        "test/lowlevel/streams.test.ts",
+        "The low-level native stream tests verify pdfminer-compatible ASCII85, ASCIIHex, LZW, and RunLength decoding through PDF stream filters."
+      );
+    }
     if (
       lowerSourceFile.includes("pdfminer-six/tests/test_utils.py") &&
       (
@@ -756,9 +770,11 @@ function inventoryPythonTests(root) {
       const classMatch = /^class\s+([A-Za-z_][\w]*)/.exec(lines[i]);
       if (classMatch) currentClass = classMatch[1];
       const match = /^(\s*)def\s+(test_[A-Za-z_]\w*)\s*\(/.exec(lines[i]);
-      if (!match) continue;
-      const indent = match[1].length;
-      const name = currentClass && indent > 0 ? `${currentClass}.${match[2]}` : match[2];
+      const exactTestMatch = /^(\s*)def\s+(test)\s*\(/.exec(lines[i]);
+      const activeMatch = match ?? (currentClass && exactTestMatch?.[1].length === 4 ? exactTestMatch : null);
+      if (!activeMatch) continue;
+      const indent = activeMatch[1].length;
+      const name = currentClass && indent > 0 ? `${currentClass}.${activeMatch[2]}` : activeMatch[2];
       const doc = pythonDocstringAfter(lines, i);
       rows.push(
         makeRow({

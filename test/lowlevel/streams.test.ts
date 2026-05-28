@@ -25,8 +25,25 @@ describe("low-level PDF stream decoding", () => {
     );
   });
 
+  it("decodes ASCII85 edge cases like pdfminer.ascii85decode", () => {
+    const decode = (value: string): string => decodePdfStream(`1 0 obj\n<< /Filter /ASCII85Decode >>\nstream\n${value}\nendstream\nendobj`);
+
+    expect(decode("9jqo^BlbD-BleB1DJ+*+F(f,q")).toBe("Man is distinguished");
+    expect(decode("E,9)oF*2M7/c~>")).toBe("pleasure.");
+    expect(decode("zE,9)oF*2M7/c~>")).toBe("\0\0\0\0pleasure.");
+    expect(decode("E,9)oF*2M7/c")).toBe("pleasure.");
+    expect(decode("E,9)oF*2M7/c~")).toBe("pleasure.");
+    expect(decode("<~E,9)oF*2M7/c~")).toBe("pleasure.");
+    expect(decode("<~E,9)oF*2M7/c~\n>")).toBe("pleasure.");
+    expect(decode("<^BVT:K:=9<E)pd;BS_1:/aSV;ag~>")).toBe("VARIOUS UTTER NONSENSE");
+    expect(decode("<~<^BVT:K:=9<E)pd;BS_1:/aSV;ag~>")).toBe("VARIOUS UTTER NONSENSE");
+    expect(decode("<^BVT:K:=9<E)pd;BS_1:/aSV;ag~")).toBe("VARIOUS UTTER NONSENSE");
+  });
+
   it("decodes ASCIIHex, RunLength, LZW, and filter chains", () => {
+    expect(decodePdfStream("1 0 obj\n<< /Filter /ASCIIHexDecode >>\nstream\n61 62 2e6364   65\nendstream\nendobj")).toBe("ab.cde");
     expect(decodePdfStream("1 0 obj\n<< /Filter /ASCIIHexDecode >>\nstream\n61 62 2e6364 657>\nendstream\nendobj")).toBe("ab.cdep");
+    expect(decodePdfStream("1 0 obj\n<< /Filter /ASCIIHexDecode >>\nstream\n7>\nendstream\nendobj")).toBe("p");
     const runLength = String.fromCharCode(5) + "123456" + String.fromCharCode(250) + "7" + String.fromCharCode(4) + "abcde" + String.fromCharCode(128) + "junk";
     expect(decodePdfStream(`1 0 obj\n<< /Filter /RunLengthDecode >>\nstream\n${runLength}\nendstream\nendobj`)).toBe("1234567777777abcde");
     const lzw = String.fromCharCode(128, 11, 96, 80, 34, 12, 12, 133, 1);

@@ -29,6 +29,10 @@ function ascii85Decode(value: string): Uint8Array {
   for (let i = 0; i < value.length; i += 1) {
     const char = value[i];
     if (/\s/.test(char)) continue;
+    if (char === "<" && value[i + 1] === "~") {
+      i += 1;
+      continue;
+    }
     if (char === "~") break;
     if (char === "z" && group.length === 0) {
       out.push(0, 0, 0, 0);

@@ -139,6 +139,19 @@ function rc4Bytes(data: Uint8Array, key: Uint8Array): Uint8Array {
   return out;
 }
 
+export function rc4BytesLikePdfminer(key: Uint8Array, data: Uint8Array): Uint8Array {
+  return rc4Bytes(data, key);
+}
+
+export function unpadAesLikePdfminer(data: Uint8Array): Uint8Array {
+  const size = data[data.length - 1];
+  if (!size || size > 16 || size > data.length) return data;
+  for (let i = data.length - size; i < data.length; i += 1) {
+    if (data[i] !== size) return data;
+  }
+  return data.subarray(0, data.length - size);
+}
+
 function parseFirstFileId(raw: string): Uint8Array | null {
   const hex = raw.match(/\/ID\s*\[\s*<([0-9A-Fa-f\s]+)>/)?.[1];
   if (hex) return hexBytes(hex);
