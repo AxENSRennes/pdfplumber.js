@@ -90,8 +90,8 @@ export class PdfPlumberPageImpl implements PDFPlumberPage {
   }
 
   extractWords(options: Record<string, unknown> = {}): PDFObject[] {
-    const { limit: _limit, slice: _slice, ...extractOptions } = options;
-    const words = new WordExtractor(extractOptions).extractWords(this.chars);
+    const { limit: _limit, slice: _slice, return_chars: returnChars, ...extractOptions } = options;
+    const words = new WordExtractor(extractOptions).extractWords(this.chars, Boolean(returnChars));
     return applyLimitSlice(words, options);
   }
 

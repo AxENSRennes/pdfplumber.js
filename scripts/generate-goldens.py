@@ -137,6 +137,19 @@ def table_cell_line(table_data: List[List[Optional[str]]], row: int, col: int, i
     return None if value is None else value.split("\n")[index]
 
 
+def first_word_chars_summary(words: List[Dict[str, Any]]) -> Dict[str, Any]:
+    first = words[0]
+    chars = first.get("chars")
+    return clean(
+        {
+            "first_has_chars": "chars" in first,
+            "first_text": first.get("text"),
+            "first_chars_text": "".join(char["text"] for char in chars) if isinstance(chars, list) else None,
+            "first_chars_count": len(chars) if isinstance(chars, list) else None,
+        }
+    )
+
+
 def ctm_summary(char: Dict[str, Any]) -> Dict[str, Any]:
     ctm = CTM(*char["matrix"])
     return clean(
@@ -434,6 +447,17 @@ def build_scenarios() -> List[Dict[str, Any]]:
                 make_check("page.extractWords", slim_words(pdf.pages[0].extract_words(vertical_ttb=False), 30), page=0, args={"vertical_ttb": False, "limit": 30}),
                 make_check("page.extractWords", slim_words(pdf.pages[0].extract_words(vertical_ttb=False, extra_attrs=["size"]), 30), page=0, args={"vertical_ttb": False, "extra_attrs": ["size"], "limit": 30}),
                 make_check("page.extractWords", slim_words(pdf.pages[0].extract_words(horizontal_ltr=False), 30), page=0, args={"horizontal_ltr": False, "limit": 30}),
+            ],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "extract-words-return-chars",
+            "extra-attrs-example.pdf",
+            lambda pdf: [
+                make_check("page.extractWords.firstCharsSummary", first_word_chars_summary(pdf.pages[0].extract_words()), page=0),
+                make_check("page.extractWords.firstCharsSummary", first_word_chars_summary(pdf.pages[0].extract_words(return_chars=True)), page=0, args={"return_chars": True}),
             ],
         )
     )

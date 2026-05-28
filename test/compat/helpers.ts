@@ -79,6 +79,17 @@ function tableCellLine(table: Array<Array<string | null>> | null, row: number, c
   return value == null ? value : textLine(value, index);
 }
 
+function firstWordCharsSummary(words: Array<Record<string, unknown>>): Record<string, unknown> {
+  const first = words[0] ?? {};
+  const chars = first.chars;
+  return {
+    first_has_chars: Object.prototype.hasOwnProperty.call(first, "chars"),
+    first_text: first.text,
+    first_chars_text: Array.isArray(chars) ? chars.map((char) => (char as Record<string, unknown>).text ?? "").join("") : null,
+    first_chars_count: Array.isArray(chars) ? chars.length : null
+  };
+}
+
 function ctmSummary(char: Record<string, unknown>): Record<string, unknown> {
   const matrix = char.matrix;
   if (!Array.isArray(matrix) || matrix.length !== 6) {
@@ -204,6 +215,9 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
           break;
         case "page.extractWords":
           actual = await valueOf(selectedPage.extractWords(check.args ?? {}));
+          break;
+        case "page.extractWords.firstCharsSummary":
+          actual = firstWordCharsSummary(await valueOf(selectedPage.extractWords(check.args ?? {})) as Array<Record<string, unknown>>);
           break;
         case "page.dedupe.extractWords":
           actual = await valueOf(selectedPage.dedupeChars(check.args ?? {}).extractWords(check.args ?? {}));

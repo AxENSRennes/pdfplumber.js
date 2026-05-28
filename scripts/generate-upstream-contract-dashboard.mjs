@@ -169,6 +169,7 @@ const pdfplumberCompatCoveredTests = new Map(
     ["pdfplumber-python/tests/test_table.py", "Test.test table curves", "table-curves"],
     ["pdfplumber-python/tests/test_utils.py", "Test.test x tolerance ratio", "x-tolerance-ratio"],
     ["pdfplumber-python/tests/test_utils.py", "Test.test extract words", "words-directions-and-extra-attrs"],
+    ["pdfplumber-python/tests/test_utils.py", "Test.test extract words return chars", "extract-words-return-chars"],
     ["pdfplumber-python/tests/test_utils.py", "Test.test extract words punctuation", "punctuation-splitting"],
     ["pdfplumber-python/tests/test_utils.py", "Test.test extract text punctuation", "punctuation-splitting"],
     ["pdfplumber-python/tests/test_utils.py", "Test.test search string", "search-and-text-lines"]
