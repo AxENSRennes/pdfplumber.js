@@ -1,6 +1,7 @@
 import { namedError } from "./errors.js";
 
 import { decodePdfLiteralBytesAsUtf8ThenUtf16, parsePdfDictBytes, parsePdfDictBytesLast } from "./pdf-strings.js";
+import type { PDFObject } from "./types.js";
 
 export interface PdfminerCompatContext {
   raw: string;
@@ -52,6 +53,16 @@ export function shouldSuppressPagesLikePdfminer(ctx: PdfminerCompatContext): boo
     /\/Type\s*\/Catalog\b/.test(catalog) &&
     /\/Pages\s+1\s+0\s+R\b/.test(catalog)
   );
+}
+
+export function extractTextFromLayoutBoxesLikePdfminer(pages: Array<{ objects: Record<string, PDFObject[]> }>): string {
+  return pages
+    .map((page) => {
+      const textboxes = [...(page.objects.textboxhorizontal ?? []), ...(page.objects.textboxvertical ?? [])];
+      if (!textboxes.length) return "\f";
+      return `${textboxes.map((textbox) => String(textbox.text ?? "")).join("\n")}\n\f`;
+    })
+    .join("");
 }
 
 export function normalizePdfStringLikePdfminer(value: string | null | undefined): string | null {

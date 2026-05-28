@@ -575,6 +575,30 @@ function classify(source, behavior, kind) {
     if (
       lowerSourceFile.includes("pdfminer-six/tests/test_highlevel_extracttext.py") &&
       (
+        lowerBehavior.includes("testextracttext.test simple1 with string") ||
+        lowerBehavior.includes("testextracttext.test simple1 no boxes flow") ||
+        lowerBehavior.includes("testextracttext.test simple2 with string") ||
+        lowerBehavior.includes("testextracttext.test simple4 with string") ||
+        lowerBehavior.includes("testextracttext.test simple5 with string") ||
+        lowerBehavior.includes("testextracttext.test simple1 with file") ||
+        lowerBehavior.includes("testextracttext.test simple2 with file") ||
+        lowerBehavior.includes("testextracttext.test simple4 with file") ||
+        lowerBehavior.includes("testextracttext.test simple5 with file") ||
+        lowerBehavior.includes("testextracttext.test zlib corrupted") ||
+        lowerBehavior.includes("testextracttext.test issue 566 cid range") ||
+        lowerBehavior.includes("testextracttext.test issue 625 identity cmap") ||
+        lowerBehavior.includes("ensure that we can support arbitrary width integers in xref streams")
+      )
+    ) {
+      return passedNativeCompatGate(
+        subsystem,
+        "test/lowlevel/highlevel-extracttext-compat.test.ts",
+        "The low-level native high-level text tests reconstruct pdfminer extract_text output from JS laparams text boxes, compare exact simple fixture output for path and file-style oracles, and verify the upstream corrupted-zlib, CMap cid-range, Identity CMap, and xref-stream-width invariants against live pdfminer.six."
+      );
+    }
+    if (
+      lowerSourceFile.includes("pdfminer-six/tests/test_highlevel_extracttext.py") &&
+      (
         lowerBehavior.includes("testextractpages.test line margin") ||
         lowerBehavior.includes("testextractpages.test no boxes flow")
       )

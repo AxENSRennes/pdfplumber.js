@@ -30,5 +30,5 @@ Generated rows: 3580
 | --- | ---: |
 | excluded | 2168 |
 | inventory | 85 |
-| needs-adapted-js-test | 1079 |
-| passed | 248 |
+| needs-adapted-js-test | 1066 |
+| passed | 261 |
