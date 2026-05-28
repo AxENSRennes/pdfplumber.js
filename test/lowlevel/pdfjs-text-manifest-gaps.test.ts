@@ -54,10 +54,22 @@ const gapCases: GapCase[] = [
     expected: { pythonChars: 55, jsChars: 55, pythonWords: 52, jsWords: 55 }
   },
   {
+    id: "issue15352",
+    path: "test/fixtures/upstream-contract-pdfs/pdfjs-issue15352.pdf",
+    category: "layout-ordering",
+    expected: { pythonChars: 4679, jsChars: 4679, pythonWords: 351, jsWords: 348 }
+  },
+  {
     id: "issue18059-text",
     path: "pdfjs/test/pdfs/issue18059.pdf",
     category: "cid-text-normalization",
     expected: { pythonChars: 52, jsChars: 52, pythonWords: 1, jsWords: 1 }
+  },
+  {
+    id: "issue1936-text",
+    path: "test/fixtures/upstream-contract-pdfs/pdfjs-issue1936-text.pdf",
+    category: "glyph-decoding",
+    expected: { pythonChars: 1983, jsChars: 1983, pythonWords: 96, jsWords: 96 }
   },
   {
     id: "issue18117-text",
@@ -94,6 +106,12 @@ const gapCases: GapCase[] = [
     path: "pdfjs/test/pdfs/operator-in-TJ-array.pdf",
     category: "malformed-content-recovery",
     expected: { pythonChars: 0, jsChars: 39, pythonWords: 0, jsWords: 1 }
+  },
+  {
+    id: "reduced_planck_constant",
+    path: "test/fixtures/upstream-contract-pdfs/pdfjs-reduced_planck_constant.pdf",
+    category: "glyph-decoding",
+    expected: { pythonChars: 1, jsChars: 1, pythonWords: 1, jsWords: 1 }
   },
   {
     id: "tracemonkey-extract_0_2_12",

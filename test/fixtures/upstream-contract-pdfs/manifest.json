@@ -513,5 +513,195 @@
       1
     ],
     "why": "Covers linked PDF.js load-manifest fixture txt2pdf with stable public open() behavior."
+  },
+  {
+    "id": "pdfjs-issue12909",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue12909.pdf",
+    "sourceUrl": "https://www.machonso.org/uploads/images/%D7%95%D7%95%D7%9C%D7%A3.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "text"
+    ],
+    "size": 330608,
+    "md5": "0faa1cb029c3323c168595cccbe46ec0",
+    "sha256": "3cf9ef82a798101d0869275c58f2ad99cb4af44d5c225dd777df65f2d9bd2792",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js text-manifest fixture issue12909 through the public text extraction API against Python pdfplumber."
+  },
+  {
+    "id": "pdfjs-issue13845",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue13845.pdf",
+    "sourceUrl": "https://github.com/mozilla/pdf.js/files/6916129/example.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "text"
+    ],
+    "size": 39756,
+    "md5": "7c6b675f61ae68a2e416f4aa26da567c",
+    "sha256": "78192275d16da11c77ff8580d74954ec9ab7337e89c6d4a35d4c7f66f33615fb",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js text-manifest fixture issue13845 through the public text extraction API against Python pdfplumber."
+  },
+  {
+    "id": "pdfjs-issue15352",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue15352.pdf",
+    "sourceUrl": "https://pdf.cdn.readpaper.com/aiKnowledge/pdf/2022-05-06/d55ec560f4c142c3973abc66397d1822-/userUpload/d0edf452a85821acf41cbfa0a6f2f2ac.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "text"
+    ],
+    "size": 7284118,
+    "md5": "d0edf452a85821acf41cbfa0a6f2f2ac",
+    "sha256": "d9f4c1a06001ca4ce45fb2145bb064f4cc53810f98a0a5cbcde777ad5c790857",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js text-manifest fixture issue15352 through the public text extraction API against Python pdfplumber."
+  },
+  {
+    "id": "pdfjs-issue16843-text",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue16843-text.pdf",
+    "sourceUrl": "https://github.com/mozilla/pdf.js/files/12366234/16_2020-044.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "text"
+    ],
+    "size": 6269105,
+    "md5": "2845b2f7f02690c388c24c488297028a",
+    "sha256": "df3fcaea5f64b5b57b7040a323b657a0bdb1d4a5b096731c4617520c0a656515",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js text-manifest fixture issue16843-text through the public text extraction API against Python pdfplumber."
+  },
+  {
+    "id": "pdfjs-issue1936-text",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue1936-text.pdf",
+    "sourceUrl": "https://sci2s.ugr.es/keel/pdf/specific/articulo/alp99.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "text"
+    ],
+    "size": 129843,
+    "md5": "7302eb9b6a626308e2a933aaed9e1756",
+    "sha256": "86a3f3fd3f41f28ffe20b5e2b5fb224e6cb5b0ade364b9f8afdeb2a364c9c794",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js text-manifest fixture issue1936-text through the public text extraction API against Python pdfplumber."
+  },
+  {
+    "id": "pdfjs-issue19624-text",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue19624-text.pdf",
+    "sourceUrl": "https://github.com/user-attachments/files/19126771/okm2500682934750615600.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "text"
+    ],
+    "size": 536895,
+    "md5": "087ac2141dbfa218be833efcc143925a",
+    "sha256": "5ea42aa0647de2cd6e7641e8dbfe17c52a70ebc66788f409368c02243d3d32c0",
+    "selectedPages": [
+      2
+    ],
+    "why": "Covers linked PDF.js text-manifest fixture issue19624-text through the public text extraction API against Python pdfplumber."
+  },
+  {
+    "id": "pdfjs-issue19954",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue19954.pdf",
+    "sourceUrl": "https://github.com/user-attachments/files/20281525/Capital.Bancorp.Inc.Corporate.Responsibility.2025509.SD000000003063823863-1-2.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "text"
+    ],
+    "size": 347200,
+    "md5": "9742309bb321691b53b96069dfc1099b",
+    "sha256": "d618cefd23b5253103013cd97a7dcddcc71f77ead1ae5bcf7d69bf76bfd5bf72",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js text-manifest fixture issue19954 through the public text extraction API against Python pdfplumber."
+  },
+  {
+    "id": "pdfjs-issue3925",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue3925.pdf",
+    "sourceUrl": "http://patentimages.storage.googleapis.com/pdfs/US4441207.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "text"
+    ],
+    "size": 1041098,
+    "md5": "c5c895deecf7a7565393587e0d61be2b",
+    "sha256": "cd983fdefaf62c39c649e80d5f2b1f23acbdce167cbdd96c670c42f7f9951654",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js text-manifest fixture issue3925 through the public text extraction API against Python pdfplumber."
+  },
+  {
+    "id": "pdfjs-issue9186",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue9186.pdf",
+    "sourceUrl": "https://github.com/mozilla/pdf.js/files/1500985/Sample.lease.contract.26.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "text"
+    ],
+    "size": 241268,
+    "md5": "d151857bb724ab9a291704a45a0b5d7f",
+    "sha256": "aabc628edab45ab625a24d513de2f87cd45f8b69bb0d1a55e8d9941c0461c558",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js text-manifest fixture issue9186 through the public text extraction API against Python pdfplumber."
+  },
+  {
+    "id": "pdfjs-reduced_planck_constant",
+    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-reduced_planck_constant.pdf",
+    "sourceUrl": "https://github.com/py-pdf/pypdf/files/12145090/hbar.pdf",
+    "source": "Mozilla PDF.js regression test suite linked fixture",
+    "license": "Apache-2.0 upstream test corpus",
+    "categories": [
+      "pdfjs-regression",
+      "linked-manifest",
+      "text"
+    ],
+    "size": 3473,
+    "md5": "54636f82714926335da5cec6d92d6482",
+    "sha256": "de90de658922cbc8bfbe4afb9a4dc0f84f00237632d61f9ca5020a5c482e2786",
+    "selectedPages": [
+      1
+    ],
+    "why": "Covers linked PDF.js text-manifest fixture reduced_planck_constant through the public text extraction API against Python pdfplumber."
   }
 ]

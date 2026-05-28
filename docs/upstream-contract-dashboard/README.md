@@ -28,8 +28,8 @@ Generated rows: 3580
 
 | Value | Rows |
 | --- | ---: |
-| backend-gap | 13 |
+| backend-gap | 16 |
 | excluded | 3036 |
 | inventory | 85 |
-| needs-adapted-js-test | 39 |
-| passed | 407 |
+| needs-adapted-js-test | 29 |
+| passed | 414 |
