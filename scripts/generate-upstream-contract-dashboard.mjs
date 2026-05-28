@@ -164,6 +164,87 @@ const classifiedPdfjsManifestTextBackendGaps = new Map([
   ["tracemonkey-text", "glyph-decoding"]
 ]);
 
+const passedPythonSupportFixtures = new Map([
+  [
+    "pdfplumber-python/tests/pdfs/issue-203-decimalize.pdf",
+    {
+      subsystem: "images",
+      js: "test/lowlevel/real-fixtures.test.ts",
+      rationale: "The low-level real-fixture test verifies that this upstream pdfplumber image-mask fixture exposes stable image metadata and transforms through the public page.images API."
+    }
+  ],
+  [
+    "pdfplumber-python/tests/pdfs/issue-297-example.pdf",
+    {
+      subsystem: "metadata",
+      js: "test/smoke/api-shape.test.ts",
+      rationale: "The public API smoke test verifies pdfplumber-compatible metadata and page suppression behavior for the upstream issue-297 fixture."
+    }
+  ],
+  [
+    "pdfplumber-python/tests/pdfs/issue-71-duplicate-chars-2.pdf",
+    {
+      subsystem: "text",
+      js: "test/lowlevel/real-fixtures.test.ts",
+      rationale: "The low-level real-fixture test verifies duplicate-character handling on this upstream pdfplumber fixture through the public page.dedupeChars() API."
+    }
+  ],
+  [
+    "pdfplumber-python/tests/pdfs/nics-background-checks-2015-11.pdf",
+    {
+      subsystem: "pages",
+      js: "test/smoke/api-shape.test.ts",
+      rationale: "The public API smoke test verifies that this upstream pdfplumber fixture opens with the expected page count, page number, and bbox."
+    }
+  ],
+  [
+    "pdfplumber-python/tests/pdfs/page-boxes-example.pdf",
+    {
+      subsystem: "parser",
+      js: "test/lowlevel/real-fixtures.test.ts",
+      rationale: "The low-level real-fixture test verifies stable page-box parsing for this upstream pdfplumber page-box fixture."
+    }
+  ],
+  [
+    "pdfplumber-python/tests/pdfs/scotus-transcript-p1.pdf",
+    {
+      subsystem: "runtime",
+      js: "test/smoke/api-shape.test.ts; test/browser/pdfplumber.browser.spec.ts",
+      rationale: "The public API and browser ESM smoke tests use this upstream pdfplumber fixture to verify search/text behavior plus Node/browser extraction parity for ArrayBuffer, Blob, and URL inputs."
+    }
+  ],
+  [
+    "pdfplumber-python/tests/pdfs/senate-expenditures.pdf",
+    {
+      subsystem: "table",
+      js: "test/lowlevel/real-fixtures.test.ts",
+      rationale: "The low-level real-fixture test verifies text-strategy table extraction on this upstream pdfplumber Senate expenditures fixture."
+    }
+  ]
+]);
+
+const passedOssFuzzSupportFixtureNames = new Set([
+  "4591020179783680.pdf",
+  "4646567755972608.pdf",
+  "4652594248613888.pdf",
+  "4691742750474240.pdf",
+  "4715311080734720.pdf",
+  "4736668896133120.pdf",
+  "4833695495684096.pdf",
+  "4927662560968704.pdf",
+  "5177159198507008.pdf",
+  "5317294594523136.pdf",
+  "5452007745323008.pdf",
+  "5592736912179200.pdf",
+  "5809779695484928.pdf",
+  "5903429863538688.pdf",
+  "5914823472250880.pdf",
+  "6013812888633344.pdf",
+  "6085913544818688.pdf",
+  "6400141380878336.pdf",
+  "6515565732102144.pdf"
+]);
+
 function slash(value) {
   return value.split(path.sep).join("/");
 }
@@ -1101,6 +1182,40 @@ function classify(source, behavior, kind) {
   const lowerBehavior = behavior.toLowerCase();
 
   if (kind === "support") {
+    const supportCoverage = passedPythonSupportFixtures.get(source);
+    if (supportCoverage) {
+      return {
+        scope: "robustness-corpus",
+        subsystem: supportCoverage.subsystem,
+        status: "passed",
+        js: supportCoverage.js,
+        rationale: supportCoverage.rationale
+      };
+    }
+
+    if (
+      lowerSourceFile.startsWith("pdfplumber-python/tests/pdfs/from-oss-fuzz/load/") &&
+      passedOssFuzzSupportFixtureNames.has(path.basename(source))
+    ) {
+      return {
+        scope: "robustness-corpus",
+        subsystem: "general",
+        status: "passed",
+        js: "test/smoke/open-robustness.test.ts",
+        rationale: "The public open() robustness test verifies that this upstream OSS-Fuzz fixture either opens with stable page/text summary data or raises the documented stable public error."
+      };
+    }
+
+    if (lowerSourceFile === "pdfjs/test/unit/clitests.json") {
+      return {
+        scope: "excluded",
+        subsystem,
+        status: "excluded",
+        js: "PDF.js CLI/unit harness configuration is not a pdfplumber.js runtime behavior.",
+        rationale: "This JSON file configures upstream PDF.js unit-test execution; it does not define an extraction API item exposed by pdfplumber.js."
+      };
+    }
+
     if (/\.(pdf|zip|png|jpg|jpeg|ttf|otf|cff|bcmap|txt|json)$/i.test(source)) {
       return {
         scope: "robustness-corpus",
