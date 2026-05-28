@@ -457,6 +457,16 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
     };
   }
 
+  if (sourceFile.endsWith("colorspace_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "colors",
+      status: "excluded",
+      js: "PDF.js ColorSpace renderer conversion and cache internals are not exposed by pdfplumber.js; public extracted colors are covered by pdfminer-backed native tests.",
+      rationale: "These rows exercise PDF.js ColorSpace.isDefaultDecode(), ColorSpaceUtils.parse() caching, getRgb/fillRgb pixel conversion, calibrated/indexed/alternate renderer conversion, and indirect-object parsing. pdfplumber.js exposes pdfminer-style raw stroking/non-stroking color values and pattern names on extracted chars/vectors through test/lowlevel/color-compat.test.ts, not PDF.js renderer ColorSpace objects or RGB pixel conversion APIs."
+    };
+  }
+
   if (sourceFile.endsWith("ui_utils_spec.js")) {
     return {
       scope: "excluded",
