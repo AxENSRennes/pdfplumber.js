@@ -57,6 +57,60 @@ const passedPdfjsManifestLoadRobustnessIds = new Set([
   "scan-bad"
 ]);
 
+const passedPdfjsManifestTextPublicIds = new Set([
+  "arabiccidtruetype-text",
+  "bug1245391-text",
+  "bug1513120-text",
+  "bug1627427",
+  "bug1811668",
+  "bug1947248-text",
+  "bug864847-text",
+  "bug900822-encrypted-extract_0",
+  "bug946506-text",
+  "extgstate-text",
+  "IdentityToUnicodeMap_charCodeOf",
+  "issue10301",
+  "issue1045",
+  "issue10529",
+  "issue11016",
+  "issue11651-text",
+  "issue11656",
+  "issue11713",
+  "issue14048",
+  "issue14627",
+  "issue15516",
+  "issue15629",
+  "issue15910",
+  "issue16221-text",
+  "issue16224-text",
+  "issue19800-text",
+  "issue19848-text",
+  "issue20930-text",
+  "issue4665-text",
+  "issue4684-text",
+  "issue5421-text",
+  "issue5734-text",
+  "issue5808-text",
+  "issue5896-text",
+  "issue5972",
+  "issue6019-text",
+  "issue6342-text",
+  "issue6387-text",
+  "issue6605",
+  "issue6612-text",
+  "issue6962",
+  "issue7180-text",
+  "issue7492-text",
+  "issue7878",
+  "issue8229",
+  "issue8372-text",
+  "issue8702-text",
+  "issue9655-text",
+  "rotated-text",
+  "simpletype3font-text",
+  "zero_descent"
+]);
+
 function slash(value) {
   return value.split(path.sep).join("/");
 }
@@ -1392,6 +1446,15 @@ function classify(source, behavior, kind) {
     const manifestId = source.includes("#") ? source.slice(source.indexOf("#") + 1) : "";
     if (passedPdfjsManifestLoadRobustnessIds.has(manifestId)) {
       return passedRobustnessGate(subsystem);
+    }
+    if (passedPdfjsManifestTextPublicIds.has(manifestId)) {
+      return {
+        scope: "pdfjs-capability",
+        subsystem: "text",
+        status: "passed",
+        js: "test/lowlevel/pdfjs-text-manifest-compat.test.ts",
+        rationale: "The public extraction API test compares selected PDF.js text/extract manifest fixtures against Python pdfplumber for page dimensions, extracted text, char counts, and word counts."
+      };
     }
     if (/\b(eq|fbf|print|annotation-layer|text-layer)\b/.test(lowerBehavior)) {
       return {
