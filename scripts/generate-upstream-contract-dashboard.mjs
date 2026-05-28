@@ -457,6 +457,36 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
     };
   }
 
+  if (sourceFile.endsWith("evaluator_spec.js") && /^should handle invalid dash stuff$/.test(lowerBehavior)) {
+    return {
+      scope: "native-engine",
+      subsystem: "vectors",
+      status: "passed",
+      js: "test/lowlevel/path-paint-compat.test.ts",
+      rationale: "The Python-backed vector extraction test builds a diagnostic PDF with the invalid dash operator pattern from the PDF.js evaluator row and verifies public line dash output against pdfplumber, preserving pdfminer PSKeyword-style dash values rather than PDF.js's normalized empty dash array."
+    };
+  }
+
+  if (sourceFile.endsWith("evaluator_spec.js") && /^should convert negative line width to absolute value in the graphic state$/.test(lowerBehavior)) {
+    return {
+      scope: "native-engine",
+      subsystem: "vectors",
+      status: "passed",
+      js: "test/lowlevel/path-paint-compat.test.ts",
+      rationale: "The Python-backed vector extraction test builds a diagnostic PDF with a negative line-width operator and verifies public line linewidth output against pdfminer/pdfplumber, preserving pdfminer-compatible signed linewidth rather than PDF.js's absolute-value graphic-state normalization."
+    };
+  }
+
+  if (sourceFile.endsWith("evaluator_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem,
+      status: "excluded",
+      js: "PDF.js PartialEvaluator and OperatorList internals are not exposed by pdfplumber.js; observable extraction behavior is covered by public and native pdfminer-backed tests.",
+      rationale: "These rows validate PDF.js private operator splitting, arity recovery, XObject handling, worker aborts, and OperatorList flushing. pdfplumber.js consumes PDF.js operator lists only as an internal aid while exposing pdfplumber-compatible text, chars, vectors, images, marked content, and metadata; retained observable behavior is covered by Python-golden public suites plus native content/vector/color/image/marked-content tests."
+    };
+  }
+
   if (sourceFile.endsWith("stream_spec.js") && lowerBehavior === "should decode simple predictor data") {
     return {
       scope: "native-engine",

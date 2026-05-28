@@ -6,6 +6,8 @@ import { parseOperatorStream } from "./parser.js";
 
 export interface GraphicsHints {
   colorOps: ColorOp[];
+  lineWidths: number[];
+  dashOps: Array<[unknown[], number]>;
   textMatrices: Matrix[];
   textMoves: Point[];
   leadingTextMoves: Point[];
@@ -36,8 +38,17 @@ function isUpperOperator(operator: string): boolean {
   return operator === operator.toUpperCase();
 }
 
+function dashArrayValueLikePdfminer(value: PdfPrimitive): unknown {
+  if (isName(value)) return `/'${value.name}'`;
+  if (typeof value === "string") return `/b'${value}'`;
+  if (Array.isArray(value)) return value.map(dashArrayValueLikePdfminer);
+  return value;
+}
+
 export function collectGraphicsHints(operations: PdfOperation[], colorSpaces: Record<string, string> = {}): GraphicsHints {
   const colorOps: ColorOp[] = [];
+  const lineWidths: number[] = [];
+  const dashOps: Array<[unknown[], number]> = [];
   const textMatrices: Matrix[] = [];
   const textMoves: Point[] = [];
   const leadingTextMoves: Point[] = [];
@@ -59,6 +70,12 @@ export function collectGraphicsHints(operations: PdfOperation[], colorSpaces: Re
     const nums = numericArgs(operation.args);
     const op = operation.operator;
 
+    if (op === "w" && nums.length >= 1) lineWidths.push(nums.at(-1)!);
+    if (op === "d" && operation.args.length >= 2) {
+      const rawDashArray = operation.args.at(-2);
+      const rawPhase = operation.args.at(-1);
+      dashOps.push([Array.isArray(rawDashArray) ? rawDashArray.map(dashArrayValueLikePdfminer) : [], typeof rawPhase === "number" ? rawPhase : 0]);
+    }
     if (op === "cm" && nums.length >= 6) transforms.push(nums.slice(-6) as Matrix);
     else if (op === "Tm" && nums.length >= 6) textMatrices.push(nums.slice(-6) as Matrix);
     else if ((op === "Td" || op === "TD") && nums.length >= 2) {
@@ -124,7 +141,7 @@ export function collectGraphicsHints(operations: PdfOperation[], colorSpaces: Re
     }
   }
 
-  return { colorOps, textMatrices, textMoves, leadingTextMoves, transforms, pathOps, drawnImages };
+  return { colorOps, lineWidths, dashOps, textMatrices, textMoves, leadingTextMoves, transforms, pathOps, drawnImages };
 }
 
 export function collectGraphicsHintsFromContent(content: string, colorSpaces: Record<string, string> = {}): GraphicsHints {

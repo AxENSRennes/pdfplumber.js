@@ -199,6 +199,10 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
     const colorOps = graphicsHints.colorOps;
     const rawTransformOps = graphicsHints.transforms;
     const operatorTransformOps = operatorList.fnArray.flatMap((fn: number, i: number) => (fn === pdfjs.OPS.transform ? [operatorList.argsArray[i] as Matrix] : []));
+    const rawLineWidthOps = graphicsHints.lineWidths;
+    const setLineWidthCount = operatorList.fnArray.filter((fn: number) => fn === pdfjs.OPS.setLineWidth).length;
+    const rawDashOps = graphicsHints.dashOps;
+    const setDashCount = operatorList.fnArray.filter((fn: number) => fn === pdfjs.OPS.setDash).length;
     const rawTextMatrixOps = graphicsHints.textMatrices;
     const setTextMatrixCount = operatorList.fnArray.filter((fn: number) => fn === pdfjs.OPS.setTextMatrix).length;
     const rawTextMoveOps = { move: graphicsHints.textMoves, leadingMove: graphicsHints.leadingTextMoves };
@@ -221,6 +225,8 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
       boxes.mediabox[0],
       boxes.mediabox[1],
       colorOps,
+      rawLineWidthOps.length === setLineWidthCount ? rawLineWidthOps : [],
+      rawDashOps.length === setDashCount ? rawDashOps : [],
       transformOpsMatch(rawTransformOps, operatorTransformOps) ? rawTransformOps : [],
       rawTextMatrixOps.length === setTextMatrixCount ? rawTextMatrixOps : [],
       rawTextMoveOps.move.length === moveTextCount ? rawTextMoveOps.move : [],

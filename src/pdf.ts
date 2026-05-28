@@ -915,6 +915,8 @@ export function extractPageObjects(
   pageX0 = 0,
   pageTop = 0,
   colorOps: ColorOp[] = [],
+  lineWidthOps: number[] = [],
+  dashOps: Array<[unknown[], number]> = [],
   transformOps: Matrix[] = [],
   textMatrixOps: Matrix[] = [],
   textMoveOps: Point[] = [],
@@ -942,6 +944,8 @@ export function extractPageObjects(
   let textMatrixIndex = 0;
   let textMoveIndex = 0;
   let textLeadingMoveIndex = 0;
+  let lineWidthIndex = 0;
+  let dashIndex = 0;
   let pathIndex = 0;
   let imageIndex = 0;
   let sawDeviceCMYK = false;
@@ -1075,11 +1079,11 @@ export function extractPageObjects(
         break;
       }
       case pdfjs.OPS.setLineWidth:
-        state.lineWidth = Number(args?.[0] ?? state.lineWidth) * lineWidthScale(state.ctm);
+        state.lineWidth = Number(lineWidthOps[lineWidthIndex++] ?? args?.[0] ?? state.lineWidth) * lineWidthScale(state.ctm);
         state.lineWidthSet = true;
         break;
       case pdfjs.OPS.setDash:
-        state.dash = args ? [args[0] ?? [], args[1] ?? 0] : null;
+        state.dash = dashOps[dashIndex++] ?? (args ? [args[0] ?? [], args[1] ?? 0] : null);
         break;
       case pdfjs.OPS.beginMarkedContent:
         markedContentStack.push({ tag: decodePdfNameUtf8(args?.[0]?.name ?? String(args?.[0] ?? "")), mcid: null });

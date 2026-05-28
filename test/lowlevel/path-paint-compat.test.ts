@@ -1,4 +1,7 @@
 import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -52,6 +55,83 @@ print(json.dumps({
 }))
 `;
   return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as { lines: number; linewidths: number[] };
+}
+
+function latin1Bytes(value: string): Uint8Array {
+  const bytes = new Uint8Array(value.length);
+  for (let index = 0; index < value.length; index += 1) bytes[index] = value.charCodeAt(index) & 0xff;
+  return bytes;
+}
+
+function concatBytes(...chunks: Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
+}
+
+function onePagePdf(content: string): Uint8Array {
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R >>",
+    `<< /Length ${latin1Bytes(content).length} >>\nstream\n${content}\nendstream`
+  ].map(latin1Bytes);
+  const chunks: Uint8Array[] = [latin1Bytes("%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")];
+  const offsets = [0];
+  let length = chunks[0].length;
+  for (let index = 0; index < objects.length; index += 1) {
+    offsets.push(length);
+    const prefix = latin1Bytes(`${index + 1} 0 obj\n`);
+    const suffix = latin1Bytes("\nendobj\n");
+    chunks.push(prefix, objects[index], suffix);
+    length += prefix.length + objects[index].length + suffix.length;
+  }
+  const xrefOffset = length;
+  chunks.push(latin1Bytes(`xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`));
+  for (const offset of offsets.slice(1)) chunks.push(latin1Bytes(`${String(offset).padStart(10, "0")} 00000 n \n`));
+  chunks.push(latin1Bytes(`trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`));
+  return concatBytes(...chunks);
+}
+
+function pdfminerLinewidthOracle(pdfBytes: Uint8Array): number[] {
+  const dir = mkdtempSync(join(tmpdir(), "pdfplumber-js-linewidth-"));
+  const path = join(dir, "line-width.pdf");
+  try {
+    writeFileSync(path, pdfBytes);
+    const code = `
+import json
+from pdfminer.high_level import extract_pages
+from pdfminer.layout import LTLine
+
+page = next(iter(extract_pages(${JSON.stringify(path)})))
+print(json.dumps([line.linewidth for line in page if isinstance(line, LTLine)]))
+`;
+    return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as number[];
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function pdfminerDashOracle(pdfBytes: Uint8Array): unknown[] {
+  const dir = mkdtempSync(join(tmpdir(), "pdfplumber-js-dash-"));
+  const path = join(dir, "dash.pdf");
+  try {
+    writeFileSync(path, pdfBytes);
+    const code = `
+import json
+import pdfplumber
+
+with pdfplumber.open(${JSON.stringify(path)}) as pdf:
+    print(json.dumps([line.get("dash") for line in pdf.pages[0].lines], default=str))
+`;
+    return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as unknown[];
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 function types(path: PdfminerPathOp[]): string[] {
@@ -152,6 +232,28 @@ describe("low-level pdfminer path painting compatibility", () => {
       } finally {
         await pdf.close();
       }
+    }
+  });
+
+  it("preserves diagnostic negative line widths like pdfminer", async () => {
+    const pdfBytes = onePagePdf("-5 w 10 10 m 90 10 l S");
+    const expected = pdfminerLinewidthOracle(pdfBytes);
+    const pdf = await open(pdfBytes);
+    try {
+      expect(pdf.pages[0].lines.map((line) => line.linewidth)).toEqual(expected);
+    } finally {
+      await pdf.close();
+    }
+  });
+
+  it("preserves diagnostic invalid dash arrays like pdfplumber", async () => {
+    const pdfBytes = onePagePdf("[ none ] 0 d 10 10 m 90 10 l S");
+    const expected = pdfminerDashOracle(pdfBytes);
+    const pdf = await open(pdfBytes);
+    try {
+      expect(pdf.pages[0].lines.map((line) => line.dash)).toEqual(expected);
+    } finally {
+      await pdf.close();
     }
   });
 });
