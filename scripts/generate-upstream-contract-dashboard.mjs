@@ -593,6 +593,21 @@ function classify(source, behavior, kind) {
         "The low-level native string/glyph tests verify pdfminer-compatible PDFFont width defaults and get_widths parsing for list, range, and object-reference width definitions."
       );
     }
+    if (
+      lowerSourceFile.includes("pdfminer-six/tests/test_converter.py") &&
+      (
+        lowerBehavior.includes("testpaintpath.") ||
+        lowerBehavior.includes("path from samples/contrib/issue-00369-excel.pdf") ||
+        lowerBehavior.includes("via https://github.com/pdfminer/pdfminer.six/issues/473") ||
+        lowerBehavior.includes("see section 4.4, table 4.9")
+      )
+    ) {
+      return passedNativeCompatGate(
+        subsystem,
+        "test/lowlevel/path-paint-compat.test.ts",
+        "The low-level native path-painting tests verify pdfminer-compatible path classification for lines, rectangles, curves, quadrilateral edge cases, Bezier endpoints/raw paths, dash style, missing initial move handling, and upstream fixture line widths."
+      );
+    }
     if (lowerSourceFile.includes("pdfminer-six/tests/test_converter.py") && lowerBehavior.includes("testbinarydetector.")) {
       return {
         scope: "excluded",
