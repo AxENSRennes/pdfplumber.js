@@ -1,5 +1,10 @@
+import { decompressSync } from "fflate";
+
 import { namedError } from "./errors.js";
 
+import { parseObject } from "./pdf/parser.js";
+import { asArray, asName, latin1String } from "./pdf/primitives.js";
+import type { PdfPrimitive } from "./pdf/primitives.js";
 import { decodePdfLiteralBytesAsUtf8ThenUtf16, parsePdfDictBytes, parsePdfDictBytesLast } from "./pdf-strings.js";
 import type { PDFObject } from "./types.js";
 
@@ -9,23 +14,43 @@ export interface PdfminerCompatContext {
   password?: string;
 }
 
+function filterNames(filterValue: PdfPrimitive | undefined): string[] {
+  const direct = asName(filterValue);
+  if (direct) return [direct];
+  const array = asArray(filterValue);
+  return array?.map((item) => asName(item)).filter((name): name is string => name != null) ?? [];
+}
+
+function validateAscii85BytesLikePdfminer(bytes: Uint8Array): void {
+  const stream = latin1String(bytes);
+  for (let i = 0; i < stream.length; i += 1) {
+    const char = stream[i];
+    if (/\s/.test(char)) continue;
+    if (char === "~" && stream[i + 1] === ">") break;
+    const code = char.charCodeAt(0);
+    if (char === "z" || char === "y" || (code >= 33 && code <= 117)) continue;
+    throw namedError("PdfminerException", `Non-Ascii85 digit found: ${char}`);
+  }
+}
+
 export function validateStreamsLikePdfminer(ctx: PdfminerCompatContext): void {
   for (const text of ctx.objects.values()) {
-    if (!/\/Filter\s*(?:\[[^\]]*)?\/(?:A85|ASCII85Decode)\b/.test(text)) continue;
-    const streamIndex = text.indexOf("stream");
-    const endstreamIndex = text.lastIndexOf("endstream");
-    if (streamIndex === -1 || endstreamIndex <= streamIndex) continue;
-    let start = streamIndex + "stream".length;
-    if (text[start] === "\r" && text[start + 1] === "\n") start += 2;
-    else if (text[start] === "\r" || text[start] === "\n") start += 1;
-    const stream = text.slice(start, endstreamIndex);
-    for (let i = 0; i < stream.length; i += 1) {
-      const char = stream[i];
-      if (/\s/.test(char)) continue;
-      if (char === "~" && stream[i + 1] === ">") break;
-      const code = char.charCodeAt(0);
-      if (char === "z" || char === "y" || (code >= 33 && code <= 117)) continue;
-      throw namedError("PdfminerException", `Non-Ascii85 digit found: ${char}`);
+    const stream = parseObject(text)?.stream;
+    if (!stream) continue;
+    let bytes = stream.data;
+    for (const filter of filterNames(stream.dict.get("Filter"))) {
+      if (filter === "FlateDecode" || filter === "Fl") {
+        try {
+          bytes = decompressSync(bytes);
+        } catch {
+          bytes = new Uint8Array();
+        }
+      } else if (filter === "ASCII85Decode" || filter === "A85") {
+        validateAscii85BytesLikePdfminer(bytes);
+        break;
+      } else if (filter === "ASCIIHexDecode" || filter === "AHx" || filter === "RunLengthDecode" || filter === "RL" || filter === "LZWDecode" || filter === "LZW") {
+        break;
+      }
     }
   }
 }

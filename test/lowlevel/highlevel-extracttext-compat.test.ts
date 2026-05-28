@@ -68,6 +68,9 @@ describe("low-level pdfminer high-level extract_text compatibility", () => {
   });
 
   it("preserves targeted CMap and xref-stream high-level text invariants", async () => {
+    const issue495PdfObjRef = samplePath("contrib/issue_495_pdfobjref.pdf");
+    expect((await jsExtractTextLikePdfminer(issue495PdfObjRef)).trim()).toBe(pdfminerExtractText(issue495PdfObjRef).trim());
+
     const issue566CMapBytes = samplePath("contrib/issue_566_test_1.pdf");
     expect((await jsExtractTextLikePdfminer(issue566CMapBytes)).trim()).toBe(pdfminerExtractText(issue566CMapBytes).trim());
 

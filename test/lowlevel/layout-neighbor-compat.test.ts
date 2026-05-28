@@ -70,6 +70,24 @@ print(json.dumps(sorted(label for label, line in lines if line in neighbors)))
   return JSON.parse(pdfminerPython(code)) as string[];
 }
 
+function pdfminerBoundaryNeighborCount(): number {
+  const code = `
+from pdfminer.layout import LAParams, LTTextLineHorizontal
+from pdfminer.utils import Plane
+
+laparams = LAParams()
+line1 = LTTextLineHorizontal(laparams.word_margin)
+line1.set_bbox((1625.1993358296002, 52.93224, 1640.9641086296, 75.25224))
+line2 = LTTextLineHorizontal(laparams.word_margin)
+line2.set_bbox((1627.3696829148, 40.506119999999996, 1638.7563493148, 51.66611999999999))
+plane = Plane((0, 0, 2000, 2000))
+plane.add(line1)
+plane.add(line2)
+print(len(line1.find_neighbors(plane, laparams.line_margin)))
+`;
+  return Number(pdfminerPython(code));
+}
+
 function pdfObjectFromPdfBBox(objectType: string, bbox: BBox, pageHeight = neighborPlaneHeight, text?: string): PDFObject {
   const [x0, y0, x1, y1] = bbox;
   return {
@@ -132,5 +150,14 @@ describe("low-level pdfminer layout neighbor compatibility", () => {
       .sort();
 
     expect(actual).toEqual(pdfminerNeighborLabels(type));
+  });
+
+  it("keeps line-margin boundary precision compatible with pdfminer", () => {
+    const lines = [
+      lineFromPdfBBox("textlinehorizontal", "page-number", [1625.1993358296002, 52.93224, 1640.9641086296, 75.25224]),
+      lineFromPdfBBox("textlinehorizontal", "sheet-size", [1627.3696829148, 40.506119999999996, 1638.7563493148, 51.66611999999999])
+    ];
+
+    expect(findLineNeighborsLikePdfminer(lines[0], lines, 0.5)).toHaveLength(pdfminerBoundaryNeighborCount());
   });
 });

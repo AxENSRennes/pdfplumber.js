@@ -168,16 +168,25 @@ function lineObjectsOverlap(a: PDFObject, b: PDFObject): boolean {
   return Number(b.x0) <= Number(a.x1) && Number(a.x0) <= Number(b.x1) && Number(b.y0) <= Number(a.y1) && Number(a.y0) <= Number(b.y1);
 }
 
+function objectHeight(obj: PDFObject): number {
+  return Number(obj.y1) - Number(obj.y0);
+}
+
+function objectWidth(obj: PDFObject): number {
+  return Number(obj.x1) - Number(obj.x0);
+}
+
 export function findLineNeighborsLikePdfminer<T extends LayoutLineLikePdfminer>(line: T, lines: T[], ratio: number): T[] {
   const obj = line.obj;
   if (line.type === "textlinehorizontal") {
-    const d = ratio * Number(obj.height);
+    const height = objectHeight(obj);
+    const d = ratio * height;
     const query = { x0: obj.x0, x1: obj.x1, y0: Number(obj.y0) - d, y1: Number(obj.y1) + d } as PDFObject;
     return lines.filter((other) => {
       const candidate = other.obj;
       if (other.type !== "textlinehorizontal" || !lineObjectsOverlap(candidate, query)) return false;
       return (
-        Math.abs(Number(candidate.height) - Number(obj.height)) <= d &&
+        Math.abs(objectHeight(candidate) - height) <= d &&
         (Math.abs(Number(candidate.x0) - Number(obj.x0)) <= d ||
           Math.abs(Number(candidate.x1) - Number(obj.x1)) <= d ||
           Math.abs((Number(candidate.x0) + Number(candidate.x1)) / 2 - (Number(obj.x0) + Number(obj.x1)) / 2) <= d)
@@ -185,13 +194,14 @@ export function findLineNeighborsLikePdfminer<T extends LayoutLineLikePdfminer>(
     });
   }
 
-  const d = ratio * Number(obj.width);
+  const width = objectWidth(obj);
+  const d = ratio * width;
   const query = { x0: Number(obj.x0) - d, x1: Number(obj.x1) + d, y0: obj.y0, y1: obj.y1 } as PDFObject;
   return lines.filter((other) => {
     const candidate = other.obj;
     if (other.type !== "textlinevertical" || !lineObjectsOverlap(candidate, query)) return false;
     return (
-      Math.abs(Number(candidate.width) - Number(obj.width)) <= d &&
+      Math.abs(objectWidth(candidate) - width) <= d &&
       (Math.abs(Number(candidate.y0) - Number(obj.y0)) <= d ||
         Math.abs(Number(candidate.y1) - Number(obj.y1)) <= d ||
         Math.abs((Number(candidate.y0) + Number(candidate.y1)) / 2 - (Number(obj.y0) + Number(obj.y1)) / 2) <= d)

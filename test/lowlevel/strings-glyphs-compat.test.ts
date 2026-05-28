@@ -60,6 +60,23 @@ describe("low-level pdfminer string, glyph, and compatibility behavior", () => {
     expect(glyphTextLikePdfminer({ originalCharCode: 65, glyphUnicode: "\u0001", font: font() })).toBe("A");
     expect(glyphTextLikePdfminer({ originalCharCode: 13, glyphUnicode: "\r", font: font() })).toBe("(cid:13)");
     expect(glyphTextLikePdfminer({ originalCharCode: 121, glyphUnicode: "\r", font: font() })).toBe("y");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 72,
+        glyphUnicode: "H",
+        font: font({
+          hasToUnicode: false,
+          fontRecord: { objectNumber: 1, baseFont: "AIGDT", subtype: "Type0", hasToUnicode: false, firstChar: 0, widths: [], embeddedUnicodeMap: { 72: "\uf066" } }
+        })
+      })
+    ).toBe("(cid:72)");
+    expect(
+      glyphTextLikePdfminer({
+        originalCharCode: 142,
+        glyphUnicode: "\u008e",
+        font: font({ hasToUnicode: false, fontRecord: { objectNumber: 1, baseFont: "ISOCPEUR", subtype: "Type0", hasToUnicode: false, firstChar: 0, widths: [] } })
+      })
+    ).toBe("(cid:142)");
 
     expect(
       glyphWidthLikePdfminer(

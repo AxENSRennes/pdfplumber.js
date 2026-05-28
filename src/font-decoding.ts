@@ -140,6 +140,12 @@ export function glyphTextLikePdfminer(input: GlyphTextInput): string {
     if (embeddedText != null) return embeddedText;
   }
   if (typeof originalCharCode === "number") {
+    if (fontRecord?.subtype === "Type0" && fontRecord.hasToUnicode === false) {
+      const embeddedText = fontRecord.embeddedUnicodeMap?.[originalCharCode];
+      if ((embeddedText != null && /[\ue000-\uf8ff]/u.test(embeddedText)) || /^[\u0080-\u009f]$/.test(glyphUnicode ?? "")) {
+        return `(cid:${originalCharCode})`;
+      }
+    }
     if (/Wingdings/i.test(font.fontname) && glyphUnicode === "ß") return "§";
     if (/CMEX/i.test(font.fontname) && (!glyphUnicode || glyphUnicode === String.fromCharCode(originalCharCode))) return `(cid:${originalCharCode})`;
     if (/^Diwan/i.test(font.fontname)) return `(cid:${originalCharCode})`;
