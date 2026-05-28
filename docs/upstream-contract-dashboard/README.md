@@ -17,9 +17,9 @@ Generated rows: 3580
 
 | Value | Rows |
 | --- | ---: |
-| excluded | 2443 |
+| excluded | 2578 |
 | native-engine | 137 |
-| pdfjs-capability | 711 |
+| pdfjs-capability | 576 |
 | public-api | 96 |
 | robustness-corpus | 178 |
 | runtime-adaptation | 15 |
@@ -28,7 +28,7 @@ Generated rows: 3580
 
 | Value | Rows |
 | --- | ---: |
-| excluded | 2443 |
+| excluded | 2578 |
 | inventory | 85 |
-| needs-adapted-js-test | 759 |
+| needs-adapted-js-test | 624 |
 | passed | 293 |

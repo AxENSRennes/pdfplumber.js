@@ -377,6 +377,86 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
     };
   }
 
+  if (sourceFile.endsWith("autolinker_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "viewer-ui",
+      status: "excluded",
+      js: "PDF.js viewer autolinker behavior is not exposed by pdfplumber.js.",
+      rationale: "pdfplumber.js returns PDF-authored annotations and hyperlinks; it does not synthesize viewer link annotations from visible text."
+    };
+  }
+
+  if (sourceFile.endsWith("default_appearance_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "viewer-ui",
+      status: "excluded",
+      js: "PDF.js annotation default-appearance parsing for rendering/editing is not exposed by pdfplumber.js.",
+      rationale: "The extraction API exposes annotation object geometry and simple fields, not PDF.js FreeText/widget appearance rendering or editor appearance serialization."
+    };
+  }
+
+  if (sourceFile.endsWith("event_utils_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "viewer-ui",
+      status: "excluded",
+      js: "PDF.js EventBus and viewer event helpers are not exposed by pdfplumber.js.",
+      rationale: "pdfplumber.js has no public viewer event layer; browser compatibility is verified through public open() extraction tests."
+    };
+  }
+
+  if (sourceFile.endsWith("message_handler_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "runtime",
+      status: "excluded",
+      js: "PDF.js worker message-handler stream internals are not exposed by pdfplumber.js.",
+      rationale: "The public runtime contract is browser and Node extraction through open(); raw PDF.js worker transport streams are implementation details."
+    };
+  }
+
+  if (sourceFile.endsWith("writer_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "viewer-ui",
+      status: "excluded",
+      js: "PDF.js PDF writer/save internals are not exposed by pdfplumber.js.",
+      rationale: "pdfplumber.js is an extraction library and does not expose PDF editing, incremental save, object writing, or AcroForm serialization APIs."
+    };
+  }
+
+  if (sourceFile.endsWith("obj_bin_transform_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "viewer-ui",
+      status: "excluded",
+      js: "PDF.js object binary transform serialization internals are not exposed by pdfplumber.js.",
+      rationale: "These rows cover renderer/cache serialization of font, pattern, and path objects rather than public extraction behavior."
+    };
+  }
+
+  if (sourceFile.endsWith("murmurhash3_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "general",
+      status: "excluded",
+      js: "PDF.js MurmurHash3 utility internals are not exposed by pdfplumber.js.",
+      rationale: "Hash implementation details are not part of the public extraction API or a named retained pdfplumber.js capability."
+    };
+  }
+
+  if (sourceFile.endsWith("image_utils_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "images",
+      status: "excluded",
+      js: "PDF.js pixel conversion helpers are not exposed by pdfplumber.js.",
+      rationale: "pdfplumber.js exposes image placement and metadata such as name, source size, colorspace, and bit depth; it does not expose decoded RGBA pixel conversion."
+    };
+  }
+
   if (/xfa_parser_spec/.test(sourceFile)) {
     return {
       scope: "excluded",
@@ -394,6 +474,19 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
       status: "excluded",
       js: "PDF.js PostScript function compiler/evaluator internals are not exposed by pdfplumber.js.",
       rationale: "These rows validate rendering-time PostScript function evaluation and optimization; pdfplumber.js exposes extracted objects and raw color values rather than PDF.js function rendering internals."
+    };
+  }
+
+  if (
+    sourceFile.endsWith("annotation_spec.js") &&
+    /\b(?:render|printing|print|save|compress and save|create a new|update an existing|added|new free|annotation storage|js sandbox)\b/.test(lowerBehavior)
+  ) {
+    return {
+      scope: "excluded",
+      subsystem: /render|printing|print/.test(lowerBehavior) ? "viewer-ui" : "annotations",
+      status: "excluded",
+      js: "PDF.js annotation rendering, editing, form-save, and sandbox helper behavior is not exposed by pdfplumber.js.",
+      rationale: "pdfplumber.js exposes extracted annotation objects and hyperlinks, not PDF.js annotation-layer appearance rendering, editor creation/update flows, saved PDF serialization, or scripting sandbox field objects."
     };
   }
 
