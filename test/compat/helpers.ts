@@ -66,6 +66,26 @@ function pageObjectCounts(selectedPage: PDFPlumberPage): Record<string, number> 
   return Object.fromEntries(Object.entries(selectedPage.objects).map(([key, value]) => [key, value.length]));
 }
 
+function layoutObjectsSummary(selectedPage: PDFPlumberPage): Record<string, unknown> {
+  const props = ["textboxhorizontals", "textlinehorizontals", "textboxverticals", "textlineverticals"] as const;
+  return {
+    object_counts: pageObjectCounts(selectedPage),
+    properties: Object.fromEntries(
+      props.map((prop) => {
+        const items = selectedPage[prop] ?? [];
+        return [
+          prop,
+          {
+            count: items.length,
+            first_has_text: items.length > 0 && Object.prototype.hasOwnProperty.call(items[0], "text"),
+            first_text: items.length > 0 ? items[0].text : null
+          }
+        ];
+      })
+    )
+  };
+}
+
 function itemAt<T>(items: T[], index: number): T | undefined {
   return index < 0 ? items[items.length + index] : items[index];
 }
@@ -193,6 +213,9 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
         case "page.objectCounts":
           actual = pageObjectCounts(selectedPage);
           break;
+        case "page.layoutObjectsSummary":
+          actual = layoutObjectsSummary(selectedPage);
+          break;
         case "page.annots.count":
           actual = selectedPage.annots.length;
           break;
@@ -280,6 +303,12 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
           break;
         case "page.crop.objectCounts":
           actual = pageObjectCounts(selectedPage.crop(check.bbox as BBox, {
+            relative: check.relative,
+            strict: check.strict
+          }));
+          break;
+        case "page.crop.layoutObjectsSummary":
+          actual = layoutObjectsSummary(selectedPage.crop(check.bbox as BBox, {
             relative: check.relative,
             strict: check.strict
           }));

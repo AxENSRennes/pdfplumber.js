@@ -20,6 +20,11 @@ export class PdfPlumberPageImpl implements PDFPlumberPage {
   rect_edges: PDFObject[];
   curve_edges: PDFObject[];
   edges: PDFObject[];
+  textboxhorizontals: PDFObject[];
+  textlinehorizontals: PDFObject[];
+  textboxverticals: PDFObject[];
+  textlineverticals: PDFObject[];
+  figures: PDFObject[];
   private readonly _annots: PDFObject[];
   private readonly _hyperlinks: PDFObject[];
 
@@ -55,6 +60,11 @@ export class PdfPlumberPageImpl implements PDFPlumberPage {
       ["image", images],
       ...Object.entries(extraObjects)
     ]);
+    this.textboxhorizontals = this.objects.textboxhorizontal ?? [];
+    this.textlinehorizontals = this.objects.textlinehorizontal ?? [];
+    this.textboxverticals = this.objects.textboxvertical ?? [];
+    this.textlineverticals = this.objects.textlinevertical ?? [];
+    this.figures = this.objects.figure ?? [];
     this.rect_edges = rects.flatMap(rectToEdges);
     this.curve_edges = curves.flatMap(curveToEdges);
     this.edges = [...this.rect_edges, ...this.curve_edges, ...lines.map(lineToEdge)];

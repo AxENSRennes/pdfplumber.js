@@ -152,6 +152,28 @@ def dedupe_extra_attrs_lines(page: Any) -> Dict[str, List[str]]:
     return out
 
 
+def layout_objects_summary(page: Any) -> Dict[str, Any]:
+    props = [
+        "textboxhorizontals",
+        "textlinehorizontals",
+        "textboxverticals",
+        "textlineverticals",
+    ]
+    return clean(
+        {
+            "object_counts": object_counts(page.objects),
+            "properties": {
+                prop: {
+                    "count": len(getattr(page, prop, [])),
+                    "first_has_text": bool(getattr(page, prop, [])) and "text" in getattr(page, prop)[0],
+                    "first_text": getattr(page, prop)[0].get("text") if getattr(page, prop, []) else None,
+                }
+                for prop in props
+            },
+        }
+    )
+
+
 def first_word_chars_summary(words: List[Dict[str, Any]]) -> Dict[str, Any]:
     first = words[0]
     chars = first.get("chars")
@@ -451,6 +473,40 @@ def build_scenarios() -> List[Dict[str, Any]]:
                 make_check("page.objectCounts", object_counts(pdf.pages[0].objects), page=0),
             ],
             open_options={"laparams": {"line_margin": 0.2}},
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "laparams-layout-objects-none",
+            "issue-13-151201DSP-Fond-581-90D.pdf",
+            lambda pdf: [
+                make_check("page.layoutObjectsSummary", layout_objects_summary(pdf.pages[0]), page=0),
+            ],
+            open_options={"laparams": None},
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "laparams-layout-objects-default",
+            "issue-13-151201DSP-Fond-581-90D.pdf",
+            lambda pdf: [
+                make_check("page.layoutObjectsSummary", layout_objects_summary(pdf.pages[0]), page=0),
+                make_check("page.crop.layoutObjectsSummary", layout_objects_summary(pdf.pages[0].crop((0, 0, 100, 100))), page=0, bbox=(0, 0, 100, 100)),
+            ],
+            open_options={"laparams": {}},
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "laparams-layout-objects-vertical",
+            "issue-192-example.pdf",
+            lambda pdf: [
+                make_check("page.layoutObjectsSummary", layout_objects_summary(pdf.pages[0]), page=0),
+            ],
+            open_options={"laparams": {"detect_vertical": True}},
         )
     )
 

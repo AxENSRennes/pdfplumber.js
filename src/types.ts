@@ -55,6 +55,11 @@ export interface PDFPlumberPage {
   lines: PDFObject[];
   curves: PDFObject[];
   images: PDFObject[];
+  textboxhorizontals: PDFObject[];
+  textlinehorizontals: PDFObject[];
+  textboxverticals: PDFObject[];
+  textlineverticals: PDFObject[];
+  figures: PDFObject[];
   annots: PDFObject[];
   hyperlinks: PDFObject[];
   rect_edges: PDFObject[];

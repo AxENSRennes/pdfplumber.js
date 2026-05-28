@@ -1,6 +1,6 @@
 {
   "reference": {
-    "generatedAt": "2026-05-28T01:07:26.357631+00:00",
+    "generatedAt": "2026-05-28T01:10:45.108300+00:00",
     "pdfminerVersion": "20260107",
     "pdfplumberCommit": "98041536932ce85d18a1fba80d9db0686b831d9d",
     "pdfplumberVersion": "0.11.9"
@@ -2812,6 +2812,180 @@
         }
       },
       "pdf": "cupertino_usd_4-6-16.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "object_counts": {
+              "char": 4408,
+              "line": 10,
+              "rect": 16
+            },
+            "properties": {
+              "textboxhorizontals": {
+                "count": 0,
+                "first_has_text": false,
+                "first_text": null
+              },
+              "textboxverticals": {
+                "count": 0,
+                "first_has_text": false,
+                "first_text": null
+              },
+              "textlinehorizontals": {
+                "count": 0,
+                "first_has_text": false,
+                "first_text": null
+              },
+              "textlineverticals": {
+                "count": 0,
+                "first_has_text": false,
+                "first_text": null
+              }
+            }
+          },
+          "page": 0,
+          "type": "page.layoutObjectsSummary"
+        }
+      ],
+      "id": "laparams-layout-objects-none",
+      "openOptions": {
+        "laparams": null
+      },
+      "pdf": "issue-13-151201DSP-Fond-581-90D.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "object_counts": {
+              "char": 4408,
+              "line": 10,
+              "rect": 16,
+              "textboxhorizontal": 27,
+              "textlinehorizontal": 79
+            },
+            "properties": {
+              "textboxhorizontals": {
+                "count": 27,
+                "first_has_text": true,
+                "first_text": "90-Day Summary Report for Child Death, Serious Injury or Egregious Incident \n"
+              },
+              "textboxverticals": {
+                "count": 0,
+                "first_has_text": false,
+                "first_text": null
+              },
+              "textlinehorizontals": {
+                "count": 79,
+                "first_has_text": true,
+                "first_text": "90-Day Summary Report for Child Death, Serious Injury or Egregious Incident \n"
+              },
+              "textlineverticals": {
+                "count": 0,
+                "first_has_text": false,
+                "first_text": null
+              }
+            }
+          },
+          "page": 0,
+          "type": "page.layoutObjectsSummary"
+        },
+        {
+          "bbox": [
+            0,
+            0,
+            100,
+            100
+          ],
+          "expected": {
+            "object_counts": {
+              "char": 82,
+              "line": 0,
+              "rect": 0,
+              "textboxhorizontal": 3,
+              "textlinehorizontal": 7
+            },
+            "properties": {
+              "textboxhorizontals": {
+                "count": 3,
+                "first_has_text": true,
+                "first_text": "90-Day Summary Report for Child Death, Serious Injury or Egregious Incident \n"
+              },
+              "textboxverticals": {
+                "count": 0,
+                "first_has_text": false,
+                "first_text": null
+              },
+              "textlinehorizontals": {
+                "count": 7,
+                "first_has_text": true,
+                "first_text": "90-Day Summary Report for Child Death, Serious Injury or Egregious Incident \n"
+              },
+              "textlineverticals": {
+                "count": 0,
+                "first_has_text": false,
+                "first_text": null
+              }
+            }
+          },
+          "page": 0,
+          "type": "page.crop.layoutObjectsSummary"
+        }
+      ],
+      "id": "laparams-layout-objects-default",
+      "openOptions": {
+        "laparams": {}
+      },
+      "pdf": "issue-13-151201DSP-Fond-581-90D.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "object_counts": {
+              "char": 1289,
+              "rect": 1054,
+              "textboxhorizontal": 74,
+              "textboxvertical": 6,
+              "textlinehorizontal": 142,
+              "textlinevertical": 11
+            },
+            "properties": {
+              "textboxhorizontals": {
+                "count": 74,
+                "first_has_text": true,
+                "first_text": "AAA/Aaabaaab 7728-AA-2076\n"
+              },
+              "textboxverticals": {
+                "count": 6,
+                "first_has_text": true,
+                "first_text": "Aabbaw-agAaababa 04\nAaag Aaam aab Aaaabaab \n"
+              },
+              "textlinehorizontals": {
+                "count": 142,
+                "first_has_text": true,
+                "first_text": "AAA/Aaabaaab 7728-AA-2076\n"
+              },
+              "textlineverticals": {
+                "count": 11,
+                "first_has_text": true,
+                "first_text": "Aabbaw-agAaababa 04\n"
+              }
+            }
+          },
+          "page": 0,
+          "type": "page.layoutObjectsSummary"
+        }
+      ],
+      "id": "laparams-layout-objects-vertical",
+      "openOptions": {
+        "laparams": {
+          "detect_vertical": true
+        }
+      },
+      "pdf": "issue-192-example.pdf"
     },
     {
       "checks": [
