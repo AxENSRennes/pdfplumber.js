@@ -544,6 +544,13 @@ function classify(source, behavior, kind) {
         "The low-level native test verifies pdfminer-compatible IdentityCMap and IdentityCMapByte decoding, including empty, single-byte, odd-length, and maximum unsigned-short buffers."
       );
     }
+    if (lowerSourceFile.includes("pdfminer-six/tests/test_cmapdb_security.py")) {
+      return passedNativeCompatGate(
+        subsystem,
+        "test/lowlevel/cmapdb-compat.test.ts",
+        "The low-level native CMapDB tests verify pdfminer-compatible gzipped JSON CMap loading, recursive CODE2CID integer-key restoration, CID-to-Unicode integer-key restoration, and standard H/Adobe-Japan1 lookup behavior against upstream assets."
+      );
+    }
     if (lowerSourceFile.includes("pdfminer-six/tests/test_encodingdb.py")) {
       return passedNativeCompatGate(
         subsystem,
