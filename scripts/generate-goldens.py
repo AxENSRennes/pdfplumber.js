@@ -567,6 +567,96 @@ def build_scenarios() -> List[Dict[str, Any]]:
 
     scenarios.append(
         scenario(
+            "issue-14-objects",
+            "cupertino_usd_4-6-16.pdf",
+            lambda pdf: [make_check("pdf.objectCounts", object_counts(pdf.objects))],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "issue-21-objects",
+            "150109DSP-Milw-505-90D.pdf",
+            lambda pdf: [make_check("pdf.objectCounts", object_counts(pdf.objects))],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "issue-33-metadata-present",
+            "issue-33-lorem-ipsum.pdf",
+            lambda pdf: [make_check("pdf.metadataHasKeys", len(pdf.metadata.keys()) > 0)],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "issue-67-metadata-present",
+            "issue-67-example.pdf",
+            lambda pdf: [make_check("pdf.metadataHasKeys", len(pdf.metadata.keys()) > 0)],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "pr-88-word-count",
+            "pr-88-example.pdf",
+            lambda pdf: [make_check("page.extractWords.count", len(pdf.pages[0].extract_words()), page=0)],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "issue-90-extract-words-no-error",
+            "issue-90-example.pdf",
+            lambda pdf: [make_check("page.extractWords.error", error_name(lambda: pdf.pages[0].extract_words()), page=0)],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "pr-136-extract-words-no-error",
+            "pr-136-example.pdf",
+            lambda pdf: [make_check("page.extractWords.error", error_name(lambda: pdf.pages[0].extract_words()), page=0)],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "issue-203-objects",
+            "issue-203-decimalize.pdf",
+            lambda pdf: [make_check("pdf.objectCounts", object_counts(pdf.objects))],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "issue-216-empty-crop-table",
+            "issue-140-example.pdf",
+            lambda pdf: [
+                make_check("page.crop.extractTable", pdf.pages[0].crop((0, 0, 1, 1)).extract_table(), page=0, bbox=(0, 0, 1, 1)),
+            ],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "issue-297-integer-metadata",
+            "issue-297-example.pdf",
+            lambda pdf: [make_check("pdf.metadata", pdf.metadata)],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "issue-1147-extract-text",
+            "issue-1147-example.pdf",
+            lambda pdf: [make_check("page.extractText.line", text_line(pdf.pages[0].extract_text(), 0), page=0, args={"line": 0})],
+        )
+    )
+
+    scenarios.append(
+        scenario(
             "nics-table-text-only-strategy",
             "nics-background-checks-2015-11.pdf",
             lambda pdf: [

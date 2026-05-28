@@ -1,6 +1,6 @@
 {
   "reference": {
-    "generatedAt": "2026-05-28T01:41:29.542489+00:00",
+    "generatedAt": "2026-05-28T01:45:40.525475+00:00",
     "pdfminerVersion": "20260107",
     "pdfplumberCommit": "98041536932ce85d18a1fba80d9db0686b831d9d",
     "pdfplumberVersion": "0.11.9"
@@ -1734,6 +1734,144 @@
       ],
       "id": "ca-warn-objects-and-parse",
       "pdf": "WARN-Report-for-7-1-2015-to-03-25-2016.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "char": 3252,
+            "image": 1,
+            "rect": 3
+          },
+          "type": "pdf.objectCounts"
+        }
+      ],
+      "id": "issue-14-objects",
+      "pdf": "cupertino_usd_4-6-16.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "char": 6880,
+            "line": 22,
+            "rect": 54
+          },
+          "type": "pdf.objectCounts"
+        }
+      ],
+      "id": "issue-21-objects",
+      "pdf": "150109DSP-Milw-505-90D.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": true,
+          "type": "pdf.metadataHasKeys"
+        }
+      ],
+      "id": "issue-33-metadata-present",
+      "pdf": "issue-33-lorem-ipsum.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": true,
+          "type": "pdf.metadataHasKeys"
+        }
+      ],
+      "id": "issue-67-metadata-present",
+      "pdf": "issue-67-example.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": 25,
+          "page": 0,
+          "type": "page.extractWords.count"
+        }
+      ],
+      "id": "pr-88-word-count",
+      "pdf": "pr-88-example.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": null,
+          "page": 0,
+          "type": "page.extractWords.error"
+        }
+      ],
+      "id": "issue-90-extract-words-no-error",
+      "pdf": "issue-90-example.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": null,
+          "page": 0,
+          "type": "page.extractWords.error"
+        }
+      ],
+      "id": "pr-136-extract-words-no-error",
+      "pdf": "pr-136-example.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "image": 26
+          },
+          "type": "pdf.objectCounts"
+        }
+      ],
+      "id": "issue-203-objects",
+      "pdf": "issue-203-decimalize.pdf"
+    },
+    {
+      "checks": [
+        {
+          "bbox": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "expected": null,
+          "page": 0,
+          "type": "page.crop.extractTable"
+        }
+      ],
+      "id": "issue-216-empty-crop-table",
+      "pdf": "issue-140-example.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "Copies": 0,
+            "Producer": "PyPDF2",
+            "Title": "IntMetadata"
+          },
+          "type": "pdf.metadata"
+        }
+      ],
+      "id": "issue-297-integer-metadata",
+      "pdf": "issue-297-example.pdf"
+    },
+    {
+      "checks": [
+        {
+          "args": {
+            "line": 0
+          },
+          "expected": "人物",
+          "page": 0,
+          "type": "page.extractText.line"
+        }
+      ],
+      "id": "issue-1147-extract-text",
+      "pdf": "issue-1147-example.pdf"
     },
     {
       "checks": [

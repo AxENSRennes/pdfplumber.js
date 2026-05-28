@@ -359,7 +359,7 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
 
   try {
     for (const check of scenario.checks) {
-      const selectedPage = page(document, check.page ?? 0);
+      const selectedPage = check.type.startsWith("pdf.") ? (undefined as unknown as PDFPlumberPage) : page(document, check.page ?? 0);
       let actual: unknown;
 
       switch (check.type) {
@@ -368,6 +368,9 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
           break;
         case "pdf.metadata":
           actual = document.metadata;
+          break;
+        case "pdf.metadataHasKeys":
+          actual = Object.keys(document.metadata).length > 0;
           break;
         case "pdf.objectCounts":
           actual = Object.fromEntries(Object.entries(document.objects).map(([key, value]) => [key, value.length]));
@@ -458,6 +461,19 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
         case "page.extractWords":
           actual = await valueOf(selectedPage.extractWords(check.args ?? {}));
           break;
+        case "page.extractWords.count":
+          actual = (await valueOf(selectedPage.extractWords(check.args ?? {}))).length;
+          break;
+        case "page.extractWords.error": {
+          let errorName = null;
+          try {
+            await valueOf(selectedPage.extractWords(check.args ?? {}));
+          } catch (error) {
+            errorName = error instanceof Error ? error.name : typeof error;
+          }
+          actual = errorName;
+          break;
+        }
         case "page.extractWords.firstCharsSummary":
           actual = firstWordCharsSummary(await valueOf(selectedPage.extractWords(check.args ?? {})) as Array<Record<string, unknown>>);
           break;
