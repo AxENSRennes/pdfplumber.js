@@ -17,6 +17,10 @@ function hexBytes(value: string): Uint8Array {
   return bytes;
 }
 
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 function concatBytes(...parts: Uint8Array[]): Uint8Array {
   const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
   let offset = 0;
@@ -185,8 +189,8 @@ export function parsePdfEncryption(raw: string, objects: Map<number, string>, pa
   const version = Number(encryptText.match(/\/V\s+(\d+)/)?.[1] ?? 0);
   const lengthValues = Array.from(encryptText.matchAll(/\/Length\s+(\d+)/g), (match) => Number(match[1]));
   const lengthBits = lengthValues.length ? Math.max(...lengthValues) : version === 1 ? 40 : 40;
-  const fileId = parseFirstFileId(raw);
-  if (!owner || !fileId || !Number.isFinite(permissions) || revision >= 5) return null;
+  const fileId = parseFirstFileId(raw) ?? new Uint8Array();
+  if (!owner || !Number.isFinite(permissions) || revision >= 5) return null;
   const keyLength = Math.max(5, Math.min(16, Math.floor(lengthBits / 8) || 5));
   const encryptMetadata = !/\/EncryptMetadata\s+false\b/.test(encryptText);
   let hashInput = concatBytes(pdfPasswordBytes(password), owner, int32LittleEndian(permissions), fileId);
@@ -221,20 +225,51 @@ function pdfObjectKey(encryption: PdfEncryption, num: number, gen: number): Uint
   return md5Bytes(concatBytes(encryption.key, extra)).subarray(0, Math.min(encryption.keyLength + 5, 16));
 }
 
-export function decryptPdfStreamObject(objectText: string, encryption: PdfEncryption | null): string {
+function decryptPdfObjectStrings(text: string, key: Uint8Array): string {
+  let out = "";
+  let index = 0;
+  while (index < text.length) {
+    const char = text[index];
+    if (char === "(") {
+      const parsed = parsePdfLiteralStringBytes(text, index);
+      if (parsed) {
+        out += `<${bytesToHex(rc4Bytes(parsed.bytes, key))}>`;
+        index = parsed.end;
+        continue;
+      }
+    }
+    if (char === "<" && text[index - 1] !== "<" && text[index + 1] !== "<") {
+      const end = text.indexOf(">", index + 1);
+      if (end >= 0) {
+        out += `<${bytesToHex(rc4Bytes(hexBytes(text.slice(index + 1, end)), key))}>`;
+        index = end + 1;
+        continue;
+      }
+    }
+    out += char;
+    index += 1;
+  }
+  return out;
+}
+
+export function decryptPdfObject(objectText: string, encryption: PdfEncryption | null): string {
   if (!encryption || encryption.streamMethod !== "RC4") return objectText;
   const ref = pdfObjectRefFromText(objectText);
   if (!ref || ref.num === encryption.encryptRef || /\/Type\s*\/XRef\b/.test(objectText)) return objectText;
-  if (!encryption.encryptMetadata && /\/Type\s*\/Metadata\b/.test(objectText)) return objectText;
+  const key = pdfObjectKey(encryption, ref.num, ref.gen);
   const streamIndex = objectText.indexOf("stream");
   const endstreamIndex = objectText.lastIndexOf("endstream");
-  if (streamIndex === -1 || endstreamIndex === -1 || endstreamIndex <= streamIndex) return objectText;
+  if (streamIndex === -1 || endstreamIndex === -1 || endstreamIndex <= streamIndex) return decryptPdfObjectStrings(objectText, key);
   let start = streamIndex + "stream".length;
   if (objectText[start] === "\r" && objectText[start + 1] === "\n") start += 2;
   else if (objectText[start] === "\r" || objectText[start] === "\n") start += 1;
   let end = endstreamIndex;
   if (objectText[end - 2] === "\r" && objectText[end - 1] === "\n") end -= 2;
   else if (objectText[end - 1] === "\r" || objectText[end - 1] === "\n") end -= 1;
-  const decrypted = rc4Bytes(latin1Bytes(objectText.slice(start, end)), pdfObjectKey(encryption, ref.num, ref.gen));
-  return `${objectText.slice(0, start)}${latin1String(decrypted)}${objectText.slice(end)}`;
+  const prefix = decryptPdfObjectStrings(objectText.slice(0, start), key);
+  if (!encryption.encryptMetadata && /\/Type\s*\/Metadata\b/.test(objectText)) return `${prefix}${objectText.slice(start)}`;
+  const decrypted = rc4Bytes(latin1Bytes(objectText.slice(start, end)), key);
+  return `${prefix}${latin1String(decrypted)}${objectText.slice(end)}`;
 }
+
+export const decryptPdfStreamObject = decryptPdfObject;

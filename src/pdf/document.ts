@@ -1,5 +1,6 @@
 import { decodePdfStringLikePdfminer } from "../pdf-strings.js";
 import { formatIntAlphaLikePdfminer, formatIntRomanLikePdfminer } from "../utils.js";
+import { namedError } from "../errors.js";
 import { asArray, asDict, asName, asNumber, isRef, isStream, latin1Bytes } from "./primitives.js";
 import type { PdfArray, PdfDict, PdfIndirectObject, PdfPrimitive, PdfRef, PdfStream } from "./primitives.js";
 import { findKeywordOutsideSyntax, parseObject } from "./parser.js";
@@ -29,6 +30,12 @@ export class PdfObjectStore {
       this.parsedObjects.set(objectNumber, raw ? parseObject(raw) : null);
     }
     return this.parsedObjects.get(objectNumber) ?? undefined;
+  }
+
+  getRequiredObject(objectNumber: number): PdfIndirectObject {
+    const object = objectNumber > 0 ? this.getObject(objectNumber) : undefined;
+    if (!object) throw namedError("PDFObjectNotFound", `PDF object ${objectNumber} not found`);
+    return object;
   }
 
   getRawObjectText(objectNumber: number): string | undefined {

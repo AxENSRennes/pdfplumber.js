@@ -611,6 +611,20 @@ function classify(source, behavior, kind) {
         "The low-level native page-label tests verify pdfminer-compatible PageLabels number-tree parsing, missing-label behavior, and public page.label values against the upstream pagelabels fixture."
       );
     }
+    if (
+      lowerSourceFile.includes("pdfminer-six/tests/test_pdfdocument.py") &&
+      (
+        lowerBehavior.includes("testpdfdocument.test get zero objid raises pdfobjectnotfound") ||
+        lowerBehavior.includes("testpdfdocument.test encrypted no id") ||
+        lowerBehavior.includes("testpdfdocument.test annotations")
+      )
+    ) {
+      return passedNativeCompatGate(
+        subsystem,
+        "test/lowlevel/pdfdocument-compat.test.ts",
+        "The low-level native PDFDocument tests verify pdfminer-compatible object lookup errors, Standard encryption without trailer IDs, encrypted metadata string decryption, and annotation-page traversal against upstream fixtures."
+      );
+    }
     if (lowerSourceFile.includes("pdfminer-six/tests/test_utils.py")) {
       if (lowerBehavior.includes("openfilename")) {
         return {
