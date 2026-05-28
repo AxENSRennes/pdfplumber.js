@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { glyphTextLikePdfminer, glyphWidthLikePdfminer } from "../../src/font-decoding.js";
+import { glyphNameToUnicodeLikePdfminer, glyphTextLikePdfminer, glyphWidthLikePdfminer } from "../../src/font-decoding.js";
 import { decodePdfLiteralBytesAsUtf8ThenUtf16, decodePdfStringLikePdfminer } from "../../src/pdf-strings.js";
 import { parsePdfObjects } from "../../src/pdf.js";
 import {
   annotationStringDecodeErrorLikePdfminer,
+  decodeIdentityCMapByteLikePdfminer,
+  decodeIdentityCMapLikePdfminer,
+  isVerticalCMapNameLikePdfminer,
   normalizePdfStringLikePdfminer,
   shouldEmulatePdfminerOpenError,
   shouldSuppressPagesLikePdfminer,
@@ -62,6 +65,45 @@ describe("low-level pdfminer string, glyph, and compatibility behavior", () => {
         { originalCharCode: 33, width: 999 }
       )
     ).toBe(333);
+  });
+
+  it("decodes Adobe glyph names like pdfminer.encodingdb.name2unicode", () => {
+    const highPlane = String.fromCodePoint(0x1040c);
+    expect(glyphNameToUnicodeLikePdfminer("Lcommaaccent")).toBe("\u013b");
+    expect(glyphNameToUnicodeLikePdfminer("uni013B")).toBe("\u013b");
+    expect(glyphNameToUnicodeLikePdfminer("uni013b")).toBe("\u013b");
+    expect(glyphNameToUnicodeLikePdfminer("uni20AC0308")).toBe("\u20ac\u0308");
+    expect(glyphNameToUnicodeLikePdfminer("uni20ac0308")).toBe("\u20ac\u0308");
+    expect(glyphNameToUnicodeLikePdfminer("uni20ac")).toBe("\u20ac");
+    expect(glyphNameToUnicodeLikePdfminer("uniD801DC0C")).toBeNull();
+    expect(glyphNameToUnicodeLikePdfminer("uniF6FB")).toBe("\uf6fb");
+    expect(glyphNameToUnicodeLikePdfminer("unif6fb")).toBe("\uf6fb");
+    expect(glyphNameToUnicodeLikePdfminer("u013B")).toBe("\u013b");
+    expect(glyphNameToUnicodeLikePdfminer("u013b")).toBe("\u013b");
+    expect(glyphNameToUnicodeLikePdfminer("u1040C")).toBe(highPlane);
+    expect(glyphNameToUnicodeLikePdfminer("u1040c")).toBe(highPlane);
+    expect(glyphNameToUnicodeLikePdfminer("Lcommaaccent_uni20AC0308_u1040C.alternate")).toBe(`\u013b\u20ac\u0308${highPlane}`);
+    expect(glyphNameToUnicodeLikePdfminer("Lcommaaccent_uni20ac0308_u1040c.alternate")).toBe(`\u013b\u20ac\u0308${highPlane}`);
+    expect(glyphNameToUnicodeLikePdfminer("foo")).toBeNull();
+    expect(glyphNameToUnicodeLikePdfminer(".notdef")).toBeNull();
+    expect(glyphNameToUnicodeLikePdfminer("Ogoneksmall")).toBe("\uf6fb");
+    expect(glyphNameToUnicodeLikePdfminer("226215240241240240240240")).toBeNull();
+  });
+
+  it("decodes Identity CMaps and CMap writing-mode aliases like pdfminer", () => {
+    const pairs = (values: number[]) => values.flatMap((value) => [(value >> 8) & 0xff, value & 0xff]);
+
+    expect(decodeIdentityCMapLikePdfminer([])).toEqual([]);
+    expect(decodeIdentityCMapLikePdfminer([0])).toEqual([]);
+    expect(decodeIdentityCMapLikePdfminer([...pairs([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]), 0])).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(decodeIdentityCMapLikePdfminer(pairs([65535, 65534, 65533, 65532, 65531]))).toEqual([65535, 65534, 65533, 65532, 65531]);
+    expect(decodeIdentityCMapByteLikePdfminer([0, 1, 2, 3, 4])).toEqual([0, 1, 2, 3, 4]);
+    expect(decodeIdentityCMapByteLikePdfminer(Array.from({ length: 255 }, (_value, index) => index)).slice(-5)).toEqual([250, 251, 252, 253, 254]);
+    expect(isVerticalCMapNameLikePdfminer("Identity-H")).toBe(false);
+    expect(isVerticalCMapNameLikePdfminer("Identity-V")).toBe(true);
+    expect(isVerticalCMapNameLikePdfminer("DLIdent-H")).toBe(false);
+    expect(isVerticalCMapNameLikePdfminer("DLIdent-V")).toBe(true);
+    expect(isVerticalCMapNameLikePdfminer("OneByteIdentityV")).toBe(false);
   });
 
   it("validates pdfminer-compatible ASCII85 stream failures", () => {

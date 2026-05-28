@@ -140,6 +140,16 @@ function passedRobustnessGate(subsystem) {
   };
 }
 
+function passedNativeCompatGate(subsystem, js, rationale) {
+  return {
+    scope: "native-engine",
+    subsystem,
+    status: "passed",
+    js,
+    rationale
+  };
+}
+
 const pdfplumberCompatCoveredTests = new Map(
   [
     ["pdfplumber-python/tests/test_ca_warn_report.py", "Test.test page limiting", "pages-option-load"],
@@ -520,6 +530,20 @@ function classify(source, behavior, kind) {
   }
 
   if (lowerSourceFile.startsWith("pdfminer-six/tests/")) {
+    if (lowerSourceFile.includes("pdfminer-six/tests/test_cmapdb.py")) {
+      return passedNativeCompatGate(
+        subsystem,
+        "test/lowlevel/strings-glyphs-compat.test.ts",
+        "The low-level native test verifies pdfminer-compatible IdentityCMap and IdentityCMapByte decoding, including empty, single-byte, odd-length, and maximum unsigned-short buffers."
+      );
+    }
+    if (lowerSourceFile.includes("pdfminer-six/tests/test_encodingdb.py")) {
+      return passedNativeCompatGate(
+        subsystem,
+        "test/lowlevel/strings-glyphs-compat.test.ts; test/lowlevel/fonts.test.ts",
+        "The low-level native tests verify pdfminer-compatible Adobe glyph-name conversion rules and that invalid Encoding Differences entries are ignored while valid entries continue to map."
+      );
+    }
     return {
       scope: "native-engine",
       subsystem,

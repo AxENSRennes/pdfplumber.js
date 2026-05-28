@@ -71,6 +71,19 @@ export function isVerticalCMapNameLikePdfminer(name: string | undefined): boolea
   return /(?:^|-)V$/i.test(normalizeIdentityCMapNameLikePdfminer(name) ?? "");
 }
 
+export function decodeIdentityCMapLikePdfminer(bytes: Uint8Array | number[]): number[] {
+  const values = Array.from(bytes);
+  const out: number[] = [];
+  for (let index = 0; index + 1 < values.length; index += 2) {
+    out.push((values[index] << 8) | values[index + 1]);
+  }
+  return out;
+}
+
+export function decodeIdentityCMapByteLikePdfminer(bytes: Uint8Array | number[]): number[] {
+  return Array.from(bytes);
+}
+
 export function shouldEmulatePdfminerOpenError(ctx: PdfminerCompatContext): Error | null {
   return null;
 }

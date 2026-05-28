@@ -8,49 +8,82 @@ export interface GlyphTextInput {
   fontRecord?: FontRecord;
 }
 
-function glyphNameText(name: string | undefined): string | null {
+const ADOBE_GLYPH_NAMES: Record<string, string> = {
+  ampersand: "&",
+  asterisk: "*",
+  at: "@",
+  backslash: "\\",
+  braceleft: "{",
+  braceright: "}",
+  bracketleft: "[",
+  bracketright: "]",
+  colon: ":",
+  comma: ",",
+  dollar: "$",
+  eight: "8",
+  five: "5",
+  four: "4",
+  hyphen: "-",
+  Lcommaaccent: "\u013b",
+  minus: "-",
+  nine: "9",
+  Ogoneksmall: "\uf6fb",
+  one: "1",
+  parenleft: "(",
+  parenright: ")",
+  percent: "%",
+  period: ".",
+  plus: "+",
+  quotedblleft: "\u201c",
+  quotedblright: "\u201d",
+  quoteleft: "\u2018",
+  quoteright: "\u2019",
+  semicolon: ";",
+  seven: "7",
+  six: "6",
+  slash: "/",
+  space: " ",
+  three: "3",
+  two: "2",
+  underscore: "_",
+  zero: "0"
+};
+
+function codePointFromHex(value: string): string | null {
+  if (!/^[0-9a-f]+$/i.test(value)) return null;
+  const codePoint = Number.parseInt(value, 16);
+  if (!Number.isInteger(codePoint) || codePoint < 0 || codePoint > 0x10ffff) return null;
+  if (codePoint >= 0xd800 && codePoint <= 0xdfff) return null;
+  return String.fromCodePoint(codePoint);
+}
+
+function glyphNameComponentToUnicode(component: string): string | null {
+  if (ADOBE_GLYPH_NAMES[component] != null) return ADOBE_GLYPH_NAMES[component];
+  if (component.length === 1) return component;
+  if (/^uni[0-9a-f]+$/i.test(component) && (component.length - 3) % 4 === 0) {
+    let out = "";
+    for (let index = 3; index < component.length; index += 4) {
+      const text = codePointFromHex(component.slice(index, index + 4));
+      if (text == null) return null;
+      out += text;
+    }
+    return out || null;
+  }
+  if (/^u[0-9a-f]{4,6}$/i.test(component)) return codePointFromHex(component.slice(1));
+  return null;
+}
+
+export function glyphNameToUnicodeLikePdfminer(name: string | undefined): string | null {
   if (!name) return null;
   const base = name.split(".")[0];
-  if (base.length === 1) return base;
-  const names: Record<string, string> = {
-    space: " ",
-    hyphen: "-",
-    minus: "-",
-    period: ".",
-    comma: ",",
-    colon: ":",
-    semicolon: ";",
-    slash: "/",
-    backslash: "\\",
-    parenleft: "(",
-    parenright: ")",
-    bracketleft: "[",
-    bracketright: "]",
-    braceleft: "{",
-    braceright: "}",
-    quoteright: "\u2019",
-    quoteleft: "\u2018",
-    quotedblleft: "\u201c",
-    quotedblright: "\u201d",
-    ampersand: "&",
-    asterisk: "*",
-    at: "@",
-    dollar: "$",
-    percent: "%",
-    plus: "+",
-    underscore: "_",
-    zero: "0",
-    one: "1",
-    two: "2",
-    three: "3",
-    four: "4",
-    five: "5",
-    six: "6",
-    seven: "7",
-    eight: "8",
-    nine: "9"
-  };
-  return names[base] ?? null;
+  if (!base) return null;
+  let out = "";
+  for (const component of base.split("_")) {
+    const text = glyphNameComponentToUnicode(component);
+    if (text == null) return null;
+    out += text;
+  }
+  return out || null;
 }
 
 function bytesFromCharCode(code: number): number[] {
@@ -76,7 +109,7 @@ export function glyphTextLikePdfminer(input: GlyphTextInput): string {
     }
     if (/^TimesNewRoman$/i.test(font.fontname) && fontRecord?.hasToUnicode !== true && glyphUnicode === "&") return "C";
     if (fontRecord?.hasToUnicode !== true || !glyphUnicode) {
-      const encodingText = glyphNameText(fontRecord?.encodingDifferences?.[originalCharCode]);
+      const encodingText = glyphNameToUnicodeLikePdfminer(fontRecord?.encodingDifferences?.[originalCharCode]);
       if (encodingText != null) return encodingText;
     }
     if (font.cidFallback) {

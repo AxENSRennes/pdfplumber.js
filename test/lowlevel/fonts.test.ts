@@ -33,6 +33,23 @@ describe("low-level PDF font parsing", () => {
     ]);
   });
 
+  it("silently ignores invalid Encoding Differences entries like pdfminer", () => {
+    const objects = new Map<number, string>([
+      [
+        10,
+        [
+          "10 0 obj",
+          "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /FirstChar 32 /LastChar 33",
+          "/Widths [250 722] /Encoding << /Differences [/ubuntu /1234 32 /space] >>",
+          ">>",
+          "endobj"
+        ].join("\n")
+      ]
+    ]);
+
+    expect(parseFontRecords(objects)).toMatchObject([{ encodingDifferences: { 32: "space" } }]);
+  });
+
   it("extracts BaseFont indirect names and descendant font descriptors", () => {
     const objects = new Map<number, string>([
       [19, "19 0 obj /ABCDEE+NotoSans endobj"],
