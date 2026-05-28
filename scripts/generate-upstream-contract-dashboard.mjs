@@ -152,6 +152,23 @@ const pdfplumberCompatCoveredTests = new Map(
   ].map(([file, behavior, scenario]) => [`${file}|${behavior.toLowerCase()}`, scenario])
 );
 
+const excludedPdfplumberUtilityTests = new Set(
+  [
+    "Test.test cluster list",
+    "Test.test cluster objects",
+    "Test.test resolve",
+    "Test.test resolve all",
+    "Test.test decode psl list",
+    "Test.test intersects bbox",
+    "Test.test merge bboxes",
+    "Test.test resize object",
+    "Test.test move object",
+    "Test.test snap objects",
+    "Test.test filter edges",
+    "Test.test to list"
+  ].map((behavior) => behavior.toLowerCase())
+);
+
 function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
   const lowerBehavior = behavior.toLowerCase();
 
@@ -305,6 +322,16 @@ function classify(source, behavior, kind) {
       status: "needs-adapted-js-test",
       js: "Add an OSS-Fuzz corpus gate that opens each PDF through the public API and either extracts stable structured data or raises the documented stable error.",
       rationale: "The upstream test is a malformed-PDF robustness harness; Python-only conversion and image helpers it opportunistically calls are not themselves part of the JS public surface."
+    };
+  }
+
+  if (lowerSourceFile.includes("pdfplumber-python/tests/test_utils.py") && excludedPdfplumberUtilityTests.has(lowerBehavior)) {
+    return {
+      scope: "excluded",
+      subsystem,
+      status: "excluded",
+      js: "Python pdfplumber utility helpers are not exported by the pdfplumber.js package or documented as public extraction APIs.",
+      rationale: "These rows exercise internal helper functions such as clustering, object resolving, object geometry transforms, edge filtering, and list coercion; corresponding public extraction behavior remains covered by page/document API tests."
     };
   }
 
