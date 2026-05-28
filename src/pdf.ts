@@ -5,9 +5,10 @@ import { glyphTextFromPdfJsGlyph, glyphWidthLikePdfminer } from "./font-decoding
 import { decodePredefinedCMapUnicodeLikePdfminer } from "./pdf/cmapdb.js";
 import { collectGraphicsHintsFromContent, patternColorValueLikePdfminer } from "./pdf/content.js";
 import { parsePdfObjectsCompat } from "./pdf/document.js";
-import { parseOperatorStream } from "./pdf/parser.js";
+import { parseObject, parseOperatorStream } from "./pdf/parser.js";
 import { decodePdfName as decodePdfNamePrimitive } from "./pdf/primitives.js";
-import { isName } from "./pdf/primitives.js";
+import { isName, isRef, isStream, latin1Bytes } from "./pdf/primitives.js";
+import type { PdfPrimitive } from "./pdf/primitives.js";
 import {
   extractPageContent as extractPageContentStructured,
   parseColorSpaceResources as parseColorSpaceResourcesStructured,
@@ -188,7 +189,37 @@ export function parseInfoMetadata(raw: string, objects: Map<number, string>): Re
   const infoRef = infoRefs.at(-1)?.[1];
   const text = infoRef ? pdfObjectText(raw, objects, Number(infoRef)) : undefined;
   if (!text) return {};
+  const parsed = parseObject(text);
+  if (parsed?.value instanceof Map) return parseInfoDictionaryStructured(parsed.value, objects, raw);
   return parseInfoDictionary(text, objects, raw);
+}
+
+function parseInfoDictionaryStructured(dict: Map<string, PdfPrimitive>, objects: Map<number, string>, raw: string, depth = 0): Record<string, unknown> {
+  const metadata: Record<string, unknown> = {};
+  for (const [key, value] of dict) {
+    const decoded = decodeInfoPrimitive(value, objects, raw, depth);
+    if (decoded !== undefined) metadata[key] = decoded;
+  }
+  return metadata;
+}
+
+function decodeInfoPrimitive(value: PdfPrimitive, objects: Map<number, string>, raw: string, depth: number): unknown {
+  if (isRef(value)) {
+    if (depth >= 4) return undefined;
+    const text = pdfObjectText(raw, objects, value.objectNumber);
+    const parsed = text ? parseObject(text) : undefined;
+    return parsed ? decodeInfoPrimitive(parsed.value, objects, raw, depth + 1) : undefined;
+  }
+  if (typeof value === "string") return decodePdfStringBytes(Array.from(latin1Bytes(value)));
+  if (typeof value === "number" || typeof value === "boolean" || value == null) return value;
+  if (isName(value)) return value.name;
+  if (Array.isArray(value)) {
+    const decoded = value.map((item) => decodeInfoPrimitive(item, objects, raw, depth + 1)).filter((item) => item !== undefined);
+    return decoded.length ? decoded : undefined;
+  }
+  if (value instanceof Map) return parseInfoDictionaryStructured(value, objects, raw, depth + 1);
+  if (isStream(value)) return parseInfoDictionaryStructured(value.dict, objects, raw, depth + 1);
+  return undefined;
 }
 
 function parseInfoDictionary(text: string, objects: Map<number, string>, raw: string, depth = 0): Record<string, unknown> {
@@ -1565,7 +1596,7 @@ export function annotationToObject(
 
 function annotationUri(annotation: any, rawUri: string | null): string | null {
   const optionalString = (value: unknown): string | null => (typeof value === "string" && value.length > 0 ? value : null);
-  const value = optionalString(rawUri ?? annotation.url ?? annotation.unsafeUrl ?? null);
+  const value = optionalString(rawUri ?? annotation.url ?? null);
   if (!value) return null;
   return /^[A-Za-z][A-Za-z0-9+.-]*:/.test(value) || !/\s/.test(value) ? value : null;
 }

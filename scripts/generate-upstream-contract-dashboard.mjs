@@ -160,6 +160,16 @@ function passedPublicPageGate() {
   };
 }
 
+function passedPdfjsPublicApiGate(subsystem, rationale) {
+  return {
+    scope: "public-api",
+    subsystem,
+    status: "passed",
+    js: "test/lowlevel/pdfjs-api-public-compat.test.ts",
+    rationale
+  };
+}
+
 function passedPdfplumberCompatGate(subsystem, scenario) {
   return {
     scope: "public-api",
@@ -695,6 +705,21 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
     if (/\b(non-existent url|invalid pdf|bad xref|bad \/pages|circular references?|incomplete trailer|bad \/resources|password protected|protected with|empty typedarray)\b/.test(lowerBehavior)) {
       return passedRobustnessGate(subsystem);
     }
+    if (/^gets metadata(?:, with custom info dict entries|, with missing pdf header \(bug 1606566\))?$/.test(lowerBehavior)) {
+      return passedPdfjsPublicApiGate(
+        "metadata",
+        "The Python-backed public API test verifies pdfplumber-compatible Info metadata extraction for the PDF.js basic API, custom-info, and missing-header fixtures, including custom keys that PDF.js stores separately from standard info fields."
+      );
+    }
+    if (/^gets metadata, with corrupt \/metadata xref entry$/.test(lowerBehavior)) {
+      return {
+        scope: "robustness-corpus",
+        subsystem: "metadata",
+        status: "passed",
+        js: "test/lowlevel/pdfjs-api-public-compat.test.ts",
+        rationale: "The Python-backed public API test verifies that this corrupt metadata-stream fixture raises the same stable PdfminerException as Python pdfplumber instead of exposing PDF.js metadata recovery internals."
+      };
+    }
     if (/^gets outline\b/.test(lowerBehavior)) {
       return {
         scope: "excluded",
@@ -715,6 +740,30 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
         js: "Raw PDF.js page lookup, page-index, and cache APIs are not exposed by pdfplumber.js.",
         rationale: "pdfplumber.js exposes loaded pages as a public pages array; it does not expose PDF.js getPageIndex, non-existent page errors, or page cache behavior."
       };
+    }
+    if (/^gets annotations$/.test(lowerBehavior)) {
+      return passedPdfjsPublicApiGate(
+        "annotations",
+        "The Python-backed public API test verifies annotation count, geometry, contents, uri, title, and hyperlink aggregation for the PDF.js basic API fixture through pdfplumber-shaped public objects."
+      );
+    }
+    if (/^gets annotations containing relative urls/.test(lowerBehavior)) {
+      return passedPdfjsPublicApiGate(
+        "annotations",
+        "The Python-backed public API test verifies that PDF.js GoToR unsafeUrl details stay out of pdfplumber-compatible public annotation uri and hyperlink fields."
+      );
+    }
+    if (/^gets annotations containing gotoe action/.test(lowerBehavior)) {
+      return passedPdfjsPublicApiGate(
+        "annotations",
+        "The Python-backed public API test verifies that PDF.js GoToE embedded-file details remain unexposed while the public annotation object matches pdfplumber geometry and hyperlink semantics."
+      );
+    }
+    if (/^gets annotations containing \/launch action with \/filespec dictionary/.test(lowerBehavior)) {
+      return passedPdfjsPublicApiGate(
+        "annotations",
+        "The Python-backed public API test verifies that PDF.js Launch FileSpec unsafeUrl details remain unexposed while the public annotation object matches pdfplumber geometry and hyperlink semantics."
+      );
     }
     if (/\b(gets number of pages|gets page\b|gets non-existent page|gets page multiple time|gets page index|gets invalid page index|gets metadata|gets outline|gets annotations|get text content|get operator list)\b/.test(lowerBehavior)) {
       return {

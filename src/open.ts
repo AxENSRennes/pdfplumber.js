@@ -142,11 +142,7 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
   validateStreamsLikePdfminer(compatContext);
   if (shouldSuppressPagesLikePdfminer(compatContext)) {
     const rawMetadata = parseInfoMetadata(raw, rawObjects);
-    const metadata: Record<string, unknown> = {};
-    for (const key of METADATA_KEYS) {
-      if (Object.prototype.hasOwnProperty.call(rawMetadata, key)) metadata[key] = rawMetadata[key];
-    }
-    return new PdfPlumberDocumentImpl({ destroy: async () => undefined }, metadata, []);
+    return new PdfPlumberDocumentImpl({ destroy: async () => undefined }, rawMetadata, []);
   }
   const loadingTask = (pdfjs as any).getDocument({
     data: new Uint8Array(source.data),
@@ -162,10 +158,13 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
   const metadata: Record<string, unknown> = {};
   const rawMetadata = options.password ? {} : parseInfoMetadata(raw, rawObjects);
   const useRawMetadata = Object.keys(rawMetadata).length > 0;
-  for (const key of METADATA_KEYS) {
-    const info = metadataResult.info ?? {};
-    if (Object.prototype.hasOwnProperty.call(rawMetadata, key)) metadata[key] = rawMetadata[key];
-    else if (!useRawMetadata && Object.prototype.hasOwnProperty.call(info, key)) metadata[key] = info[key];
+  if (useRawMetadata) {
+    Object.assign(metadata, rawMetadata);
+  } else {
+    for (const key of METADATA_KEYS) {
+      const info = metadataResult.info ?? {};
+      if (Object.prototype.hasOwnProperty.call(info, key)) metadata[key] = info[key];
+    }
   }
 
   const pages: PDFPlumberPage[] = [];

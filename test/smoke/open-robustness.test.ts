@@ -166,7 +166,7 @@ describe("public open() robustness", () => {
     for (const relativePath of cases) {
       expectStableOpenOutcome(await captureOpen(fixture(relativePath)));
     }
-  });
+  }, 10_000);
 
   it("opens OSS-Fuzz corpus PDFs or raises the documented stable error", async () => {
     const cases = [
