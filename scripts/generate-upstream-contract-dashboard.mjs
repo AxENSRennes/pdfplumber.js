@@ -447,6 +447,16 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
     };
   }
 
+  if (sourceFile.endsWith("/parser_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: subsystem === "search" ? "parser" : subsystem,
+      status: "excluded",
+      js: "PDF.js Parser, Lexer, and Linearization helper APIs are not exposed by pdfplumber.js; native parser behavior is covered by pdfminer-backed parser, object, stream, and public extraction tests.",
+      rationale: "These rows validate raw PDF.js token cursor state, number/string/name recovery, inline-image EI scanning, and linearization dictionary helpers. pdfplumber.js does not expose those PDF.js classes or linearized streaming hints; it exposes parsed metadata, pages, objects, streams, text, vectors, and annotations. The supported native parsing surface is covered through test/lowlevel/psparser-compat.test.ts, test/lowlevel/pdf-objects.test.ts, test/lowlevel/streams.test.ts, test/lowlevel/content-stream.test.ts, and public Python-golden extraction suites."
+    };
+  }
+
   if (sourceFile.endsWith("stream_spec.js") && lowerBehavior === "should decode simple predictor data") {
     return {
       scope: "native-engine",
