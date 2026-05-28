@@ -467,6 +467,16 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
     };
   }
 
+  if (sourceFile.endsWith("to_unicode_map_spec.js")) {
+    return {
+      scope: "pdfjs-capability",
+      subsystem: "text",
+      status: "passed",
+      js: "test/lowlevel/to-unicode-compat.test.ts",
+      rationale: "The adapted test builds a tiny Type0-font PDF with a ToUnicode CMap mapping one CID to a Unicode Extension B character, then compares public JS extractText() and chars output against Python pdfplumber; this covers the retained ToUnicode high-plane decoding behavior without exposing PDF.js ToUnicodeMap internals."
+    };
+  }
+
   if (sourceFile.endsWith("ui_utils_spec.js")) {
     return {
       scope: "excluded",
