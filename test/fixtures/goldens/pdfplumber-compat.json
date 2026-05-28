@@ -1,6 +1,6 @@
 {
   "reference": {
-    "generatedAt": "2026-05-28T01:38:00.643892+00:00",
+    "generatedAt": "2026-05-28T01:41:29.542489+00:00",
     "pdfminerVersion": "20260107",
     "pdfplumberCommit": "98041536932ce85d18a1fba80d9db0686b831d9d",
     "pdfplumberVersion": "0.11.9"
@@ -1666,6 +1666,74 @@
       ],
       "id": "nics-plain-table-and-month",
       "pdf": "nics-background-checks-2015-11.pdf"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "char": 4702,
+            "image": 1,
+            "rect": 91
+          },
+          "page": 0,
+          "type": "page.objectCounts"
+        },
+        {
+          "expected": {
+            "curve_edges": 0,
+            "edges": 364,
+            "rect_edges": 364
+          },
+          "page": 0,
+          "type": "page.edgeCounts"
+        },
+        {
+          "expected": {
+            "column_count": 7,
+            "first_data_row": [
+              "06/22/2015",
+              "03/25/2016",
+              "07/01/2015",
+              "Maxim Integrated Product",
+              "San Jose",
+              "150",
+              "Closure Permanent"
+            ],
+            "header": [
+              "NoticeDate",
+              "Effective",
+              "Received",
+              "Company",
+              "City",
+              "No. Of",
+              "Layoff/Closure"
+            ],
+            "last_data_row": [
+              "07/17/2015",
+              "07/13/2015",
+              "07/21/2015",
+              "American Management Services LLC",
+              "Monterey",
+              "56",
+              "Closure Permanent"
+            ],
+            "row_count": 37,
+            "v_lines": [
+              28.08,
+              95.4,
+              162.74,
+              232.46,
+              428.95,
+              521.23,
+              604.66,
+              762.12
+            ]
+          },
+          "type": "pdf.caWarnParseSummary"
+        }
+      ],
+      "id": "ca-warn-objects-and-parse",
+      "pdf": "WARN-Report-for-7-1-2015-to-03-25-2016.pdf"
     },
     {
       "checks": [

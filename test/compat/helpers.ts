@@ -118,6 +118,35 @@ function tableSampleSummary(table: Array<Array<string | null>> | null, cells: nu
   };
 }
 
+function clusterNumbers(values: number[], tolerance: number): number[][] {
+  const clusters: number[][] = [];
+  for (const value of [...values].sort((a, b) => a - b)) {
+    const last = clusters.at(-1);
+    if (!last || Math.abs(value - last[last.length - 1]) > tolerance) clusters.push([value]);
+    else last.push(value);
+  }
+  return clusters;
+}
+
+function caWarnFixRowSpaces(row: Array<string | null>): Array<string | null> {
+  return [...row.slice(0, 3).map((value) => (value ?? "").replaceAll(" ", "")), ...row.slice(3)];
+}
+
+async function caWarnParseSummary(document: PDFPlumberDocument): Promise<Record<string, unknown>> {
+  const firstPage = page(document, 0);
+  const secondPage = page(document, 1);
+  const vLines = clusterNumbers(secondPage.rects.map((rect) => Number(rect.x0)), 3).map((cluster) => cluster[0]);
+  const table = await valueOf(firstPage.extractTable({ vertical_strategy: "explicit", explicit_vertical_lines: vLines }));
+  return {
+    v_lines: vLines,
+    row_count: table?.length ?? 0,
+    column_count: table?.[0]?.length ?? 0,
+    header: table ? caWarnFixRowSpaces(table[0]) : [],
+    first_data_row: table ? caWarnFixRowSpaces(table[1]) : [],
+    last_data_row: table ? caWarnFixRowSpaces(table.at(-1) ?? []) : []
+  };
+}
+
 function nicsPlainTableSummary(table: Array<Array<string | null>> | null): Record<string, unknown> {
   if (!table?.length) {
     return {
@@ -355,6 +384,9 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
             horizontal_edges: document.horizontal_edges.length,
             edges: document.edges.length
           };
+          break;
+        case "pdf.caWarnParseSummary":
+          actual = await caWarnParseSummary(document);
           break;
         case "page.geometry":
           actual = pageGeometry(selectedPage);

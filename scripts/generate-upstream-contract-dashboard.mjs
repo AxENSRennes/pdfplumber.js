@@ -133,6 +133,8 @@ function passedPdfplumberCompatGate(subsystem, scenario) {
 const pdfplumberCompatCoveredTests = new Map(
   [
     ["pdfplumber-python/tests/test_ca_warn_report.py", "Test.test page limiting", "pages-option-load"],
+    ["pdfplumber-python/tests/test_ca_warn_report.py", "Test.test objects", "ca-warn-objects-and-parse"],
+    ["pdfplumber-python/tests/test_ca_warn_report.py", "Test.test parse", "ca-warn-objects-and-parse"],
     ["pdfplumber-python/tests/test_basics.py", "Test.test metadata", "open-basic-objects-text-and-edges"],
     ["pdfplumber-python/tests/test_basics.py", "Test.test pagecount", "open-basic-objects-text-and-edges"],
     ["pdfplumber-python/tests/test_basics.py", "Test.test page number", "open-basic-objects-text-and-edges"],
@@ -211,6 +213,8 @@ const excludedPdfplumberUtilityTests = new Set(
 );
 
 const excludedPdfplumberInternalHelperTests = new Set([
+  "pdfplumber-python/tests/test_ca_warn_report.py|test.test edge merging",
+  "pdfplumber-python/tests/test_ca_warn_report.py|test.test vertices",
   "pdfplumber-python/tests/test_table.py|test.test orientation errors"
 ]);
 
@@ -400,8 +404,8 @@ function classify(source, behavior, kind) {
       scope: "excluded",
       subsystem,
       status: "excluded",
-      js: "Python pdfplumber table helper functions such as table.join_edge_group are not exported by pdfplumber.js or documented as public extraction APIs.",
-      rationale: "This upstream row validates an internal Python helper's direct argument validation; public table input validation is covered separately by table-settings-errors."
+      js: "Python pdfplumber table helper functions such as join_edge_group, merge_edges, and edges_to_intersections are not exported by pdfplumber.js or documented as public extraction APIs.",
+      rationale: "This upstream row validates direct internal helper behavior; public table extraction, page edge counts, and table input validation are covered by compat scenarios such as ca-warn-objects-and-parse and table-settings-errors."
     };
   }
 

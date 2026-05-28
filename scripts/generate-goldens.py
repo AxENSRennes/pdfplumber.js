@@ -176,6 +176,26 @@ def nics_plain_table_summary(table_data: List[List[Optional[str]]]) -> Dict[str,
     )
 
 
+def ca_warn_fix_row_spaces(row: List[Optional[str]]) -> List[Optional[str]]:
+    return [(x or "").replace(" ", "") for x in row[:3]] + row[3:]
+
+
+def ca_warn_parse_summary(pdf: Any) -> Dict[str, Any]:
+    rect_x0_clusters = utils.cluster_list([r["x0"] for r in pdf.pages[1].rects], tolerance=3)
+    v_lines = [x[0] for x in rect_x0_clusters]
+    table_data = pdf.pages[0].extract_table({"vertical_strategy": "explicit", "explicit_vertical_lines": v_lines})
+    return clean(
+        {
+            "v_lines": v_lines,
+            "row_count": len(table_data),
+            "column_count": len(table_data[0]) if table_data else 0,
+            "header": ca_warn_fix_row_spaces(table_data[0]),
+            "first_data_row": ca_warn_fix_row_spaces(table_data[1]),
+            "last_data_row": ca_warn_fix_row_spaces(table_data[-1]),
+        }
+    )
+
+
 def nics_explicit_horizontal_summary(page: Any) -> Dict[str, Any]:
     cropped = page.crop((0, 80, page.width, 475))
     table = cropped.find_tables({"horizontal_strategy": "text", "vertical_strategy": "text"})[0]
@@ -530,6 +550,18 @@ def build_scenarios() -> List[Dict[str, Any]]:
             "nics-plain-table-and-month",
             "nics-background-checks-2015-11.pdf",
             nics_plain_checks,
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "ca-warn-objects-and-parse",
+            "WARN-Report-for-7-1-2015-to-03-25-2016.pdf",
+            lambda pdf: [
+                make_check("page.objectCounts", object_counts(pdf.pages[0].objects), page=0),
+                make_check("page.edgeCounts", {"rect_edges": len(pdf.pages[0].rect_edges), "curve_edges": len(pdf.pages[0].curve_edges), "edges": len(pdf.pages[0].edges)}, page=0),
+                make_check("pdf.caWarnParseSummary", ca_warn_parse_summary(pdf)),
+            ],
         )
     )
 
