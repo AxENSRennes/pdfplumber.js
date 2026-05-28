@@ -622,6 +622,16 @@ function classify(source, behavior, kind) {
       );
     }
     if (
+      lowerSourceFile.includes("pdfminer-six/tests/test_pdfminer_psparser.py") &&
+      lowerBehavior.includes("token that crosses a")
+    ) {
+      return passedNativeCompatGate(
+        subsystem,
+        "test/lowlevel/psparser-compat.test.ts",
+        "The low-level native PS parser test compares JS keyword tokenization against a live pdfminer.six oracle for a beginbfchar token starting at byte 4093 and crossing pdfminer's 4096-byte parser buffer boundary."
+      );
+    }
+    if (
       lowerSourceFile.includes("pdfminer-six/tests/test_pdffont.py") &&
       (
         lowerBehavior.includes("test pdffont char width defaults") ||
