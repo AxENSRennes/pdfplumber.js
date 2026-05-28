@@ -578,10 +578,12 @@ function classify(source, behavior, kind) {
         lowerBehavior.includes("testextracttext.test simple1 with string") ||
         lowerBehavior.includes("testextracttext.test simple1 no boxes flow") ||
         lowerBehavior.includes("testextracttext.test simple2 with string") ||
+        lowerBehavior.includes("testextracttext.test simple3 with string") ||
         lowerBehavior.includes("testextracttext.test simple4 with string") ||
         lowerBehavior.includes("testextracttext.test simple5 with string") ||
         lowerBehavior.includes("testextracttext.test simple1 with file") ||
         lowerBehavior.includes("testextracttext.test simple2 with file") ||
+        lowerBehavior.includes("testextracttext.test simple3 with file") ||
         lowerBehavior.includes("testextracttext.test simple4 with file") ||
         lowerBehavior.includes("testextracttext.test simple5 with file") ||
         lowerBehavior.includes("testextracttext.test zlib corrupted") ||
@@ -596,7 +598,7 @@ function classify(source, behavior, kind) {
       return passedNativeCompatGate(
         subsystem,
         "test/lowlevel/highlevel-extracttext-compat.test.ts",
-        "The low-level native high-level text tests reconstruct pdfminer extract_text output from JS laparams text boxes, compare exact simple fixture output for path and file-style oracles, and verify the upstream corrupted-zlib, pdfobjref iterable, CMap bytes/ranges, Identity CMap, non-Unicode CMap, and xref-stream-width invariants against live pdfminer.six."
+        "The low-level native high-level text tests reconstruct pdfminer extract_text output from JS laparams text boxes, compare exact simple fixture output for path and file-style oracles, including predefined vertical Adobe-Japan1 CMaps, and verify the upstream corrupted-zlib, pdfobjref iterable, CMap bytes/ranges, Identity CMap, non-Unicode CMap, and xref-stream-width invariants against live pdfminer.six."
       );
     }
     if (

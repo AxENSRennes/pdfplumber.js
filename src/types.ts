@@ -123,6 +123,8 @@ export interface FontRecord {
   objectNumber: number;
   baseFont: string;
   subtype?: string;
+  cidCoding?: string;
+  encodingName?: string;
   hasToUnicode?: boolean;
   symbolic?: boolean;
   charSet?: string[];

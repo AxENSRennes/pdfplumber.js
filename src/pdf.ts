@@ -2,9 +2,12 @@ import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 
 import { DEFAULT_FONT_ASCENT, DEFAULT_FONT_DESCENT, FONT_UNITS_PER_EM, METADATA_KEYS, STANDARD_FONT_METRICS } from "./constants.js";
 import { glyphTextFromPdfJsGlyph, glyphWidthLikePdfminer } from "./font-decoding.js";
+import { decodePredefinedCMapUnicodeLikePdfminer } from "./pdf/cmapdb.js";
 import { collectGraphicsHintsFromContent, patternColorValueLikePdfminer } from "./pdf/content.js";
 import { parsePdfObjectsCompat } from "./pdf/document.js";
+import { parseOperatorStream } from "./pdf/parser.js";
 import { decodePdfName as decodePdfNamePrimitive } from "./pdf/primitives.js";
+import { isName } from "./pdf/primitives.js";
 import {
   extractPageContent as extractPageContentStructured,
   parseColorSpaceResources as parseColorSpaceResourcesStructured,
@@ -504,6 +507,208 @@ function mapFonts(pdfPage: any, styles: Record<string, any>, fontRecords: FontRe
     });
   }
   return mapped;
+}
+
+const HELVETICA_WIDTHS: Record<string, number> = {
+  " ": 278,
+  H: 722,
+  W: 944,
+  d: 556,
+  e: 556,
+  l: 222,
+  o: 556,
+  r: 333
+};
+
+function standardWidthForNativeFallback(font: FontRecord | undefined, byte: number): number {
+  if (/^Helvetica(?:$|-)/.test(font?.baseFont ?? "")) {
+    return HELVETICA_WIDTHS[String.fromCharCode(byte)] ?? 500;
+  }
+  return 1000;
+}
+
+function bytesFromPdfPrimitiveString(value: unknown): Uint8Array {
+  if (typeof value !== "string") return new Uint8Array();
+  return Uint8Array.from(Array.from(value, (char) => char.charCodeAt(0) & 0xff));
+}
+
+function textSeqBytes(value: unknown): Uint8Array[] {
+  if (Array.isArray(value)) return value.flatMap((item) => (typeof item === "string" ? [bytesFromPdfPrimitiveString(item)] : []));
+  return typeof value === "string" ? [bytesFromPdfPrimitiveString(value)] : [];
+}
+
+function nativeFontAdvance(font: FontRecord | undefined, bytes: Uint8Array, fontSize: number, textHScale: number): number {
+  if (font?.vertical) return Math.floor(bytes.length / 2) * fontSize;
+  let width = 0;
+  for (const byte of bytes) width += standardWidthForNativeFallback(font, byte);
+  return (width * fontSize * textHScale) / FONT_UNITS_PER_EM;
+}
+
+export function extractPredefinedCMapCharsFromContent(
+  pageContent: string,
+  fontResourceMap: Map<string, number>,
+  fontRecords: FontRecord[],
+  pageNumber: number,
+  pageWidth: number,
+  pageHeight: number,
+  pageRotate: number,
+  doctopOffset: number,
+  pageX0 = 0,
+  pageTop = 0
+): PDFObject[] {
+  const fontByResource = new Map<string, FontRecord | undefined>();
+  for (const [name, objectNumber] of fontResourceMap) fontByResource.set(name, fontRecords.find((record) => record.objectNumber === objectNumber));
+  const ops = parseOperatorStream(pageContent);
+  const state = {
+    ctm: [1, 0, 0, 1, 0, 0] as Matrix,
+    textMatrix: [1, 0, 0, 1, 0, 0] as Matrix,
+    x: 0,
+    y: 0,
+    lineX: 0,
+    lineY: 0,
+    fontResource: "",
+    fontSize: 1,
+    textRise: 0,
+    textHScale: 1
+  };
+  const stack: Matrix[] = [];
+  const chars: PDFObject[] = [];
+  const coordOffset: Point = [pageX0, pageTop];
+  let sawTarget = false;
+  const currentFont = (): FontRecord | undefined => fontByResource.get(state.fontResource);
+  const pushChar = (text: string, font: FontRecord | undefined, advance: number): void => {
+    const matrix = multiplyMatrix(state.ctm, state.textMatrix);
+    const vertical = font?.vertical === true;
+    const xStart = vertical ? state.x - 0.5 * state.fontSize : state.x;
+    const xEnd = vertical ? xStart + state.fontSize : state.x + advance;
+    const yStart = vertical ? state.y + state.textRise - 0.88 * state.fontSize : state.y + state.textRise + (standardFontMetrics(font?.baseFont)?.descent ?? DEFAULT_FONT_DESCENT) * state.fontSize;
+    const yEnd = vertical ? yStart + state.fontSize : yStart + state.fontSize;
+    const rawBBox = bboxFromPoints([
+      applyMatrix([xStart, yStart], matrix),
+      applyMatrix([xStart, yEnd], matrix),
+      applyMatrix([xEnd, yStart], matrix),
+      applyMatrix([xEnd, yEnd], matrix)
+    ]);
+    const [matrixE, matrixF] = applyMatrix([state.x, state.y], matrix);
+    const glyphMatrix = cleanMatrix(matrixToPageMatrix([matrix[0], matrix[1], matrix[2], matrix[3], matrixE, matrixF], pageWidth, pageHeight, pageRotate));
+    glyphMatrix[4] = cleanNumber(glyphMatrix[4] - pageX0);
+    glyphMatrix[5] = cleanNumber(glyphMatrix[5] + pageTop);
+    const obj = rectFromPdfBBox(
+      rawBBox,
+      pageWidth,
+      pageHeight,
+      pageRotate,
+      pageNumber,
+      "char",
+      doctopOffset,
+      {
+        text,
+        fontname: font?.vertical && font.hasToUnicode === false ? "unknown" : (font?.baseFont ?? "unknown"),
+        adv: cleanNumber(advance),
+        upright: true,
+        matrix: glyphMatrix,
+        ncs: "DeviceGray",
+        non_stroking_color: [0],
+        stroking_color: [0]
+      },
+      coordOffset
+    );
+    obj.size = vertical ? obj.width : obj.height;
+    Object.defineProperty(obj, "__pdfplumber_raw_size", { value: state.fontSize, enumerable: false });
+    Object.defineProperty(obj, "__pdfplumber_raw_size_key", { value: vertical ? `${state.fontSize}:${obj.x0}:${obj.x1}` : `${state.fontSize}:${obj.y0}:${obj.y1}`, enumerable: false });
+    chars.push(obj);
+  };
+  const showBytes = (bytes: Uint8Array): void => {
+    const font = currentFont();
+    const target = font?.subtype === "Type0" && font.vertical === true && font.hasToUnicode === false;
+    const texts = target ? decodePredefinedCMapUnicodeLikePdfminer(font.encodingName, font.cidCoding, bytes) : [];
+    if (!texts.length) {
+      for (const byte of bytes) {
+        const advance = (standardWidthForNativeFallback(font, byte) * state.fontSize * state.textHScale) / FONT_UNITS_PER_EM;
+        pushChar(String.fromCharCode(byte), font, advance);
+        state.x += advance;
+      }
+      return;
+    }
+    sawTarget = true;
+    for (const text of texts) {
+      pushChar(text, font, state.fontSize);
+      state.y -= state.fontSize;
+    }
+  };
+
+  for (const op of ops) {
+    const args = op.args;
+    switch (op.operator) {
+      case "q":
+        stack.push(cloneMatrix(state.ctm));
+        break;
+      case "Q": {
+        const restored = stack.pop();
+        if (restored) state.ctm = restored;
+        break;
+      }
+      case "cm":
+        if (args.length >= 6) state.ctm = multiplyMatrix(state.ctm, args.slice(0, 6).map(Number) as Matrix);
+        break;
+      case "BT":
+        state.textMatrix = [1, 0, 0, 1, 0, 0];
+        state.x = state.lineX = 0;
+        state.y = state.lineY = 0;
+        break;
+      case "Tf":
+        state.fontResource = isName(args[0]) ? args[0].name : "";
+        state.fontSize = Math.abs(Number(args[1] ?? 1));
+        break;
+      case "Tz":
+        state.textHScale = Number(args[0] ?? 100) / 100;
+        break;
+      case "Ts":
+        state.textRise = Number(args[0] ?? 0);
+        break;
+      case "Td":
+      case "TD": {
+        const tx = Number(args[0] ?? 0);
+        const ty = Number(args[1] ?? 0);
+        state.x = state.lineX += tx;
+        state.y = state.lineY += ty;
+        break;
+      }
+      case "Tm":
+        if (args.length >= 6) state.textMatrix = args.slice(0, 6).map((value) => snapPdfOperand(Number(value))) as Matrix;
+        state.x = state.lineX = 0;
+        state.y = state.lineY = 0;
+        break;
+      case "T*":
+        state.x = state.lineX;
+        state.y = state.lineY;
+        break;
+      case "Tj":
+        for (const bytes of textSeqBytes(args[0])) showBytes(bytes);
+        break;
+      case "TJ":
+        for (const item of Array.isArray(args[0]) ? args[0] : []) {
+          if (typeof item === "number") {
+            if (currentFont()?.vertical) state.y += (item * state.fontSize) / FONT_UNITS_PER_EM;
+            else state.x -= (item * state.fontSize * state.textHScale) / FONT_UNITS_PER_EM;
+          } else {
+            showBytes(bytesFromPdfPrimitiveString(item));
+          }
+        }
+        break;
+      case "'":
+        state.x = state.lineX;
+        state.y = state.lineY;
+        for (const bytes of textSeqBytes(args[0])) showBytes(bytes);
+        break;
+      case "\"":
+        state.x = state.lineX;
+        state.y = state.lineY;
+        for (const bytes of textSeqBytes(args[2])) showBytes(bytes);
+        break;
+    }
+  }
+  return sawTarget ? chars : [];
 }
 
 function cloneState(state: GraphicsState): GraphicsState {

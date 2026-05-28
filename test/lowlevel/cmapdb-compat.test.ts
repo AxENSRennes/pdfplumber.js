@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { CMapLikePdfminer, parseCompressedCMapJsonLikePdfminer, UnicodeMapLikePdfminer } from "../../src/pdf/cmapdb.js";
+import { CMapLikePdfminer, decodePredefinedCMapUnicodeLikePdfminer, parseCompressedCMapJsonLikePdfminer, UnicodeMapLikePdfminer } from "../../src/pdf/cmapdb.js";
 
 function pdfminerOracle(): { cmap: string; unicodeMap: string; cid1: string; hDecode: number[] } {
   const code = `
@@ -36,6 +36,18 @@ print(json.dumps({
 }))
 `;
   return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as { name: string; code2cid_len: number; vertical: boolean; decode: number[] };
+}
+
+function pdfminerAdobeJapan1VText(bytes: number[]): string[] {
+  const code = `
+import json
+from pdfminer.cmapdb import CMapDB
+
+cmap = CMapDB.get_cmap("V")
+umap = CMapDB.get_unicode_map("Adobe-Japan1", vertical=True)
+print(json.dumps([umap.get_unichr(cid) for cid in cmap.decode(bytes(${JSON.stringify(bytes)}))]))
+`;
+  return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as string[];
 }
 
 function allKeysAreNumbers(map: Map<number, unknown>): boolean {
@@ -76,5 +88,12 @@ describe("low-level pdfminer CMapDB JSON compatibility", () => {
     expect(cmap.code2cid.size).toBe(expected.code2cid_len);
     expect(cmap.vertical).toBe(expected.vertical);
     expect(cmap.decode([0, 32, 0, 33, 78, 0])).toEqual(expected.decode);
+  });
+
+  it("decodes the built-in Adobe-Japan1 vertical kana rows used by predefined V CMaps", () => {
+    const bytes = [0x24, 0x21, 0x24, 0x22, 0x24, 0x24, 0x24, 0x26, 0x24, 0x28, 0x24, 0x2a, 0x25, 0x73];
+
+    expect(decodePredefinedCMapUnicodeLikePdfminer("V", "Adobe-Japan1", bytes)).toEqual(pdfminerAdobeJapan1VText(bytes));
+    expect(decodePredefinedCMapUnicodeLikePdfminer("H", "Adobe-Japan1", bytes)).toEqual([]);
   });
 });

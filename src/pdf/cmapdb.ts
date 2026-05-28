@@ -88,3 +88,23 @@ export class UnicodeMapLikePdfminer {
     return this.cid2unichr.get(cid);
   }
 }
+
+const ADOBE_JAPAN1_KANA_ROWS: Record<number, string> = {
+  0x24: "ぁあぃいぅうぇえぉおかがきぎくぐけげこごさざしじすずせぜそぞただちぢっつづてでとどなにぬねのはばぱひびぴふぶぷへべぺほぼぽまみむめもゃやゅゆょよらりるれろゎわゐゑをん",
+  0x25: "ァアィイゥウェエォオカガキギクグケゲコゴサザシジスズセゼソゾタダチヂッツヅテデトドナニヌネノハバパヒビピフブプヘベペホボポマミムメモャヤュユョヨラリルレロヮワヰヱヲンヴヵヶ"
+};
+
+export function decodePredefinedCMapUnicodeLikePdfminer(cmapName: string | undefined, cidCoding: string | undefined, bytes: Uint8Array | number[]): string[] {
+  if (cmapName !== "V" || cidCoding !== "Adobe-Japan1") return [];
+  const values = Array.from(bytes);
+  const out: string[] = [];
+  for (let index = 0; index + 1 < values.length; index += 2) {
+    const lead = values[index];
+    const trail = values[index + 1];
+    const row = ADOBE_JAPAN1_KANA_ROWS[lead];
+    const offset = trail - 0x21;
+    const text = row == null || offset < 0 ? undefined : Array.from(row)[offset];
+    if (text != null) out.push(text);
+  }
+  return out;
+}

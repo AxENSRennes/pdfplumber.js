@@ -11,6 +11,7 @@ import {
   parseColorSpaceResources,
   parseFontRecords,
   parseImageResources,
+  parsePageFontResourceMap,
   parsePageFontObjectNumbers
 } from "./pdf/resources.js";
 import { PdfPlumberPageImpl } from "./page.js";
@@ -18,6 +19,7 @@ import { annotationStringDecodeErrorLikePdfminer, shouldEmulatePdfminerOpenError
 import {
   annotationToObject,
   extractPageObjects,
+  extractPredefinedCMapCharsFromContent,
   parseInfoMetadata,
   resolvePageBoxes
 } from "./pdf.js";
@@ -178,6 +180,7 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
     const pageModel = store.getPageModel(pdfPage.ref?.num ? Number(pdfPage.ref.num) : undefined);
     const pageObjectText = pageModel?.raw ?? (pdfPage.ref?.num ? rawObjects.get(Number(pdfPage.ref.num)) : undefined);
     const pageOwner = pageModel ?? pageObjectText;
+    const pageFontResourceMap = parsePageFontResourceMap(pageOwner, store);
     const pageFontObjectNumbers = new Set(parsePageFontObjectNumbers(pageOwner, store));
     const pageFontRecords = pageFontObjectNumbers.size
       ? [
@@ -228,6 +231,19 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
       options.unicode_norm,
       Boolean(options.password)
     );
+    const nativeCMapChars = extractPredefinedCMapCharsFromContent(
+      pageContent,
+      pageFontResourceMap,
+      pageFontRecords,
+      pageNumber,
+      boxes.width,
+      boxes.height,
+      boxes.rotate,
+      doctopOffset,
+      boxes.mediabox[0],
+      boxes.mediabox[1]
+    );
+    if (nativeCMapChars.length) lowLevel.chars.splice(0, lowLevel.chars.length, ...nativeCMapChars);
     const annotations = await pdfPage.getAnnotations({ intent: "display" }).catch(() => []);
     const annotationList = annotations as any[];
     const canSortAnnotationIds = annotationList.every((annot: any) => Number.isFinite(Number.parseInt(String(annot.id ?? ""), 10)));

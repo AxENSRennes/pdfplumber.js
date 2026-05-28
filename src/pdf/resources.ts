@@ -276,10 +276,6 @@ export function extractPageContent(owner: PdfResourceOwner, context: PdfResource
   return expandFormXObjectsInContent(content, store, effectivePageResources(store, owner));
 }
 
-function uniquePush<T>(values: T[], value: T): void {
-  if (!values.includes(value)) values.push(value);
-}
-
 function pdfValueRepr(store: PdfObjectStore, value: PdfPrimitive | undefined, key = ""): string | number | undefined {
   if (value == null) return undefined;
   if (isRef(value)) return `<PDFObjRef:${value.objectNumber}>`;
@@ -502,6 +498,13 @@ function firstDescendantFont(store: PdfObjectStore, fontDict: PdfDict): PdfDict 
   return undefined;
 }
 
+function cidCodingName(store: PdfObjectStore, descendant: PdfDict | undefined): string | undefined {
+  const systemInfo = resolvedDict(store, descendant?.get("CIDSystemInfo"));
+  const registry = primitiveNameOrString(store, systemInfo?.get("Registry"))?.trim();
+  const ordering = primitiveNameOrString(store, systemInfo?.get("Ordering"))?.trim();
+  return registry && ordering ? `${registry}-${ordering}` : undefined;
+}
+
 function charSetNames(value: PdfPrimitive | undefined): string[] | undefined {
   if (typeof value !== "string") return undefined;
   const names = Array.from(value.matchAll(/\/([^/\s()]+)/g), (match) => decodePdfName(match[1]));
@@ -636,6 +639,7 @@ export function parseFontRecords(context: PdfResourceContext): FontRecord[] {
     const subtype = primitiveName(store, fontDict.get("Subtype"));
     const descendant = firstDescendantFont(store, fontDict);
     const descriptor = firstFontDescriptor(store, fontDict, descendant);
+    const encodingName = fontEncodingName(store, fontDict);
     const flags = resolvedNumber(store, descriptor?.get("Flags"));
     const ascent = resolvedNumber(store, descriptor?.get("Ascent"));
     const descent = resolvedNumber(store, descriptor?.get("Descent"));
@@ -646,6 +650,8 @@ export function parseFontRecords(context: PdfResourceContext): FontRecord[] {
       objectNumber,
       baseFont,
       subtype,
+      cidCoding: cidCodingName(store, descendant),
+      encodingName,
       hasToUnicode: hasToUnicode(store, fontDict),
       symbolic: flags == null ? undefined : (flags & 4) !== 0,
       charSet: charSetNames(resolveOne(store, descriptor?.get("CharSet"))),
@@ -655,10 +661,21 @@ export function parseFontRecords(context: PdfResourceContext): FontRecord[] {
       widths: primitiveArrayNumbers(store, fontDict.get("Widths")),
       ascent: ascent == null ? undefined : ascent / FONT_UNITS_PER_EM,
       descent: descent == null ? undefined : -Math.abs(descent / FONT_UNITS_PER_EM),
-      vertical: isVerticalCMapNameLikePdfminer(fontEncodingName(store, fontDict))
+      vertical: isVerticalCMapNameLikePdfminer(encodingName)
     });
   }
   return fonts;
+}
+
+export function parsePageFontResourceMap(owner: PdfResourceOwner, context: PdfResourceContext): Map<string, number> {
+  const store = toStore(context);
+  const fontDict = resourceSubdict(store, effectivePageResources(store, owner), "Font");
+  const out = new Map<string, number>();
+  if (!fontDict) return out;
+  for (const [name, value] of fontDict) {
+    if (isRef(value)) out.set(name, value.objectNumber);
+  }
+  return out;
 }
 
 function parseDirectFontRefs(pageObjectText: string | undefined): number[] {
@@ -669,12 +686,5 @@ function parseDirectFontRefs(pageObjectText: string | undefined): number[] {
 
 export function parsePageFontObjectNumbers(owner: PdfResourceOwner, context?: PdfResourceContext): number[] {
   if (!context) return typeof owner === "string" ? parseDirectFontRefs(owner) : [];
-  const store = toStore(context);
-  const fontDict = resourceSubdict(store, effectivePageResources(store, owner), "Font");
-  if (!fontDict) return [];
-  const out: number[] = [];
-  for (const value of fontDict.values()) {
-    if (isRef(value)) uniquePush(out, value.objectNumber);
-  }
-  return out;
+  return Array.from(new Set(parsePageFontResourceMap(owner, context).values()));
 }

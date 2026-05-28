@@ -48,6 +48,7 @@ describe("low-level pdfminer high-level extract_text compatibility", () => {
     { sample: "simple1.pdf" },
     { sample: "simple1.pdf", laparams: { boxes_flow: null } },
     { sample: "simple2.pdf" },
+    { sample: "simple3.pdf" },
     { sample: "simple4.pdf" },
     { sample: "simple5.pdf" },
     { sample: "contrib/issue-886-xref-stream-widths.pdf" }
