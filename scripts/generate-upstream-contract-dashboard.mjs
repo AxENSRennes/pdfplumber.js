@@ -357,6 +357,26 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
     };
   }
 
+  if (sourceFile.endsWith("pdf_find_controller_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: subsystem === "search" || subsystem === "text" ? "search" : "viewer-ui",
+      status: "excluded",
+      js: "PDF.js viewer find-controller behavior is not exposed by pdfplumber.js; public page.search() is covered by pdfplumber compatibility tests.",
+      rationale: "pdfplumber.js implements search over extracted chars/text maps rather than exposing PDF.js viewer find events, match navigation, normalization, or controller state."
+    };
+  }
+
+  if (sourceFile.endsWith("ui_utils_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "viewer-ui",
+      status: "excluded",
+      js: "PDF.js viewer UI utility helpers are not exposed by pdfplumber.js.",
+      rationale: "These rows cover viewer orientation, query parsing, scrolling, visibility, and display-angle helpers; the extraction API exposes page boxes and text objects through separate public tests."
+    };
+  }
+
   if (/xfa_parser_spec/.test(sourceFile)) {
     return {
       scope: "excluded",
@@ -364,6 +384,16 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
       status: "excluded",
       js: "PDF.js XFA parser/display binding behavior is not exposed by pdfplumber.js.",
       rationale: "XFA viewer form binding is outside the supported extraction API."
+    };
+  }
+
+  if (sourceFile.endsWith("postscript_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem,
+      status: "excluded",
+      js: "PDF.js PostScript function compiler/evaluator internals are not exposed by pdfplumber.js.",
+      rationale: "These rows validate rendering-time PostScript function evaluation and optimization; pdfplumber.js exposes extracted objects and raw color values rather than PDF.js function rendering internals."
     };
   }
 
