@@ -278,6 +278,16 @@ function classify(source, behavior, kind) {
     };
   }
 
+  if (lowerSourceFile.includes("pdfplumber-python/tests/test_repair.py")) {
+    return {
+      scope: "excluded",
+      subsystem: subsystem === "security" ? "security" : "runtime",
+      status: "excluded",
+      js: "Python Ghostscript repair helpers (`repair=True`, `pdfplumber.repair()`, `gs_path`) are not exposed by the pdfplumber.js extraction API.",
+      rationale: "The stable JS API opens and extracts PDFs directly; optional Python/Ghostscript file repair plumbing is a Python-only helper outside this library's public surface."
+    };
+  }
+
   if (lowerSourceFile.includes("pdfminer-six/tests/test_tools_")) {
     return {
       scope: "excluded",
