@@ -572,6 +572,29 @@ function classify(source, behavior, kind) {
         "The low-level native stream tests verify pdfminer-compatible ASCII85, ASCIIHex, LZW, and RunLength decoding through PDF stream filters."
       );
     }
+    if (lowerSourceFile.includes("pdfminer-six/tests/test_utils.py")) {
+      if (lowerBehavior.includes("openfilename")) {
+        return {
+          scope: "excluded",
+          subsystem,
+          status: "excluded",
+          js: "pdfminer open_filename is Python path/file-object wrapper behavior; pdfplumber.js browser-capable input adaptation is covered by public open() runtime tests.",
+          rationale: "The stable goal excludes Python-only behavior, while the JS public API separately verifies ArrayBuffer, Blob, URL, and Node file inputs."
+        };
+      }
+      if (
+        lowerBehavior.includes("testplane.") ||
+        lowerBehavior.includes("shorten") ||
+        lowerBehavior.includes("format int alpha") ||
+        lowerBehavior.includes("format int roman")
+      ) {
+        return passedNativeCompatGate(
+          subsystem,
+          "test/lowlevel/pdfminer-utils-compat.test.ts",
+          "The low-level native utility tests verify pdfminer-compatible Plane lookup/removal, string shortening, and alpha/Roman page-label formatting helpers."
+        );
+      }
+    }
     if (
       lowerSourceFile.includes("pdfminer-six/tests/test_utils.py") &&
       (

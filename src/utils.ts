@@ -52,6 +52,139 @@ export function safeRectListLikePdfminer(value: unknown): MutableBBox | null {
   return rect as MutableBBox;
 }
 
+export function shortenStrLikePdfminer(value: string, size: number): string {
+  if (size < 7) return value.slice(0, size);
+  if (value.length <= size) return value;
+  const length = Math.floor((size - 5) / 2);
+  return `${value.slice(0, length)} ... ${value.slice(-length)}`;
+}
+
+export function formatIntAlphaLikePdfminer(value: number): string {
+  if (!Number.isInteger(value) || value <= 0) throw new RangeError("formatIntAlphaLikePdfminer expects a positive integer");
+  const letters = "abcdefghijklmnopqrstuvwxyz";
+  let current = value;
+  let result = "";
+  while (current !== 0) {
+    const next = Math.floor((current - 1) / letters.length);
+    const remainder = (current - 1) % letters.length;
+    result = `${letters[remainder]}${result}`;
+    current = next;
+  }
+  return result;
+}
+
+export function formatIntRomanLikePdfminer(value: number): string {
+  if (!Number.isInteger(value) || value <= 0 || value >= 4000) throw new RangeError("formatIntRomanLikePdfminer expects an integer from 1 to 3999");
+  const ones = ["i", "x", "c", "m"];
+  const fives = ["v", "l", "d"];
+  let current = value;
+  let index = 0;
+  let result = "";
+  while (current !== 0) {
+    const remainder = current % 10;
+    current = Math.floor(current / 10);
+    let part = "";
+    if (remainder === 9) part = `${ones[index]}${ones[index + 1]}`;
+    else if (remainder === 4) part = `${ones[index]}${fives[index]}`;
+    else {
+      const overFive = remainder >= 5;
+      part = `${overFive ? fives[index] : ""}${ones[index].repeat(overFive ? remainder - 5 : remainder)}`;
+    }
+    result = `${part}${result}`;
+    index += 1;
+  }
+  return result;
+}
+
+function discreteRangeLikePdfminer(v0: number, v1: number, size: number): number[] {
+  const out: number[] = [];
+  for (let value = Math.floor(Math.trunc(v0) / size); value < Math.floor(Math.trunc(v1 + size) / size); value += 1) out.push(value);
+  return out;
+}
+
+export interface PlaneObjectLikePdfminer {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+export class PlaneLikePdfminer<T extends PlaneObjectLikePdfminer> {
+  private readonly seq: T[] = [];
+  private readonly objs = new Set<T>();
+  private readonly grid = new Map<string, T[]>();
+  private readonly x0: number;
+  private readonly y0: number;
+  private readonly x1: number;
+  private readonly y1: number;
+
+  constructor(bbox: MutableBBox, private readonly gridsize = 50) {
+    [this.x0, this.y0, this.x1, this.y1] = bbox;
+  }
+
+  get size(): number {
+    return this.objs.size;
+  }
+
+  has(obj: T): boolean {
+    return this.objs.has(obj);
+  }
+
+  values(): T[] {
+    return this.seq.filter((obj) => this.objs.has(obj));
+  }
+
+  add(obj: T): void {
+    for (const key of this.getRange([obj.x0, obj.y0, obj.x1, obj.y1])) {
+      const bucket = this.grid.get(key);
+      if (bucket) bucket.push(obj);
+      else this.grid.set(key, [obj]);
+    }
+    this.seq.push(obj);
+    this.objs.add(obj);
+  }
+
+  remove(obj: T): void {
+    for (const key of this.getRange([obj.x0, obj.y0, obj.x1, obj.y1])) {
+      const bucket = this.grid.get(key);
+      const index = bucket?.indexOf(obj) ?? -1;
+      if (bucket && index >= 0) bucket.splice(index, 1);
+    }
+    this.objs.delete(obj);
+  }
+
+  find(bbox: MutableBBox): T[] {
+    const [x0, y0, x1, y1] = bbox;
+    const done = new Set<T>();
+    const out: T[] = [];
+    for (const key of this.getRange(bbox)) {
+      const bucket = this.grid.get(key);
+      if (!bucket) continue;
+      for (const obj of bucket) {
+        if (done.has(obj)) continue;
+        done.add(obj);
+        if (obj.x1 <= x0 || x1 <= obj.x0 || obj.y1 <= y0 || y1 <= obj.y0) continue;
+        out.push(obj);
+      }
+    }
+    return out;
+  }
+
+  private getRange(bbox: MutableBBox): string[] {
+    let [x0, y0, x1, y1] = bbox;
+    if (x1 <= this.x0 || this.x1 <= x0 || y1 <= this.y0 || this.y1 <= y0) return [];
+    x0 = Math.max(this.x0, x0);
+    y0 = Math.max(this.y0, y0);
+    x1 = Math.min(this.x1, x1);
+    y1 = Math.min(this.y1, y1);
+    const out: string[] = [];
+    for (const gridY of discreteRangeLikePdfminer(y0, y1, this.gridsize)) {
+      for (const gridX of discreteRangeLikePdfminer(x0, x1, this.gridsize)) out.push(`${gridX},${gridY}`);
+    }
+    return out;
+  }
+}
+
 export function snapPdfCoordinate(value: number): number {
   if (!Number.isFinite(value)) return value;
   if (Math.abs(value) < 1) return value;
