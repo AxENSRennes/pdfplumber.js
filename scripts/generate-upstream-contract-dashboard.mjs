@@ -100,6 +100,97 @@ function detectSubsystem(source, behavior) {
   return "general";
 }
 
+function passedBrowserInputGate(subsystem) {
+  return {
+    scope: "runtime-adaptation",
+    subsystem,
+    status: "passed",
+    js: "test/browser/pdfplumber.browser.spec.ts",
+    rationale: "The Playwright browser ESM gate runs Chromium, Firefox, and WebKit against the built package and verifies ArrayBuffer, Blob, and URL inputs against validated Node extraction results."
+  };
+}
+
+function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
+  const lowerBehavior = behavior.toLowerCase();
+
+  if (sourceFile.endsWith("api_spec.js")) {
+    if (/creates pdf doc from (url-string|url-object|url$|typedarray|arraybuffer)/.test(lowerBehavior)) {
+      return passedBrowserInputGate("runtime");
+    }
+    if (lowerBehavior === "gets current workersrc") {
+      return {
+        ...passedBrowserInputGate("runtime"),
+        rationale: "The browser ESM gate proves the packaged worker source is configured well enough for public extraction in Chromium, Firefox, and WebKit."
+      };
+    }
+    if (/\b(worker|workerport|abort|loadingtask|_worker)\b/.test(lowerBehavior)) {
+      return {
+        scope: "excluded",
+        subsystem: "runtime",
+        status: "excluded",
+        js: "PDF.js worker lifecycle controls are internal implementation details, not exposed pdfplumber.js APIs.",
+        rationale: "The public browser contract is covered through open() input tests; raw PDF.js worker APIs are not part of this library."
+      };
+    }
+    if (/\b(destination|destinations|page labels|page layout|page mode|viewer preferences|open action|attachments|javascript|jsactions|permissions|optional content|field objects|calculation order|markinfo|data|download info|stats)\b/.test(lowerBehavior)) {
+      return {
+        scope: "excluded",
+        subsystem,
+        status: "excluded",
+        js: "PDF.js document-proxy convenience API is not exposed by pdfplumber.js.",
+        rationale: "pdfplumber.js exposes extraction objects and metadata, not raw PDF.js navigation/viewer/document-management methods."
+      };
+    }
+    if (/\b(non-existent url|invalid pdf|bad xref|bad \/pages|circular references|incomplete trailer|bad \/resources|password protected|protected with|empty typedarray)\b/.test(lowerBehavior)) {
+      return {
+        scope: "robustness-corpus",
+        subsystem,
+        status: "needs-adapted-js-test",
+        js: "Add a public open() robustness test that either extracts matching behavior or raises the documented stable error.",
+        rationale: "Malformed, encrypted, and failed-load API cases matter as stable public open() outcomes rather than as raw PDF.js APIs."
+      };
+    }
+    if (/\b(gets number of pages|gets page\b|gets non-existent page|gets page multiple time|gets page index|gets invalid page index|gets metadata|gets outline|gets annotations|get text content|get operator list)\b/.test(lowerBehavior)) {
+      return {
+        scope: "pdfjs-capability",
+        subsystem,
+        status: "needs-adapted-js-test",
+        js: "Cover through public extraction tests for page loading, metadata, annotations, text, and operator-derived objects.",
+        rationale: "These are PDF.js capabilities currently used underneath pdfplumber.js extraction, so retained use needs explicit public coverage."
+      };
+    }
+    return {
+      scope: "excluded",
+      subsystem,
+      status: "excluded",
+      js: "PDF.js API behavior is not exposed directly by pdfplumber.js.",
+      rationale: "Unexposed PDF.js display/document API behavior is outside the supported public extraction surface unless separately classified as a retained capability."
+    };
+  }
+
+  if (sourceFile.endsWith("document_spec.js")) {
+    return {
+      scope: "pdfjs-capability",
+      subsystem,
+      status: "needs-adapted-js-test",
+      js: "Adapt where document parsing behavior is retained by pdfplumber.js; otherwise reclassify rows as excluded or duplicate.",
+      rationale: "PDF.js document core behavior matters only when it feeds public extraction behavior."
+    };
+  }
+
+  if (/node_stream_spec|fetch_stream_spec|network_spec|network_utils_spec/.test(sourceFile)) {
+    return {
+      scope: "runtime-adaptation",
+      subsystem: "runtime",
+      status: "needs-adapted-js-test",
+      js: "Adapt only for public open() URL/fetch/file behavior in Node and browsers.",
+      rationale: "Runtime stream behavior is relevant only through the pdfplumber.js input contract, not through raw PDF.js stream classes."
+    };
+  }
+
+  return null;
+}
+
 function classify(source, behavior, kind) {
   const subsystem = detectSubsystem(source, behavior);
   const lowerSource = source.toLowerCase();
@@ -204,7 +295,9 @@ function classify(source, behavior, kind) {
   }
 
   if (lowerSourceFile.startsWith("pdfjs/test/unit/")) {
-    if (["runtime"].includes(subsystem) || /api_spec|document_spec/.test(lowerSourceFile)) {
+    const pdfjsUnit = classifyPdfjsUnit(lowerSourceFile, behavior, subsystem);
+    if (pdfjsUnit) return pdfjsUnit;
+    if (["runtime"].includes(subsystem)) {
       return {
         scope: "runtime-adaptation",
         subsystem,

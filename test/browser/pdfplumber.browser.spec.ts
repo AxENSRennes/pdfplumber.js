@@ -110,7 +110,7 @@ test.describe("browser ESM package", () => {
     const actual = await page.evaluate(async ({ moduleUrl, pdfUrl }) => {
       const { open } = await import(moduleUrl);
 
-      async function summarize(input: ArrayBuffer | Blob | string) {
+      async function summarize(input: ArrayBuffer | Blob | string | URL) {
         const document = await open(input);
         try {
           const page = document.pages[0];
@@ -143,12 +143,14 @@ test.describe("browser ESM package", () => {
       return {
         arrayBuffer: await summarize(bytes.slice(0)),
         blob: await summarize(new Blob([bytes], { type: "application/pdf" })),
-        url: await summarize(pdfUrl)
+        urlObject: await summarize(new URL(pdfUrl)),
+        urlString: await summarize(pdfUrl)
       };
     }, { moduleUrl: `${baseUrl}/dist/browser/index.js`, pdfUrl: `${baseUrl}/fixture.pdf` });
 
     expect(actual.arrayBuffer).toEqual(expected);
     expect(actual.blob).toEqual(expected);
-    expect(actual.url).toEqual(expected);
+    expect(actual.urlObject).toEqual(expected);
+    expect(actual.urlString).toEqual(expected);
   });
 });
