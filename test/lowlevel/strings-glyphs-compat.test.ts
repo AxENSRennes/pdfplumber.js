@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { glyphNameToUnicodeLikePdfminer, glyphTextLikePdfminer, glyphWidthLikePdfminer } from "../../src/font-decoding.js";
+import {
+  fontCharWidthLikePdfminer,
+  getWidthsLikePdfminer,
+  glyphNameToUnicodeLikePdfminer,
+  glyphTextLikePdfminer,
+  glyphWidthLikePdfminer
+} from "../../src/font-decoding.js";
 import { decodePdfLiteralBytesAsUtf8ThenUtf16, decodePdfStringLikePdfminer } from "../../src/pdf-strings.js";
 import { parsePdfObjects } from "../../src/pdf.js";
 import {
@@ -65,6 +71,19 @@ describe("low-level pdfminer string, glyph, and compatibility behavior", () => {
         { originalCharCode: 33, width: 999 }
       )
     ).toBe(333);
+  });
+
+  it("handles PDFFont width defaults and get_widths lists like pdfminer", () => {
+    expect(fontCharWidthLikePdfminer({}, 0, 100)).toBe(0.1);
+    expect(fontCharWidthLikePdfminer({ 0: 50 }, 0, 100)).toBe(0.05);
+    expect(fontCharWidthLikePdfminer({ 0: 200 }, 0, 100)).toBe(0.2);
+    expect(fontCharWidthLikePdfminer({ 0: null }, 0, 100)).toBe(0.1);
+
+    expect(getWidthsLikePdfminer([0, [1, 2, 3, 4]])).toEqual({ 0: 1, 1: 2, 2: 3, 3: 4 });
+    expect(getWidthsLikePdfminer([0, 4, 3])).toEqual({ 0: 3, 1: 3, 2: 3, 3: 3, 4: 3 });
+
+    const ref = { kind: "ref", objectNumber: 121 };
+    expect(getWidthsLikePdfminer([0, ref], (value) => (value === ref ? [1, 2, 3, 4] : value))).toEqual({ 0: 1, 1: 2, 2: 3, 3: 4 });
   });
 
   it("decodes Adobe glyph names like pdfminer.encodingdb.name2unicode", () => {

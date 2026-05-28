@@ -572,6 +572,20 @@ function classify(source, behavior, kind) {
         "The low-level native stream tests verify pdfminer-compatible ASCII85, ASCIIHex, LZW, and RunLength decoding through PDF stream filters."
       );
     }
+    if (
+      lowerSourceFile.includes("pdfminer-six/tests/test_pdffont.py") &&
+      (
+        lowerBehavior.includes("test pdffont char width defaults") ||
+        lowerBehavior.includes("test pdffont get widths") ||
+        lowerBehavior.includes("issues/629")
+      )
+    ) {
+      return passedNativeCompatGate(
+        subsystem,
+        "test/lowlevel/strings-glyphs-compat.test.ts",
+        "The low-level native string/glyph tests verify pdfminer-compatible PDFFont width defaults and get_widths parsing for list, range, and object-reference width definitions."
+      );
+    }
     if (lowerSourceFile.includes("pdfminer-six/tests/test_utils.py")) {
       if (lowerBehavior.includes("openfilename")) {
         return {

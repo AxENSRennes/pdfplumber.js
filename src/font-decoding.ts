@@ -86,6 +86,43 @@ export function glyphNameToUnicodeLikePdfminer(name: string | undefined): string
   return out || null;
 }
 
+function numberLikePdfminer(value: unknown): number | null {
+  if (value == null) return null;
+  if (typeof value === "string" && value.trim() === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+export function fontCharWidthLikePdfminer(widths: Record<string, unknown>, cid: number, defaultWidth: number): number {
+  const width = numberLikePdfminer(widths[cid]);
+  return (width ?? defaultWidth) * 0.001;
+}
+
+export function getWidthsLikePdfminer(values: unknown[], resolveRef: (value: unknown) => unknown = (value) => value): Record<number, number> {
+  const out: Record<number, number> = {};
+  for (let index = 0; index < values.length; index += 1) {
+    const first = numberLikePdfminer(resolveRef(values[index]));
+    if (first == null) continue;
+
+    const next = resolveRef(values[index + 1]);
+    if (Array.isArray(next)) {
+      for (let offset = 0; offset < next.length; offset += 1) {
+        const width = numberLikePdfminer(resolveRef(next[offset]));
+        if (width != null) out[first + offset] = width;
+      }
+      index += 1;
+      continue;
+    }
+
+    const last = numberLikePdfminer(next);
+    const width = numberLikePdfminer(resolveRef(values[index + 2]));
+    if (last == null || width == null) continue;
+    for (let cid = first; cid <= last; cid += 1) out[cid] = width;
+    index += 2;
+  }
+  return out;
+}
+
 function bytesFromCharCode(code: number): number[] {
   if (code <= 0xff) return [code];
   return [(code >> 8) & 0xff, code & 0xff];
