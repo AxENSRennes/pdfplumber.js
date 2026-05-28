@@ -2,7 +2,7 @@ import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 
 import { DEFAULT_FONT_ASCENT, DEFAULT_FONT_DESCENT, FONT_UNITS_PER_EM, METADATA_KEYS, STANDARD_FONT_METRICS } from "./constants.js";
 import { glyphTextFromPdfJsGlyph, glyphWidthLikePdfminer } from "./font-decoding.js";
-import { collectGraphicsHintsFromContent } from "./pdf/content.js";
+import { collectGraphicsHintsFromContent, patternColorValueLikePdfminer } from "./pdf/content.js";
 import { parsePdfObjectsCompat } from "./pdf/document.js";
 import { decodePdfName as decodePdfNamePrimitive } from "./pdf/primitives.js";
 import {
@@ -766,7 +766,7 @@ export function extractPageObjects(
     } else {
       hint = queue.shift();
     }
-    if (hint?.pattern) return { color: hint.pattern, colorSpace: "Pattern", fromHint: true };
+    if (hint?.pattern) return { color: patternColorValueLikePdfminer(hint.components, hint.pattern), colorSpace: "Pattern", fromHint: true };
     if (hint?.components.length === 1) return { color: [cleanNumber(hint.components[0])], colorSpace: hint.colorSpace, fromHint: true };
     if (hint) return { color: hint.components.map(cleanNumber), colorSpace: hint.colorSpace, fromHint: true };
     if (!preferRgbFallback && currentColorSpace === "DeviceGray" && typeof fallback === "string" && /^#([0-9a-f]{2})\1\1$/i.test(fallback)) {

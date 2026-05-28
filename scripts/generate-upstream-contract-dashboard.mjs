@@ -608,6 +608,20 @@ function classify(source, behavior, kind) {
         "The low-level native path-painting tests verify pdfminer-compatible path classification for lines, rectangles, curves, quadrilateral edge cases, Bezier endpoints/raw paths, dash style, missing initial move handling, and upstream fixture line widths."
       );
     }
+    if (
+      lowerSourceFile.includes("pdfminer-six/tests/test_converter.py") &&
+      (
+        lowerBehavior.includes("testcolorspace.test do rg") ||
+        lowerBehavior.includes("test that pattern color spaces are properly handled") ||
+        lowerBehavior.includes("test scn/scn operators with all pattern combinations")
+      )
+    ) {
+      return passedNativeCompatGate(
+        subsystem,
+        "test/lowlevel/color-compat.test.ts",
+        "The low-level native color tests verify pdfminer-compatible character color-space arity for rg/g output, Pattern color preservation on upstream vectors, and SCN/scn colored and uncolored pattern operand handling."
+      );
+    }
     if (lowerSourceFile.includes("pdfminer-six/tests/test_converter.py") && lowerBehavior.includes("testbinarydetector.")) {
       return {
         scope: "excluded",

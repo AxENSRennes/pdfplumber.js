@@ -1,5 +1,5 @@
 import type { ColorOp, Matrix, Point } from "../types.js";
-import { colorSpaceName } from "../utils.js";
+import { cleanNumber, colorSpaceName } from "../utils.js";
 import { asName, isName } from "./primitives.js";
 import type { PdfOperation, PdfPrimitive } from "./primitives.js";
 import { parseOperatorStream } from "./parser.js";
@@ -16,6 +16,12 @@ export interface GraphicsHints {
 
 export function extractContentOps(content: string): PdfOperation[] {
   return parseOperatorStream(content);
+}
+
+export function patternColorValueLikePdfminer(components: number[], pattern: string): unknown {
+  if (components.length === 0) return pattern;
+  const base = components.length === 1 ? cleanNumber(components[0]) : components.map(cleanNumber);
+  return [base, pattern];
 }
 
 function numericArgs(args: PdfPrimitive[]): number[] {
@@ -78,7 +84,7 @@ export function collectGraphicsHints(operations: PdfOperation[], colorSpaces: Re
     else if (op === "rg" || op === "RG") colorSpace = "DeviceRGB";
     else if (op === "k" || op === "K") colorSpace = "DeviceCMYK";
     if (["g", "G", "rg", "RG", "k", "K", "sc", "SC", "scn", "SCN"].includes(op)) {
-      const pattern = op.endsWith("cn") ? lastName(operation.args) : undefined;
+      const pattern = op === "scn" || op === "SCN" ? lastName(operation.args) : undefined;
       colorOps.push({ target: isStroke ? "stroke" : "fill", components: nums, colorSpace, pattern });
       if (isStroke) strokeColorSpace = colorSpace;
       else fillColorSpace = colorSpace;
