@@ -201,15 +201,9 @@ function wordsToEdgesV(words: PDFObject[], threshold: number): PDFObject[] {
     ...clusterObjectsSimple(words, (word) => rawObjBBox(word)[2], TEXT_VERTICAL_EDGE_CLUSTER_TOLERANCE),
     ...clusterObjectsSimple(words, center, TEXT_VERTICAL_EDGE_CLUSTER_TOLERANCE)
   ].sort((a, b) => b.length - a.length).filter((cluster) => cluster.length >= threshold);
-  const wordBBoxes = words.map(rawObjBBox);
-  const minWordTop = Math.min(...wordBBoxes.map((bbox) => bbox[1]));
-  const maxWordBottom = Math.max(...wordBBoxes.map((bbox) => bbox[3]));
-  const fullWordHeight = maxWordBottom - minWordTop;
   const condensed: BBox[] = [];
   for (const cluster of clusters) {
     const bbox = objectsToRawBBox(cluster);
-    const startsAtDocumentTop = Math.abs(bbox[1] - minWordTop) < 1e-9;
-    if (words.length > 20 && startsAtDocumentTop && bbox[3] - bbox[1] > fullWordHeight * 0.9) continue;
     if (!condensed.some((existing) => getBBoxOverlap(bbox, existing))) condensed.push(bbox);
   }
   if (!condensed.length) return [];

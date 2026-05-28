@@ -66,6 +66,31 @@ describe("low-level parsing against imported PDF fixtures", () => {
     }
   });
 
+  it("drops trailing move-only subpaths when counting curves like pdfminer", async () => {
+    const pdf = await open(path.join(repoRoot, "pdfplumber-python/tests/pdfs/issue-71-duplicate-chars-2.pdf"));
+    try {
+      expect(pdf.pages[0].curves).toHaveLength(69);
+    } finally {
+      await pdf.close();
+    }
+  });
+
+  it("keeps full-height text clusters as table column edges", async () => {
+    const pdf = await open(path.join(repoRoot, "pdfplumber-python/tests/pdfs/senate-expenditures.pdf"));
+    try {
+      const table = await pdf.pages[0]
+        .crop([70.332, 130.986, 420, 509.106])
+        .extractTable({ horizontal_strategy: "text", vertical_strategy: "text", min_words_vertical: 20, text_x_tolerance: 1 });
+      expect(table).not.toBeNull();
+      if (!table) throw new Error("Expected a text-strategy table.");
+      expect(table).toHaveLength(54);
+      expect(table[0]).toHaveLength(5);
+      expect(table.at(-1)).toEqual(["DHAW20190070", "09/09/2019", "CITIBANK - TRAVEL CBA CARD", "08/12/2019", "08/14/2019"]);
+    } finally {
+      await pdf.close();
+    }
+  });
+
   it("keeps page-box normalization stable on an imported pdfplumber fixture", () => {
     const objects = parsePdfObjects(rawPdf("pdfplumber-python/tests/pdfs/page-boxes-example.pdf"));
     const page = firstPage(objects);

@@ -407,6 +407,7 @@ export class WordExtractor {
         const prev = current[current.length - 1];
         const beforePrev = current[current.length - 2];
         if (
+          direction === "ltr" &&
           prev &&
           beforePrev &&
           Number(char.x0) <= Number(prev.x0) + 1e-6 &&

@@ -1153,6 +1153,7 @@ export function extractPageObjects(
         );
         for (const { path, transformed, pagePoints } of pathEntries) {
           const inferRectFromGeometry = rawPath === undefined;
+          if (path.trailingMove && !path.closed && !path.hasCurve && transformed.length === 1) continue;
           if (transformed.length < 2) {
             if (transformed.length === 1 && (isFill || (isStroke && vectorExtras.tag === "Artifact"))) {
               if (!path.closed && closedSinglePointKeys.has(pointKey(transformed) ?? "")) continue;
