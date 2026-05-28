@@ -150,6 +150,7 @@ const pdfplumberCompatCoveredTests = new Map(
     ["pdfplumber-python/tests/test_basics.py", "Test.test text colors", "basic-colors"],
     ["pdfplumber-python/tests/test_basics.py", "Test.test load with custom laparams", "laparams-custom-layout"],
     ["pdfplumber-python/tests/test_basics.py", "Test.test uncommon boxes", "uncommon-page-boxes"],
+    ["pdfplumber-python/tests/test_ctm.py", "Test.test pdffill demo", "char-ctm-matrix"],
     ["pdfplumber-python/tests/test_dedupe_chars.py", "Test.test extract text2", "dedupe-chars"],
     ["pdfplumber-python/tests/test_issues.py", "Test.test issue 53", "table-text-layout"],
     ["pdfplumber-python/tests/test_issues.py", "Test.test issue 140", "table-lines-strict"],

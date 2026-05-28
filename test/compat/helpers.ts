@@ -66,6 +66,24 @@ function pageObjectCounts(selectedPage: PDFPlumberPage): Record<string, number> 
   return Object.fromEntries(Object.entries(selectedPage.objects).map(([key, value]) => [key, value.length]));
 }
 
+function ctmSummary(char: Record<string, unknown>): Record<string, unknown> {
+  const matrix = char.matrix;
+  if (!Array.isArray(matrix) || matrix.length !== 6) {
+    return { matrix };
+  }
+
+  const [a, b, c, d, e, f] = matrix.map(Number);
+  return {
+    matrix,
+    translation_x: e,
+    translation_y: f,
+    skew_x: (Math.atan2(d, c) * 180) / Math.PI - 90,
+    skew_y: (Math.atan2(b, a) * 180) / Math.PI,
+    scale_x: Math.sqrt(a ** 2 + b ** 2),
+    scale_y: Math.sqrt(c ** 2 + d ** 2)
+  };
+}
+
 function roundTripComparable(value: unknown): unknown {
   return JSON.parse(JSON.stringify(value));
 }
@@ -155,6 +173,11 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
           const objectType = String(check.args?.objectType ?? "");
           const index = (check.args?.index as number | undefined) ?? 0;
           actual = selectedPage.objects[objectType]?.[index];
+          break;
+        }
+        case "page.ctmSummary": {
+          const index = (check.args?.index as number | undefined) ?? 0;
+          actual = ctmSummary(selectedPage.chars[index] as Record<string, unknown>);
           break;
         }
         case "page.extractText":

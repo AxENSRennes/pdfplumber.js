@@ -19,6 +19,7 @@ sys.path.insert(0, str(PY_REF))
 
 import pdfplumber  # noqa: E402
 from pdfplumber import utils  # noqa: E402
+from pdfplumber.ctm import CTM  # noqa: E402
 
 try:
     import pdfminer  # noqa: E402
@@ -123,6 +124,21 @@ def page_geometry(page: Any) -> Dict[str, Any]:
             "bbox": page.bbox,
             "mediabox": page.mediabox,
             "cropbox": page.cropbox,
+        }
+    )
+
+
+def ctm_summary(char: Dict[str, Any]) -> Dict[str, Any]:
+    ctm = CTM(*char["matrix"])
+    return clean(
+        {
+            "matrix": char["matrix"],
+            "translation_x": ctm.translation_x,
+            "translation_y": ctm.translation_y,
+            "skew_x": ctm.skew_x,
+            "skew_y": ctm.skew_y,
+            "scale_x": ctm.scale_x,
+            "scale_y": ctm.scale_y,
         }
     )
 
@@ -271,6 +287,17 @@ def build_scenarios() -> List[Dict[str, Any]]:
                 make_check("page.annots", [slim_obj(a) for a in pdf.pages[0].annots[:5]], page=0),
                 make_check("page.hyperlinks", [slim_obj(a) for a in pdf.pages[0].hyperlinks], page=0),
                 make_check("page.edgeCounts", {"rect_edges": len(pdf.pages[0].rect_edges), "curve_edges": len(pdf.pages[0].curve_edges), "edges": len(pdf.pages[0].edges)}, page=0),
+            ],
+        )
+    )
+
+    scenarios.append(
+        scenario(
+            "char-ctm-matrix",
+            "pdffill-demo.pdf",
+            lambda pdf: [
+                make_check("page.ctmSummary", ctm_summary(pdf.pages[3].chars[97]), page=3, args={"index": 97}),
+                make_check("page.ctmSummary", ctm_summary(pdf.pages[3].chars[105]), page=3, args={"index": 105}),
             ],
         )
     )

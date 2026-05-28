@@ -1,6 +1,6 @@
 {
   "reference": {
-    "generatedAt": "2026-05-28T00:53:01.280976+00:00",
+    "generatedAt": "2026-05-28T00:56:36.788200+00:00",
     "pdfminerVersion": "20260107",
     "pdfplumberCommit": "98041536932ce85d18a1fba80d9db0686b831d9d",
     "pdfplumberVersion": "0.11.9"
@@ -1659,6 +1659,58 @@
         }
       ],
       "id": "annotations-and-hyperlinks",
+      "pdf": "pdffill-demo.pdf"
+    },
+    {
+      "checks": [
+        {
+          "args": {
+            "index": 97
+          },
+          "expected": {
+            "matrix": [
+              0.70711,
+              0.70711,
+              -0.70711,
+              0.70711,
+              125.99577,
+              519.00595
+            ],
+            "scale_x": 1.000005,
+            "scale_y": 1.000005,
+            "skew_x": 45.0,
+            "skew_y": 45.0,
+            "translation_x": 125.99577,
+            "translation_y": 519.00595
+          },
+          "page": 3,
+          "type": "page.ctmSummary"
+        },
+        {
+          "args": {
+            "index": 105
+          },
+          "expected": {
+            "matrix": [
+              0.70711,
+              -0.70711,
+              0.70711,
+              0.70711,
+              372.003962,
+              561.754122
+            ],
+            "scale_x": 1.000005,
+            "scale_y": 1.000005,
+            "skew_x": -45.0,
+            "skew_y": -45.0,
+            "translation_x": 372.003962,
+            "translation_y": 561.754122
+          },
+          "page": 3,
+          "type": "page.ctmSummary"
+        }
+      ],
+      "id": "char-ctm-matrix",
       "pdf": "pdffill-demo.pdf"
     },
     {
