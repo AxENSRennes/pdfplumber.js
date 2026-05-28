@@ -132,6 +132,30 @@ describe("public open() robustness", () => {
     }
   });
 
+  it("opens selected PDF.js load manifest corpus PDFs with stable public outcomes", async () => {
+    const cases = [
+      "pdfjs/test/pdfs/issue4461.pdf",
+      "pdfjs/test/pdfs/issue6069.pdf",
+      "pdfjs/test/pdfs/issue1293r.pdf",
+      "pdfjs/test/pdfs/issue17554.pdf",
+      "pdfjs/test/pdfs/issue6108.pdf",
+      "pdfjs/test/pdfs/issue7446.pdf",
+      "pdfjs/test/pdfs/issue5599.pdf",
+      "pdfjs/test/pdfs/issue18986.pdf",
+      "pdfjs/test/pdfs/issue6151.pdf",
+      "pdfjs/test/pdfs/bug1020858.pdf",
+      "pdfjs/test/pdfs/issue7665.pdf",
+      "pdfjs/test/pdfs/pdfjsbad1586.pdf",
+      "pdfjs/test/pdfs/issue1985.pdf",
+      "pdfjs/test/pdfs/openoffice.pdf",
+      "pdfjs/test/pdfs/arial_unicode_ab_cidfont.pdf"
+    ];
+
+    for (const relativePath of cases) {
+      expectStableOpenOutcome(await captureOpen(fixture(relativePath)));
+    }
+  });
+
   it("opens OSS-Fuzz corpus PDFs or raises the documented stable error", async () => {
     const cases = [
       "5452007745323008.pdf",

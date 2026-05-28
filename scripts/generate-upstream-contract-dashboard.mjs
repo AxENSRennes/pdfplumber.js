@@ -27,6 +27,24 @@ const columns = [
   "rationale"
 ];
 
+const passedPdfjsManifestLoadRobustnessIds = new Set([
+  "bug1020858",
+  "issue1293",
+  "issue1586",
+  "issue17554",
+  "issue18986",
+  "issue1985",
+  "issue4461-load",
+  "issue5599",
+  "issue6069",
+  "issue6108",
+  "issue6151",
+  "issue7446",
+  "issue7665",
+  "openoffice-pdf",
+  "openofficearabiccidtruetype-pdf"
+]);
+
 function slash(value) {
   return value.split(path.sep).join("/");
 }
@@ -811,6 +829,10 @@ function classify(source, behavior, kind) {
   }
 
   if (lowerSourceFile.startsWith("pdfjs/test/test_manifest.json")) {
+    const manifestId = source.includes("#") ? source.slice(source.indexOf("#") + 1) : "";
+    if (passedPdfjsManifestLoadRobustnessIds.has(manifestId)) {
+      return passedRobustnessGate(subsystem);
+    }
     if (/\b(eq|fbf|print|annotation-layer|text-layer)\b/.test(lowerBehavior)) {
       return {
         scope: "excluded",
