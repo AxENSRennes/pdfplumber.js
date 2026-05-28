@@ -477,6 +477,16 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
     };
   }
 
+  if (sourceFile.endsWith("unicode_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "text",
+      status: "excluded",
+      js: "PDF.js Unicode helper tables are not exposed by pdfplumber.js; public glyph and ToUnicode extraction behavior is covered by pdfminer-backed native tests.",
+      rationale: "These rows exercise raw PDF.js helpers for private-use remapping, whitespace/diacritic category flags, glyph-list lookup, and PDF.js Unicode-range table IDs. pdfplumber.js exposes decoded chars/text rather than PDF.js unicode.js helper functions; pdfminer-compatible glyph-name recovery is covered by test/lowlevel/strings-glyphs-compat.test.ts and high-plane ToUnicode extraction is covered by test/lowlevel/to-unicode-compat.test.ts. PDF.js glyph-list semantics intentionally are not treated as the oracle where they differ from pdfminer."
+    };
+  }
+
   if (sourceFile.endsWith("ui_utils_spec.js")) {
     return {
       scope: "excluded",
