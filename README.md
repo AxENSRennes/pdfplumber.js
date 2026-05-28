@@ -62,21 +62,26 @@ Supported options:
 
 Each page exposes pdfplumber-shaped geometry and objects:
 
-- Page geometry: `page_number`, `pageNumber`, `width`, `height`, `bbox`,
-  `mediabox`, `cropbox`, `artbox`, `bleedbox`, and `trimbox`.
+- Page geometry and boxes: `page_number`, `pageNumber`, `label`, `width`,
+  `height`, `bbox`, `mediabox`, `cropbox`, `artbox`, `bleedbox`, and
+  `trimbox`.
 - Object arrays: `chars`, `rects`, `lines`, `curves`, `images`, `annots`,
   `hyperlinks`, `rect_edges`, `curve_edges`, and `edges`.
+- Edge helpers: `horizontal_edges` and `vertical_edges`.
 - `objects`: object arrays grouped by `object_type`.
 
 Extraction and transformation methods:
 
 - `extractText(options)` / `extract_text(options)`
 - `extractWords(options)` / `extract_words(options)`
+- `extractTextLines(options)` / `extract_text_lines(options)`
 - `search(pattern, options)`
+- `filter(testFunction)`
 - `crop(bbox, options)`
 - `withinBbox(bbox, options)` / `within_bbox(bbox, options)`
 - `outsideBbox(bbox, options)` / `outside_bbox(bbox, options)`
 - `dedupeChars(options)` / `dedupe_chars(options)`
+- `findTable(options)` / `find_table(options)`
 - `findTables(options)` / `find_tables(options)`
 - `extractTable(options)` / `extract_table(options)`
 - `extractTables(options)` / `extract_tables(options)`
@@ -84,6 +89,12 @@ Extraction and transformation methods:
 Object dictionaries include pdfplumber-style fields where available, including
 coordinates, colors, vector state, marked-content `mcid`/`tag`, annotation
 fields, and image metadata such as `name`, `srcsize`, `colorspace`, and `bits`.
+
+Table detection accepts pdfplumber-style table settings, including `lines`,
+`lines_strict`, `text`, and `explicit` `vertical_strategy` /
+`horizontal_strategy` values, explicit edge inputs, snap/join/intersection
+tolerances, minimum word thresholds, and `text_*` options forwarded to cell text
+extraction.
 
 ## Compatibility Gates
 
