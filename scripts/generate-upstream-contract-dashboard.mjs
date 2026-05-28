@@ -437,6 +437,16 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
     };
   }
 
+  if (sourceFile.endsWith("cff_parser_spec.js") || sourceFile.endsWith("type1_parser_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "text",
+      status: "excluded",
+      js: "PDF.js CFF/Type1 font-program parser internals are not exposed by pdfplumber.js; public font/text extraction behavior is covered by pdfminer-backed native tests.",
+      rationale: "These rows validate raw PDF.js CFF and Type1 parser helpers for headers, indexes, dictionaries, charstrings, charsets, encodings, FDSelect data, compiler output, and Type1 token/header parsing. pdfplumber.js exposes decoded chars/text, font names, widths, and geometry rather than PDF.js font parser classes; pdfminer-compatible glyph, CMap, width, and font-resource behavior is covered by test/lowlevel/strings-glyphs-compat.test.ts, test/lowlevel/cmap-font-compat.test.ts, test/lowlevel/fonts.test.ts, and the public compat/parity suites."
+    };
+  }
+
   if (sourceFile.endsWith("stream_spec.js") && lowerBehavior === "should decode simple predictor data") {
     return {
       scope: "native-engine",
@@ -1438,11 +1448,11 @@ function classify(source, behavior, kind) {
       };
     }
     return {
-      scope: "pdfjs-capability",
+      scope: "excluded",
       subsystem: "text",
-      status: "needs-adapted-js-test",
-      js: "Adapt only if the pdf.js font capability remains a named fallback or differential capability.",
-      rationale: "Font parser behavior is a pdf.js capability contract only where pdfplumber.js depends on it."
+      status: "excluded",
+      js: "PDF.js font-test TTX/OpenType sanitizer outputs are not exposed by pdfplumber.js; public font/text extraction is covered by pdfminer-backed tests.",
+      rationale: "These rows validate PDF.js test-harness font conversion and OpenType table repair details such as fpgm, OS/2, and post table normalization. pdfplumber.js does not expose generated font binaries or TTX output; the stable API exposes extracted text/chars/font names/geometry, covered by native glyph/font/CMap tests and public Python goldens."
     };
   }
 
