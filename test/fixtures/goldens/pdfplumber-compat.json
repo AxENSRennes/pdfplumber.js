@@ -1,6 +1,6 @@
 {
   "reference": {
-    "generatedAt": "2026-05-02T17:06:20.416865+00:00",
+    "generatedAt": "2026-05-28T00:43:40.240595+00:00",
     "pdfminerVersion": "20260107",
     "pdfplumberCommit": "98041536932ce85d18a1fba80d9db0686b831d9d",
     "pdfplumberVersion": "0.11.9"
@@ -1030,6 +1030,77 @@
         }
       ],
       "id": "open-basic-objects-text-and-edges",
+      "pdf": "nics-background-checks-2015-11.pdf"
+    },
+    {
+      "checks": [
+        {
+          "args": {
+            "index": 0,
+            "objectType": "rect"
+          },
+          "expected": {
+            "bottom": 61.7,
+            "doctop": 23.996,
+            "height": 37.704,
+            "mcid": null,
+            "non_stroking_color": [
+              0.8,
+              1.0,
+              1.0
+            ],
+            "object_type": "rect",
+            "page_number": 1,
+            "stroking_color": 0,
+            "tag": null,
+            "top": 23.996,
+            "width": 942.24,
+            "x0": 33.12,
+            "x1": 975.36,
+            "y0": 550.3,
+            "y1": 588.004
+          },
+          "page": 0,
+          "type": "page.object"
+        },
+        {
+          "args": {
+            "index": 3358,
+            "objectType": "char"
+          },
+          "expected": {
+            "adv": 0.722,
+            "bottom": 60.08544,
+            "doctop": 44.96544,
+            "fontname": "WEVZII+ArialMT",
+            "height": 15.12,
+            "mcid": null,
+            "non_stroking_color": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "object_type": "char",
+            "page_number": 1,
+            "size": 15.12,
+            "stroking_color": [
+              0
+            ],
+            "tag": null,
+            "text": "N",
+            "top": 44.96544,
+            "upright": true,
+            "width": 10.91664,
+            "x0": 465.94,
+            "x1": 476.85664,
+            "y0": 551.91456,
+            "y1": 567.03456
+          },
+          "page": 0,
+          "type": "page.object"
+        }
+      ],
+      "id": "basic-colors",
       "pdf": "nics-background-checks-2015-11.pdf"
     },
     {

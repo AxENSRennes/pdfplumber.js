@@ -141,6 +141,8 @@ const pdfplumberCompatCoveredTests = new Map(
     ["pdfplumber-python/tests/test_basics.py", "Test.test rotation", "rotation-page-boxes"],
     ["pdfplumber-python/tests/test_basics.py", "Test.test password", "password-open"],
     ["pdfplumber-python/tests/test_basics.py", "Test.test unicode normalization", "unicode-normalization"],
+    ["pdfplumber-python/tests/test_basics.py", "Test.test colors", "basic-colors"],
+    ["pdfplumber-python/tests/test_basics.py", "Test.test text colors", "basic-colors"],
     ["pdfplumber-python/tests/test_basics.py", "Test.test load with custom laparams", "laparams-custom-layout"],
     ["pdfplumber-python/tests/test_basics.py", "Test.test uncommon boxes", "uncommon-page-boxes"],
     ["pdfplumber-python/tests/test_dedupe_chars.py", "Test.test extract text2", "dedupe-chars"],

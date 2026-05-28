@@ -185,6 +185,17 @@ def build_scenarios() -> List[Dict[str, Any]]:
 
     scenarios.append(
         scenario(
+            "basic-colors",
+            "nics-background-checks-2015-11.pdf",
+            lambda pdf: [
+                make_check("page.object", slim_obj(pdf.pages[0].rects[0]), page=0, args={"objectType": "rect", "index": 0}),
+                make_check("page.object", slim_obj(pdf.pages[0].chars[3358]), page=0, args={"objectType": "char", "index": 3358}),
+            ],
+        )
+    )
+
+    scenarios.append(
+        scenario(
             "rotation-page-boxes",
             "nics-background-checks-2015-11-rotated.pdf",
             lambda pdf: [

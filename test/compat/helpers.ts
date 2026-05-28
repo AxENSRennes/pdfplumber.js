@@ -137,6 +137,12 @@ export async function runScenario(scenario: GoldenScenario): Promise<void> {
         case "page.chars.sample":
           actual = selectedPage.chars.slice(0, (check.args?.count as number | undefined) ?? 5);
           break;
+        case "page.object": {
+          const objectType = String(check.args?.objectType ?? "");
+          const index = (check.args?.index as number | undefined) ?? 0;
+          actual = selectedPage.objects[objectType]?.[index];
+          break;
+        }
         case "page.extractText":
           actual = await valueOf(selectedPage.extractText(check.args ?? {}));
           break;
