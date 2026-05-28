@@ -150,6 +150,16 @@ function passedPublicInputGate(subsystem) {
   };
 }
 
+function passedPublicPageGate() {
+  return {
+    scope: "public-api",
+    subsystem: "parser",
+    status: "passed",
+    js: "test/smoke/api-shape.test.ts; test/browser/pdfplumber.browser.spec.ts",
+    rationale: "The public API smoke test verifies document.pages length, first-page access, page_number, and page boxes in Node; the browser ESM gate verifies the same public page summary in Chromium, Firefox, and WebKit."
+  };
+}
+
 function passedPdfplumberCompatGate(subsystem, scenario) {
   return {
     scope: "public-api",
@@ -367,6 +377,16 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
     };
   }
 
+  if (sourceFile.endsWith("pdf_find_utils_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "viewer-ui",
+      status: "excluded",
+      js: "PDF.js viewer find utility behavior is not exposed by pdfplumber.js.",
+      rationale: "pdfplumber.js implements search over extracted chars/text maps rather than exposing PDF.js viewer character-classification helpers."
+    };
+  }
+
   if (sourceFile.endsWith("ui_utils_spec.js")) {
     return {
       scope: "excluded",
@@ -374,6 +394,16 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
       status: "excluded",
       js: "PDF.js viewer UI utility helpers are not exposed by pdfplumber.js.",
       rationale: "These rows cover viewer orientation, query parsing, scrolling, visibility, and display-angle helpers; the extraction API exposes page boxes and text objects through separate public tests."
+    };
+  }
+
+  if (sourceFile.endsWith("annotation_storage_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "annotations",
+      status: "excluded",
+      js: "PDF.js annotation storage mutation state is not exposed by pdfplumber.js.",
+      rationale: "pdfplumber.js extracts existing annotation objects and hyperlinks; it does not expose viewer/editor annotation storage, dirty-state callbacks, or form-value mutation APIs."
     };
   }
 
@@ -397,6 +427,56 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
     };
   }
 
+  if (sourceFile.endsWith("struct_tree_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "marked-content",
+      status: "excluded",
+      js: "PDF.js full structure-tree traversal is not exposed by pdfplumber.js.",
+      rationale: "pdfplumber.js exposes marked-content mcid/tag fields on extracted objects; full accessibility structure trees, table/list role collection, and associated-file MathML traversal are outside the documented public API."
+    };
+  }
+
+  if (sourceFile.endsWith("pdf_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "general",
+      status: "excluded",
+      js: "PDF.js package/API self-checks are not exposed by pdfplumber.js.",
+      rationale: "These rows verify PDF.js build exports and library constants rather than pdfplumber.js public extraction behavior."
+    };
+  }
+
+  if (sourceFile.endsWith("pdf.image_decoders_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "images",
+      status: "excluded",
+      js: "PDF.js image-decoder package/API self-checks are not exposed by pdfplumber.js.",
+      rationale: "pdfplumber.js exposes image placement and metadata, not the standalone PDF.js image decoder API or its library constants."
+    };
+  }
+
+  if (sourceFile.endsWith("custom_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "runtime",
+      status: "excluded",
+      js: "PDF.js DOM font-loading customization hooks are not exposed by pdfplumber.js.",
+      rationale: "The browser package is verified through public extraction behavior; callers do not configure PDF.js font loading documents or CSS-rule injection through the pdfplumber.js API."
+    };
+  }
+
+  if (sourceFile.endsWith("xml_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "metadata",
+      status: "excluded",
+      js: "PDF.js XML parser tree utilities are not exposed by pdfplumber.js.",
+      rationale: "pdfplumber.js documents Info metadata extraction and does not expose raw XML/XMP tree parsing, searching, or dumping APIs."
+    };
+  }
+
   if (sourceFile.endsWith("event_utils_spec.js")) {
     return {
       scope: "excluded",
@@ -404,6 +484,36 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
       status: "excluded",
       js: "PDF.js EventBus and viewer event helpers are not exposed by pdfplumber.js.",
       rationale: "pdfplumber.js has no public viewer event layer; browser compatibility is verified through public open() extraction tests."
+    };
+  }
+
+  if (sourceFile.endsWith("pattern_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "viewer-ui",
+      status: "excluded",
+      js: "PDF.js shading/pattern renderer internals are not exposed by pdfplumber.js.",
+      rationale: "pdfplumber.js preserves extractable color and pattern names on objects, but it does not expose PDF.js Type 1 shading mesh sampling, packed renderer IR, or binary renderer serialization."
+    };
+  }
+
+  if (sourceFile.endsWith("name_number_tree_spec.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "metadata",
+      status: "excluded",
+      js: "PDF.js name/number tree helper internals are not exposed by pdfplumber.js.",
+      rationale: "pdfplumber.js does not expose raw PDF.js NameTree/NumberTree APIs, destinations, or attachment/name-tree traversal as public extraction capabilities."
+    };
+  }
+
+  if (sourceFile.endsWith("test_utils.js")) {
+    return {
+      scope: "excluded",
+      subsystem: "general",
+      status: "excluded",
+      js: "PDF.js test harness utilities are not exposed by pdfplumber.js.",
+      rationale: "Upstream test helper constants and harness behavior are not runtime extraction behavior."
     };
   }
 
@@ -528,8 +638,29 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
         rationale: "pdfplumber.js exposes extraction objects and metadata, not raw PDF.js navigation/viewer/document-management methods."
       };
     }
-    if (/\b(non-existent url|invalid pdf|bad xref|bad \/pages|circular references|incomplete trailer|bad \/resources|password protected|protected with|empty typedarray)\b/.test(lowerBehavior)) {
+    if (/\b(non-existent url|invalid pdf|bad xref|bad \/pages|circular references?|incomplete trailer|bad \/resources|password protected|protected with|empty typedarray)\b/.test(lowerBehavior)) {
       return passedRobustnessGate(subsystem);
+    }
+    if (/^gets outline\b/.test(lowerBehavior)) {
+      return {
+        scope: "excluded",
+        subsystem: "metadata",
+        status: "excluded",
+        js: "PDF.js outline/bookmark convenience APIs are not exposed by pdfplumber.js.",
+        rationale: "pdfplumber.js documents Info metadata and extraction objects, not raw PDF.js outline, destination, named-action, optional-content, or structure-element bookmark APIs."
+      };
+    }
+    if (/^gets (?:number of pages|page|page number)$/.test(lowerBehavior)) {
+      return passedPublicPageGate();
+    }
+    if (/^gets (?:page index|invalid page index|page multiple time|page index,|non-existent page)/.test(lowerBehavior)) {
+      return {
+        scope: "excluded",
+        subsystem: "parser",
+        status: "excluded",
+        js: "Raw PDF.js page lookup, page-index, and cache APIs are not exposed by pdfplumber.js.",
+        rationale: "pdfplumber.js exposes loaded pages as a public pages array; it does not expose PDF.js getPageIndex, non-existent page errors, or page cache behavior."
+      };
     }
     if (/\b(gets number of pages|gets page\b|gets non-existent page|gets page multiple time|gets page index|gets invalid page index|gets metadata|gets outline|gets annotations|get text content|get operator list)\b/.test(lowerBehavior)) {
       return {
@@ -551,11 +682,11 @@ function classifyPdfjsUnit(sourceFile, behavior, subsystem) {
 
   if (sourceFile.endsWith("document_spec.js")) {
     return {
-      scope: "pdfjs-capability",
+      scope: "excluded",
       subsystem,
-      status: "needs-adapted-js-test",
-      js: "Adapt where document parsing behavior is retained by pdfplumber.js; otherwise reclassify rows as excluded or duplicate.",
-      rationale: "PDF.js document core behavior matters only when it feeds public extraction behavior."
+      status: "excluded",
+      js: "PDF.js document-core form-info and idFactory internals are not exposed by pdfplumber.js.",
+      rationale: "pdfplumber.js exposes extracted pages, objects, annotations, and metadata; it does not expose PDF.js AcroForm summary APIs, calculation-order arrays, raw field-object arrays, field-action checks, XFA form info, or object/font id factories."
     };
   }
 
