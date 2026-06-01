@@ -35,7 +35,7 @@ for path in paths:
         out[path] = images
 print(json.dumps(out, default=str))
 `;
-  return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as Record<string, ImageMetadata[]>;
+  return JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" })) as Record<string, ImageMetadata[]>;
 }
 
 function stableImageMetadata(image: Record<string, unknown>): ImageMetadata {

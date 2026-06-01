@@ -12,7 +12,7 @@ const parentHeight = 50;
 const neighborPlaneHeight = 55;
 
 function pdfminerPython(code: string): string {
-  return execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" }).trim();
+  return execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" }).trim();
 }
 
 function pdfminerWrongParentTextboxCount(): number {

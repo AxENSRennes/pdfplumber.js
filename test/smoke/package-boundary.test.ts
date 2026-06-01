@@ -151,6 +151,7 @@ describe("package boundary", () => {
     expect(packageCheck).toContain("consumer.ts");
     expect(packageCheck).toContain("type PDFPlumberDocument");
     expect(packageCheck).toContain("type PDFPlumberPage");
+    expect(packageCheck).toContain("type PDFPlumberWarning");
     expect(packageCheck).toContain("type SearchResult");
     for (const optionType of [
       "type PDFInput",
@@ -258,7 +259,7 @@ describe("package boundary", () => {
     const optionNames = [...openOptions.matchAll(/^\s*([A-Za-z_]\w*)\??:/gm)].map((match) => match[1]).sort();
 
     expect(indexSource).not.toMatch(/\b(?:pdfjs|mupdf|backend|engine|native)\b/i);
-    expect(optionNames).toEqual(["laparams", "pages", "password", "raise_unicode_errors", "unicode_norm"]);
+    expect(optionNames).toEqual(["laparams", "logLevel", "onWarning", "pages", "password", "raise_unicode_errors", "unicode_norm"]);
   });
 
   it("keeps PDF.js scoped to named tested runtime/operator roles", () => {

@@ -68,6 +68,7 @@ describe("public API documentation", () => {
     for (const typeName of [
       "PDFInput",
       "OpenOptions",
+      "PDFPlumberWarning",
       "PDFPlumberDocument",
       "PDFPlumberPage",
       "PDFObject",

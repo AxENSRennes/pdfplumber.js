@@ -11,6 +11,7 @@ export type {
   PDFObject,
   PDFPlumberDocument,
   PDFPlumberPage,
+  PDFPlumberWarning,
   SearchOptions,
   SearchResult,
   TableOptions,

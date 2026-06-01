@@ -19,7 +19,7 @@ print(json.dumps({
     "hDecode": list(cmap.decode(bytes([33, 33, 33, 34]))),
 }))
 `;
-  return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as { cmap: string; unicodeMap: string; cid1: string; hDecode: number[] };
+  return JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" })) as { cmap: string; unicodeMap: string; cid1: string; hDecode: number[] };
 }
 
 function pdfminerNamedCMapOracle(name: string): { name: string; code2cid_len: number; vertical: boolean; decode: number[] } {
@@ -35,7 +35,7 @@ print(json.dumps({
     "decode": list(cmap.decode(bytes([0, 32, 0, 33, 78, 0]))),
 }))
 `;
-  return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as { name: string; code2cid_len: number; vertical: boolean; decode: number[] };
+  return JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" })) as { name: string; code2cid_len: number; vertical: boolean; decode: number[] };
 }
 
 function pdfminerAdobeJapan1VText(bytes: number[]): string[] {
@@ -47,7 +47,7 @@ cmap = CMapDB.get_cmap("V")
 umap = CMapDB.get_unicode_map("Adobe-Japan1", vertical=True)
 print(json.dumps([umap.get_unichr(cid) for cid in cmap.decode(bytes(${JSON.stringify(bytes)}))]))
 `;
-  return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as string[];
+  return JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" })) as string[];
 }
 
 function allKeysAreNumbers(map: Map<number, unknown>): boolean {

@@ -8,7 +8,8 @@ import { open } from "../../src/index.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
-const python = path.join(repoRoot, "wsl_venv/bin/python");
+const python = "uv";
+const pythonArgs = ["run", "python"] as const;
 
 interface PdfjsTextManifestCase {
   id: string;
@@ -162,7 +163,7 @@ for case in cases:
 
 print(json.dumps(out, ensure_ascii=False))
 `;
-  return JSON.parse(execFileSync(python, ["-c", code], { cwd: repoRoot, input: JSON.stringify(cases), encoding: "utf8" })) as Record<string, TextSummary>;
+  return JSON.parse(execFileSync(python, [...pythonArgs, "-c", code], { cwd: repoRoot, input: JSON.stringify(cases), encoding: "utf8" })) as Record<string, TextSummary>;
 }
 
 async function jsTextSummary(pdfCase: PdfjsTextManifestCase): Promise<TextSummary> {

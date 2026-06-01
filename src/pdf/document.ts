@@ -19,6 +19,12 @@ export interface PdfPageModel {
   getDecodedContent(): string;
 }
 
+export interface PdfPageTreeEntry {
+  objectNumber: number;
+  dict: PdfDict | undefined;
+  inherited: PdfDict;
+}
+
 export class PdfObjectStore {
   private parsedObjects = new Map<number, PdfIndirectObject | null>();
 
@@ -154,6 +160,44 @@ export function parsePageLabelsLikePdfminer(store: PdfObjectStore, pageCount: nu
     }
   }
   return Array.from({ length: pageCount }, (_unused, index) => out[index] ?? "");
+}
+
+const PAGE_INHERITABLE_KEYS = ["MediaBox", "CropBox", "Rotate", "ArtBox", "BleedBox", "TrimBox"] as const;
+
+function mergePageInheritance(parent: PdfDict, dict: PdfDict | undefined): PdfDict {
+  const inherited = new Map(parent);
+  if (!dict) return inherited;
+  for (const key of PAGE_INHERITABLE_KEYS) {
+    const value = dict.get(key);
+    if (value !== undefined) inherited.set(key, value);
+  }
+  return inherited;
+}
+
+export function collectPageTreeEntries(store: PdfObjectStore): PdfPageTreeEntry[] {
+  const catalog = store.getCatalog();
+  const root = catalog?.get("Pages");
+  const pages: PdfPageTreeEntry[] = [];
+  const visited = new Set<number>();
+  const visit = (value: PdfPrimitive | undefined, inherited: PdfDict): void => {
+    const ref = isRef(value) ? value : undefined;
+    if (ref) {
+      if (visited.has(ref.objectNumber)) return;
+      visited.add(ref.objectNumber);
+    }
+    const object = ref ? store.getObject(ref.objectNumber) : undefined;
+    const resolved = ref ? object?.value : store.resolve(value);
+    const dict = asDict(resolved) ?? (isStream(resolved) ? resolved.dict : undefined);
+    const nextInherited = mergePageInheritance(inherited, dict);
+    const type = asName(store.resolve(dict?.get("Type")));
+    if (type === "Page" || (!dict?.has("Kids") && ref && dict?.has("Contents"))) {
+      pages.push({ objectNumber: ref?.objectNumber ?? object?.objectNumber ?? 0, dict, inherited: nextInherited });
+      return;
+    }
+    for (const kid of resolvedArray(store, dict?.get("Kids")) ?? []) visit(kid, nextInherited);
+  };
+  visit(root, new Map());
+  return pages.filter((page) => page.objectNumber > 0);
 }
 
 function findObjectEnd(raw: string, start: number): number {

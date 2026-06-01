@@ -183,10 +183,11 @@ function runInstalledTypeSmoke(repoRoot, packageJson, files) {
     fs.writeFileSync(
       path.join(tempRoot, "consumer.ts"),
       [
-        'import { Table, open, type BBox, type CropOptions, type DedupeOptions, type ExplicitTableLine, type ExtractTextOptions, type OpenOptions, type PDFInput, type PDFObject, type PDFPlumberDocument, type PDFPlumberPage, type SearchOptions, type SearchResult, type TableAxisGroup, type TableOptions, type TableStrategy, type TextLineOptions, type WordOptions } from "pdfplumber-js";',
+        'import { Table, open, type BBox, type CropOptions, type DedupeOptions, type ExplicitTableLine, type ExtractTextOptions, type OpenOptions, type PDFInput, type PDFObject, type PDFPlumberDocument, type PDFPlumberPage, type PDFPlumberWarning, type SearchOptions, type SearchResult, type TableAxisGroup, type TableOptions, type TableStrategy, type TextLineOptions, type WordOptions } from "pdfplumber-js";',
         "const inputs: PDFInput[] = [new ArrayBuffer(0), new Uint8Array(), new Blob(), new URL('https://example.test/file.pdf')];",
         "const bbox: BBox = [0, 0, 1, 1];",
-        "const openOptions: OpenOptions = { pages: [1], unicode_norm: 'NFC' };",
+        "const warnings: PDFPlumberWarning[] = [];",
+        "const openOptions: OpenOptions = { pages: [1], unicode_norm: 'NFC', logLevel: 'silent', onWarning: (warning) => warnings.push(warning) };",
         "const textOptions: ExtractTextOptions = { layout: true, x_tolerance: 2, y_tolerance: 2, line_dir_render: 'ttb', char_dir_render: 'ltr', dedupe_chars: true };",
         "const wordOptions: WordOptions = { return_chars: true, split_at_punctuation: true, extra_attrs: ['fontname', 'size'] };",
         "const searchOptions: SearchOptions = { regex: true, return_chars: true, return_groups: false };",

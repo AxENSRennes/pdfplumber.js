@@ -34,7 +34,7 @@ print(json.dumps({
     "annotationPagesWithAnnots": sum(1 for page in annotation_pages if page.annots is not None),
 }))
 `;
-  return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as PdfDocumentOracle;
+  return JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" })) as PdfDocumentOracle;
 }
 
 describe("low-level pdfminer PDFDocument compatibility", () => {

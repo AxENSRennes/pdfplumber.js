@@ -12,6 +12,14 @@ export interface OpenOptions {
   laparams?: Record<string, unknown>;
   unicode_norm?: "NFC" | "NFKC" | "NFD" | "NFKD";
   raise_unicode_errors?: boolean;
+  logLevel?: "silent" | "warning" | "debug";
+  onWarning?: (warning: PDFPlumberWarning) => void;
+}
+
+export interface PDFPlumberWarning {
+  source: "pdfjs" | "native";
+  message: string;
+  page?: number;
 }
 
 export interface PDFObject {

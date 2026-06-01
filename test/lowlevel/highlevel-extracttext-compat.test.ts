@@ -31,7 +31,7 @@ else:
     text = extract_text(path, laparams=laparams)
 print(json.dumps(text))
 `;
-  return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as string;
+  return JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" })) as string;
 }
 
 async function jsExtractTextLikePdfminer(path: string, laparams: Record<string, unknown> = {}): Promise<string> {

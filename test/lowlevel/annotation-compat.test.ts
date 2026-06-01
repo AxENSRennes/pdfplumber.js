@@ -82,7 +82,7 @@ for path in paths:
         out[path] = annots
 print(json.dumps(out))
 `;
-  return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as Record<string, Record<string, unknown>[]>;
+  return JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" })) as Record<string, Record<string, unknown>[]>;
 }
 
 describe("low-level pdfplumber annotation compatibility", () => {

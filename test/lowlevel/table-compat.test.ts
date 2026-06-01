@@ -27,7 +27,7 @@ with pdfplumber.open(${JSON.stringify(path)}) as pdf:
         "first_column": {"bbox": table.columns[0].bbox, "cells": table.columns[0].cells},
     }, default=str))
 `;
-  return clean(JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" }))) as Record<string, unknown>;
+  return clean(JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" }))) as Record<string, unknown>;
 }
 
 describe("low-level pdfplumber table compatibility", () => {

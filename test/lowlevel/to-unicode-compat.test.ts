@@ -107,7 +107,7 @@ import pdfplumber
 with pdfplumber.open(${JSON.stringify(path)}) as pdf:
     print(json.dumps(pdf.pages[0].extract_text()))
 `;
-    return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as string;
+    return JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" })) as string;
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

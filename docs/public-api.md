@@ -32,14 +32,28 @@ Supported `open()` options:
 - `unicode_norm`: one of `NFC`, `NFKC`, `NFD`, or `NFKD`.
 - `raise_unicode_errors`: reserved for Python-compatible unicode error
   handling.
+- `logLevel`: warning output policy, one of `silent`, `warning`, or `debug`;
+  the default is `silent`.
+- `onWarning`: callback receiving `{ source, message, page? }` diagnostic
+  warnings without changing extraction results.
+
+When `pages` is provided, pdfplumber.js loads and extracts only those
+one-based pages. It may read lightweight page-tree metadata for earlier pages
+to compute pdfplumber-compatible `doctop` offsets, but it should not extract
+text, operators, annotations, images, or tables for unselected pages.
+
+PDF.js warnings are suppressed by default so library consumers get a quiet
+public API. Use `logLevel: "warning"` to forward significant warnings to
+`console.warn`, `logLevel: "debug"` for lower-level diagnostics, or `onWarning`
+to collect warnings programmatically.
 
 Backend names such as PDF.js, MuPDF, native, or engine are intentionally not
 public options. The stable contract is extraction behavior, not implementation
 selection.
 
 The package also exports TypeScript types for the documented surface:
-`PDFInput`, `OpenOptions`, `PDFPlumberDocument`, `PDFPlumberPage`, `PDFObject`,
-`SearchResult`, `ExtractTextOptions`, `WordOptions`, `SearchOptions`,
+`PDFInput`, `OpenOptions`, `PDFPlumberWarning`, `PDFPlumberDocument`,
+`PDFPlumberPage`, `PDFObject`, `SearchResult`, `ExtractTextOptions`, `WordOptions`, `SearchOptions`,
 `TextLineOptions`, `CropOptions`, `DedupeOptions`, `TableOptions`,
 `TableStrategy`, `ExplicitTableLine`, `Table`, and `TableAxisGroup`.
 

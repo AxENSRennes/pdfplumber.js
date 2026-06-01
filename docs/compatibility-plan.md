@@ -13,7 +13,7 @@ Regular `npm test` only checks the API scaffold. Run the parity suite explicitly
 
 ```bash
 npm run python:setup
-wsl_venv/bin/python scripts/generate-goldens.py
+npm run fixtures:generate
 npm run test:compat
 ```
 

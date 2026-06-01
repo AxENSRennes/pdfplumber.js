@@ -12,7 +12,7 @@ The low-level suite protects the PDF parsing primitives that sit below the publi
    Generate them with `npm run fixtures:generate:micro`; sources live in `scripts/generate-micro-pdfs.py`.
 
 3. Python pdfplumber parity.
-   Use `wsl_venv` and the parity goldens to validate the public behavior expected from pdfminer/pdfplumber.
+   Use `npm run python:setup` and the parity goldens to validate the public behavior expected from pdfminer/pdfplumber.
    The generated micro-PDFs are checked directly against Python pdfplumber in `test/lowlevel/micro-pdfs.test.ts`.
 
 4. Diagnostic engine comparisons.

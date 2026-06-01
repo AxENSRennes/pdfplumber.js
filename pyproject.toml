@@ -1,0 +1,18 @@
+[project]
+name = "pdfplumber-js-python-oracle"
+version = "0.0.0"
+description = "Python oracle dependencies for pdfplumber.js parity tests."
+requires-python = ">=3.10"
+dependencies = [
+    "cffi==2.0.0",
+    "charset-normalizer==3.4.7",
+    "cryptography==48.0.0",
+    "pdfminer-six==20260107",
+    "pdfplumber",
+    "pillow==12.2.0",
+    "pycparser==3.0",
+    "pypdfium2==5.8.0",
+]
+
+[tool.uv.sources]
+pdfplumber = { path = "pdfplumber-python", editable = true }

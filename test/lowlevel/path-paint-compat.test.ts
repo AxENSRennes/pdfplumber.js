@@ -38,7 +38,7 @@ print(json.dumps({
     "dashing_style": [getattr(item, "dashing_style", None) for item in items],
 }))
 `;
-  return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as PaintPathOracle;
+  return JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" })) as PaintPathOracle;
 }
 
 function pdfminerFixtureOracle(path: string): { lines: number; linewidths: number[] } {
@@ -54,7 +54,7 @@ print(json.dumps({
     "linewidths": sorted([line.linewidth for line in lines]),
 }))
 `;
-  return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as { lines: number; linewidths: number[] };
+  return JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" })) as { lines: number; linewidths: number[] };
 }
 
 function latin1Bytes(value: string): Uint8Array {
@@ -110,7 +110,7 @@ from pdfminer.layout import LTLine
 page = next(iter(extract_pages(${JSON.stringify(path)})))
 print(json.dumps([line.linewidth for line in page if isinstance(line, LTLine)]))
 `;
-    return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as number[];
+    return JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" })) as number[];
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -128,7 +128,7 @@ import pdfplumber
 with pdfplumber.open(${JSON.stringify(path)}) as pdf:
     print(json.dumps([line.get("dash") for line in pdf.pages[0].lines], default=str))
 `;
-    return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as unknown[];
+    return JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" })) as unknown[];
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -147,7 +147,7 @@ with pdfplumber.open(${JSON.stringify(path)}) as pdf:
         "curves": [{"pts": curve.get("pts"), "path": curve.get("path")} for curve in page.curves],
     }, default=str))
 `;
-  return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as Record<string, unknown[]>;
+  return JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" })) as Record<string, unknown[]>;
 }
 
 function types(path: PdfminerPathOp[]): string[] {

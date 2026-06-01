@@ -4,7 +4,7 @@ import { METADATA_KEYS } from "./constants.js";
 import { PdfPlumberDocumentImpl } from "./document.js";
 import { buildLayoutObjects } from "./layout.js";
 import { collectGraphicsHintsFromContent } from "./pdf/content.js";
-import { parsePageLabelsLikePdfminer, parsePdfDocument } from "./pdf/document.js";
+import { collectPageTreeEntries, parsePageLabelsLikePdfminer, parsePdfDocument } from "./pdf/document.js";
 import { namedError } from "./errors.js";
 import { asArray, isRef } from "./pdf/primitives.js";
 import {
@@ -24,7 +24,7 @@ import {
   parseInfoMetadata,
   resolvePageBoxes
 } from "./pdf.js";
-import type { Matrix, OpenOptions, PDFInput, PDFObject, PDFPlumberDocument, PDFPlumberPage } from "./types.js";
+import type { Matrix, OpenOptions, PageBoxes, PDFInput, PDFObject, PDFPlumberDocument, PDFPlumberPage } from "./types.js";
 
 interface InputBytes {
   data: Uint8Array;
@@ -54,12 +54,41 @@ function urlProtocol(input: string): string | null {
 }
 
 function bytesToLatin1(bytes: Uint8Array): string {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("latin1");
+  }
   const chunkSize = 0x8000;
   const chunks: string[] = [];
   for (let i = 0; i < bytes.length; i += chunkSize) {
     chunks.push(String.fromCharCode(...bytes.subarray(i, i + chunkSize)));
   }
   return chunks.join("");
+}
+
+function pdfjsVerbosity(options: OpenOptions): number {
+  const levels = (pdfjs as any).VerbosityLevel ?? {};
+  if (options.logLevel === "debug") return levels.INFOS ?? 5;
+  if (options.logLevel === "warning" || options.onWarning) return levels.WARNINGS ?? 1;
+  return levels.ERRORS ?? 0;
+}
+
+async function withPdfjsWarningCapture<T>(options: OpenOptions, action: () => Promise<T>): Promise<T> {
+  if (!options.onWarning && options.logLevel !== "warning" && options.logLevel !== "debug") return action();
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]): void => {
+    const message = args.map((arg) => (typeof arg === "string" ? arg : String(arg))).join(" ");
+    if (message.startsWith("Warning: ")) {
+      options.onWarning?.({ source: "pdfjs", message: message.slice("Warning: ".length) });
+      if (options.logLevel === "warning" || options.logLevel === "debug") originalWarn(...args);
+      return;
+    }
+    originalWarn(...args);
+  };
+  try {
+    return await action();
+  } finally {
+    console.warn = originalWarn;
+  }
 }
 
 function isBlobInput(input: PDFInput): input is Blob {
@@ -197,6 +226,36 @@ function annotationResolutionErrorLikePdfminer(pageModel: ReturnType<ReturnType<
 }
 
 export async function open(input: PDFInput, options: OpenOptions = {}): Promise<PDFPlumberDocument> {
+  return withPdfjsWarningCapture(options, () => openImpl(input, options));
+}
+
+function primitiveNumbers(value: unknown): number[] | null {
+  if (!Array.isArray(value)) return null;
+  const numbers = value.filter((item): item is number => typeof item === "number" && Number.isFinite(item));
+  return numbers.length === value.length && numbers.length >= 4 ? numbers : null;
+}
+
+function inheritedPageBoxRaw(entry: ReturnType<typeof collectPageTreeEntries>[number] | undefined, store: ReturnType<typeof parsePdfDocument>): string | undefined {
+  if (!entry) return undefined;
+  const parts: string[] = [];
+  for (const key of ["MediaBox", "CropBox", "ArtBox", "BleedBox", "TrimBox"] as const) {
+    const numbers = primitiveNumbers(store.resolve(entry.dict?.get(key)) ?? store.resolve(entry.inherited.get(key)));
+    if (numbers) parts.push(`/${key} [${numbers.join(" ")}]`);
+  }
+  const rotate = store.resolve(entry.dict?.get("Rotate")) ?? store.resolve(entry.inherited.get("Rotate"));
+  if (typeof rotate === "number" && Number.isFinite(rotate)) parts.push(`/Rotate ${rotate}`);
+  return parts.length ? `${entry.objectNumber} 0 obj\n<< ${parts.join(" ")} >>\nendobj` : undefined;
+}
+
+function nativePageBoxes(entry: ReturnType<typeof collectPageTreeEntries>[number] | undefined, store: ReturnType<typeof parsePdfDocument>): PageBoxes | null {
+  if (!entry) return null;
+  const media = primitiveNumbers(store.resolve(entry.dict?.get("MediaBox")) ?? store.resolve(entry.inherited.get("MediaBox")));
+  if (!media) return null;
+  const rotate = store.resolve(entry.dict?.get("Rotate")) ?? store.resolve(entry.inherited.get("Rotate"));
+  return resolvePageBoxes({ view: media.slice(0, 4), rotate: typeof rotate === "number" ? rotate : 0 }, inheritedPageBoxRaw(entry, store));
+}
+
+async function openImpl(input: PDFInput, options: OpenOptions = {}): Promise<PDFPlumberDocument> {
   ensurePdfjsWorkerConfigured();
   const source = await inputToBytes(input);
   const raw = source.raw;
@@ -216,6 +275,7 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
     disableWorker: true,
     fontExtraProperties: true,
     cMapPacked: true,
+    verbosity: pdfjsVerbosity(options),
     ...(await pdfjsAssetOptions())
   });
   const pdf = await loadingTask.promise;
@@ -239,11 +299,18 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
   const maxSelectedPage = selected.size ? Math.max(...selected) : 0;
   const pageTotal = pdf.numPages;
   const pageLabels = parsePageLabelsLikePdfminer(store, pageTotal);
+  const nativePages = selected.size < pageTotal ? collectPageTreeEntries(store) : [];
   for (let pageNumber = 1; pageNumber <= pageTotal; pageNumber += 1) {
     if (pageNumber > maxSelectedPage) break;
+    const nativeEntry = nativePages[pageNumber - 1];
+    if (!selected.has(pageNumber)) {
+      const boxes = nativePageBoxes(nativeEntry, store) ?? resolvePageBoxes(await pdf.getPage(pageNumber), inheritedPageBoxRaw(nativeEntry, store));
+      doctopOffset += boxes.height;
+      continue;
+    }
     const pdfPage = await pdf.getPage(pageNumber);
     const pageModel = store.getPageModel(pdfPage.ref?.num ? Number(pdfPage.ref.num) : undefined);
-    const pageObjectText = pageModel?.raw ?? (pdfPage.ref?.num ? rawObjects.get(Number(pdfPage.ref.num)) : undefined);
+    const pageObjectText = pageModel?.raw ?? inheritedPageBoxRaw(nativeEntry, store) ?? (pdfPage.ref?.num ? rawObjects.get(Number(pdfPage.ref.num)) : undefined);
     const pageOwner = pageModel ?? pageObjectText;
     const pageFontResourceMap = parsePageFontResourceMap(pageOwner, store);
     const pageFontObjectNumbers = new Set(parsePageFontObjectNumbers(pageOwner, store));
@@ -256,10 +323,6 @@ export async function open(input: PDFInput, options: OpenOptions = {}): Promise<
         ]
       : fontRecords;
     const boxes = resolvePageBoxes(pdfPage, pageObjectText);
-    if (!selected.has(pageNumber)) {
-      doctopOffset += boxes.height;
-      continue;
-    }
     const textContent = await pdfPage.getTextContent({ includeMarkedContent: true, disableNormalization: true });
     const operatorList = await pdfPage.getOperatorList({ annotationMode: (pdfjs as any).AnnotationMode?.DISABLE ?? 0 });
     const pageContent = extractPageContent(pageOwner, store);

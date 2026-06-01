@@ -17,7 +17,7 @@ data = bytes(${JSON.stringify(bytes)})
 result = apply_png_predictor(${options.predictor}, ${options.colors}, ${options.columns}, ${options.bitsPerComponent}, data)
 print(json.dumps(list(result)))
 `;
-  const result = execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" });
+  const result = execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" });
   return latin1(Uint8Array.from(JSON.parse(result) as number[]));
 }
 

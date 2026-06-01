@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "thresholds": {
+    "timeRegressionRatio": 0.1,
+    "memoryRegressionRatio": 0.15,
+    "minTimeToleranceMs": 25,
+    "minMemoryToleranceMb": 5
+  },
+  "cases": {
+    "small-pdfplumber-scotus-page-1": {
+      "openMs": 274,
+      "totalMs": 277.83,
+      "rssDeltaMb": 340.5,
+      "pageCount": 1,
+      "objectCount": 724,
+      "textLength": 665,
+      "wordCount": 147,
+      "imageCount": 0,
+      "annotationCount": 0,
+      "tableCellCount": 0
+    },
+    "real-report-federal-reserve-page-117": {
+      "openMs": 654.12,
+      "totalMs": 656.94,
+      "rssDeltaMb": 748.89,
+      "pageCount": 1,
+      "objectCount": 1428,
+      "textLength": 1465,
+      "wordCount": 200,
+      "imageCount": 0,
+      "annotationCount": 5,
+      "tableCellCount": 0
+    },
+    "long-federal-register-page-399": {
+      "openMs": 347.54,
+      "totalMs": 352.44,
+      "rssDeltaMb": 50.11,
+      "pageCount": 1,
+      "objectCount": 2114,
+      "textLength": 2095,
+      "wordCount": 500,
+      "imageCount": 0,
+      "annotationCount": 0,
+      "tableCellCount": 0
+    },
+    "image-heavy-micro-page-1": {
+      "openMs": 5.25,
+      "totalMs": 5.35,
+      "rssDeltaMb": 0,
+      "pageCount": 1,
+      "objectCount": 2,
+      "textLength": 0,
+      "wordCount": 0,
+      "imageCount": 2,
+      "annotationCount": 0,
+      "tableCellCount": 0
+    },
+    "large-pdfjs-reference-page-1": {
+      "openMs": 2647.51,
+      "totalMs": 2648.19,
+      "rssDeltaMb": 163,
+      "pageCount": 1,
+      "objectCount": 107,
+      "textLength": 112,
+      "wordCount": 15,
+      "imageCount": 0,
+      "annotationCount": 0,
+      "tableCellCount": 0
+    },
+    "large-pdfjs-reference-page-100": {
+      "openMs": 2667.51,
+      "totalMs": 2669.14,
+      "rssDeltaMb": 93.86,
+      "pageCount": 1,
+      "objectCount": 587,
+      "textLength": 590,
+      "wordCount": 96,
+      "imageCount": 0,
+      "annotationCount": 0,
+      "tableCellCount": 0
+    },
+    "real-cycle-table-pubtables-page-6": {
+      "openMs": 87.51,
+      "totalMs": 100.39,
+      "rssDeltaMb": 12.75,
+      "pageCount": 1,
+      "objectCount": 4419,
+      "textLength": 4702,
+      "wordCount": 275,
+      "imageCount": 0,
+      "annotationCount": 0,
+      "tableCellCount": 0
+    }
+  }
+}

@@ -10,14 +10,15 @@ import { open, type PDFObject } from "../../src/index.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
-const python = path.join(repoRoot, "wsl_venv/bin/python");
+const python = "uv";
+const pythonArgs = ["run", "python"] as const;
 
 function fixture(relativePath: string): string {
   return path.join(repoRoot, relativePath);
 }
 
 function pythonJson<T>(code: string): T {
-  return JSON.parse(execFileSync(python, ["-c", code], { cwd: repoRoot, encoding: "utf8" })) as T;
+  return JSON.parse(execFileSync(python, [...pythonArgs, "-c", code], { cwd: repoRoot, encoding: "utf8" })) as T;
 }
 
 class PdfBuilder {

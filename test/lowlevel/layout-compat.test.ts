@@ -24,7 +24,7 @@ print(json.dumps({
     "vertical": [textbox.get_text() for textbox in page if isinstance(textbox, LTTextBoxVertical)],
 }))
 `;
-  return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as LayoutOracle;
+  return JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" })) as LayoutOracle;
 }
 
 async function jsTextboxes(path: string, laparams: Record<string, unknown>, kind: TextboxKind): Promise<string[]> {

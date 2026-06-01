@@ -60,7 +60,7 @@ for path in paths:
         out[path] = summarize_page(pdf.pages[0])
 print(json.dumps(out))
 `;
-  return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as Record<string, MarkedSummary>;
+  return JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" })) as Record<string, MarkedSummary>;
 }
 
 function summarizeMarkedContent(page: Record<string, any>): MarkedSummary {

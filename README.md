@@ -49,6 +49,13 @@ Supported options:
 - `laparams`: pdfplumber-style layout object generation options.
 - `unicode_norm`: one of `NFC`, `NFKC`, `NFD`, or `NFKD`.
 - `raise_unicode_errors`: reserved for Python-compatible unicode error handling.
+- `logLevel`: `silent` by default; set `warning` or `debug` for diagnostics.
+- `onWarning`: callback for structured extraction warnings.
+
+`pages` is one-based and page-selective: unselected pages may be inspected for
+lightweight document geometry such as `doctop`, but their text, operators,
+annotations, images, and tables are not extracted. PDF.js warnings are quiet by
+default; opt into logging or collect them with `onWarning`.
 
 The ESM package exports TypeScript types for public inputs, documents, pages,
 objects, search results, text/word/search/crop/dedupe options, and table

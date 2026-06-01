@@ -29,7 +29,7 @@ for page in extract_pages(${JSON.stringify(path)}):
                     })
 print(json.dumps(out))
 `;
-  return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as DigitLineSize[];
+  return JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" })) as DigitLineSize[];
 }
 
 describe("low-level pdfminer font-size compatibility", () => {

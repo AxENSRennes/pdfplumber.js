@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "thresholds": {
+    "timeRegressionRatio": 0.1
+  },
+  "browsers": {
+    "chromium": {
+      "small-arraybuffer": { "totalMs": 355.2, "pageCount": 1, "textLength": 665, "wordCount": 147 },
+      "large-url-page-1": { "totalMs": 2947.9, "pageCount": 1, "textLength": 112, "wordCount": 15 },
+      "large-blob-page-100": { "totalMs": 3065.3, "pageCount": 1, "textLength": 590, "wordCount": 96 }
+    },
+    "firefox": {
+      "small-arraybuffer": { "totalMs": 577, "pageCount": 1, "textLength": 665, "wordCount": 147 },
+      "large-url-page-1": { "totalMs": 5334, "pageCount": 1, "textLength": 112, "wordCount": 15 },
+      "large-blob-page-100": { "totalMs": 4684, "pageCount": 1, "textLength": 590, "wordCount": 96 }
+    },
+    "webkit": {
+      "small-arraybuffer": { "totalMs": 318, "pageCount": 1, "textLength": 665, "wordCount": 147 },
+      "large-url-page-1": { "totalMs": 3433, "pageCount": 1, "textLength": 112, "wordCount": 15 },
+      "large-blob-page-100": { "totalMs": 4490, "pageCount": 1, "textLength": 590, "wordCount": 96 }
+    }
+  }
+}

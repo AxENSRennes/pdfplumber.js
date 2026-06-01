@@ -39,7 +39,7 @@ while True:
         break
 print(json.dumps({"beginPositions": positions, "keywordValues": keywords}))
 `;
-  return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as PsParserBoundaryOracle;
+  return JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" })) as PsParserBoundaryOracle;
 }
 
 function pdfminerTokenOracle(data: string): TokenOracle {
@@ -68,7 +68,7 @@ while True:
         break
 print(json.dumps(tokens))
 `;
-  return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as TokenOracle;
+  return JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" })) as TokenOracle;
 }
 
 describe("low-level pdfminer PS parser compatibility", () => {

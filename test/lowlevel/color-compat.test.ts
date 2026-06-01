@@ -26,7 +26,7 @@ interface CharColorSummary {
 }
 
 function pythonJson<T>(code: string): T {
-  return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as T;
+  return JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" })) as T;
 }
 
 function pdfminerPatternOperatorOracle(): PatternScenario[] {

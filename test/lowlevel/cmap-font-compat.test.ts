@@ -37,7 +37,7 @@ print(json.dumps({
     "vcount": len(vboxes),
 }))
 `;
-  return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as CMapFontFixtureOracle;
+  return JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" })) as CMapFontFixtureOracle;
 }
 
 describe("low-level pdfminer CMap font fixture compatibility", () => {

@@ -10,7 +10,8 @@ import { open } from "../../src/index.js";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
 const fixtureDir = path.join(repoRoot, "test/fixtures/micro-pdfs");
-const python = path.join(repoRoot, "wsl_venv/bin/python");
+const python = "uv";
+const pythonArgs = ["run", "python"] as const;
 
 const expectedFiles = [
   "annotations-extended.pdf",
@@ -72,12 +73,12 @@ for path in sorted(Path(${JSON.stringify(fixtureDir)}).glob("*.pdf")):
         }
 print(json.dumps(out))
 `;
-  return JSON.parse(execFileSync(python, ["-c", code], { cwd: repoRoot, encoding: "utf8" })) as Record<string, Snapshot>;
+  return JSON.parse(execFileSync(python, [...pythonArgs, "-c", code], { cwd: repoRoot, encoding: "utf8" })) as Record<string, Snapshot>;
 }
 
 describe("generated micro-PDF fixtures", () => {
   beforeAll(() => {
-    execFileSync(python, ["scripts/generate-micro-pdfs.py"], { cwd: repoRoot, stdio: "pipe" });
+    execFileSync(python, [...pythonArgs, "scripts/generate-micro-pdfs.py"], { cwd: repoRoot, stdio: "pipe" });
   });
 
   it("generates one small PDF per low-level feature", () => {

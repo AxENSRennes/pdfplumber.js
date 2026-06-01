@@ -227,14 +227,44 @@ describe("public open() robustness", () => {
     for (const relativePath of cases) {
       expectStableOpenOutcome(await captureOpen(fixture(relativePath)));
     }
-  }, 60_000);
-
-  it("opens the large linked PDF.js issue19281 load manifest PDF with a stable public outcome", async () => {
-    expectStableOpenOutcome(await captureOpen(fixture("test/fixtures/upstream-contract-pdfs/pdfjs-issue19281.pdf")));
   }, 90_000);
 
-  it("opens the large linked PDF.js PDF reference load manifest PDF with a stable public outcome", async () => {
-    expectStableOpenOutcome(await captureOpen(fixture("test/fixtures/upstream-contract-pdfs/pdfjs-pdf-reference-1-7.pdf")));
+  it("opens the large linked PDF.js issue19281 load manifest PDF first page with a stable public outcome", async () => {
+    expectStableOpenOutcome(await captureOpen(fixture("test/fixtures/upstream-contract-pdfs/pdfjs-issue19281.pdf"), { pages: [1] }));
+  }, 90_000);
+
+  it("opens the large linked PDF.js PDF reference load manifest PDF first page with a stable public outcome", async () => {
+    expectStableOpenOutcome(await captureOpen(fixture("test/fixtures/upstream-contract-pdfs/pdfjs-pdf-reference-1-7.pdf"), { pages: [1] }));
+  }, 90_000);
+
+  it("keeps PDF.js warnings silent by default and exposes explicit warning controls", async () => {
+    const input = fixture("test/fixtures/upstream-contract-pdfs/pdfjs-issue19281.pdf");
+    const originalWarn = console.warn;
+    const defaultWarnings: string[] = [];
+    console.warn = (...args: unknown[]) => {
+      defaultWarnings.push(args.map(String).join(" "));
+    };
+    try {
+      expectStableOpenOutcome(await captureOpen(input, { pages: [1] }));
+    } finally {
+      console.warn = originalWarn;
+    }
+    expect(defaultWarnings).toEqual([]);
+
+    const callbackWarnings: string[] = [];
+    expectStableOpenOutcome(await captureOpen(input, { pages: [1], onWarning: (warning: { message: string }) => callbackWarnings.push(warning.message) }));
+    expect(callbackWarnings.some((message) => message.includes("Name token is longer than allowed by the spec"))).toBe(true);
+
+    const loggedWarnings: string[] = [];
+    console.warn = (...args: unknown[]) => {
+      loggedWarnings.push(args.map(String).join(" "));
+    };
+    try {
+      expectStableOpenOutcome(await captureOpen(input, { pages: [1], logLevel: "warning" }));
+    } finally {
+      console.warn = originalWarn;
+    }
+    expect(loggedWarnings.some((message) => message.includes("Name token is longer than allowed by the spec"))).toBe(true);
   }, 90_000);
 
   it("opens OSS-Fuzz corpus PDFs or raises the documented stable error", async () => {

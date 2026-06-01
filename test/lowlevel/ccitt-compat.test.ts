@@ -67,7 +67,7 @@ print(json.dumps({
     "bits": parser._get_bits(),
 }))
 `;
-  return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as CcittOracle;
+  return JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" })) as CcittOracle;
 }
 
 function runJsParserCase(testCase: CcittCase): CcittOracle {
@@ -100,7 +100,7 @@ decoder = CCITTFaxDecoder(width)
 decoder.output_line(0, bits)
 print(json.dumps(list(decoder.close())))
 `;
-  return JSON.parse(execFileSync("wsl_venv/bin/python", ["-c", code], { encoding: "utf8" })) as number[];
+  return JSON.parse(execFileSync("uv", ["run", "python", "-c", code], { encoding: "utf8" })) as number[];
 }
 
 describe("low-level pdfminer CCITT compatibility", () => {
