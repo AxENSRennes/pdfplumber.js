@@ -1,0 +1,16 @@
+[package]
+name = "pdfminer"
+description = "Faithful Rust port of pdfminer.six 20260107, one module per Python module."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+pycompat.workspace = true
+indexmap.workspace = true
+rustc-hash.workspace = true
+
+[lints]
+workspace = true
