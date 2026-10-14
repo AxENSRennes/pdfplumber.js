@@ -32,6 +32,15 @@
 //! | `fillbuf()` | [`PSStackParserExt::fillbuf`] | [`PSStackParser::psbaseparser_fillbuf`] |
 //! | `do_keyword(pos, token)` | [`PSStackParserExt::do_keyword`] | nothing |
 //! | `flush()` | [`PSStackParserExt::flush`] | nothing |
+//! | (none) | [`PSStackParserExt::read_position`] | offset in `fp` |
+//!
+//! `read_position` is not a Python method: it feeds [`ProgressGuard`], a
+//! debug-assertion check that the reading loops move forward between two
+//! seeks. A subclass that reads several files in turn (`PDFContentParser`)
+//! returns `(file ordinal, offset)`; a subclass reading one `fp` keeps the
+//! default. A subclass method that loops over `fillbuf` calls
+//! [`PSStackParser::check_progress`] after each step, as
+//! `PDFContentParser::get_inline_data` does.
 //!
 //! The parser's own methods (`nexttoken`, `nextline`, `nextobject`, ...)
 //! call the hooks wherever Python calls `self.seek()`, `self.fillbuf()`,
