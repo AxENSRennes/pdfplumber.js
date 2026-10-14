@@ -1,0 +1,347 @@
+"""PDF sets for oracle traces and parity runs.
+
+Sets (``docs/verification.md``, "Ensembles de PDF"), all relative to the corpus
+root ``PDFPLUMBER_ROOT`` (default: the repository holding this package; in a
+git worktree, point it at the main checkout, which has the downloaded PDFs and
+initialized submodules):
+
+- ``micro``: ``corpus/micro``
+- ``upstream``: ``upstream/pdfplumber-python/tests/pdfs``,
+  ``upstream/pdfminer-six/samples``, ``corpus/upstream-contract``
+- ``real``: ``corpus/external``, ``corpus/external-holdout``,
+  ``corpus/parity-cycles``
+- ``pdfjs``: ``upstream/pdfjs/test/pdfs``
+- ``all``: the four sets above
+- ``quick``: every ``micro`` file, plus every other file of ``all`` whose
+  SHA-256 starts with a byte below ``QUICK_BYTE_LIMIT`` (about 7 %, ~145 files
+  today). Membership depends only on the file's own content, so adding files
+  never removes a file from the sample.
+- ``adv-<stage>``: ``<cache>/corpus/adv-<stage>`` (generated adversarial PDFs)
+
+The cache directory is ``PDFPLUMBER_CACHE`` if set, else ``<root>/.cache``.
+
+A file is any ``*.pdf`` (case-insensitive) under the set directories,
+recursively, in sorted relative-path order. Identical files are de-duplicated
+by SHA-256: the first occurrence wins, in the set order above.
+
+Passwords (``password_table``), by SHA-256 of the file, first source wins:
+
+1. ``corpus/passwords.json`` (upstream test files; each entry cites the
+   upstream test line that opens the file with that password);
+2. any ``manifest.json`` / ``*-manifest.json`` under ``corpus/`` and
+   ``<cache>/corpus/`` whose entries carry ``password`` or
+   ``openOptions.password`` (``corpus/micro/manifest.json`` is written by
+   ``oracle/generate_micro_pdfs.py``);
+3. ``upstream/pdfjs/test/test_manifest.json`` (``file`` + ``password``).
+
+The checked-in metadata (1 and 2) is read from this checkout first, then from
+the corpus root when that is another checkout (a worktree pointing at the
+main checkout sees its own new manifests). Keys are SHA-256, so a manifest
+never gives a password to a file whose content differs.
+
+``python -m oracle.corpus --set NAME`` lists a set; ``--check`` also reports
+password conflicts between sources.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+PACKAGE_DIR = Path(__file__).resolve().parent
+REPO_DIR = PACKAGE_DIR.parent
+
+
+def corpus_root() -> Path:
+    """``PDFPLUMBER_ROOT`` or the repository root."""
+    env = os.environ.get("PDFPLUMBER_ROOT")
+    return Path(env).resolve() if env else REPO_DIR
+
+
+def cache_dir() -> Path:
+    """``PDFPLUMBER_CACHE`` or ``<corpus root>/.cache``."""
+    env = os.environ.get("PDFPLUMBER_CACHE")
+    return Path(env).resolve() if env else corpus_root() / ".cache"
+
+
+BASE_SETS: dict[str, tuple[str, ...]] = {
+    "micro": ("corpus/micro",),
+    "upstream": (
+        "upstream/pdfplumber-python/tests/pdfs",
+        "upstream/pdfminer-six/samples",
+        "corpus/upstream-contract",
+    ),
+    "real": ("corpus/external", "corpus/external-holdout", "corpus/parity-cycles"),
+    "pdfjs": ("upstream/pdfjs/test/pdfs",),
+}
+SET_NAMES = (*BASE_SETS, "quick", "all")
+QUICK_BYTE_LIMIT = 18  # first SHA-256 byte < 18/256: ~7 % of the non-micro files
+
+
+@dataclass(frozen=True)
+class CorpusFile:
+    path: Path  # absolute
+    rel: str  # relative to the corpus root (posix), or the absolute path
+    sha256: str
+    size: int
+    password: str | None
+
+    @property
+    def name(self) -> str:
+        return self.rel
+
+
+# --------------------------------------------------------------------------- hashing
+
+
+class _ShaIndex:
+    """SHA-256 of files, cached by (path, size, mtime_ns) in .cache/corpus-sha256.json."""
+
+    def __init__(self) -> None:
+        self.path = cache_dir() / "corpus-sha256.json"
+        self.entries: dict[str, list] = {}
+        self.dirty = False
+        try:
+            self.entries = json.loads(self.path.read_text())
+        except (OSError, ValueError):
+            self.entries = {}
+
+    def sha256(self, path: Path) -> tuple[str, int]:
+        st = path.stat()
+        key = str(path)
+        hit = self.entries.get(key)
+        if hit and hit[0] == st.st_size and hit[1] == st.st_mtime_ns:
+            return hit[2], st.st_size
+        digest = sha256_file(path)
+        self.entries[key] = [st.st_size, st.st_mtime_ns, digest]
+        self.dirty = True
+        return digest, st.st_size
+
+    def save(self) -> None:
+        if not self.dirty:
+            return
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.path.with_name(f"{self.path.name}.{os.getpid()}.tmp")
+            tmp.write_text(json.dumps(self.entries, sort_keys=True))
+            os.replace(tmp, self.path)
+            self.dirty = False
+        except OSError:
+            pass  # read-only cache: hashing again next time is fine
+
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+# ------------------------------------------------------------------------- passwords
+
+
+def _metadata_roots(root: Path) -> list[Path]:
+    """This checkout first, then the corpus root if it is another checkout."""
+    return [REPO_DIR] if root == REPO_DIR else [REPO_DIR, root]
+
+
+def _manifest_paths(root: Path) -> list[Path]:
+    found: list[Path] = []
+    bases = [r / "corpus" / "passwords.json" for r in _metadata_roots(root)]
+    found.extend(p for p in bases if p.is_file())
+    for base in [*(r / "corpus" for r in _metadata_roots(root)), cache_dir() / "corpus"]:
+        if not base.is_dir():
+            continue
+        for dirpath, dirnames, filenames in os.walk(base):
+            dirnames.sort()
+            for fn in sorted(filenames):
+                if fn == "manifest.json" or fn.endswith("-manifest.json"):
+                    found.append(Path(dirpath) / fn)
+    return found
+
+
+def _entry_password(entry: dict) -> str | None:
+    if isinstance(entry.get("password"), str):
+        return entry["password"]
+    options = entry.get("openOptions")
+    if isinstance(options, dict) and isinstance(options.get("password"), str):
+        return options["password"]
+    return None
+
+
+def password_sources(root: Path | None = None, index: _ShaIndex | None = None) -> list[tuple[str, str, str]]:
+    """Every (sha256, password, origin) found, in priority order."""
+    root = root or corpus_root()
+    index = index or _ShaIndex()
+    out: list[tuple[str, str, str]] = []
+
+    def entry_sha(entry: dict) -> str | None:
+        sha = entry.get("sha256")
+        if isinstance(sha, str):
+            return sha
+        local = entry.get("localPath")
+        if isinstance(local, str) and (root / local).is_file():
+            return index.sha256(root / local)[0]
+        return None
+
+    for manifest in _manifest_paths(root):
+        try:
+            entries = json.loads(manifest.read_text())
+        except (OSError, ValueError):
+            continue
+        if isinstance(entries, dict):
+            entries = entries.get("entries", [])
+        for entry in entries if isinstance(entries, list) else []:
+            if not isinstance(entry, dict):
+                continue
+            password = _entry_password(entry)
+            sha = entry_sha(entry) if password is not None else None
+            if password is not None and sha:
+                out.append((sha, password, _rel(manifest, root)))
+
+    pdfjs_manifest = root / "upstream" / "pdfjs" / "test" / "test_manifest.json"
+    if pdfjs_manifest.is_file():
+        for entry in json.loads(pdfjs_manifest.read_text()):
+            password = entry.get("password") if isinstance(entry, dict) else None
+            file = entry.get("file") if isinstance(entry, dict) else None
+            if isinstance(password, str) and isinstance(file, str):
+                path = pdfjs_manifest.parent / file
+                if path.is_file():
+                    out.append((index.sha256(path)[0], password, "upstream/pdfjs/test/test_manifest.json"))
+    return out
+
+
+def password_table(root: Path | None = None, index: _ShaIndex | None = None) -> dict[str, str]:
+    table: dict[str, str] = {}
+    for sha, password, _origin in password_sources(root, index):
+        table.setdefault(sha, password)
+    return table
+
+
+# ------------------------------------------------------------------------------ sets
+
+
+def _walk_pdfs(directory: Path) -> list[Path]:
+    found: list[Path] = []
+    if not directory.is_dir():
+        return found
+    for dirpath, dirnames, filenames in os.walk(directory):
+        dirnames.sort()
+        for fn in filenames:
+            if fn.lower().endswith(".pdf"):
+                found.append(Path(dirpath) / fn)
+    return sorted(found, key=lambda p: p.relative_to(directory).as_posix())
+
+
+def _rel(path: Path, root: Path) -> str:
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _warn_if_incomplete(root: Path, d: str) -> None:
+    """Tell on stderr when PDFs a manifest lists are absent (not downloaded)."""
+    directory = root / d
+    if Path(d).is_absolute():
+        return  # adversarial corpora: generated, no manifest
+    if not directory.is_dir():
+        print(f"corpus: {directory} is missing (should PDFPLUMBER_ROOT point at the main checkout?)", file=sys.stderr)
+        return
+    manifest = directory / "manifest.json"
+    try:
+        entries = json.loads(manifest.read_text()) if manifest.is_file() else []
+    except (OSError, ValueError):
+        return
+    paths = [e.get("localPath") for e in entries if isinstance(e, dict) and isinstance(e.get("localPath"), str)]
+    missing = [p for p in paths if not (root / p).is_file()]
+    if missing:
+        print(f"corpus: {len(missing)} of the {len(paths)} PDFs listed in {_rel(manifest, root)} are missing (download them, or set PDFPLUMBER_ROOT)", file=sys.stderr)
+
+
+def _collect(dirs: list[str], root: Path, index: _ShaIndex, passwords: dict[str, str]) -> list[CorpusFile]:
+    seen: set[str] = set()
+    files: list[CorpusFile] = []
+    for d in dirs:
+        _warn_if_incomplete(root, d)
+        for path in _walk_pdfs(root / d):
+            sha, size = index.sha256(path)
+            if sha in seen:
+                continue
+            seen.add(sha)
+            files.append(CorpusFile(path, _rel(path, root), sha, size, passwords.get(sha)))
+    return files
+
+
+def load_set(name: str, root: Path | None = None) -> list[CorpusFile]:
+    """The files of a set, de-duplicated by SHA-256, in a stable order."""
+    root = root or corpus_root()
+    index = _ShaIndex()
+    passwords = password_table(root, index)
+    if name in BASE_SETS:
+        files = _collect(list(BASE_SETS[name]), root, index, passwords)
+    elif name in ("all", "quick"):
+        dirs = [d for s in BASE_SETS.values() for d in s]
+        files = _collect(dirs, root, index, passwords)
+        if name == "quick":
+            micro = {f.sha256 for f in _collect(list(BASE_SETS["micro"]), root, index, passwords)}
+            files = [f for f in files if f.sha256 in micro or int(f.sha256[:2], 16) < QUICK_BYTE_LIMIT]
+    elif name.startswith("adv-") and len(name) > 4:
+        files = _collect([str(cache_dir() / "corpus" / name)], root, index, passwords)
+    else:
+        raise KeyError(f"unknown corpus set {name!r} (known: {', '.join(SET_NAMES)}, adv-<stage>)")
+    index.save()
+    return files
+
+
+def files_from_paths(paths: list[str], root: Path | None = None) -> list[CorpusFile]:
+    """Explicit files (``--files``), with passwords looked up by SHA-256."""
+    root = root or corpus_root()
+    index = _ShaIndex()
+    passwords = password_table(root, index)
+    out: list[CorpusFile] = []
+    seen: set[str] = set()
+    for p in paths:
+        path = Path(p).resolve()
+        sha, size = index.sha256(path)
+        if sha in seen:
+            continue
+        seen.add(sha)
+        out.append(CorpusFile(path, _rel(path, root), sha, size, passwords.get(sha)))
+    index.save()
+    return out
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="python -m oracle.corpus", description=__doc__.split("\n\n")[0])
+    ap.add_argument("--set", default="all", help=f"one of {', '.join(SET_NAMES)}, adv-<stage>")
+    ap.add_argument("--check", action="store_true", help="report password conflicts between sources")
+    ap.add_argument("--summary", action="store_true", help="only print counts")
+    args = ap.parse_args(argv)
+    files = load_set(args.set)
+    if not args.summary:
+        for f in files:
+            pw = "" if f.password is None else "\tpassword=" + json.dumps(f.password)
+            print(f"{f.sha256}\t{f.size}\t{f.rel}{pw}")
+    total = sum(f.size for f in files)
+    print(f"# {args.set}: {len(files)} files, {total / 1e6:.1f} MB, root {corpus_root()}", file=sys.stderr)
+    if args.check:
+        by_sha: dict[str, list[tuple[str, str]]] = {}
+        for sha, password, origin in password_sources():
+            by_sha.setdefault(sha, []).append((password, origin))
+        conflicts = {s: v for s, v in by_sha.items() if len({p for p, _ in v}) > 1}
+        for sha, values in sorted(conflicts.items()):
+            print(f"# password conflict {sha}: {values}", file=sys.stderr)
+        print(f"# {len(by_sha)} files with a password, {len(conflicts)} conflicts", file=sys.stderr)
+        return 1 if conflicts else 0
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
