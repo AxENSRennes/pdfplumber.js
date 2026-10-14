@@ -1,0 +1,131 @@
+[
+  {
+    "id": "micro/text-operators",
+    "localPath": "corpus/micro/text-operators.pdf",
+    "source": "Generated micro-PDF",
+    "generator": "oracle/generate_micro_pdfs.py",
+    "size": 632,
+    "sha256": "1e7b224fab07f6f9917a678489aaff5b3ca54997eba2f3fa572d060bc479d1ce"
+  },
+  {
+    "id": "micro/type3-simple",
+    "localPath": "corpus/micro/type3-simple.pdf",
+    "source": "Generated micro-PDF",
+    "generator": "oracle/generate_micro_pdfs.py",
+    "size": 864,
+    "sha256": "ab5b54b54a234b82d383e4aafde53ead4a47560e57eacee58624c47e63e8042d"
+  },
+  {
+    "id": "micro/image-xobject",
+    "localPath": "corpus/micro/image-xobject.pdf",
+    "source": "Generated micro-PDF",
+    "generator": "oracle/generate_micro_pdfs.py",
+    "size": 647,
+    "sha256": "bb91edd5b8f63d7b5a341cf2a4f07c7783887fb1f4063822a24382297fd43564"
+  },
+  {
+    "id": "micro/form-xobject-matrix",
+    "localPath": "corpus/micro/form-xobject-matrix.pdf",
+    "source": "Generated micro-PDF",
+    "generator": "oracle/generate_micro_pdfs.py",
+    "size": 1179,
+    "sha256": "a52da4571f59fb2d71798fac80da088c0e133fecb3155b4625d59e502ae16d12"
+  },
+  {
+    "id": "micro/vector-objects",
+    "localPath": "corpus/micro/vector-objects.pdf",
+    "source": "Generated micro-PDF",
+    "generator": "oracle/generate_micro_pdfs.py",
+    "size": 497,
+    "sha256": "e38ebe1d57699c885a8ce0338e32b0d3f86e903027e0d33ce2d5ba32aff21472"
+  },
+  {
+    "id": "micro/annotations",
+    "localPath": "corpus/micro/annotations.pdf",
+    "source": "Generated micro-PDF",
+    "generator": "oracle/generate_micro_pdfs.py",
+    "size": 1067,
+    "sha256": "fd8254d8b2e3a9ca167c87614e93d3dec01b684646ca0ffecfc6500f9a71a61f"
+  },
+  {
+    "id": "micro/page-boxes-rotate",
+    "localPath": "corpus/micro/page-boxes-rotate.pdf",
+    "source": "Generated micro-PDF",
+    "generator": "oracle/generate_micro_pdfs.py",
+    "size": 546,
+    "sha256": "2a19fb3093e97d5705c2496005ee74913e6b9117f676e2b831c266042cc5d7f9"
+  },
+  {
+    "id": "micro/encodings-cmap",
+    "localPath": "corpus/micro/encodings-cmap.pdf",
+    "source": "Generated micro-PDF",
+    "generator": "oracle/generate_micro_pdfs.py",
+    "size": 1399,
+    "sha256": "2dd63c6f1cd91a6492efe71f2963530e5af65d9312420509347ab3fd20960507"
+  },
+  {
+    "id": "micro/vertical-rtl-text",
+    "localPath": "corpus/micro/vertical-rtl-text.pdf",
+    "source": "Generated micro-PDF",
+    "generator": "oracle/generate_micro_pdfs.py",
+    "size": 2355,
+    "sha256": "3e350da38d3ee5cb285bdc0b997b9f9c4d96c32806659dd8e5541715b06b8c75"
+  },
+  {
+    "id": "micro/inherited-resources",
+    "localPath": "corpus/micro/inherited-resources.pdf",
+    "source": "Generated micro-PDF",
+    "generator": "oracle/generate_micro_pdfs.py",
+    "size": 576,
+    "sha256": "382c3ed1877db5e83df0d75d7b3809c7e42bc746c1fb49a4eb38384114ff6a4a"
+  },
+  {
+    "id": "micro/contents-indirect-array",
+    "localPath": "corpus/micro/contents-indirect-array.pdf",
+    "source": "Generated micro-PDF",
+    "generator": "oracle/generate_micro_pdfs.py",
+    "size": 731,
+    "sha256": "dc8ddcfbd5936eb12f53f6aacf278a3ebdba508f8b09a1851336be607ca4d4cf"
+  },
+  {
+    "id": "micro/graphics-state-colors",
+    "localPath": "corpus/micro/graphics-state-colors.pdf",
+    "source": "Generated micro-PDF",
+    "generator": "oracle/generate_micro_pdfs.py",
+    "size": 809,
+    "sha256": "7ada8a763c498c6d7c6722a6c06a07ffb731585a7fdc2cb8bc190ee755f633fe"
+  },
+  {
+    "id": "micro/annotations-extended",
+    "localPath": "corpus/micro/annotations-extended.pdf",
+    "source": "Generated micro-PDF",
+    "generator": "oracle/generate_micro_pdfs.py",
+    "size": 1901,
+    "sha256": "8e703694b506f3f4468da150351a1835e8e1acae8fa6deca5789ec1865442f7c"
+  },
+  {
+    "id": "micro/images-advanced",
+    "localPath": "corpus/micro/images-advanced.pdf",
+    "source": "Generated micro-PDF",
+    "generator": "oracle/generate_micro_pdfs.py",
+    "size": 921,
+    "sha256": "9371c1d66d399700ba85c807b537d225fc1de896515a1a3672be2ef3c50e32ca"
+  },
+  {
+    "id": "micro/broken-recovery",
+    "localPath": "corpus/micro/broken-recovery.pdf",
+    "source": "Generated micro-PDF",
+    "generator": "oracle/generate_micro_pdfs.py",
+    "size": 575,
+    "sha256": "fbf5c006c4599b77fd9fd20dc9e1617d27e604563a767f0991e66043e55a8ef4"
+  },
+  {
+    "id": "micro/encrypted-password",
+    "localPath": "corpus/micro/encrypted-password.pdf",
+    "source": "Generated micro-PDF",
+    "generator": "oracle/generate_micro_pdfs.py",
+    "size": 911,
+    "sha256": "dd32512b611c83004b7f508684d73f7fe560a761590ed7d7d416ab1924de0dee",
+    "password": "user"
+  }
+]
