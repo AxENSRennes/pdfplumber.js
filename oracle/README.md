@@ -34,6 +34,7 @@ overrides the cache directory (default `$PDFPLUMBER_ROOT/.cache`).
 | `verify.py` | CLI: build the cache, run `pdftrace`, compare |
 | `unit/<module>.py` | generators of unit cases replayed by `crates/pdftrace/tests/<module>_unit.rs` (`unit/_common.py`: output and `meta.json`) |
 | `unit/__main__.py` | CLI: regenerate the unit data that is missing or stale |
+| `upstream_refs.py` | CLI: check every upstream `file:line Name` reference of `crates/` and `oracle/` against `upstream/` |
 | `generate_micro_pdfs.py` | deterministic generator of `corpus/micro` (+ its manifest) |
 | `tests/` | `python -m unittest` self-tests (canon, typed JSON, runner, verify with a fake `pdftrace`) |
 

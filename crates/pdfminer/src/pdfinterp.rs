@@ -33,7 +33,7 @@ pub struct ContentStreams {
 /// pdfminer/pdfinterp.py:256 `PDFContentParser`.
 pub type PDFContentParser = PSStackParser<ContentStreams>;
 
-// pdfminer/pdfinterp.py:330-332 (class attributes)
+// pdfminer/pdfinterp.py:327-329 PDFContentParser.KEYWORD_BI, PDFContentParser.KEYWORD_ID, PDFContentParser.KEYWORD_EI
 pub static KEYWORD_BI: LazyLock<PSKeyword> = LazyLock::new(|| KWD(b"BI"));
 pub static KEYWORD_ID: LazyLock<PSKeyword> = LazyLock::new(|| KWD(b"ID"));
 pub static KEYWORD_EI: LazyLock<PSKeyword> = LazyLock::new(|| KWD(b"EI"));
@@ -68,7 +68,7 @@ impl PSStackParser<ContentStreams> {
         Ok(false)
     }
 
-    // pdfminer/pdfinterp.py:288 PDFContentParser.get_inline_data
+    // pdfminer/pdfinterp.py:294 PDFContentParser.get_inline_data
     /// Reads the data of an inline image up to `target` followed by a
     /// whitespace (`EI`), or up to `target` (`~>`, for ASCII85 data).
     pub fn get_inline_data(&mut self, pos: usize, target: &[u8]) -> PyResult<(usize, Vec<u8>)> {
@@ -131,13 +131,13 @@ fn strip_trailing_eol(data: &[u8]) -> usize {
 }
 
 impl PSStackParserExt for ContentStreams {
-    // pdfminer/pdfinterp.py:278 PDFContentParser.seek
+    // pdfminer/pdfinterp.py:276 PDFContentParser.seek
     fn seek(p: &mut PSStackParser<Self>, pos: i64) -> PyResult<()> {
         p.fillfp()?;
         p.psstackparser_seek(pos)
     }
 
-    // pdfminer/pdfinterp.py:282 PDFContentParser.fillbuf
+    // pdfminer/pdfinterp.py:280 PDFContentParser.fillbuf
     fn fillbuf(p: &mut PSStackParser<Self>) -> PyResult<bool> {
         if p.charpos < p.buf.len() {
             return Ok(false);
@@ -165,7 +165,7 @@ impl PSStackParserExt for ContentStreams {
         (p.ext.istream, p.bufpos + p.charpos)
     }
 
-    // pdfminer/pdfinterp.py:327 PDFContentParser.flush
+    // pdfminer/pdfinterp.py:324 PDFContentParser.flush
     fn flush(p: &mut PSStackParser<Self>) -> PyResult<()> {
         // self.add_results(*self.popall()). When `results` is empty (always,
         // from nextobject), the two buffers trade places instead of moving
@@ -181,7 +181,7 @@ impl PSStackParserExt for ContentStreams {
         Ok(())
     }
 
-    // pdfminer/pdfinterp.py:334 PDFContentParser.do_keyword
+    // pdfminer/pdfinterp.py:331 PDFContentParser.do_keyword
     fn do_keyword(p: &mut PSStackParser<Self>, pos: usize, token: PSKeyword) -> PyResult<()> {
         let [keyword_bi, keyword_id, _] = p.ext.keywords;
         if token == keyword_bi {

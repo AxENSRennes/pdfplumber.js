@@ -2,8 +2,8 @@
 
 Opening a document
 ------------------
-``open_document`` does exactly what ``pdfplumber.PDF.__init__``
-(pdfplumber/pdf.py:47) does, minus the ``PdfminerException`` wrapper::
+``open_document`` does exactly what pdfplumber/pdf.py:28 ``PDF.__init__``
+does (at its line 50), minus the ``PdfminerException`` wrapper::
 
     fp = open(path, "rb")
     doc = PDFDocument(PDFParser(fp), password=password or "")

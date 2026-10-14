@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Local CI: formatting, lints, Rust tests on the unit oracle data, Wasm build
-# and the oracle self-tests. Regenerates the unit oracle data first when it is
+# Local CI: formatting, lints, upstream references, Rust tests on the unit
+# oracle data, Wasm build and the oracle self-tests. Regenerates the unit oracle data first when it is
 # missing or stale (`python -m oracle.unit`).
 #
 #   scripts/check.sh            # from any directory
@@ -38,6 +38,9 @@ cargo fmt --all --check
 
 step "clippy"
 cargo clippy --workspace --all-targets -- -D warnings
+
+step "upstream file:line references (python -m oracle.upstream_refs)"
+"$PY" -m oracle.upstream_refs
 
 step "unit oracle data (python -m oracle.unit)"
 capped "$PY" -m oracle.unit

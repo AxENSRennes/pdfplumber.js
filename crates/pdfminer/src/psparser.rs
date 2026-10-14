@@ -337,7 +337,8 @@ pub fn KWD(name: &[u8]) -> PSKeyword {
     })
 }
 
-// pdfminer/psparser.py:102-107
+// pdfminer/psparser.py:102-107 KEYWORD_PROC_BEGIN, KEYWORD_PROC_END, KEYWORD_ARRAY_BEGIN, KEYWORD_ARRAY_END,
+// KEYWORD_DICT_BEGIN, KEYWORD_DICT_END
 pub static KEYWORD_PROC_BEGIN: LazyLock<PSKeyword> = LazyLock::new(|| KWD(b"{"));
 pub static KEYWORD_PROC_END: LazyLock<PSKeyword> = LazyLock::new(|| KWD(b"}"));
 pub static KEYWORD_ARRAY_BEGIN: LazyLock<PSKeyword> = LazyLock::new(|| KWD(b"["));

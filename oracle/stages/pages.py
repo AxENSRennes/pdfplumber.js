@@ -7,7 +7,7 @@ inheritance of Resources/MediaBox/CropBox/Rotate, the ``visited`` guard, the
 ``PDFPage.__init__``: ``_parse_mediabox``, ``_parse_cropbox``,
 ``_parse_contents``, rotation), pdfminer/pdfdocument.py
 ``get_page_labels`` + ``PageLabels`` (pdfminer/utils.py ``NumberTree``), and
-pdfplumber/page.py:189 ``Page.__init__`` (``_normalize_box``, ``_invert_box``,
+pdfplumber/page.py:191 ``Page.__init__`` (``_normalize_box``, ``_invert_box``,
 rotation, MediaBox/CropBox/TrimBox/BleedBox/ArtBox).
 
 pdfminer's ``PDFPage`` has no TrimBox/BleedBox/ArtBox attributes: these
@@ -24,10 +24,10 @@ generator is not resumed after page ``max_pages``)::
         p = pdfplumber.page.Page(None, page, page_number=pageno, initial_doctop=doctop)
         the box attributes of ``p``; doctop += p.height
 
-as in pdfplumber/pdf.py:144 ``PDF.pages``. ``Page.__init__`` only reads
+as in pdfplumber/pdf.py:145 ``PDF.pages``. ``Page.__init__`` only reads
 ``page_obj.attrs`` (it stores ``pdf`` and never uses it there), so passing
 ``None`` for the ``PDF`` cannot change a value. It reads each box through
-pdfplumber's ``resolve_all`` (pdfplumber/utils/pdfinternals.py:65), which
+pdfplumber's resolve_all (pdfplumber/utils/pdfinternals.py:66 ``resolve_all``), which
 builds resolved copies (stopping at ``/Page`` dicts) and turns a
 ``RecursionError`` on a reference cycle into ``MalformedPDFException``: that
 error depends on the stack depth, fixed by the runner (``STAGE_ENTRY_DEPTH``).

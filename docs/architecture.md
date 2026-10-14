@@ -40,8 +40,12 @@ docs/                      stratégie, architecture, vérification, API publique
    dossier (`pdfdocument/mod.rs` + `pdfdocument/security.rs`), en le disant dans
    l'en-tête.
 2. **Mêmes noms** de types, fonctions et méthodes (en `snake_case` / `CamelCase`
-   Rust). Chaque fonction ou méthode porte en commentaire sa référence upstream :
-   `// pdfminer/pdfinterp.py:612 PDFPageInterpreter.do_Tj`.
+   Rust). Chaque fonction ou méthode porte en commentaire sa référence upstream,
+   la ligne de son `def` suivie de son nom qualifié :
+   `// pdfminer/pdfinterp.py:1282 PDFPageInterpreter.do_Tj` (une plage cite
+   tous les noms qu'elle couvre : `:327-329 C.A, C.B, C.C`).
+   `python -m oracle.upstream_refs` (lancé par `scripts/check.sh`) vérifie
+   chacune de ces références, dans `crates/` et `oracle/`.
 3. **Même algorithme, même ordre d'évaluation**, mêmes cas d'erreur. Les
    optimisations sont permises si la trace reste identique ; elles sont
    commentées et testées par mutation.

@@ -44,7 +44,9 @@ use crate::psparser::{PSKeyword, PSLiteral, LIT};
 /// Python `bytes`: immutable and shared.
 pub type PyBytes = Rc<[u8]>;
 
-// pdfminer/pdftypes.py:28-39
+// pdfminer/pdftypes.py:28-39 LITERAL_CRYPT, LITERALS_FLATE_DECODE, LITERALS_LZW_DECODE, LITERALS_ASCII85_DECODE,
+// LITERALS_ASCIIHEX_DECODE, LITERALS_RUNLENGTH_DECODE, LITERALS_CCITTFAX_DECODE, LITERALS_DCT_DECODE,
+// LITERALS_JBIG2_DECODE, LITERALS_JPX_DECODE
 pub static LITERAL_CRYPT: LazyLock<PSLiteral> = LazyLock::new(|| LIT("Crypt"));
 pub static LITERALS_FLATE_DECODE: LazyLock<[PSLiteral; 2]> = LazyLock::new(|| [LIT("FlateDecode"), LIT("Fl")]);
 pub static LITERALS_LZW_DECODE: LazyLock<[PSLiteral; 2]> = LazyLock::new(|| [LIT("LZWDecode"), LIT("LZW")]);
