@@ -4,7 +4,7 @@
 
 use std::rc::Rc;
 
-use pdfminer::psparser::{PSBaseParser, PSStackEntry, PSStackParser};
+use pdfminer::psparser::{LIT_bytes, PSBaseParser, PSStackEntry, PSStackParser, KWD, LIT};
 use pdftrace::unit::UnitData;
 use pdftrace::value::Value;
 use pycompat::io::BytesIO;
@@ -106,4 +106,20 @@ fn base_parser() {
         cases.len(),
         failures.iter().take(5).map(|f| f.chars().take(3000).collect::<String>()).collect::<Vec<_>>().join("\n")
     );
+}
+
+/// Interned symbols compare by identity, like Python's `is` on the objects
+/// of `PSLiteralTable`/`PSKeywordTable`: the same name gives the same
+/// symbol, in any thread, and a `str` name differs from a `bytes` one.
+#[test]
+fn interning_is_process_wide() {
+    let intern =
+        || (KWD(b"Tj"), LIT("F1"), LIT_bytes(b"\xff"), KWD(b"a-long-keyword"), LIT("a-long-literal-name"), KWD(b""));
+    let here = intern();
+    let there = std::thread::spawn(intern).join().expect("thread");
+    assert_eq!(here, there);
+    assert_eq!(here, intern());
+    assert_ne!(LIT("F1"), LIT_bytes(b"F1"));
+    assert_ne!(KWD(b"Tj"), KWD(b"TJ"));
+    assert_ne!(KWD(b""), KWD(b"\x00"));
 }

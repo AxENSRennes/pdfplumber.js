@@ -377,13 +377,13 @@ pub fn keyword_name(x: &PDFObject) -> KeywordName {
 // Byte classes of the module-level regular expressions (bytes patterns, so
 // `\s` is `[\t\n\v\f\r ]`)
 
-const C_SPACE: u8 = 1 << 0; // SPC
-const C_DIGIT: u8 = 1 << 1; // [0-9], END_NUMBER is its complement
-const C_HEX: u8 = 1 << 2; // HEX
-const C_END_LITERAL: u8 = 1 << 3; // END_LITERAL, END_KEYWORD: [#/%\[\]()<>{}\s]
-const C_END_STRING: u8 = 1 << 4; // END_STRING: [()\\]
-const C_EOL: u8 = 1 << 5; // EOL: [\r\n]
-const C_OCT: u8 = 1 << 6; // OCT_STRING: [0-7]
+const C_SPACE: u8 = 0x01; // SPC
+const C_DIGIT: u8 = 0x02; // [0-9], END_NUMBER is its complement
+const C_HEX: u8 = 0x04; // HEX
+const C_END_LITERAL: u8 = 0x08; // END_LITERAL, END_KEYWORD: [#/%\[\]()<>{}\s]
+const C_END_STRING: u8 = 0x10; // END_STRING: [()\\]
+const C_EOL: u8 = 0x20; // EOL: [\r\n]
+const C_OCT: u8 = 0x40; // OCT_STRING: [0-7]
 
 const fn byte_classes() -> [u8; 256] {
     let mut t = [0u8; 256];

@@ -58,9 +58,10 @@ impl BytesIO {
         Ok(self.pos)
     }
 
-    /// `read(n)` (`None` reads to the end): the range of [`Self::data`]
-    /// that Python would return. Reading at or past the end returns an
-    /// empty range and leaves the position unchanged.
+    /// `read(n)` (`None`, like a negative `n` in Python, reads to the end):
+    /// the range of [`Self::data`] that Python would return. Reading at or
+    /// past the end returns an empty range and leaves the position
+    /// unchanged.
     pub fn read(&mut self, n: Option<usize>) -> Range<usize> {
         let avail = self.data.len().saturating_sub(self.pos);
         let n = n.map_or(avail, |n| n.min(avail));
