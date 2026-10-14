@@ -922,16 +922,17 @@ impl ProgressGuard {
         let _ = (position, what);
     }
 
-    /// Restarts the guard when `fp` is not where the parser left it
-    /// (`expected`): something else moved it.
+    /// Restarts the guard when `fp` (now at `tell`) is not where the parser
+    /// left it, right after the chunk `buf` read at `bufpos`: something
+    /// else moved it. The chunk's raw range is used, not its contents.
     #[inline]
-    pub fn restart_if_moved(&mut self, expected: usize, tell: usize) {
+    pub fn restart_if_moved(&mut self, bufpos: usize, buf: &Buf, tell: usize) {
         #[cfg(debug_assertions)]
-        if expected != tell {
+        if bufpos + (buf.end - buf.start) != tell {
             *self = ProgressGuard::default();
         }
         #[cfg(not(debug_assertions))]
-        let _ = (expected, tell);
+        let _ = (bufpos, buf, tell);
     }
 }
 
@@ -1098,12 +1099,11 @@ impl<X: PSStackParserExt> PSStackParser<X> {
             return Ok(false);
         }
         // fetch next chunk.
-        let expected = self.bufpos + self.buf.len();
         let fp = self.fp_mut("tell")?;
         let bufpos = fp.tell();
         let range = fp.read(Some(BUFSIZ));
         let data = fp.data().clone();
-        self.progress.restart_if_moved(expected, bufpos);
+        self.progress.restart_if_moved(self.bufpos, &self.buf, bufpos);
         self.bufpos = bufpos;
         self.buf = Buf::new(data, range);
         if self.buf.is_empty() {

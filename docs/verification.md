@@ -181,7 +181,8 @@ règles :
   `seek`, un parseur ne lit qu'en avant (position
   `PSStackParserExt::read_position`) ; une boucle qui ne progresse plus
   panique en quelques pas au lieu d'épuiser la mémoire. Le code du garde est
-  exclu des mutations (`-E ProgressGuard`), ses mutants étant équivalents par
+  exclu des mutations (`-E "ProgressGuard|check_progress|read_position"`),
+  ses mutants étant équivalents par
   construction.
 - **Bornes dans les tests de rejeu** : un job ne peut pas produire plus
   d'objets que pdfminer (`psparser_unit`), ni plus de tokens ou de lignes que
@@ -189,7 +190,7 @@ règles :
 
 ```sh
 systemd-run --user --scope --quiet -p MemoryMax=5G -p MemorySwapMax=0 \
-  cargo mutants -f crates/pdfminer/src/psparser.rs -E ProgressGuard \
+  cargo mutants -f crates/pdfminer/src/psparser.rs -E "ProgressGuard|check_progress|read_position" \
   --test-package pdftrace --cargo-test-arg=--test=psparser_unit \
   --profile mutants -j 1 --timeout 20
 ```
