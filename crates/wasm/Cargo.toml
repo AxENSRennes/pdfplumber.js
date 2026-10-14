@@ -1,0 +1,17 @@
+[package]
+name = "pdfplumber-wasm"
+description = "Coarse-grained WebAssembly API over the pdfplumber port (stub)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "pdfplumber_wasm"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+
+[lints]
+workspace = true

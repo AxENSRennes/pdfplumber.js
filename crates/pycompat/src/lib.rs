@@ -1,0 +1,33 @@
+//! CPython 3.12 semantics shared by the pdfminer.six and pdfplumber ports.
+//!
+//! Everything the port needs to behave like Python, and that Rust does not
+//! do the same way, lives here once and is tested against CPython (the
+//! oracle generator is `oracle/unit/pycompat.py`, the replay tests are in
+//! `crates/pdftrace/tests/pycompat_unit.rs`):
+//!
+//! - [`err`]: exceptions as values (`PyErr`), with the class hierarchy of
+//!   builtins, pdfminer and pdfplumber.
+//! - [`int`], [`num`], [`float`]: `int` of any size, `int`/`float`
+//!   arithmetic and exact mixed comparisons, `int()`/`float()` parsing,
+//!   `float(int)`, true and floor division, `%`, `**`, `round()`.
+//! - [`builtins`]: `sum()` (3.12 compensated float sum), `min()`/`max()`
+//!   (first wins on ties), `round()`.
+//! - [`repr`]: `repr()` of float, bytes and str; `json.dumps(str)`.
+//! - [`text`]: `bytes`/`str` character classes (`\s`, `isspace`,
+//!   `isprintable`, decimal digits), from generated Unicode 15.0 tables.
+//! - [`io`]: the `io.BytesIO` file object parsers read.
+
+pub mod builtins;
+pub mod err;
+pub mod float;
+pub mod int;
+pub mod io;
+pub mod num;
+pub mod repr;
+pub mod text;
+mod unicode_tables;
+
+pub use builtins::{py_max, py_max_by, py_min, py_min_by, py_round, py_round_ndigits, py_sum, py_sum0};
+pub use err::{exc, ExcKind, PyErr, PyResult};
+pub use int::PyInt;
+pub use num::Num;

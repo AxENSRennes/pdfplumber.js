@@ -1,0 +1,45 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+license = "MIT"
+publish = false
+rust-version = "1.99"
+
+[workspace.dependencies]
+pycompat = { path = "crates/pycompat" }
+pdfminer = { path = "crates/pdfminer" }
+pdfplumber = { path = "crates/pdfplumber" }
+pdftrace = { path = "crates/pdftrace" }
+indexmap = "2.14"
+num-bigint = "0.4"
+num-integer = "0.1"
+num-traits = "0.2"
+rustc-hash = "2.1"
+sha2 = "0.10"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+# Lints allowed workspace-wide. Faithful ports keep upstream names
+# (PDFObjRef, do_Tj, LITERAL_FONT, KEYWORD_BI...) and upstream signatures,
+# see docs/architecture.md ("Règles de port").
+[workspace.lints.clippy]
+upper_case_acronyms = "allow"
+too_many_arguments = "allow"
+module_inception = "allow"
+
+# Fast iteration: optimized, with parallel codegen.
+[profile.release]
+opt-level = 3
+codegen-units = 16
+
+# Production Wasm/native builds: `cargo build --profile dist`.
+[profile.dist]
+inherits = "release"
+lto = true
+codegen-units = 1
+panic = "abort"
