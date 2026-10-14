@@ -16,6 +16,10 @@ crates/pdftrace/tests/pdftypes_unit.rs. In the inputs, ``{"ref": n}`` is a
   references.
 - ``streams``: ``PDFStream`` ``repr``, ``get_filters``, ``get_data`` (filters
   that need no unported decoder) and ``__getitem__``.
+- ``decipher``: ``decipher_all`` (lists rebuilt, dicts updated in place) and
+  ``PDFStream.get_data`` with a decipher callback, the test callback
+  ``test_decipher`` below (the Rust test implements the same function).
+- ``refs``: ``PDFObjRef.resolve`` without a document (``AssertionError``).
 
 Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python oracle/unit/pdftypes.py
 """
@@ -32,6 +36,7 @@ from pdfminer.pdfexceptions import PDFObjectNotFound
 from pdfminer.pdftypes import (
     PDFObjRef,
     PDFStream,
+    decipher_all,
     dict_value,
     float_value,
     int_value,
@@ -300,7 +305,47 @@ def gen_streams(rng):
         yield [typed(attrs), typed(raw), typed(objid)], out
 
 
-GENERATORS = {"objects": gen_objects, "eq": gen_eq, "resolve": gen_resolve, "streams": gen_streams}
+def test_decipher(objid, genno, data, attrs=None):
+    """A deterministic stand-in for the document's decryption callback."""
+    key = (objid + 7 * genno + (len(attrs) if attrs is not None else 100)) & 0xFF
+    return bytes(b ^ key for b in reversed(data)) + bytes([len(data) & 0xFF])
+
+
+def gen_decipher(rng):
+    for _ in range(2000):
+        spec = rand_spec(rng)
+        objid, genno = rng.choice([1, 7, 300]), rng.choice([0, 1, 65535])
+        x = build(spec, TableDoc([]))
+        out = call(decipher_all, test_decipher, objid, genno, x)
+        yield [spec_typed(spec), typed(objid), typed(genno)], [out, x]
+    for _ in range(1000):
+        attrs = {}
+        if rng.random() < 0.5:
+            attrs["Filter"] = rng.choice([LIT("DCT"), LIT("Foo"), [LIT("JPXDecode")]])
+        if rng.random() < 0.5:
+            attrs["Length"] = rng.randint(0, 9)
+        raw = bytes(rng.randint(0, 255) for _ in range(rng.randint(0, 6)))
+        s = PDFStream(dict(attrs), raw, test_decipher)
+        objid = rng.choice([None, 4, 9])
+        if objid is not None:
+            s.set_objid(objid, rng.choice([0, 2]))
+        yield [typed(attrs), typed(raw), typed(objid), typed(s.genno)], [call(s.get_data), repr(s)]
+
+
+def gen_refs(rng):
+    for objid in [0, 1, 5, 2**70]:
+        r = PDFObjRef(None, objid)
+        yield [typed(objid)], [repr(r), call(r.resolve), call(resolve1, r), call(resolve_all, [r])]
+
+
+GENERATORS = {
+    "objects": gen_objects,
+    "eq": gen_eq,
+    "resolve": gen_resolve,
+    "streams": gen_streams,
+    "decipher": gen_decipher,
+    "refs": gen_refs,
+}
 
 
 def main():

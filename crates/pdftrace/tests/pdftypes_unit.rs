@@ -11,8 +11,8 @@ use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
 use pdfminer::pdftypes::{
-    dict_value, float_value, int_value_obj, list_value, num_value, resolve1_none, resolve_all, str_value, PDFDict,
-    PDFList, PDFObjRef, PDFObject, PDFResolver, PDFStream,
+    decipher_all, dict_value, float_value, int_value_obj, list_value, num_value, resolve1_none, resolve_all, str_value,
+    DecipherCallable, PDFDict, PDFList, PDFObjRef, PDFObject, PDFResolver, PDFStream,
 };
 use pdfminer::psparser::{keyword_name, literal_name, KeywordName, LIT_bytes, KWD, LIT};
 use pdftrace::unit::UnitData;
@@ -240,5 +240,56 @@ fn streams() {
             Out::V(Value::Bool(s.contains("Length"))),
         ];
         finish(outs)
+    });
+}
+
+/// `test_decipher` of oracle/unit/pdftypes.py.
+fn test_decipher(objid: &PyInt, genno: &PyInt, data: &[u8], attrs: Option<&PDFDict>) -> PyResult<Vec<u8>> {
+    let small = |i: &PyInt| i.as_i64().expect("small test ids");
+    let n = attrs.map_or(100, |a| a.len() as i64);
+    let key = ((small(objid) + 7 * small(genno) + n) & 0xff) as u8;
+    let mut out: Vec<u8> = data.iter().rev().map(|b| b ^ key).collect();
+    out.push((data.len() & 0xff) as u8);
+    Ok(out)
+}
+
+#[test]
+fn decipher() {
+    let (_doc, weak) = doc();
+    let callback: DecipherCallable = Rc::new(test_decipher);
+    replay("decipher", |a| {
+        if a.len() == 3 {
+            // decipher_all(test_decipher, objid, genno, x), then x itself
+            let x = build(&a[0], &weak);
+            let (Value::Int(objid), Value::Int(genno)) = (&a[1], &a[2]) else { panic!() };
+            let out = obj(decipher_all(&callback, objid, genno, &x));
+            return finish(vec![out, Out::Obj(x)]);
+        }
+        let PDFObject::Dict(attrs) = build(&a[0], &weak) else { panic!() };
+        let Value::Bytes(raw) = &a[1] else { panic!() };
+        let s = PDFStream::new(attrs, Rc::from(&raw[..]), Some(callback.clone()));
+        if let (Value::Int(objid), Value::Int(genno)) = (&a[2], &a[3]) {
+            s.set_objid(objid.clone(), genno.clone());
+        }
+        let data = match s.get_data() {
+            Ok(d) => Value::Bytes(d.to_vec()),
+            Err(e) => Value::from(&e),
+        };
+        Value::List(vec![data, Value::Str(s.repr())])
+    });
+}
+
+#[test]
+fn refs_without_document() {
+    replay("refs", |a| {
+        let Value::Int(objid) = &a[0] else { panic!() };
+        let r = PDFObjRef::new(None, objid.clone());
+        let x = PDFObject::Ref(r.clone());
+        finish(vec![
+            Out::V(Value::Str(r.repr())),
+            obj(r.resolve(&PDFObject::Null)),
+            obj(resolve1_none(&x)),
+            obj(resolve_all(&PDFObject::List(PDFList::new(vec![x.clone()])), &PDFObject::Null)),
+        ])
     });
 }

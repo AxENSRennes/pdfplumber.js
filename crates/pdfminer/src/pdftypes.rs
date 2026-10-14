@@ -605,7 +605,7 @@ pub fn uint_value(x: &PDFObject, n_bits: u32) -> PyResult<PyInt> {
     if xi > PyInt::ZERO {
         Ok(xi)
     } else {
-        let two_pow = PyInt::Small(2).pow(&PyInt::from(n_bits)).expect("non-negative exponent");
+        let two_pow = PyInt::Small(2).pow(&PyInt::from(n_bits))?.expect("non-negative exponent");
         Ok(xi.add(&two_pow))
     }
 }

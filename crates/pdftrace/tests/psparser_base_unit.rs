@@ -56,11 +56,9 @@ fn run(data: &[u8], ops: &[Value]) -> Value {
             "tokens" => until_error(|| p.nexttoken(), |t| entry(&t)),
             "nextline" => result(p.nextline(), line),
             "lines" => until_error(|| p.nextline(), line),
-            "revreadlines" => {
-                result(p.revreadlines().map(|lines| lines.collect::<Vec<_>>()), |l| {
-                    Value::List(l.into_iter().map(Value::Bytes).collect())
-                })
-            }
+            "revreadlines" => result(p.revreadlines().map(|lines| lines.collect::<Vec<_>>()), |l| {
+                Value::List(l.into_iter().map(Value::Bytes).collect())
+            }),
             "nextobject" => result(p.nextobject(), |e| entry(&e)),
             "pop" => {
                 let popped = p.pop(arg() as usize);

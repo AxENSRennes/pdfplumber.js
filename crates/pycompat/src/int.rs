@@ -256,26 +256,31 @@ impl PyInt {
         Ok(PyInt::from(self.to_bigint().mod_floor(&other.to_bigint())))
     }
 
-    /// `a ** b` for `b >= 0` (`long_pow` without modulus); `None` when `b`
-    /// is negative (Python then computes a float power, see `Num::pow`).
-    pub fn pow(&self, exp: &PyInt) -> Option<PyInt> {
+    /// `a ** b` for `b >= 0` (`long_pow` without modulus); `Ok(None)` when
+    /// `b` is negative (Python then computes a float power, see `Num::pow`).
+    ///
+    /// For an exponent beyond `u32` with a base other than 0, 1 and -1,
+    /// Python computes until memory or time runs out; the port raises
+    /// `MemoryError` at once.
+    pub fn pow(&self, exp: &PyInt) -> PyResult<Option<PyInt>> {
         if exp.is_negative() {
-            return None;
+            return Ok(None);
         }
         let base = self.to_bigint();
         if base.is_zero() || base.is_one() {
-            return Some(if exp.is_zero() { PyInt::Small(1) } else { self.clone() });
+            return Ok(Some(if exp.is_zero() { PyInt::Small(1) } else { self.clone() }));
         }
         if base == BigInt::from(-1) {
             let odd = match exp {
                 PyInt::Small(e) => e % 2 == 1,
                 PyInt::Big(e) => e.is_odd(),
             };
-            return Some(PyInt::Small(if odd { -1 } else { 1 }));
+            return Ok(Some(PyInt::Small(if odd { -1 } else { 1 })));
         }
-        // Any other base overflows memory long before the exponent leaves u32.
-        let e = exp.as_i64().and_then(|e| u32::try_from(e).ok()).expect("int ** exponent too large to compute");
-        Some(PyInt::from(num_traits::Pow::pow(base, e)))
+        match exp.as_i64().and_then(|e| u32::try_from(e).ok()) {
+            Some(e) => Ok(Some(PyInt::from(num_traits::Pow::pow(base, e)))),
+            None => Err(exc::MemoryError("")),
+        }
     }
 
     /// `float(a)` (`PyLong_AsDouble`): correctly rounded, half to even.

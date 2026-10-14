@@ -256,7 +256,7 @@ pub mod exc {
     ctors! {
         Exception, ZeroDivisionError, OverflowError, AssertionError, AttributeError,
         IndexError, KeyError, ValueError, UnicodeDecodeError, TypeError, RecursionError,
-        NotImplementedError, EOFError, OSError, ReferenceError, StructError, ZlibError,
+        NotImplementedError, EOFError, OSError, MemoryError, ReferenceError, StructError, ZlibError,
         PSException, PSEOF, PSSyntaxError, PSTypeError, PSValueError,
         PDFException, PDFTypeError, PDFValueError, PDFObjectNotFound, PDFNotImplementedError,
         PDFKeyError, PDFEOFError, PDFIOError, PDFSyntaxError, PDFNoValidXRef,

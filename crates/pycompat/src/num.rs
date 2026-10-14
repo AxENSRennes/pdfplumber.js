@@ -126,7 +126,7 @@ impl Num {
     /// negative int exponent to `float_pow` too).
     pub fn pow(&self, other: &Num) -> PyResult<Num> {
         if let (Num::Int(a), Num::Int(b)) = (self, other) {
-            if let Some(r) = a.pow(b) {
+            if let Some(r) = a.pow(b)? {
                 return Ok(Num::Int(r));
             }
         }
