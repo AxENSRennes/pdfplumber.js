@@ -9,50 +9,20 @@ and ``nextobject`` (which never returns for a bare ``PSStackParser``, whose
 ``pop``, ``popall`` and ``add_results`` as subclasses use them. Data are
 generated around the 4096-byte read blocks and line endings.
 
-Writes ``$PDFPLUMBER_ROOT/.cache/unit/psparser_base/cases.jsonl`` (typed JSON
-lines ``{"in": [data, ops], "out": [results...]}``) and ``meta.json``. The
+Writes ``<cache>/unit/psparser_base/cases.jsonl`` (typed JSON lines
+``{"in": [data, ops], "out": [results...]}``, see ``oracle/unit/_common.py``)
+and ``meta.json``. The
 Rust replay is crates/pdftrace/tests/psparser_base_unit.rs.
 
-Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python oracle/unit/psparser_base.py
+Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.psparser_base
 """
 
-import hashlib
 import io
-import json
-import logging
-import os
 import random
-import struct
-import sys
 
-from pdfminer.psparser import PSBaseParser, PSKeyword, PSLiteral, PSStackParser
+from pdfminer.psparser import PSBaseParser, PSStackParser
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
-
-
-def typed(v):
-    if v is None or isinstance(v, (bool, str)):
-        return v
-    if isinstance(v, int):
-        return {"i": str(v)}
-    if isinstance(v, float):
-        return {"f": struct.pack(">d", v).hex()}
-    if isinstance(v, bytes):
-        return {"b": v.hex()}
-    if isinstance(v, list):
-        return [typed(x) for x in v]
-    if isinstance(v, tuple):
-        return {"t": [typed(x) for x in v]}
-    if isinstance(v, dict):
-        return {"d": [[typed(k), typed(x)] for k, x in v.items()]}
-    if isinstance(v, PSLiteral):
-        return {"lit": v.name if isinstance(v.name, str) else {"b": v.name.hex()}}
-    if isinstance(v, PSKeyword):
-        return {"kw": v.name.hex()}
-    if isinstance(v, BaseException):
-        return {"exc": type(v).__name__, "msg": str(v)}
-    raise TypeError(f"no typed JSON form for {type(v).__name__}")
+from ._common import require_oracle_python, write_cases, write_meta
 
 
 FRAGMENTS = [
@@ -160,29 +130,19 @@ def gen_ops(rng, n):
 
 
 def main():
-    if sys.version_info[:2] != (3, 12):
-        sys.exit(f"the oracle is CPython 3.12, not {sys.version.split()[0]}")
-    logging.disable(logging.CRITICAL)
-    root = os.environ.get("PDFPLUMBER_ROOT") or REPO
-    outdir = os.path.join(root, ".cache", "unit", "psparser_base")
-    os.makedirs(outdir, exist_ok=True)
+    require_oracle_python()
+    assert PSBaseParser.BUFSIZ == 4096
     rng = random.Random("20261014:psparser_base")
-    n = 0
-    with open(os.path.join(outdir, "cases.jsonl"), "w", encoding="ascii") as f:
+
+    def cases():
         for _ in range(3000):
             data = gen_data(rng)
             ops = gen_ops(rng, len(data))
-            out = run(data, ops)
-            typed_ops = [[op[0]] + [typed(x) for x in op[1:]] for op in ops]
-            f.write(json.dumps({"in": [typed(data), typed_ops], "out": typed(out)}) + "\n")
-            n += 1
-    assert PSBaseParser.BUFSIZ == 4096
-    with open(os.path.abspath(__file__), "rb") as f:
-        digest = hashlib.sha256(f.read()).hexdigest()
-    with open(os.path.join(outdir, "meta.json"), "w") as f:
-        json.dump({"generator_sha256": digest, "python": sys.version.split()[0], "cases": n}, f)
-    print(f"wrote {n} cases to {outdir}")
+            yield [data, ops], run(data, ops)
 
+    n = write_cases("psparser_base", "cases", cases())
+    write_meta("psparser_base", cases=n)
+    print(f"wrote {n} cases")
 
 if __name__ == "__main__":
     main()

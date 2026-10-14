@@ -1,6 +1,6 @@
 """Content-stream corpora and Python oracle for psparser + PDFContentParser.
 
-Adapted from experiments/psparser-bench/dump_corpus.py. A job is a list of
+A job is a list of
 content streams, each given by a kind and bytes (see ``STREAM_KINDS``: a
 plain stream of decoded data, or the cases where ``PDFContentParser.fillfp``
 meets an unsupported filter, a pass-through filter or an object that is not
@@ -8,103 +8,50 @@ a stream). The oracle runs pdfminer's real ``PDFContentParser``
 over each job and records the SHA-256 of its canonical serialization: one line
 ``<pos> <canon(obj)>`` per object yielded by ``nextobject()``, then the line of
 the exception that ended the job (``!PSEOF("Unexpected EOF")`` normally), with
-``canon`` as in docs/verification.md. The Rust replay is
-crates/pdftrace/tests/psparser_unit.rs.
+``oracle.canon.canon``. The Rust replay is crates/pdftrace/tests/psparser_unit.rs.
 
-Modes (outputs in ``$PDFPLUMBER_ROOT/.cache/unit/psparser/``):
+Modes (outputs in ``<cache>/unit/psparser/``, see ``oracle/unit/_common.py``):
 
 - default: the real corpus. Decoded streams of the first ``--max-pages`` pages
-  (and of the Form XObjects of their resources) of every PDF in ``corpus/``,
-  ``upstream/pdfplumber-python/tests/pdfs``, ``upstream/pdfminer-six/samples``
-  and ``upstream/pdfjs/test/pdfs``. Writes ``corpus.bin`` and ``corpus.json``.
+  (and of the Form XObjects of their resources) of every PDF of the corpus set
+  ``all`` (``oracle/corpus.py``: de-duplicated, opened with their known
+  password). Writes ``corpus.bin`` and ``corpus.json``.
 - ``--fuzz N``: N generated adversarial jobs (tokens across 4096-byte read
   blocks and stream boundaries, escapes, inline images, exceptions). Writes
   ``fuzz.bin`` and ``fuzz.json``.
 - ``--dump INDEX [--corpus fuzz]``: prints the serialization of one job.
 
 ``*.bin``: little-endian ``b"PSC2" u32 njobs``, then per job ``u32 nstreams``
-and per stream ``u8 kind``, ``u32 len`` + bytes. ``*.json``: ``{"generator_sha256",
-"records": [{"id", "bytes", "objects", "outcome", "sha256"}]}``.
+and per stream ``u8 kind``, ``u32 len`` + bytes. ``*.json``: ``{"sources",
+"records": [{"id", "bytes", "objects", "outcome", "sha256"}]}``, where
+``sources`` is the ``sources`` of the ``meta.json`` written with it (the Rust
+replay checks that both corpora come from the current generator).
 
-Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python oracle/unit/psparser.py [--fuzz 4000]
+Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.psparser [--fuzz 4000]
 """
 
 import argparse
 import collections
-import glob
 import hashlib
 import json
-import logging
 import multiprocessing
-import os
 import random
 import signal
 import struct
 import sys
 
-from pdfminer.pdfdocument import PDFDocument
 from pdfminer.pdfinterp import PDFContentParser
 from pdfminer.pdfpage import PDFPage
-from pdfminer.pdfparser import PDFParser
-from pdfminer.pdftypes import PDFObjRef, PDFStream, resolve1, stream_value
-from pdfminer.psparser import LIT, PSKeyword, PSLiteral
+from pdfminer.pdftypes import PDFStream, resolve1, stream_value
+from pdfminer.psparser import LIT
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
-ROOT = os.environ.get("PDFPLUMBER_ROOT") or REPO
-OUT = os.path.join(ROOT, ".cache", "unit", "psparser")
+from ..canon import canon
+from ..corpus import load_set
+from ..stages._common import open_document
+from ._common import oracle_sources, require_oracle_python, unit_dir, write_meta
 
-SOURCES = [
-    "corpus/**/*.pdf",
-    "upstream/pdfplumber-python/tests/pdfs/**/*.pdf",
-    "upstream/pdfminer-six/samples/**/*.pdf",
-    "upstream/pdfjs/test/pdfs/**/*.pdf",
-]
+OUT = unit_dir("psparser")
 FILE_TIMEOUT_S = 120
-
-
-def generator_sha256() -> str:
-    with open(os.path.abspath(__file__), "rb") as f:
-        return hashlib.sha256(f.read()).hexdigest()
-
-
-# -- canon (docs/verification.md, "Format canonique") -------------------------
-
-
-def canon_bytes(b: bytes) -> str:
-    if len(b) <= 256:
-        return 'x"' + b.hex() + '"'
-    return f"x#{len(b)}:{hashlib.sha256(b).hexdigest()[:16]}"
-
-
-def canon(v) -> str:
-    if v is None or v is True or v is False:
-        return repr(v)
-    if isinstance(v, int):
-        return str(v)
-    if isinstance(v, float):
-        return repr(v)
-    if isinstance(v, str):
-        return json.dumps(v, ensure_ascii=True)
-    if isinstance(v, bytes):
-        return canon_bytes(v)
-    if isinstance(v, tuple):
-        return "(" + ", ".join(canon(x) for x in v) + ")"
-    if isinstance(v, list):
-        return "[" + ", ".join(canon(x) for x in v) + "]"
-    if isinstance(v, dict):
-        return "{" + ", ".join(f"{canon(k)}: {canon(x)}" for k, x in v.items()) + "}"
-    if isinstance(v, PSLiteral):
-        return "/" + canon(v.name)
-    if isinstance(v, PSKeyword):
-        return "K" + canon(v.name)
-    if isinstance(v, PDFObjRef):
-        return f"R{v.objid}"
-    if isinstance(v, PDFStream):
-        return f"Stream({canon(v.objid)}, {canon(v.genno)}, {canon(v.attrs)}, {canon(v.rawdata)})"
-    if isinstance(v, BaseException):
-        return "!" + type(v).__name__ + "(" + json.dumps(str(v), ensure_ascii=True) + ")"
-    raise TypeError(f"unexpected object {type(v)!r}")
 
 
 # -- the job ------------------------------------------------------------------
@@ -154,11 +101,10 @@ def record(job_id, streams):
 # -- real corpus --------------------------------------------------------------
 
 
-def collect_jobs(path: str, max_pages: int):
+def collect_jobs(path: str, password: str | None, max_pages: int):
     """(job id, streams) for each page and Form XObject; a job that fails to
     load (decoding error...) is skipped, not the whole file."""
-    with open(path, "rb") as fp:
-        doc = PDFDocument(PDFParser(fp))
+    with open_document(path, password) as doc:
         for pageno, page in enumerate(PDFPage.create_pages(doc), start=1):
             if pageno > max_pages:
                 break
@@ -192,14 +138,12 @@ def on_alarm(signum, frame):
 
 
 def process_file(args):
-    path, max_pages = args
-    logging.disable(logging.CRITICAL)  # malformed files are noisy; parsing is unchanged
-    rel = os.path.relpath(path, ROOT)
+    path, rel, password, max_pages = args
     signal.signal(signal.SIGALRM, on_alarm)
     signal.alarm(FILE_TIMEOUT_S)
     out = []
     try:
-        for job_id, streams in collect_jobs(path, max_pages):
+        for job_id, streams in collect_jobs(path, password, max_pages):
             out.append((record(f"{rel}#{job_id}", streams), streams))
         status = None
     except Timeout:
@@ -212,7 +156,7 @@ def process_file(args):
 
 
 def write_corpus(name: str, payload) -> None:
-    with open(os.path.join(OUT, name + ".bin"), "wb") as f:
+    with open(OUT / f"{name}.bin", "wb") as f:
         f.write(b"PSC2" + struct.pack("<I", len(payload)))
         for streams in payload:
             f.write(struct.pack("<I", len(streams)))
@@ -221,8 +165,7 @@ def write_corpus(name: str, payload) -> None:
 
 
 def read_corpus(name: str):
-    with open(os.path.join(OUT, name + ".bin"), "rb") as f:
-        data = f.read()
+    data = (OUT / f"{name}.bin").read_bytes()
     assert data[:4] == b"PSC2"
     (n,) = struct.unpack_from("<I", data, 4)
     off, jobs = 8, []
@@ -240,10 +183,9 @@ def read_corpus(name: str):
 
 
 def write_oracle(name: str, records) -> None:
-    with open(os.path.join(OUT, name + ".json"), "w") as f:
-        json.dump({"generator_sha256": generator_sha256(), "records": records}, f)
-    with open(os.path.join(OUT, "meta.json"), "w") as f:
-        json.dump({"generator_sha256": generator_sha256(), "python": sys.version.split()[0]}, f)
+    with open(OUT / f"{name}.json", "w", encoding="ascii") as f:
+        json.dump({"sources": oracle_sources(), "records": records}, f)
+    write_meta("psparser")
 
 
 # -- adversarial corpus ---------------------------------------------------------
@@ -341,7 +283,7 @@ def fuzz_job(rng):
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(prog="python -m oracle.unit.psparser")
     ap.add_argument("--max-pages", type=int, default=20)
     ap.add_argument("--fuzz", type=int, help="generate N adversarial jobs instead of the real corpus")
     ap.add_argument("--seed", type=int, default=1)
@@ -349,10 +291,7 @@ def main() -> None:
     ap.add_argument("--corpus", default="corpus", choices=["corpus", "fuzz"])
     ap.add_argument("-j", "--jobs", type=int, default=3, help="worker processes for the real corpus")
     args = ap.parse_args()
-    if sys.version_info[:2] != (3, 12):
-        sys.exit(f"the oracle is CPython 3.12, not {sys.version.split()[0]}")
-    os.makedirs(OUT, exist_ok=True)
-    logging.disable(logging.CRITICAL)
+    require_oracle_python()
 
     if args.dump is not None:
         jobs = read_corpus(args.corpus)
@@ -372,10 +311,11 @@ def main() -> None:
         print(len(records), "fuzz jobs", dict(collections.Counter(r["outcome"] for r in records)))
         return
 
-    files = sorted({f for pattern in SOURCES for f in glob.glob(os.path.join(ROOT, pattern), recursive=True)})
+    files = load_set("all")
+    tasks = [(str(f.path), f.rel, f.password, args.max_pages) for f in files]
     records, payload, skipped = [], [], collections.Counter()
     with multiprocessing.Pool(args.jobs) as pool:
-        for rel, status, out in pool.imap(process_file, [(f, args.max_pages) for f in files], chunksize=4):
+        for rel, status, out in pool.imap(process_file, tasks, chunksize=4):
             if status is not None:
                 skipped[status] += 1
                 print(f"skip {rel}: {status}", file=sys.stderr)

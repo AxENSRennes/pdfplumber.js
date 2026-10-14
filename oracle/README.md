@@ -32,7 +32,8 @@ overrides the cache directory (default `$PDFPLUMBER_ROOT/.cache`).
 | `trace.py` | CLI: one trace on stdout |
 | `cache.py` | trace cache under `.cache/oracle/` |
 | `verify.py` | CLI: build the cache, run `pdftrace`, compare |
-| `unit/canon.py` | generated cases for the Rust `canon`/typed JSON |
+| `unit/<module>.py` | generators of unit cases replayed by `crates/pdftrace/tests/<module>_unit.rs` (`unit/_common.py`: output and `meta.json`) |
+| `unit/__main__.py` | CLI: regenerate the unit data that is missing or stale |
 | `generate_micro_pdfs.py` | deterministic generator of `corpus/micro` (+ its manifest) |
 | `tests/` | `python -m unittest` self-tests (canon, typed JSON, runner, verify with a fake `pdftrace`) |
 
@@ -145,18 +146,28 @@ fingerprint directories are never read again and can be deleted.
   `PYTHONHASHSEED`: a trace that depended on set or hash order would show up
   as a cache that differs between two builds.
 
-## Unit cases for the Rust canon
+## Unit cases
 
 ```bash
-$PY -m oracle.unit.canon        # -> $PDFPLUMBER_CACHE/unit/canon/cases.jsonl
+$PY -m oracle.unit                 # regenerate what is missing or stale (--check: only report, --force: all)
+$PY -m oracle.unit.canon           # one generator -> $PDFPLUMBER_CACHE/unit/canon/
 ```
 
-About 6 300 lines `{"value": <typed JSON>, "canon": "<expected text>"}`:
-edge cases of every type (ints past the 4 300-digit `str()` limit, subnormals,
-NaN payloads, `repr` exponent thresholds, lone surrogates, bytes of 256/257
-bytes, decoded streams, exceptions with memory addresses, `Named` objects,
-deep nesting) and random values (seed 1). Each case is checked to round-trip
-through typed JSON before it is written.
+Generators: `canon` (the Rust `canon`/typed JSON), `pycompat` (CPython
+semantics), `exceptions` (pdfminer/pdfplumber exception classes), `pdftypes`
+(object model), `psparser_base` (`PSStackParser` on a file) and `psparser`
+(`PDFContentParser` on the content streams of the `all` set, and with
+`--fuzz 4000` on an adversarial corpus). Each writes typed JSON lines
+`{"in": [args...], "out": result}` (fixed seed) and a `meta.json` whose
+`sources` holds the SHA-256 of every `oracle/` module the generator loaded;
+the Rust replay refuses data whose sources changed since.
+
+The `canon` cases (about 6 300) are edge cases of every type (ints past the
+4 300-digit `str()` limit, subnormals, NaN payloads, `repr` exponent
+thresholds, lone surrogates, bytes of 256/257 bytes, decoded streams,
+exceptions with memory addresses, `Named` objects, deep nesting) and random
+values (seed 1), as `{"in": [<typed JSON value>], "out": "<canon>"}`. Each case
+is checked to round-trip through typed JSON before it is written.
 
 ## Self-tests
 
@@ -168,7 +179,9 @@ $PY -m unittest oracle.tests.test_verify     # one module
 They need only this checkout (`corpus/micro`) and use a temporary cache.
 `tests/test_verify.py` drives `verify.py` with `tests/fake_pdftrace.py`, a
 stand-in for the Rust binary that copies the oracle's traces and can perturb a
-line, truncate a trace, crash on a file or answer "not implemented".
+line, truncate a trace, crash on a file or answer "not implemented" (also
+through `--list-stages`, which `verify.py` asks before building the oracle
+cache).
 
 ## Micro PDFs
 

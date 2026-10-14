@@ -60,7 +60,13 @@ lignes (préfixe d'étiquette, puis valeurs). Les valeurs sont écrites par
   (`crates/pdftrace/src/canon.rs`). Les deux sont testés l'un contre l'autre
   sur des valeurs générées : `oracle/unit/canon.py` écrit
   `.cache/unit/canon/cases.jsonl` (≈ 6 300 cas, graine fixe), une ligne
-  `{"value": <JSON typé>, "canon": "<texte attendu>"}` par cas.
+  `{"in": [<JSON typé>], "out": "<texte attendu>"}` par cas ;
+  `crates/pdftrace/tests/canon_unit.rs` vérifie que Rust décode chaque valeur,
+  écrit le même `canon` et ré-encode le même JSON typé, au caractère près.
+- Côté Rust, une `str` Python est un `value::PyStr` : un `String`, ou ses
+  points de code quand elle contient un surrogate (qu'UTF-8 ne peut pas
+  porter). Seul le harnais en a besoin aujourd'hui ; un module porté qui peut
+  produire un surrogate (`chr()` sur une valeur arbitraire) le signale.
 - `canon` est itératif (profondeur quelconque). Une structure cyclique ou un
   type inconnu lève `CanonError`, qui dérive de `BaseException` : une erreur du
   harnais n'est jamais rattrapée par le `except Exception` d'une étape ni
@@ -116,28 +122,31 @@ CMap, analyse de mise en page, tables à partir de bords) ont aussi des **tests
 différentiels unitaires** : `oracle/unit/<module>.py` génère des cas (graine
 fixe) et les sorties Python, Rust les rejoue (`cargo test`).
 
-- Les cas sont écrits dans `$PDFPLUMBER_ROOT/.cache/unit/<module>/`
-  (`<nom>.jsonl`, une ligne `{"in": [...], "out": ...}` au format typé
-  ci-dessous), avec `meta.json` qui contient le SHA-256 du générateur. Les
-  tests Rust (`crates/pdftrace/tests/<module>_unit.rs`, via
-  `pdftrace::unit::UnitData`) échouent si les données manquent ou viennent
-  d'une autre version du générateur, en affichant la commande qui les
-  régénère.
-- Générateurs actuels : `pycompat.py` (sémantique CPython, bibliothèque
-  standard seule), `exceptions.py` (classes d'exception de pdfminer et
-  pdfplumber), `pdftypes.py` (modèle d'objets, références, flux,
+- Chaque générateur se lance comme module depuis le dépôt dont le Rust rejoue
+  les cas (`python -m oracle.unit.<module>`) et écrit, avec les outils de
+  `oracle/unit/_common.py`, dans `<cache>/unit/<module>/` (`<cache>` :
+  `PDFPLUMBER_CACHE`, sinon `$PDFPLUMBER_ROOT/.cache`) : `<nom>.jsonl`, une
+  ligne `{"in": [...], "out": ...}` au format typé ci-dessous, et `meta.json`,
+  dont `sources` donne le SHA-256 de chaque module de `oracle/` chargé par le
+  générateur (lui-même, `canon.py`, `typed_json.py`…). Les tests Rust
+  (`crates/pdftrace/tests/<module>_unit.rs`, via `pdftrace::unit::UnitData`)
+  échouent si les données manquent ou si l'une de ces sources a changé depuis,
+  en affichant la commande qui les régénère. `python -m oracle.unit`
+  régénère tout ce qui manque ou est périmé (`--check` : constat seul).
+- Générateurs actuels : `canon.py` (`canon` et JSON typé, ci-dessus),
+  `pycompat.py` (sémantique CPython), `exceptions.py` (classes d'exception de
+  pdfminer et pdfplumber), `pdftypes.py` (modèle d'objets, références, flux,
   déchiffrement), `psparser_base.py` (`PSStackParser` sur un fichier :
   `nexttoken`, `nextline`, `revreadlines`, `seek`, `pop`), `psparser.py`
-  (corpus réel de flux de contenu et corpus adverse `--fuzz 4000` pour
-  `PDFContentParser`, comparés job par job par empreinte de la
-  sérialisation canonique).
+  (flux de contenu des pages et Form XObjects de l'ensemble `all`, et corpus
+  adverse `--fuzz 4000`, pour `PDFContentParser`, comparés job par job par
+  empreinte de la sérialisation canonique).
 
 ```sh
 export PDFPLUMBER_ROOT=/chemin/du/dépôt/principal   # .venv, corpus/, .cache/
-for m in pycompat exceptions pdftypes psparser_base; do $PDFPLUMBER_ROOT/.venv/bin/python oracle/unit/$m.py; done
-$PDFPLUMBER_ROOT/.venv/bin/python oracle/unit/psparser.py --fuzz 4000
-$PDFPLUMBER_ROOT/.venv/bin/python oracle/unit/psparser.py          # corpus réel, ~1 min
+PYTHONPATH=. $PDFPLUMBER_ROOT/.venv/bin/python -m oracle.unit   # ce qui manque ou a changé (corpus réel : ~3 min)
 cargo test --release
+scripts/check.sh                                               # tout : fmt, clippy, données, tests Rust et Python
 ```
 
 ### Format d'échange typé (entrées et sorties des tests unitaires)
@@ -180,7 +189,8 @@ Mode d'emploi détaillé : [`oracle/README.md`](../oracle/README.md).
   Rust) : même chose, mêmes valeurs par défaut.
   `pdftrace --stage S [--password P] [--max-pages N] --out DIR F1.pdf F2.pdf …`
   écrit `DIR/<sha256 du PDF>.txt` pour une liste de fichiers. Code de sortie 2 :
-  étape non implémentée.
+  étape non implémentée. `pdftrace --list-stages` liste les étapes, suivies de
+  `(not implemented)` tant qu'elles ne le sont pas.
 - `python -m oracle.verify --stage S --set NOM [-j N] [--max-pages N]
   [--pdftrace CHEMIN] [--limit K] [--files …] [--json]` : construit au besoin
   le cache de l'oracle (`-j` processus, 3 par défaut), lance `pdftrace` par lots
@@ -191,7 +201,8 @@ Mode d'emploi détaillé : [`oracle/README.md`](../oracle/README.md).
   est rejoué fichier par fichier pour isoler le coupable. `--json` donne un
   résumé lisible par machine ; `--oracle-only` ne fait que remplir le cache.
   Code de sortie : 0 si tout est identique (hors délais), 1 sinon, 2 si
-  l'étape n'existe pas côté Rust ou si le binaire manque.
+  l'étape n'existe pas côté Rust ou si le binaire manque (vérifié par
+  `pdftrace --list-stages` avant de construire le cache de l'oracle).
 - Cache : `.cache/oracle/<étape>/<empreinte>/<sha256 du PDF>.txt`
   (`<sha256>.pw-<12 hexa du SHA-256 du mot de passe>.txt` avec un mot de
   passe). L'empreinte couvre les sources de l'étape (et des étapes de son `DEPENDS`), de `stages/__init__.py`,

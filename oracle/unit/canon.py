@@ -1,16 +1,16 @@
 """Cases for cross-testing ``canon.rs`` / ``typed_json.rs`` against ``oracle/canon.py``.
 
-    PYTHONPATH=. .venv/bin/python -m oracle.unit.canon [--seed 1] [--random 6000] [--out FILE]
+    PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.canon [--seed 1] [--random 6000]
 
-Writes ``<cache>/unit/canon/cases.jsonl`` (``<cache>`` = ``PDFPLUMBER_CACHE``
-or ``<PDFPLUMBER_ROOT>/.cache``): one JSON object per line,
+Writes ``<cache>/unit/canon/cases.jsonl`` (see ``oracle/unit/_common.py``):
+one case per line,
 
-    {"value": <typed JSON of the value>, "canon": "<canon(value)>"}
+    {"in": [<typed JSON of the value>], "out": "<canon(value)>"}
 
-The Rust side decodes ``value`` with its typed JSON reader, writes it with its
-``canon`` and must produce ``canon`` exactly; it can also re-encode ``value``
-and compare with the line (``dumps`` output is canonical: compact, ASCII, key
-order fixed).
+The Rust side (crates/pdftrace/tests/canon_unit.rs) decodes the value with its
+typed JSON reader, writes it with its ``canon`` and must produce ``out``
+exactly; it also re-encodes the value and compares with the text of the line
+(``dumps`` output is canonical: compact, ASCII, key order fixed).
 
 Cases: a fixed list of edge cases for every type of the canon table (ints
 around 2**31/2**53/2**63/2**64 and past CPython's 4300-digit ``str()`` limit;
@@ -29,14 +29,12 @@ round-trip through typed JSON with the same canon before it is written.
 from __future__ import annotations
 
 import argparse
-import json
 import random
 import struct
 import sys
 import zlib
 from collections import Counter
 from collections.abc import Iterator
-from pathlib import Path
 from typing import Any
 
 from pdfminer.pdfdocument import PDFPasswordIncorrect
@@ -46,8 +44,8 @@ from pdfminer.pdftypes import PDFObjRef, PDFStream
 from pdfminer.psparser import KWD, LIT, PSEOF
 
 from ..canon import Named, canon
-from ..corpus import cache_dir
 from ..typed_json import dumps, loads
+from ._common import require_oracle_python, write_cases, write_meta
 
 
 def _f(bits: int) -> float:
@@ -160,6 +158,7 @@ def edge_cases() -> Iterator[Any]:
         AssertionError(),
         ValueError("Trailer not found: <pdfminer.pdfparser.PDFParser object at 0x7f3a2b1c0d10>: line=b'x'"),
         ValueError("two <a.B object at 0xDEADbeef> and <c.D object at 0x1>, not <at 0x12>"),
+        ValueError("no digits at 0x>, not hex at 0xg1>, unclosed at 0x12, nested at 0x at 0xab>>, upper at 0XAB>"),
         TypeError("caf\xe9 \U0001f600 \"quoted\" \\ \n"),
         Exception("a", 2),
         Exception(),
@@ -271,31 +270,31 @@ def kind(v: Any) -> str:
     return type(v).__name__ if not isinstance(v, BaseException) else "exception"
 
 
+def checked_case(v: Any) -> tuple[list[Any], str]:
+    """``([v], canon(v))``, after checking that ``v`` survives typed JSON."""
+    text = canon(v)
+    encoded = dumps(v)
+    again = loads(encoded)
+    if canon(again) != text or dumps(again) != encoded:
+        raise AssertionError(f"typed JSON round trip changes {v!r}")
+    return [v], text
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m oracle.unit.canon", description=__doc__.split("\n\n")[0])
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--random", type=int, default=6000, help="number of random values after the edge cases")
-    ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args(argv)
-    out = args.out or cache_dir() / "unit" / "canon" / "cases.jsonl"
-    out.parent.mkdir(parents=True, exist_ok=True)
+    require_oracle_python()
     kinds: Counter[str] = Counter()
-    tmp = out.with_name(out.name + ".tmp")
-    with open(tmp, "w", encoding="ascii") as fh:
-        for v in [*edge_cases(), *random_cases(args.seed, args.random)]:
-            text = canon(v)
-            encoded = dumps(v)
-            again = loads(encoded)
-            if canon(again) != text or dumps(again) != encoded:
-                raise AssertionError(f"typed JSON round trip changes {v!r}")
-            fh.write('{"value":' + encoded + ',"canon":' + json.dumps(text) + "}\n")
-            kinds[kind(v)] += 1
-    tmp.replace(out)
-    total = sum(kinds.values())
-    print(f"{total} cases -> {out}", file=sys.stderr)
+    values = [*edge_cases(), *random_cases(args.seed, args.random)]
+    for v in values:
+        kinds[kind(v)] += 1
+    n = write_cases("canon", "cases", (checked_case(v) for v in values))
+    write_meta("canon", seed=args.seed, random=args.random, kinds=dict(kinds.most_common()))
+    print(f"{n} cases", file=sys.stderr)
     print("  " + ", ".join(f"{k} {n}" for k, n in kinds.most_common()), file=sys.stderr)
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

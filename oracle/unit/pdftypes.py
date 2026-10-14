@@ -2,8 +2,8 @@
 psparser.py it relies on), computed by pdfminer.
 
 Writes typed JSON lines (docs/verification.md) to
-``$PDFPLUMBER_ROOT/.cache/unit/pdftypes/<name>.jsonl``, one case per line,
-``{"in": [...], "out": ...}``; the Rust replay is
+``<cache>/unit/pdftypes/<name>.jsonl`` (see ``oracle/unit/_common.py``), one
+case per line, ``{"in": [...], "out": ...}``; the Rust replay is
 crates/pdftrace/tests/pdftypes_unit.rs. In the inputs, ``{"ref": n}`` is a
 ``PDFObjRef`` to a document whose objects are given by the case (a list of
 ``[objid, object]`` pairs; a missing id raises ``PDFObjectNotFound``).
@@ -21,16 +21,12 @@ crates/pdftrace/tests/pdftypes_unit.rs. In the inputs, ``{"ref": n}`` is a
   ``test_decipher`` below (the Rust test implements the same function).
 - ``refs``: ``PDFObjRef.resolve`` without a document (``AssertionError``).
 
-Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python oracle/unit/pdftypes.py
+Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.pdftypes
 """
 
-import hashlib
-import json
 import math
-import os
 import random
 import struct
-import sys
 
 from pdfminer.pdfexceptions import PDFObjectNotFound
 from pdfminer.pdftypes import (
@@ -46,39 +42,9 @@ from pdfminer.pdftypes import (
     resolve_all,
     str_value,
 )
-from pdfminer.psparser import KWD, LIT, PSKeyword, PSLiteral, keyword_name, literal_name
+from pdfminer.psparser import KWD, LIT, keyword_name, literal_name
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
-
-
-# -- typed JSON -----------------------------------------------------------------
-
-
-def typed(v):
-    if v is None or isinstance(v, (bool, str)):
-        return v
-    if isinstance(v, int):
-        return {"i": str(v)}
-    if isinstance(v, float):
-        return {"f": struct.pack(">d", v).hex()}
-    if isinstance(v, bytes):
-        return {"b": v.hex()}
-    if isinstance(v, list):
-        return [typed(x) for x in v]
-    if isinstance(v, tuple):
-        return {"t": [typed(x) for x in v]}
-    if isinstance(v, dict):
-        return {"d": [[typed(k), typed(x)] for k, x in v.items()]}
-    if isinstance(v, PSLiteral):
-        return {"lit": v.name if isinstance(v.name, str) else {"b": v.name.hex()}}
-    if isinstance(v, PSKeyword):
-        return {"kw": v.name.hex()}
-    if isinstance(v, PDFObjRef):
-        return {"ref": v.objid}
-    if isinstance(v, BaseException):
-        return {"exc": type(v).__name__, "msg": str(v)}
-    raise TypeError(f"no typed JSON form for {type(v).__name__}")
+from ._common import require_oracle_python, write_cases, write_meta
 
 
 class TableDoc:
@@ -115,21 +81,10 @@ def build(spec, doc):
     raise ValueError(kind)
 
 
-def spec_typed(spec):
-    kind = spec[0]
-    if kind == "v":
-        return typed(spec[1])
-    if kind == "lit":
-        return typed(LIT(spec[1]))
-    if kind == "kw":
-        return {"kw": spec[1].hex()}
-    if kind == "ref":
-        return {"ref": spec[1]}
-    if kind == "list":
-        return [spec_typed(x) for x in spec[1]]
-    if kind == "dict":
-        return {"d": [[k, spec_typed(x)] for k, x in spec[1]]}
-    raise ValueError(kind)
+def spec_value(spec):
+    """The object of a spec as a case input: its references have no document
+    (typed JSON ``{"ref": n}``; the Rust test binds them to the case's table)."""
+    return build(spec, None)
 
 
 def call(f, *args):
@@ -203,7 +158,7 @@ def gen_objects(rng):
         spec = rand_spec(rng)
         doc = TableDoc([])
         x = build(spec, doc)
-        yield [spec_typed(spec)], accessors(x)
+        yield [spec_value(spec)], accessors(x)
 
 
 def variant(rng, spec):
@@ -240,12 +195,12 @@ def gen_eq(rng):
         b = variant(rng, a)
         doc = TableDoc([])
         x, y = build(a, doc), build(b, doc)
-        yield [spec_typed(a), spec_typed(b)], [x == y, y == x]
+        yield [spec_value(a), spec_value(b)], [x == y, y == x]
     # one object compared with itself (identity shortcut of containers)
     for _ in range(300):
         a = rand_spec(rng)
         x = build(a, TableDoc([]))
-        yield [spec_typed(a), "same"], [x == x, x == x]
+        yield [spec_value(a), "same"], [x == x, x == x]
 
 
 def gen_resolve(rng):
@@ -268,7 +223,7 @@ def gen_resolve(rng):
         again = call(resolve1, x)
         out = [r1, ra, again, call(int_value, x), call(num_value, x), call(dict_value, x), call(list_value, x),
                call(str_value, x), repr(x)]
-        yield [[[typed(i), spec_typed(s)] for i, s in table_specs], spec_typed(x_spec)], out
+        yield [[[i, spec_value(s)] for i, s in table_specs], spec_value(x_spec)], out
 
 
 STREAM_FILTERS = [None, LIT("DCTDecode"), LIT("DCT"), LIT("JPXDecode"), LIT("JBIG2Decode"), [LIT("DCT"), LIT("JPXDecode")],
@@ -302,7 +257,7 @@ def gen_streams(rng):
         data = call(s.get_data)
         out = [before, filters, data, repr(s), s.get_rawdata(), call(lambda: s["Missing"]), call(lambda: s["Length"]),
                s.get("Length", -1), s.get_any(["F", "Filter"], "none"), "Length" in s]
-        yield [typed(attrs), typed(raw), typed(objid)], out
+        yield [attrs, raw, objid], out
 
 
 def test_decipher(objid, genno, data, attrs=None):
@@ -317,7 +272,7 @@ def gen_decipher(rng):
         objid, genno = rng.choice([1, 7, 300]), rng.choice([0, 1, 65535])
         x = build(spec, TableDoc([]))
         out = call(decipher_all, test_decipher, objid, genno, x)
-        yield [spec_typed(spec), typed(objid), typed(genno)], [out, x]
+        yield [spec_value(spec), objid, genno], [out, x]
     for _ in range(1000):
         attrs = {}
         if rng.random() < 0.5:
@@ -329,13 +284,13 @@ def gen_decipher(rng):
         objid = rng.choice([None, 4, 9])
         if objid is not None:
             s.set_objid(objid, rng.choice([0, 2]))
-        yield [typed(attrs), typed(raw), typed(objid), typed(s.genno)], [call(s.get_data), repr(s)]
+        yield [attrs, raw, objid, s.genno], [call(s.get_data), repr(s)]
 
 
 def gen_refs(rng):
     for objid in [0, 1, 5, 2**70]:
         r = PDFObjRef(None, objid)
-        yield [typed(objid)], [repr(r), call(r.resolve), call(resolve1, r), call(resolve_all, [r])]
+        yield [objid], [repr(r), call(r.resolve), call(resolve1, r), call(resolve_all, [r])]
 
 
 GENERATORS = {
@@ -349,26 +304,10 @@ GENERATORS = {
 
 
 def main():
-    if sys.version_info[:2] != (3, 12):
-        sys.exit(f"the oracle is CPython 3.12, not {sys.version.split()[0]}")
-    root = os.environ.get("PDFPLUMBER_ROOT") or REPO
-    outdir = os.path.join(root, ".cache", "unit", "pdftypes")
-    os.makedirs(outdir, exist_ok=True)
-    counts = {}
-    for name, gen in GENERATORS.items():
-        rng = random.Random(f"20261014:{name}")
-        n = 0
-        with open(os.path.join(outdir, name + ".jsonl"), "w", encoding="ascii") as f:
-            for args, out in gen(rng):
-                f.write(json.dumps({"in": args, "out": typed(out)}) + "\n")
-                n += 1
-        counts[name] = n
-    with open(os.path.abspath(__file__), "rb") as f:
-        digest = hashlib.sha256(f.read()).hexdigest()
-    with open(os.path.join(outdir, "meta.json"), "w") as f:
-        json.dump({"generator_sha256": digest, "python": sys.version.split()[0], "counts": counts}, f)
-    print(f"wrote {counts} to {outdir}")
-
+    require_oracle_python()
+    counts = {name: write_cases("pdftypes", name, gen(random.Random(f"20261014:{name}"))) for name, gen in GENERATORS.items()}
+    write_meta("pdftypes", counts=counts)
+    print(f"wrote {counts}")
 
 if __name__ == "__main__":
     main()

@@ -206,22 +206,45 @@ pub fn json_dumps_str(s: &str) -> String {
 pub fn write_json_str(out: &mut String, s: &str) {
     out.push('"');
     for ch in s.chars() {
-        match ch {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            '\u{8}' => out.push_str("\\b"),
-            '\u{c}' => out.push_str("\\f"),
-            ' '..='~' => out.push(ch),
-            _ => {
-                let mut units = [0u16; 2];
-                for unit in ch.encode_utf16(&mut units) {
-                    let _ = write!(out, "\\u{unit:04x}");
-                }
+        write_json_char(out, ch);
+    }
+    out.push('"');
+}
+
+/// [`json_dumps_str`] of a Python `str` given by its code points, which may
+/// include surrogates (U+D800..U+DFFF, written as one `\uXXXX` escape each,
+/// as `ascii_escape_unichar` does). Code points above U+10FFFF are not
+/// Python characters and are skipped.
+pub fn write_json_code_points(out: &mut String, code_points: &[u32]) {
+    out.push('"');
+    for &c in code_points {
+        match char::from_u32(c) {
+            Some(ch) => write_json_char(out, ch),
+            None if c < 0x10000 => {
+                let _ = write!(out, "\\u{c:04x}");
             }
+            None => {}
         }
     }
     out.push('"');
+}
+
+#[inline]
+fn write_json_char(out: &mut String, ch: char) {
+    match ch {
+        '"' => out.push_str("\\\""),
+        '\\' => out.push_str("\\\\"),
+        '\n' => out.push_str("\\n"),
+        '\r' => out.push_str("\\r"),
+        '\t' => out.push_str("\\t"),
+        '\u{8}' => out.push_str("\\b"),
+        '\u{c}' => out.push_str("\\f"),
+        ' '..='~' => out.push(ch),
+        _ => {
+            let mut units = [0u16; 2];
+            for unit in ch.encode_utf16(&mut units) {
+                let _ = write!(out, "\\u{unit:04x}");
+            }
+        }
+    }
 }

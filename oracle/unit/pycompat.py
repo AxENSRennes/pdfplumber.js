@@ -1,66 +1,27 @@
 """Differential cases for crates/pycompat, computed by CPython.
 
-Standalone (standard library only). Writes typed JSON lines (format of
-docs/verification.md, "Format d'échange typé") to
-``$PDFPLUMBER_ROOT/.cache/unit/pycompat/<name>.jsonl``: one case per line,
-``{"in": [arguments...], "out": result}``, where the result is the value
-CPython returns or the exception it raises (``{"exc": ..., "msg": ...}``).
-``meta.json`` records the SHA-256 of this file, so that the Rust tests
-(crates/pdftrace/tests/pycompat_unit.rs) reject data from another version.
+Exercises only the standard library. Writes ``<cache>/unit/pycompat/<name>.jsonl``
+(see ``oracle/unit/_common.py``): one case per line, ``{"in": [arguments...],
+"out": result}`` in typed JSON, where the result is the value CPython returns
+or the exception it raises (``{"exc": ..., "msg": ...}``). The Rust replay is
+crates/pdftrace/tests/pycompat_unit.rs.
 
-Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python oracle/unit/pycompat.py [--seed N]
+Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.pycompat [--seed N]
 
 The oracle is CPython 3.12 (``.python-version``); the script refuses to run
 on another minor version.
 """
 
 import argparse
-import hashlib
 import io
 import json
 import math
-import os
 import random
 import re
 import struct
-import sys
 import unicodedata
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
-
-
-# -- typed JSON ---------------------------------------------------------------
-
-
-def typed(v):
-    if v is None or isinstance(v, (bool, str)):
-        return v
-    if isinstance(v, int):
-        return {"i": str(v)} if abs(v) < 10**4000 else {"i": format_big(v)}
-    if isinstance(v, float):
-        return {"f": struct.pack(">d", v).hex()}
-    if isinstance(v, (bytes, bytearray)):
-        return {"b": bytes(v).hex()}
-    if isinstance(v, list):
-        return [typed(x) for x in v]
-    if isinstance(v, tuple):
-        return {"t": [typed(x) for x in v]}
-    if isinstance(v, dict):
-        return {"d": [[typed(k), typed(x)] for k, x in v.items()]}
-    if isinstance(v, BaseException):
-        return {"exc": type(v).__name__, "msg": str(v)}
-    raise TypeError(f"no typed JSON form for {type(v).__name__}")
-
-
-def format_big(v):
-    """str(v) beyond the int -> str digit limit."""
-    old = sys.get_int_max_str_digits()
-    sys.set_int_max_str_digits(0)
-    try:
-        return str(v)
-    finally:
-        sys.set_int_max_str_digits(old)
+from ._common import require_oracle_python, write_cases, write_meta
 
 
 def call(f, *args):
@@ -68,22 +29,6 @@ def call(f, *args):
         return f(*args)
     except Exception as e:  # the exception is the expected result
         return e
-
-
-class Writer:
-    def __init__(self, outdir):
-        self.outdir = outdir
-        self.counts = {}
-
-    def write(self, name, cases):
-        """cases: iterable of (args list, result)."""
-        path = os.path.join(self.outdir, name + ".jsonl")
-        n = 0
-        with open(path, "w", encoding="ascii") as f:
-            for args, out in cases:
-                f.write(json.dumps({"in": typed(list(args)), "out": typed(out)}) + "\n")
-                n += 1
-        self.counts[name] = n
 
 
 # -- value generators ---------------------------------------------------------
@@ -477,23 +422,13 @@ GENERATORS = {
 
 
 def main():
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(prog="python -m oracle.unit.pycompat")
     ap.add_argument("--seed", type=int, default=20261014)
     args = ap.parse_args()
-    if sys.version_info[:2] != (3, 12):
-        sys.exit(f"the oracle is CPython 3.12, not {sys.version.split()[0]}")
-    root = os.environ.get("PDFPLUMBER_ROOT") or REPO
-    outdir = os.path.join(root, ".cache", "unit", "pycompat")
-    os.makedirs(outdir, exist_ok=True)
-    w = Writer(outdir)
-    for name, gen in GENERATORS.items():
-        w.write(name, gen(random.Random(f"{args.seed}:{name}")))
-    with open(os.path.abspath(__file__), "rb") as f:
-        digest = hashlib.sha256(f.read()).hexdigest()
-    meta = {"generator_sha256": digest, "python": sys.version.split()[0], "seed": args.seed, "counts": w.counts}
-    with open(os.path.join(outdir, "meta.json"), "w") as f:
-        json.dump(meta, f, indent=1)
-    print(f"wrote {sum(w.counts.values())} cases to {outdir}: {w.counts}")
+    require_oracle_python()
+    counts = {name: write_cases("pycompat", name, gen(random.Random(f"{args.seed}:{name}"))) for name, gen in GENERATORS.items()}
+    write_meta("pycompat", seed=args.seed, counts=counts)
+    print(f"wrote {sum(counts.values())} cases: {counts}")
 
 
 if __name__ == "__main__":

@@ -12,23 +12,26 @@
 //! | `tuple`, `list`, `dict` | `(a, b)`, `[a, b]`, `{k: v}` (insertion order) |
 //! | `PSLiteral` | `/` + canon(name) |
 //! | `PSKeyword` | `K` + canon(name bytes) |
-//! | `PDFObjRef` | `R` + objid |
-//! | `PDFStream` | `Stream(objid, genno, attrs, raw)` |
+//! | `PDFObjRef` | `R` + canon(objid) |
+//! | `PDFStream` | `Stream(objid, genno, attrs, raw)`, `raw` = canon(`rawdata`) |
 //! | exception | `!` + class name + `(` + json(str(e)) + `)` |
 //! | named object | class name + dict (`LTChar{...}`) |
 //!
 //! The separator is always `", "`; a one-element tuple is `(a)` (the
-//! elements joined, without Python's trailing comma).
+//! elements joined, without Python's trailing comma). In an exception
+//! message, the address of every CPython default repr (` at 0x7f3a...>`)
+//! is written ` at 0x?>`. Cross-tested against `oracle/canon.py` by
+//! `tests/canon_unit.rs`.
 
 use std::fmt::Write;
 
 use pdfminer::pdftypes::{PDFObject, PDFStream};
 use pdfminer::psparser::LiteralName;
-use pycompat::repr::{float_repr, write_json_str};
+use pycompat::repr::{float_repr, write_json_code_points, write_json_str};
 use pycompat::PyErr;
 use sha2::{Digest, Sha256};
 
-use crate::value::{NameValue, Value};
+use crate::value::{NameValue, PyStr, Value};
 
 /// Bytes longer than this are written as their length and hash.
 pub const MAX_INLINE_BYTES: usize = 256;
@@ -50,7 +53,7 @@ pub fn canon_obj(obj: &PDFObject) -> String {
 /// The line of a raised exception: `!Class("message")`.
 pub fn canon_exc(e: &PyErr) -> String {
     let mut out = String::new();
-    write_exc(&mut out, e.kind.name(), &e.message);
+    write_exc(&mut out, e.kind.name(), ExcMessage::Text(&e.message));
     out
 }
 
@@ -79,11 +82,57 @@ pub fn write_bytes(out: &mut String, b: &[u8]) {
     }
 }
 
-fn write_exc(out: &mut String, class: &str, message: &str) {
+/// `json.dumps(s)` of a Python `str`.
+pub fn write_py_str(out: &mut String, s: &PyStr) {
+    match s {
+        PyStr::Text(s) => write_json_str(out, s),
+        PyStr::CodePoints(c) => write_json_code_points(out, c),
+    }
+}
+
+const ADDRESS_PREFIX: [u32; 6] = [b' ' as u32, b'a' as u32, b't' as u32, b' ' as u32, b'0' as u32, b'x' as u32];
+
+/// `re.sub(r" at 0x[0-9a-fA-F]+>", " at 0x?>", message)` (`oracle/canon.py`
+/// `_normalize_message`): hides the memory address of CPython default
+/// reprs, which changes from run to run.
+fn normalize_addresses(message: &[u32]) -> Vec<u32> {
+    let is_hex = |c: u32| char::from_u32(c).is_some_and(|ch| ch.is_ascii_hexdigit());
+    let mut out = Vec::with_capacity(message.len());
+    let mut i = 0;
+    while i < message.len() {
+        if message[i..].starts_with(&ADDRESS_PREFIX) {
+            let digits = i + ADDRESS_PREFIX.len();
+            let end = digits + message[digits..].iter().take_while(|&&c| is_hex(c)).count();
+            if end > digits && message.get(end) == Some(&u32::from(b'>')) {
+                out.extend(ADDRESS_PREFIX);
+                out.extend([u32::from(b'?'), u32::from(b'>')]);
+                i = end + 1;
+                continue;
+            }
+        }
+        out.push(message[i]);
+        i += 1;
+    }
+    out
+}
+
+/// `str(e)`, borrowed.
+enum ExcMessage<'a> {
+    Text(&'a str),
+    CodePoints(&'a [u32]),
+}
+
+fn write_exc(out: &mut String, class: &str, message: ExcMessage<'_>) {
     out.push('!');
     out.push_str(class);
     out.push('(');
-    write_json_str(out, message);
+    match message {
+        ExcMessage::Text(m) if !m.contains(" at 0x") => write_json_str(out, m),
+        ExcMessage::Text(m) => {
+            write_json_code_points(out, &normalize_addresses(&m.chars().map(u32::from).collect::<Vec<_>>()))
+        }
+        ExcMessage::CodePoints(c) => write_json_code_points(out, &normalize_addresses(c)),
+    }
     out.push(')');
 }
 
@@ -115,7 +164,7 @@ pub fn write_canon(out: &mut String, v: &Value) {
             let _ = write!(out, "{i}");
         }
         Value::Float(f) => out.push_str(&float_repr(*f)),
-        Value::Str(s) => write_json_str(out, s),
+        Value::Str(s) => write_py_str(out, s),
         Value::Bytes(b) => write_bytes(out, b),
         Value::Tuple(items) => write_seq(out, '(', items, ')', write_canon),
         Value::List(items) => write_seq(out, '[', items, ']', write_canon),
@@ -123,7 +172,7 @@ pub fn write_canon(out: &mut String, v: &Value) {
         Value::Literal(name) => {
             out.push('/');
             match name {
-                NameValue::Str(s) => write_json_str(out, s),
+                NameValue::Str(s) => write_py_str(out, s),
                 NameValue::Bytes(b) => write_bytes(out, b),
             }
         }
@@ -145,7 +194,13 @@ pub fn write_canon(out: &mut String, v: &Value) {
             write_canon(out, &s.raw);
             out.push(')');
         }
-        Value::Exception { class, message } => write_exc(out, class, message),
+        Value::Exception { class, message } => {
+            let message = match message {
+                PyStr::Text(m) => ExcMessage::Text(m),
+                PyStr::CodePoints(c) => ExcMessage::CodePoints(c),
+            };
+            write_exc(out, class, message)
+        }
         Value::Named { name, fields } => {
             out.push_str(name);
             write_pairs(out, fields);
@@ -228,7 +283,7 @@ mod tests {
     use pycompat::{ExcKind, PyInt};
 
     fn s(x: &str) -> Value {
-        Value::Str(x.to_owned())
+        Value::str(x)
     }
 
     #[test]
@@ -263,11 +318,19 @@ mod tests {
             genno: Value::Int(PyInt::Small(0)),
             attrs: vec![(s("Length"), Value::Int(PyInt::Small(42)))],
             raw: Value::Bytes(raw.clone()),
+            data: Value::None,
         }));
         assert_eq!(canon(&stream), format!("Stream(5, 0, {{\"Length\": 42}}, x\"{}\")", hex(&raw)));
         let e = PyErr::new(ExcKind::PSEOF, "Unexpected EOF");
         assert_eq!(canon_exc(&e), "!PSEOF(\"Unexpected EOF\")");
         assert_eq!(canon(&Value::from(&e)), "!PSEOF(\"Unexpected EOF\")");
+        let addr = PyErr::new(ExcKind::ValueError, "<a.B object at 0x7f3aDEAD> at 0x>, at 0xg>");
+        assert_eq!(canon_exc(&addr), "!ValueError(\"<a.B object at 0x?> at 0x>, at 0xg>\")");
+        let lone = Value::Exception {
+            class: "ValueError".into(),
+            message: PyStr::from_code_points(vec![0xd800, 0x20, 0x61, 0x74, 0x20, 0x30, 0x78, 0x31, 0x3e]).unwrap(),
+        };
+        assert_eq!(canon(&lone), "!ValueError(\"\\ud800 at 0x?>\")");
         let named = Value::Named { name: "LTChar".into(), fields: vec![(s("x0"), Value::Float(1.5))] };
         assert_eq!(canon(&named), "LTChar{\"x0\": 1.5}");
     }

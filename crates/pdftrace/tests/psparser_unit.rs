@@ -14,7 +14,7 @@
 //! To investigate a mismatch, set `PSPARSER_DUMP_DIR`: the Rust
 //! serialization of each differing job is written there as
 //! `<corpus>-<index>.txt`, to compare with
-//! `oracle/unit/psparser.py --dump <index> --corpus <corpus>`.
+//! `python -m oracle.unit.psparser --dump <index> --corpus <corpus>`.
 
 use std::fs;
 
@@ -57,16 +57,13 @@ fn replay(corpus: &str, min_jobs: usize) {
     let oracle_path = data.path(&format!("{corpus}.json"));
     let oracle = fs::read_to_string(&oracle_path).unwrap_or_else(|_| {
         panic!(
-            "missing {}: generate it with oracle/unit/psparser.py{}",
+            "missing {}: generate it with python -m oracle.unit.psparser{}",
             oracle_path.display(),
             if corpus == "fuzz" { " --fuzz 4000" } else { "" }
         )
     });
     let oracle = pdftrace::typed_json::parse_json(&oracle).expect("oracle JSON");
-    let recorded = oracle.get("generator_sha256");
-    let meta = fs::read_to_string(data.path("meta.json")).unwrap();
-    let meta = pdftrace::typed_json::parse_json(&meta).unwrap();
-    assert_eq!(recorded, meta.get("generator_sha256"), "{corpus}.json comes from another version of the generator");
+    data.check_sources(&oracle_path, oracle.get("sources"));
     let Some(Json::Array(records)) = oracle.get("records") else { panic!("no records") };
     let jobs = read_content_jobs(&data.path(&format!("{corpus}.bin")));
     assert_eq!(jobs.len(), records.len());

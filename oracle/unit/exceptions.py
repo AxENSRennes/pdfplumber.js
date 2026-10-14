@@ -1,24 +1,20 @@
 """Exception classes of pdfminer and pdfplumber, for pycompat::ExcKind.
 
-Writes ``$PDFPLUMBER_ROOT/.cache/unit/exceptions/classes.jsonl``: one line per
+Writes ``<cache>/unit/exceptions/classes.jsonl`` (see
+``oracle/unit/_common.py``): one line per
 ``Exception`` subclass defined in a pdfminer or pdfplumber module (nested
 classes included), ``{"in": [module, qualname], "out": [name, [[base module,
 base qualname], ...]]}`` in typed JSON. The Rust test
 (crates/pdftrace/tests/exceptions_unit.rs) checks that ExcKind lists every
 class with the same name and bases.
 
-Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python oracle/unit/exceptions.py
+Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.exceptions
 """
 
-import hashlib
 import importlib
-import json
-import os
 import pkgutil
-import sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
+from ._common import require_oracle_python, write_cases, write_meta
 
 # Modules that are out of scope and pull optional dependencies.
 SKIP = {"pdfplumber.display", "pdfplumber.cli", "pdfminer.high_level", "pdfminer.image"}
@@ -33,8 +29,7 @@ def classes_in(obj, seen):
 
 
 def main():
-    if sys.version_info[:2] != (3, 12):
-        sys.exit(f"the oracle is CPython 3.12, not {sys.version.split()[0]}")
+    require_oracle_python()
     found = {}
     for package_name in ("pdfminer", "pdfplumber"):
         package = importlib.import_module(package_name)
@@ -46,19 +41,13 @@ def main():
             for cls in classes_in(module, set()):
                 if issubclass(cls, Exception) and cls.__module__.split(".")[0] in ("pdfminer", "pdfplumber"):
                     found[(cls.__module__, cls.__qualname__)] = cls
-    root = os.environ.get("PDFPLUMBER_ROOT") or REPO
-    outdir = os.path.join(root, ".cache", "unit", "exceptions")
-    os.makedirs(outdir, exist_ok=True)
-    with open(os.path.join(outdir, "classes.jsonl"), "w") as f:
-        for (module, qualname), cls in sorted(found.items()):
-            bases = [[b.__module__, b.__qualname__] for b in cls.__bases__]
-            f.write(json.dumps({"in": [module, qualname], "out": [cls.__name__, bases]}) + "\n")
-    with open(os.path.abspath(__file__), "rb") as f:
-        digest = hashlib.sha256(f.read()).hexdigest()
-    with open(os.path.join(outdir, "meta.json"), "w") as f:
-        json.dump({"generator_sha256": digest, "python": sys.version.split()[0], "classes": len(found)}, f)
-    print(f"wrote {len(found)} classes to {outdir}")
-
+    cases = (
+        ([module, qualname], [cls.__name__, [[b.__module__, b.__qualname__] for b in cls.__bases__]])
+        for (module, qualname), cls in sorted(found.items())
+    )
+    n = write_cases("exceptions", "classes", cases)
+    write_meta("exceptions", classes=n)
+    print(f"wrote {n} classes")
 
 if __name__ == "__main__":
     main()

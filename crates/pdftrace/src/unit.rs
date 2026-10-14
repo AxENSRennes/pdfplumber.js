@@ -1,10 +1,12 @@
 //! Access to the unit differential test data that `oracle/unit/<module>.py`
-//! writes under `$PDFPLUMBER_ROOT/.cache/unit/<module>/`.
+//! writes under `<cache>/unit/<module>/` (`<cache>` is `$PDFPLUMBER_CACHE`,
+//! else `$PDFPLUMBER_ROOT/.cache`).
 //!
-//! Each generator also writes `meta.json` with the SHA-256 of its own
-//! source; [`UnitData::open`] refuses data produced by another version of
-//! the generator, and panics with the command that regenerates it when the
-//! data is missing or stale.
+//! Each generator also writes `meta.json`, whose `sources` gives the SHA-256
+//! of every `oracle/` module it loaded (`oracle/unit/_common.py`);
+//! [`UnitData::open`] refuses data produced by other versions of these
+//! files, and panics with the command that regenerates it when the data is
+//! missing or stale.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -32,6 +34,15 @@ pub fn pdfplumber_root() -> PathBuf {
     }
 }
 
+/// `$PDFPLUMBER_CACHE`, else `<pdfplumber_root>/.cache` (as
+/// `oracle/corpus.py` `cache_dir`).
+pub fn cache_dir() -> PathBuf {
+    match std::env::var_os("PDFPLUMBER_CACHE") {
+        Some(dir) if !dir.is_empty() => PathBuf::from(dir),
+        _ => pdfplumber_root().join(".cache"),
+    }
+}
+
 /// The unit test data of one oracle module.
 pub struct UnitData {
     pub module: String,
@@ -39,30 +50,56 @@ pub struct UnitData {
 }
 
 impl UnitData {
-    /// Opens `.cache/unit/<module>/`, checking that `oracle/unit/<module>.py`
-    /// generated it. Panics with instructions when it did not.
+    /// Opens `<cache>/unit/<module>/`, checking that the current
+    /// `oracle/unit/<module>.py` (and the oracle modules it uses) generated
+    /// it. Panics with instructions when it did not.
     pub fn open(module: &str) -> UnitData {
-        let root = pdfplumber_root();
-        let dir = root.join(".cache/unit").join(module);
-        let generator = workspace_root().join("oracle/unit").join(format!("{module}.py"));
-        let how = format!(
-            "generate it with:\n    PDFPLUMBER_ROOT={root} {root}/.venv/bin/python {generator}\n\
-             (PDFPLUMBER_ROOT is the checkout holding .venv, corpus/ and .cache/)",
-            root = root.display(),
-            generator = generator.display(),
-        );
-        let meta_path = dir.join("meta.json");
+        let dir = cache_dir().join("unit").join(module);
+        let data = UnitData { module: module.to_owned(), dir };
+        let meta_path = data.path("meta.json");
         let meta = fs::read_to_string(&meta_path)
-            .unwrap_or_else(|_| panic!("missing unit test data {}: {how}", meta_path.display()));
+            .unwrap_or_else(|_| panic!("missing unit test data {}: {}", meta_path.display(), data.how()));
         let meta = typed_json::parse_json(&meta).expect("meta.json is JSON");
-        let source = fs::read(&generator).unwrap_or_else(|e| panic!("cannot read {}: {e}", generator.display()));
-        let expected = sha256_hex(&source);
-        let recorded = match meta.get("generator_sha256") {
-            Some(Json::String(s)) => s.clone(),
-            _ => String::new(),
+        data.check_sources(&meta_path, meta.get("sources"));
+        data
+    }
+
+    /// How to regenerate the data.
+    fn how(&self) -> String {
+        format!(
+            "generate it with:\n    cd {workspace} && PDFPLUMBER_ROOT={root} {root}/.venv/bin/python -m oracle.unit.{module}\n\
+             (PDFPLUMBER_ROOT is the checkout holding .venv, corpus/ and .cache/; `python -m oracle.unit` \
+             regenerates every missing or stale module)",
+            workspace = workspace_root().display(),
+            root = pdfplumber_root().display(),
+            module = self.module,
+        )
+    }
+
+    /// Checks the `sources` recorded in `file` (`{repo path: sha256}` of the
+    /// oracle modules that wrote it): the generator of this module must be
+    /// listed, and every file must be unchanged in this checkout.
+    pub fn check_sources(&self, file: &Path, sources: Option<&Json>) {
+        let Some(Json::Object(sources)) = sources else {
+            panic!("{} has no \"sources\" (an older generator wrote it): {}", file.display(), self.how());
         };
-        assert_eq!(recorded, expected, "stale unit test data in {}: {how}", dir.display());
-        UnitData { module: module.to_owned(), dir }
+        let generator = format!("oracle/unit/{}.py", self.module);
+        assert!(
+            sources.iter().any(|(path, _)| *path == generator),
+            "{} does not list {generator}: {}",
+            file.display(),
+            self.how()
+        );
+        let workspace = workspace_root();
+        for (path, recorded) in sources {
+            let source = fs::read(workspace.join(path)).unwrap_or_else(|e| panic!("cannot read {path}: {e}"));
+            assert!(
+                *recorded == Json::String(sha256_hex(&source)),
+                "stale unit test data {}: {path} changed since it was generated; {}",
+                file.display(),
+                self.how()
+            );
+        }
     }
 
     /// The path of one data file.

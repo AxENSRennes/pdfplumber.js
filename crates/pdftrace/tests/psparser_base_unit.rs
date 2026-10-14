@@ -29,7 +29,7 @@ fn until_error<T>(limit: usize, mut next: impl FnMut() -> PyResult<T>, mut value
     let mut items = Vec::new();
     loop {
         if items.len() > limit {
-            items.push(Value::Str("too many items".into()));
+            items.push(Value::str("too many items"));
             return Value::List(items);
         }
         match next() {
@@ -54,12 +54,12 @@ fn run(data: &[u8], ops: &[Value]) -> Value {
     let limit = data.len() + 2;
     for op in ops {
         let Value::List(op) = op else { panic!("{op:?}") };
-        let Value::Str(kind) = &op[0] else { panic!() };
+        let kind = op[0].as_str().expect("an op name");
         let arg = || match op.get(1) {
             Some(Value::Int(i)) => i.as_i64().expect("small int"),
             other => panic!("{other:?}"),
         };
-        out.push(match kind.as_str() {
+        out.push(match kind {
             "seek" => result(p.seek(arg()), |()| Value::None),
             "nexttoken" => result(p.nexttoken(), |t| entry(&t)),
             "tokens" => until_error(limit, || p.nexttoken(), |t| entry(&t)),
@@ -80,7 +80,7 @@ fn run(data: &[u8], ops: &[Value]) -> Value {
                 Value::List(p.results.iter().map(entry).collect())
             }
             "stack" => Value::List(vec![
-                p.curtype.map_or(Value::None, |t| Value::Str(t.to_owned())),
+                p.curtype.map_or(Value::None, Value::str),
                 Value::List(p.curstack.iter().map(entry).collect()),
                 Value::Int(PyInt::from(p.context.len())),
             ]),

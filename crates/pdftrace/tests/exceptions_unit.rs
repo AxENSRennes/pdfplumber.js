@@ -8,10 +8,7 @@ use pdftrace::value::Value;
 use pycompat::ExcKind;
 
 fn s(v: &Value) -> &str {
-    match v {
-        Value::Str(s) => s,
-        other => panic!("not a str: {other:?}"),
-    }
+    v.as_str().unwrap_or_else(|| panic!("not a str: {v:?}"))
 }
 
 fn qualified(kind: ExcKind) -> String {

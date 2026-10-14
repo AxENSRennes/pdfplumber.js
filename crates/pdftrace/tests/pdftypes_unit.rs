@@ -38,13 +38,15 @@ fn build(v: &Value, doc: &Weak<dyn PDFResolver>) -> PDFObject {
         Value::Int(i) => PDFObject::Int(i.clone()),
         Value::Float(f) => PDFObject::Float(*f),
         Value::Bytes(b) => PDFObject::Bytes(Rc::from(&b[..])),
-        Value::Literal(NameValue::Str(s)) => PDFObject::Literal(LIT(s)),
+        Value::Literal(NameValue::Str(s)) => {
+            PDFObject::Literal(LIT(s.as_str().expect("a literal name without surrogates")))
+        }
         Value::Literal(NameValue::Bytes(b)) => PDFObject::Literal(LIT_bytes(b)),
         Value::Keyword(k) => PDFObject::Keyword(KWD(k)),
         Value::List(items) => PDFObject::List(PDFList::new(items.iter().map(|x| build(x, doc)).collect())),
         Value::Dict(items) => PDFObject::Dict(PDFDict::from_pairs(items.iter().map(|(k, x)| {
-            let Value::Str(k) = k else { panic!("dict key {k:?}") };
-            (Rc::from(k.as_str()), build(x, doc))
+            let k = k.as_str().unwrap_or_else(|| panic!("dict key {k:?}"));
+            (Rc::from(k), build(x, doc))
         }))),
         Value::Ref(objid) => PDFObject::Ref(PDFObjRef::new(Some(doc.clone()), objid.clone())),
         other => panic!("not a PDF object: {other:?}"),
@@ -128,10 +130,10 @@ fn objects() {
     replay("objects", |a| {
         let x = build(&a[0], &weak);
         let outs = vec![
-            Out::V(Value::Str(x.repr())),
-            Out::V(Value::Str(literal_name(&x))),
+            Out::V(Value::str(x.repr())),
+            Out::V(Value::str(literal_name(&x))),
             match keyword_name(&x) {
-                KeywordName::Name(s) => Out::V(Value::Str(s)),
+                KeywordName::Name(s) => Out::V(Value::str(s)),
                 KeywordName::NotKeyword(o) => Out::Obj(o),
             },
             Out::V(Value::Bool(x.is_truthy())),
@@ -187,7 +189,7 @@ fn resolve() {
             obj(dict_value(&x).map(PDFObject::Dict)),
             obj(list_value(&x).map(PDFObject::List)),
             obj(str_value(&x).map(PDFObject::Bytes)),
-            Out::V(Value::Str(x.repr())),
+            Out::V(Value::str(x.repr())),
         ];
         let resolved_bool = match resolve1_none(&x) {
             Ok(PDFObject::Bool(b)) => Some(b),
@@ -225,13 +227,13 @@ fn streams() {
         let any = if s.contains("F") || s.contains("Filter") {
             Value::from(&s.get_any(&["F", "Filter"], PDFObject::Null))
         } else {
-            Value::Str("none".into())
+            Value::str("none")
         };
         let outs = vec![
-            Out::V(Value::Str(before)),
+            Out::V(Value::str(before)),
             Out::V(filters),
             Out::V(data),
-            Out::V(Value::Str(s.repr())),
+            Out::V(Value::str(s.repr())),
             Out::V(s.get_rawdata().map_or(Value::None, |r| Value::Bytes(r.to_vec()))),
             obj(s.getitem("Missing")),
             obj(s.getitem("Length")),
@@ -275,7 +277,7 @@ fn decipher() {
             Ok(d) => Value::Bytes(d.to_vec()),
             Err(e) => Value::from(&e),
         };
-        Value::List(vec![data, Value::Str(s.repr())])
+        Value::List(vec![data, Value::str(s.repr())])
     });
 }
 
@@ -286,7 +288,7 @@ fn refs_without_document() {
         let r = PDFObjRef::new(None, objid.clone());
         let x = PDFObject::Ref(r.clone());
         finish(vec![
-            Out::V(Value::Str(r.repr())),
+            Out::V(Value::str(r.repr())),
             obj(r.resolve(&PDFObject::Null)),
             obj(resolve1_none(&x)),
             obj(resolve_all(&PDFObject::List(PDFList::new(vec![x.clone()])), &PDFObject::Null)),

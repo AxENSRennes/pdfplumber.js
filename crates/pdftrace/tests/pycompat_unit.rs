@@ -79,10 +79,7 @@ fn int(v: &Value) -> i64 {
 }
 
 fn str_arg(v: &Value) -> &str {
-    match v {
-        Value::Str(s) => s,
-        other => panic!("not a str: {other:?}"),
-    }
+    v.as_str().unwrap_or_else(|| panic!("not a str: {v:?}"))
 }
 
 fn bytes_arg(v: &Value) -> &[u8] {
@@ -128,7 +125,7 @@ fn int_parse() {
         let base = int(&a[1]) as u32;
         let base = if int(&a[1]) < 0 { u32::MAX } else { base };
         let r = match &a[0] {
-            Value::Str(s) => PyInt::parse_str(s, base),
+            Value::Str(s) => PyInt::parse_str(s.as_str().expect("no surrogates"), base),
             Value::Bytes(b) => PyInt::parse_bytes(b, base),
             other => panic!("{other:?}"),
         };
@@ -140,7 +137,7 @@ fn int_parse() {
 fn int_str() {
     replay("int_str", |a| {
         let Value::Int(i) = &a[0] else { panic!() };
-        result(i.py_str(), Value::Str)
+        result(i.py_str(), Value::str)
     });
 }
 
@@ -206,7 +203,7 @@ fn minmax() {
 fn float_repr_() {
     replay("float_repr", |a| {
         let Value::Float(f) = &a[0] else { panic!() };
-        Value::Str(float_repr(*f))
+        Value::str(float_repr(*f))
     });
 }
 
@@ -224,7 +221,7 @@ fn round() {
 #[test]
 fn float_parse() {
     replay("float_parse", |a| match &a[0] {
-        Value::Str(s) => result(float_from_str(s), Value::Float),
+        Value::Str(s) => result(float_from_str(s.as_str().expect("no surrogates")), Value::Float),
         Value::Bytes(b) => result(float_from_bytes(b), Value::Float),
         other => panic!("{other:?}"),
     });
@@ -232,22 +229,22 @@ fn float_parse() {
 
 #[test]
 fn str_repr_() {
-    replay("str_repr", |a| Value::Str(str_repr(str_arg(&a[0]))));
+    replay("str_repr", |a| Value::str(str_repr(str_arg(&a[0]))));
 }
 
 #[test]
 fn json_str() {
-    replay("json_str", |a| Value::Str(json_dumps_str(str_arg(&a[0]))));
+    replay("json_str", |a| Value::str(json_dumps_str(str_arg(&a[0]))));
 }
 
 #[test]
 fn bytes_repr_() {
-    replay("bytes_repr", |a| Value::Str(bytes_repr(bytes_arg(&a[0]))));
+    replay("bytes_repr", |a| Value::str(bytes_repr(bytes_arg(&a[0]))));
 }
 
 #[test]
 fn utf8_ignore() {
-    replay("utf8_ignore", |a| Value::Str(text::decode_utf8_ignore(bytes_arg(&a[0]))));
+    replay("utf8_ignore", |a| Value::str(text::decode_utf8_ignore(bytes_arg(&a[0]))));
 }
 
 fn range_list(ranges: &[(u32, u32)]) -> Value {
@@ -262,7 +259,7 @@ fn range_list(ranges: &[(u32, u32)]) -> Value {
 #[test]
 fn unicode_tables() {
     replay("unicode", |a| match str_arg(&a[0]) {
-        "unidata_version" => Value::Str(text::UNICODE_VERSION.to_owned()),
+        "unidata_version" => Value::str(text::UNICODE_VERSION.to_owned()),
         "nonprintable" => range_list(tables::NONPRINTABLE),
         "space" => range_list(tables::SPACE),
         "decimal" => Value::List(
