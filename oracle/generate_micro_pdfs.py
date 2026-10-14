@@ -1,20 +1,110 @@
 #!/usr/bin/env python3
+"""Generate the micro PDFs of ``corpus/micro`` and their manifest.
+
+    .venv/bin/python oracle/generate_micro_pdfs.py
+
+Fully deterministic: running it twice writes identical bytes. The encrypted
+file is produced here too (Standard security handler, RC4 40-bit, revision 2,
+PDF 1.7 section 7.6.3.3, algorithms 1 to 4) from fixed inputs: user password
+``user``, owner password ``owner``, permissions ``/P -3904`` and a document
+``/ID`` equal to the MD5 of the unencrypted file. Nothing random, no external
+tool. ``corpus/micro/manifest.json`` records each file's SHA-256 and the
+password of the encrypted one (read by ``oracle/corpus.py``).
+"""
+
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 import re
-import subprocess
+import struct
+from typing import NamedTuple
 
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "corpus" / "micro"
 
 
+class Stream(NamedTuple):
+    dictionary: str
+    data: bytes
+
+    def body(self, data: bytes) -> bytes:
+        return f"<< {self.dictionary} /Length {len(data)} >>\nstream\n".encode("latin1") + data + b"\nendstream"
+
+
+PASSWORD_PADDING = b"(\xbfN^Nu\x8aAd\x00NV\xff\xfa\x01\x08..\x00\xb6\xd0h>\x80/\x0c\xa9\xfedSiz"
+
+
+def rc4(key: bytes, data: bytes) -> bytes:
+    s = list(range(256))
+    j = 0
+    for i in range(256):
+        j = (j + s[i] + key[i % len(key)]) & 0xFF
+        s[i], s[j] = s[j], s[i]
+    out = bytearray()
+    i = j = 0
+    for byte in data:
+        i = (i + 1) & 0xFF
+        j = (j + s[i]) & 0xFF
+        s[i], s[j] = s[j], s[i]
+        out.append(byte ^ s[(s[i] + s[j]) & 0xFF])
+    return bytes(out)
+
+
+class Encryption(NamedTuple):
+    """Standard security handler, /V 1 /R 2, 40-bit RC4 (PDF 1.7, 7.6.3.3)."""
+
+    user_password: bytes
+    owner_password: bytes
+    permissions: int  # /P, signed 32-bit
+    doc_id: bytes
+
+    @staticmethod
+    def _pad(password: bytes) -> bytes:
+        return (password + PASSWORD_PADDING)[:32]
+
+    def owner_entry(self) -> bytes:
+        # Algorithm 3: O = RC4(MD5(padded owner password)[:5], padded user password)
+        return rc4(hashlib.md5(self._pad(self.owner_password)).digest()[:5], self._pad(self.user_password))
+
+    def file_key(self) -> bytes:
+        # Algorithm 2: MD5(padded user password + O + P as 4 bytes little-endian + ID[0])[:5]
+        h = hashlib.md5(self._pad(self.user_password))
+        h.update(self.owner_entry())
+        h.update(struct.pack("<l", self.permissions))
+        h.update(self.doc_id)
+        return h.digest()[:5]
+
+    def user_entry(self) -> bytes:
+        # Algorithm 4: U = RC4(file key, padding)
+        return rc4(self.file_key(), PASSWORD_PADDING)
+
+    def object_key(self, objid: int, genno: int) -> bytes:
+        # Algorithm 1: MD5(file key + objid (3 bytes LE) + genno (2 bytes LE))[:5 + 5]
+        key = self.file_key() + struct.pack("<L", objid)[:3] + struct.pack("<L", genno)[:2]
+        return hashlib.md5(key).digest()[: min(len(key), 16)]
+
+    def trailer_entries(self) -> str:
+        doc_id = self.doc_id.hex().upper()
+        return (
+            f" /Encrypt << /Filter /Standard /V 1 /R 2 /Length 40 /P {self.permissions}"
+            f" /O <{self.owner_entry().hex().upper()}> /U <{self.user_entry().hex().upper()}> >>"
+            f" /ID [<{doc_id}> <{doc_id}>]"
+        )
+
+
+# A string object in a non-stream body: "(" or a "<" that does not open "<<"
+# (the generator only encrypts stream data).
+_STRING_OBJECT = re.compile(rb"\(|<(?!<)(?<!<<)")
+
+
 class PDF:
     def __init__(self) -> None:
-        self.objects: list[bytes] = []
+        self.objects: list[bytes | Stream] = []
 
-    def add(self, body: str | bytes) -> int:
+    def add(self, body: str | bytes | Stream) -> int:
         if isinstance(body, str):
             body = body.encode("latin1")
         self.objects.append(body)
@@ -23,13 +113,19 @@ class PDF:
     def stream(self, dictionary: str, data: str | bytes) -> int:
         if isinstance(data, str):
             data = data.encode("latin1")
-        body = f"<< {dictionary} /Length {len(data)} >>\nstream\n".encode("latin1") + data + b"\nendstream"
-        return self.add(body)
+        return self.add(Stream(dictionary, data))
 
-    def write(self, path: Path, root_obj: int) -> None:
+    def to_bytes(self, root_obj: int, encryption: Encryption | None = None) -> bytes:
         out = bytearray(b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")
         offsets = [0]
-        for index, body in enumerate(self.objects, start=1):
+        for index, obj in enumerate(self.objects, start=1):
+            if isinstance(obj, Stream):
+                data = obj.data if encryption is None else rc4(encryption.object_key(index, 0), obj.data)
+                body = obj.body(data)
+            else:
+                body = obj
+                if encryption is not None and _STRING_OBJECT.search(body):
+                    raise ValueError(f"object {index}: encrypting string objects is not implemented")
             offsets.append(len(out))
             out.extend(f"{index} 0 obj\n".encode("latin1"))
             out.extend(body)
@@ -39,8 +135,12 @@ class PDF:
         out.extend(b"0000000000 65535 f \n")
         for offset in offsets[1:]:
             out.extend(f"{offset:010d} 00000 n \n".encode("latin1"))
-        out.extend(f"trailer\n<< /Size {len(self.objects) + 1} /Root {root_obj} 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode("latin1"))
-        path.write_bytes(bytes(out))
+        extra = "" if encryption is None else encryption.trailer_entries()
+        out.extend(f"trailer\n<< /Size {len(self.objects) + 1} /Root {root_obj} 0 R{extra} >>\nstartxref\n{xref}\n%%EOF\n".encode("latin1"))
+        return bytes(out)
+
+    def write(self, path: Path, root_obj: int) -> None:
+        path.write_bytes(self.to_bytes(root_obj))
 
 
 def page_tree(pdf: PDF, page_obj: int, extra_catalog: str = "") -> int:
@@ -300,7 +400,7 @@ def images_advanced() -> PDF:
     mask = pdf.stream("/Type /XObject /Subtype /Image /Width 1 /Height 1 /ImageMask true /BitsPerComponent 1", b"\x80")
     image = pdf.stream("/Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace 4 0 R /BitsPerComponent 8 /SMask 3 0 R", b"\x00\xff\x00")
     colorspace = pdf.add("[ /DeviceRGB ]")
-    pdf.objects[image - 1] = f"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace {colorspace} 0 R /BitsPerComponent 8 /SMask {mask} 0 R /Length 3 >>\nstream\n".encode("latin1") + b"\x00\xff\x00\nendstream"
+    pdf.objects[image - 1] = Stream(f"/Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace {colorspace} 0 R /BitsPerComponent 8 /SMask {mask} 0 R", b"\x00\xff\x00")
     inline = "BI /W 1 /H 1 /BPC 8 /CS /RGB ID \xff\x00\x00 EI"
     content_obj = pdf.stream("", f"q 10 0 0 10 20 50 cm /Im1 Do Q\nq 8 0 0 8 60 50 cm {inline} Q")
     page = pdf.add(f"<< /Type /Page /MediaBox [0 0 120 100] /Resources << /XObject << /Im1 {image} 0 R >> >> /Contents {content_obj} 0 R >>")
@@ -338,6 +438,38 @@ FIXTURES = {
 }
 
 
+ENCRYPTED = "encrypted-password.pdf"
+ENCRYPTED_FROM = "text-operators.pdf"
+ENCRYPTED_PASSWORD = "user"
+
+
+def encrypted_copy(name: str) -> bytes:
+    pdf = FIXTURES[name]()
+    plain = pdf.to_bytes(pdf.root)  # type: ignore[attr-defined]
+    encryption = Encryption(
+        user_password=ENCRYPTED_PASSWORD.encode("latin1"),
+        owner_password=b"owner",
+        permissions=-3904,
+        doc_id=hashlib.md5(plain).digest(),
+    )
+    return pdf.to_bytes(pdf.root, encryption)  # type: ignore[attr-defined]
+
+
+def manifest_entry(name: str, password: str | None = None) -> dict[str, object]:
+    data = (OUT / name).read_bytes()
+    entry: dict[str, object] = {
+        "id": f"micro/{name.removesuffix('.pdf')}",
+        "localPath": f"corpus/micro/{name}",
+        "source": "Generated micro-PDF",
+        "generator": "oracle/generate_micro_pdfs.py",
+        "size": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+    }
+    if password is not None:
+        entry["password"] = password
+    return entry
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     for name, factory in FIXTURES.items():
@@ -345,14 +477,10 @@ def main() -> None:
         pdf.write(OUT / name, pdf.root)  # type: ignore[attr-defined]
     broken = OUT / "broken-recovery.pdf"
     broken.write_bytes(re.sub(rb"startxref\n\d+", b"startxref\n0", broken.read_bytes()))
-    plain = OUT / "text-operators.pdf"
-    encrypted = OUT / "encrypted-password.pdf"
-    subprocess.run(
-        ["mutool", "clean", "-E", "rc4-40", "-U", "user", "-O", "owner", "-P", "none", str(plain), str(encrypted)],
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    (OUT / ENCRYPTED).write_bytes(encrypted_copy(ENCRYPTED_FROM))
+    entries = [manifest_entry(name) for name in FIXTURES]
+    entries.append(manifest_entry(ENCRYPTED, password=ENCRYPTED_PASSWORD))
+    (OUT / "manifest.json").write_text(json.dumps(entries, indent=2) + "\n")
 
 
 if __name__ == "__main__":
