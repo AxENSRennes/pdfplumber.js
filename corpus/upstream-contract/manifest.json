@@ -1,7 +1,7 @@
 [
   {
     "id": "pdfjs-bug1260585",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-bug1260585.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-bug1260585.pdf",
     "sourceUrl": "https://bugzilla.mozilla.org/attachment.cgi?id=8736063",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -21,7 +21,7 @@
   },
   {
     "id": "pdfjs-bug867484",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-bug867484.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-bug867484.pdf",
     "sourceUrl": "https://bugzilla.mozilla.org/attachment.cgi?id=744001",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -41,7 +41,7 @@
   },
   {
     "id": "pdfjs-bug1755201",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-bug1755201.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-bug1755201.pdf",
     "sourceUrl": "https://bugzilla.mozilla.org/attachment.cgi?id=9263657",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -60,7 +60,7 @@
   },
   {
     "id": "pdfjs-issue14864",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue14864.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue14864.pdf",
     "sourceUrl": "https://github.com/mozilla/pdf.js/files/8599802/songbook.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -79,7 +79,7 @@
   },
   {
     "id": "pdfjs-issue18503",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue18503.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue18503.pdf",
     "sourceUrl": "https://github.com/user-attachments/files/16402842/apl_23_003.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -98,7 +98,7 @@
   },
   {
     "id": "pdfjs-issue19835",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue19835.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue19835.pdf",
     "sourceUrl": "https://github.com/user-attachments/files/19825124/AAPL-2024-09-28-10-K-d71aeb7ff955e2fc4770624610676221.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -117,7 +117,7 @@
   },
   {
     "id": "pdfjs-issue10004",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue10004.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue10004.pdf",
     "sourceUrl": "https://github.com/mozilla/pdf.js/files/2315390/2371410.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -136,7 +136,7 @@
   },
   {
     "id": "pdfjs-issue10272",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue10272.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue10272.pdf",
     "sourceUrl": "https://github.com/mozilla/pdf.js/files/2598691/ATS_TEST_PVC_2_1.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -155,7 +155,7 @@
   },
   {
     "id": "pdfjs-issue11518",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue11518.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue11518.pdf",
     "sourceUrl": "https://github.com/mozilla/pdf.js/files/4076920/set-2_lyst7242.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -174,7 +174,7 @@
   },
   {
     "id": "pdfjs-issue14562",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue14562.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue14562.pdf",
     "sourceUrl": "https://github.com/mozilla/pdf.js/files/8055863/NHA-20211231-A-018_before.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -193,7 +193,7 @@
   },
   {
     "id": "pdfjs-bug1766987",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-bug1766987.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-bug1766987.pdf",
     "sourceUrl": "https://bugzilla.mozilla.org/attachment.cgi?id=9274388",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -212,7 +212,7 @@
   },
   {
     "id": "pdfjs-issue16081",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue16081.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue16081.pdf",
     "sourceUrl": "https://github.com/mozilla/pdf.js/files/10808293/pptc153.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -231,7 +231,7 @@
   },
   {
     "id": "pdfjs-issue16119",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue16119.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue16119.pdf",
     "sourceUrl": "https://github.com/mozilla/pdf.js/files/10907776/Fiskelagkagen_2016v2.1.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -250,7 +250,7 @@
   },
   {
     "id": "pdfjs-bug1823296",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-bug1823296.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-bug1823296.pdf",
     "sourceUrl": "https://bugzilla.mozilla.org/attachment.cgi?id=9324226",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -269,7 +269,7 @@
   },
   {
     "id": "pdfjs-bug1847733",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-bug1847733.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-bug1847733.pdf",
     "sourceUrl": "https://github.com/mozilla/pdf.js/files/12290354/PDF.Form.4.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -288,7 +288,7 @@
   },
   {
     "id": "pdfjs-issue16863",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue16863.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue16863.pdf",
     "sourceUrl": "https://github.com/mozilla/pdf.js/files/12422360/4422-84.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -307,7 +307,7 @@
   },
   {
     "id": "pdfjs-issue17856",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue17856.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue17856.pdf",
     "sourceUrl": "https://github.com/mozilla/pdf.js/files/14808044/outline-without-title.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -326,7 +326,7 @@
   },
   {
     "id": "pdfjs-issue19281",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue19281.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue19281.pdf",
     "sourceUrl": "https://github.com/user-attachments/files/18304780/Antarctica-Grid.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -345,7 +345,7 @@
   },
   {
     "id": "pdfjs-bug808084",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-bug808084.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-bug808084.pdf",
     "sourceUrl": "https://www.open-std.org/JTC1/SC22/WG21/docs/papers/2006/n1984.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -364,7 +364,7 @@
   },
   {
     "id": "pdfjs-hudsonsurvey",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-hudsonsurvey.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-hudsonsurvey.pdf",
     "sourceUrl": "https://svn.apache.org/repos/asf/pdfbox/branches/1.2.x/pdfbox/src/test/resources/input/rendering/survey.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -383,7 +383,7 @@
   },
   {
     "id": "pdfjs-issue2129",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue2129.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue2129.pdf",
     "sourceUrl": "http://docs.dpaq.de/1737-itcsamsungapple337_794notice14092012.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -402,7 +402,7 @@
   },
   {
     "id": "pdfjs-issue3848",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue3848.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue3848.pdf",
     "sourceUrl": "http://www.unicode.org/L2/L2006/06334-reph-telugu-gurmukhi.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -421,7 +421,7 @@
   },
   {
     "id": "pdfjs-issue4387",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue4387.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue4387.pdf",
     "sourceUrl": "https://www.swiss-orienteering.ch/files/magazin/blw2014_nachwuchs.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -440,7 +440,7 @@
   },
   {
     "id": "pdfjs-issue6549",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue6549.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue6549.pdf",
     "sourceUrl": "https://www.kokuyo-st.co.jp/stationery/camiapp/CamiApp_Sample.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -459,7 +459,7 @@
   },
   {
     "id": "pdfjs-jai-pdf",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-jai-pdf.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-jai-pdf.pdf",
     "sourceUrl": "https://docs.oracle.com/cd/E19957-01/806-5413-10/806-5413-10.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -478,7 +478,7 @@
   },
   {
     "id": "pdfjs-liveprogramming",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-liveprogramming.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-liveprogramming.pdf",
     "sourceUrl": "https://blog.lassus.se/files/liveprogramming.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -497,7 +497,7 @@
   },
   {
     "id": "pdfjs-txt2pdf",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-txt2pdf.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-txt2pdf.pdf",
     "sourceUrl": "https://www.sanface.com/pdf/test.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -516,7 +516,7 @@
   },
   {
     "id": "pdfjs-issue12909",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue12909.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue12909.pdf",
     "sourceUrl": "https://www.machonso.org/uploads/images/%D7%95%D7%95%D7%9C%D7%A3.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -535,7 +535,7 @@
   },
   {
     "id": "pdfjs-issue13845",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue13845.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue13845.pdf",
     "sourceUrl": "https://github.com/mozilla/pdf.js/files/6916129/example.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -554,7 +554,7 @@
   },
   {
     "id": "pdfjs-issue15352",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue15352.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue15352.pdf",
     "sourceUrl": "https://pdf.cdn.readpaper.com/aiKnowledge/pdf/2022-05-06/d55ec560f4c142c3973abc66397d1822-/userUpload/d0edf452a85821acf41cbfa0a6f2f2ac.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -573,7 +573,7 @@
   },
   {
     "id": "pdfjs-issue16843-text",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue16843-text.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue16843-text.pdf",
     "sourceUrl": "https://github.com/mozilla/pdf.js/files/12366234/16_2020-044.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -592,7 +592,7 @@
   },
   {
     "id": "pdfjs-issue1936-text",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue1936-text.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue1936-text.pdf",
     "sourceUrl": "https://sci2s.ugr.es/keel/pdf/specific/articulo/alp99.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -611,7 +611,7 @@
   },
   {
     "id": "pdfjs-issue19624-text",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue19624-text.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue19624-text.pdf",
     "sourceUrl": "https://github.com/user-attachments/files/19126771/okm2500682934750615600.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -630,7 +630,7 @@
   },
   {
     "id": "pdfjs-issue19954",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue19954.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue19954.pdf",
     "sourceUrl": "https://github.com/user-attachments/files/20281525/Capital.Bancorp.Inc.Corporate.Responsibility.2025509.SD000000003063823863-1-2.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -649,7 +649,7 @@
   },
   {
     "id": "pdfjs-bug1130815",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-bug1130815.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-bug1130815.pdf",
     "sourceUrl": "https://bug1130815.bmoattachments.org/attachment.cgi?id=8560958",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -668,7 +668,7 @@
   },
   {
     "id": "pdfjs-bug951051",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-bug951051.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-bug951051.pdf",
     "sourceUrl": "https://web.archive.org/web/20120618235740/http://www.intreprinzatorturism.ro/wp-content/uploads/2012/05/ITPR-studiu-online-5000-turisti-straini_martie-2012.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -687,7 +687,7 @@
   },
   {
     "id": "pdfjs-f1040",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-f1040.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-f1040.pdf",
     "sourceUrl": "https://web.archive.org/web/20110918100215/http://www.irs.gov/pub/irs-pdf/f1040.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -706,7 +706,7 @@
   },
   {
     "id": "pdfjs-f1040-2022",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-f1040_2022.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-f1040_2022.pdf",
     "sourceUrl": "https://web.archive.org/web/20230218015355/https://www.irs.gov/pub/irs-pdf/f1040.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -725,7 +725,7 @@
   },
   {
     "id": "pdfjs-issue1127",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue1127.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue1127.pdf",
     "sourceUrl": "https://web.archive.org/web/20160114105739/https://vmp.ethz.ch/pdfs/diplome/vordiplome/Block%201/Algorithmen_%26_Komplexitaet/AlgoKo_f08_Aufg.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -744,7 +744,7 @@
   },
   {
     "id": "pdfjs-bug1820909",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-bug1820909.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-bug1820909.pdf",
     "sourceUrl": "https://www.unicode.org/charts/PDF/U31350.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Unicode code chart PDF",
     "license": "Unicode charts terms via upstream linked public corpus",
@@ -764,7 +764,7 @@
   },
   {
     "id": "pdfjs-issue2770",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue2770.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue2770.pdf",
     "sourceUrl": "https://bugzilla.mozilla.org/attachment.cgi?id=718826",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -783,7 +783,7 @@
   },
   {
     "id": "pdfjs-issue1729",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue1729.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue1729.pdf",
     "sourceUrl": "https://web.archive.org/web/20110915200237/http://www.environmentallights.com/files/documents/ir_light_hazard.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -802,7 +802,7 @@
   },
   {
     "id": "pdfjs-issue1878",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue1878.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue1878.pdf",
     "sourceUrl": "https://web.archive.org/web/20150317000520/http://iau.org/static/scientific_meetings/postmr12.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -821,7 +821,7 @@
   },
   {
     "id": "pdfjs-issue1940",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue1940.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue1940.pdf",
     "sourceUrl": "https://web.archive.org/web/20120105135646/http://www.parallax.com/dl/docs/prod/acc/memsickit.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -840,7 +840,7 @@
   },
   {
     "id": "pdfjs-issue2853",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue2853.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue2853.pdf",
     "sourceUrl": "https://web.archive.org/web/20130818210913/http://www.celgene.de/Patienten/Newsletter-Epigenetik-201301.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -859,7 +859,7 @@
   },
   {
     "id": "pdfjs-issue3248",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue3248.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue3248.pdf",
     "sourceUrl": "https://web.archive.org/web/20130203135942/http://www.kira-reviews.com/wp-content/uploads/2013/01/Scan0003.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -878,7 +878,7 @@
   },
   {
     "id": "pdfjs-issue5509",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue5509.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue5509.pdf",
     "sourceUrl": "https://web.archive.org/web/20140908142029/http://kieranhealy.org/files/papers/data-visualization.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -897,7 +897,7 @@
   },
   {
     "id": "pdfjs-issue3064",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue3064.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue3064.pdf",
     "sourceUrl": "https://bugzilla.mozilla.org/attachment.cgi?id=733257",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -916,7 +916,7 @@
   },
   {
     "id": "pdfjs-issue3925",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue3925.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue3925.pdf",
     "sourceUrl": "http://patentimages.storage.googleapis.com/pdfs/US4441207.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -935,7 +935,7 @@
   },
   {
     "id": "pdfjs-issue9186",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue9186.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue9186.pdf",
     "sourceUrl": "https://github.com/mozilla/pdf.js/files/1500985/Sample.lease.contract.26.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -954,7 +954,7 @@
   },
   {
     "id": "pdfjs-shavian",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-shavian.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-shavian.pdf",
     "sourceUrl": "https://www.unicode.org/charts/PDF/U10450.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Unicode code chart PDF",
     "license": "Unicode charts terms via upstream linked public corpus",
@@ -974,7 +974,7 @@
   },
   {
     "id": "pdfjs-preistabelle",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-preistabelle.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-preistabelle.pdf",
     "sourceUrl": "https://web.archive.org/web/20130903113659/http://www.fyve.de/downloads/Preistabelle_FYVE_Oktober_2010.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -993,7 +993,7 @@
   },
   {
     "id": "pdfjs-vesta",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-vesta.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-vesta.pdf",
     "sourceUrl": "https://web.archive.org/web/20140514052657/http://www-csag.ucsd.edu/~jburke/Vesta/Vesta_Overview.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -1012,7 +1012,7 @@
   },
   {
     "id": "pdfjs-reduced_planck_constant",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-reduced_planck_constant.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-reduced_planck_constant.pdf",
     "sourceUrl": "https://github.com/py-pdf/pypdf/files/12145090/hbar.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture",
     "license": "Apache-2.0 upstream test corpus",
@@ -1031,7 +1031,7 @@
   },
   {
     "id": "pdfjs-bug931481",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-bug931481.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-bug931481.pdf",
     "sourceUrl": "https://web.archive.org/web/20141210054406/http://www.stronachinstitut.at/wp-content/uploads/2012/02/Nachbaur_CV5.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -1050,7 +1050,7 @@
   },
   {
     "id": "pdfjs-mao",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-mao.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-mao.pdf",
     "sourceUrl": "https://web.archive.org/web/20140501023554/http://www1.ihns.ac.cn/readers/mao.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -1070,7 +1070,7 @@
   },
   {
     "id": "pdfjs-TaroUTR50SortedList112",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-TaroUTR50SortedList112.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-TaroUTR50SortedList112.pdf",
     "sourceUrl": "https://web.archive.org/web/20150805202858/http://blogs.adobe.com/CCJKType/files/2012/07/TaroUTR50SortedList112.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -1092,7 +1092,7 @@
   },
   {
     "id": "pdfjs-ecma262",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-ecma262.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-ecma262.pdf",
     "sourceUrl": "https://web.archive.org/web/20110902042030/http://www.ecma-international.org/publications/files/ECMA-ST/Ecma-262.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -1111,7 +1111,7 @@
   },
   {
     "id": "pdfjs-hmm",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-hmm.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-hmm.pdf",
     "sourceUrl": "https://web.archive.org/web/20130626074301/http://speech.tifr.res.in/tutorials/hmmTutorialBarbaraExercises.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -1131,7 +1131,7 @@
   },
   {
     "id": "pdfjs-ibwa-bad",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-ibwa-bad.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-ibwa-bad.pdf",
     "sourceUrl": "https://web.archive.org/web/20070317213312/http://www.bottledwater.org/public/pdf/IBWA05ModelCode_Mar2.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -1151,7 +1151,7 @@
   },
   {
     "id": "pdfjs-issue13132",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue13132.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue13132.pdf",
     "sourceUrl": "https://web.archive.org/web/20210324123420/https://assets.publishing.service.gov.uk/government/uploads/system/uploads/attachment_data/file/866023/IHT205_2004-2006.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -1170,7 +1170,7 @@
   },
   {
     "id": "pdfjs-issue2627",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-issue2627.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-issue2627.pdf",
     "sourceUrl": "https://web.archive.org/web/20160117120444/http://borel.slu.edu/pub/metanet.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -1189,7 +1189,7 @@
   },
   {
     "id": "pdfjs-ocs",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-ocs.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-ocs.pdf",
     "sourceUrl": "https://web.archive.org/web/20100215194419/http://www.unibuc.ro/uploads_en/29535/10/Cyrillic_Alphabets-Chars.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -1208,7 +1208,7 @@
   },
   {
     "id": "pdfjs-pdf-reference-1-7",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-pdf-reference-1-7.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-pdf-reference-1-7.pdf",
     "sourceUrl": "https://web.archive.org/web/20151204084826/http://wwwimages.adobe.com/www.adobe.com/content/dam/Adobe/en/devnet/pdf/pdfs/pdf_reference_1-7.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -1228,7 +1228,7 @@
   },
   {
     "id": "pdfjs-pr4606",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-pr4606.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-pr4606.pdf",
     "sourceUrl": "https://web.archive.org/web/20140411084003/http://www.prensalibre.com/multimedia/Terremoto-1976-Sismo-terremoto_del_76-guatemala-Teremoto-temblorgt_PREFIL20140203_0001.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",
@@ -1247,7 +1247,7 @@
   },
   {
     "id": "pdfjs-pr4731",
-    "localPath": "test/fixtures/upstream-contract-pdfs/pdfjs-pr4731.pdf",
+    "localPath": "corpus/upstream-contract/pdfjs-pr4731.pdf",
     "sourceUrl": "https://web.archive.org/web/20150830132600/http://rudar.ruc.dk/bitstream/1800/12945/1/samlet-29Nov1035.pdf",
     "source": "Mozilla PDF.js regression test suite linked fixture, mirrored by Internet Archive",
     "license": "Apache-2.0 upstream test corpus",

@@ -2,10 +2,14 @@ node_modules/
 dist/
 coverage/
 test-results/
+target/
 .venv/
 wsl_venv/
 .pytest_cache/
 __pycache__/
 *.pyc
-test/fixtures/external-pdfs/*.pdf
-test/fixtures/external-holdout-pdfs/*.pdf
+# Python oracle outputs and generated corpora are rebuilt on demand
+.cache/
+# Large external PDFs: downloaded from corpus/*/manifest.json (SHA-256 checked)
+corpus/external/*.pdf
+corpus/external-holdout/*.pdf

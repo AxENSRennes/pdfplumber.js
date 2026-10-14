@@ -128,22 +128,24 @@ Lecture :
 
 - Python **3.12** (oracle), uv, Node 26, Rust 1.99 avec la cible
   `wasm32-unknown-unknown` (`rust-toolchain.toml`).
-- Installation : `scripts/setup-dev.sh`. Les PDF externes, ignorés par git, se
+- Installation : `scripts/setup-dev.sh`. Les PDF externes (`corpus/external*`), ignorés par git, se
   téléchargent depuis leurs manifestes (avec vérification des SHA-256) ou se
   copient depuis une machine qui les a.
 - Les mesures de performance ne se comparent qu'entre runs d'une même machine.
 
-## État et prochaines étapes
+## État
 
-- Fait : parseur de flux de contenu (`psparser` + `PDFContentParser`) et
-  détection de tables (`TableFinder`, stratégies lines), en TS et en Rust,
-  identiques au bit près à Python sur corpus réel et adverse.
-- Ensuite : `pdfinterp` (opérateurs et état graphique), `pdffont` et `cmapdb`
-  (largeurs, ToUnicode, CMaps), `converter` (LTChar, LTCurve…), puis les objets
-  de page pdfplumber. Chaque étape avec sa trace Python.
-- Points ouverts dans le dépôt :
-  - Lancer la suite de tests réécrit `test/fixtures/micro-pdfs/encrypted-password.pdf`
-    de façon non déterministe : un fichier suivi par git ne devrait pas changer
-    à chaque run.
-  - Des goldens `external-*-parity.json` régénérés le 1er juin, avec des
-    empreintes changées, attendent sur le Mac d'origine, sans explication.
+- Octobre 2026 : l'ancien port (pdf.js + rustines) est retiré du dépôt et
+  étiqueté `legacy-pdfjs`. Le corpus est dans `corpus/`, les sources Python
+  portées dans `upstream/` (pdfminer.six épinglé sur le tag `20260107`,
+  exactement le code exécuté par l'oracle).
+- Version de Python : vérifiée sur 316 pages réelles (134 PDF), pdfplumber
+  sort des résultats identiques sous 3.12, 3.13 et 3.14 ; sous 3.11, 54 pages
+  ont des coordonnées de tables différentes (contenu extrait identique). Le
+  contrat est donc « Python ≥ 3.12 », l'outillage reste figé sur 3.12.
+- Le port suit l'ordre des dépendances : fondations (`pycompat`, `psparser`,
+  modèle d'objets, outillage de traces), puis filtres, chiffrement, CMaps et
+  polices, puis document et pages, interpréteur et mise en page, puis
+  pdfplumber, puis le Wasm et l'API JS. L'organisation est décrite dans
+  [`architecture.md`](architecture.md), la méthode de preuve dans
+  [`verification.md`](verification.md).

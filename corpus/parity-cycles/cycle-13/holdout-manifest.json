@@ -16,7 +16,7 @@
     "creator": "XPP",
     "id": "cycle-13/holdout/c13-101-financial-report-federal-reserve-2024-ar-p62",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "localPath": "corpus/external/federal-reserve-2024-ar.pdf",
     "metadata": {
       "Author": "Federal Reserve Board",
       "CreationDate": "D:20251125085733-05'00'",
@@ -38,7 +38,7 @@
     "size": 2170319,
     "source": "Board of Governors of the Federal Reserve System publications",
     "sourceDocumentId": "federal-reserve-2024-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
     "title": "Federal Reserve Board Publication"
   },
@@ -59,7 +59,7 @@
     "creator": "XPP",
     "id": "cycle-13/holdout/c13-102-financial-report-federal-reserve-2024-ar-p68",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "localPath": "corpus/external/federal-reserve-2024-ar.pdf",
     "metadata": {
       "Author": "Federal Reserve Board",
       "CreationDate": "D:20251125085733-05'00'",
@@ -81,7 +81,7 @@
     "size": 2170319,
     "source": "Board of Governors of the Federal Reserve System publications",
     "sourceDocumentId": "federal-reserve-2024-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
     "title": "Federal Reserve Board Publication"
   },
@@ -102,7 +102,7 @@
     "creator": "XPP",
     "id": "cycle-13/holdout/c13-103-financial-report-federal-reserve-2024-ar-p74",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "localPath": "corpus/external/federal-reserve-2024-ar.pdf",
     "metadata": {
       "Author": "Federal Reserve Board",
       "CreationDate": "D:20251125085733-05'00'",
@@ -124,7 +124,7 @@
     "size": 2170319,
     "source": "Board of Governors of the Federal Reserve System publications",
     "sourceDocumentId": "federal-reserve-2024-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
     "title": "Federal Reserve Board Publication"
   },
@@ -145,7 +145,7 @@
     "creator": "XPP",
     "id": "cycle-13/holdout/c13-104-financial-report-federal-reserve-2024-ar-p80",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "localPath": "corpus/external/federal-reserve-2024-ar.pdf",
     "metadata": {
       "Author": "Federal Reserve Board",
       "CreationDate": "D:20251125085733-05'00'",
@@ -167,7 +167,7 @@
     "size": 2170319,
     "source": "Board of Governors of the Federal Reserve System publications",
     "sourceDocumentId": "federal-reserve-2024-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
     "title": "Federal Reserve Board Publication"
   },
@@ -188,7 +188,7 @@
     "creator": "XPP",
     "id": "cycle-13/holdout/c13-105-financial-report-federal-reserve-2024-ar-p86",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "localPath": "corpus/external/federal-reserve-2024-ar.pdf",
     "metadata": {
       "Author": "Federal Reserve Board",
       "CreationDate": "D:20251125085733-05'00'",
@@ -210,7 +210,7 @@
     "size": 2170319,
     "source": "Board of Governors of the Federal Reserve System publications",
     "sourceDocumentId": "federal-reserve-2024-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
     "title": "Federal Reserve Board Publication"
   },
@@ -231,7 +231,7 @@
     "creator": "XPP",
     "id": "cycle-13/holdout/c13-106-financial-report-federal-reserve-2024-ar-p92",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "localPath": "corpus/external/federal-reserve-2024-ar.pdf",
     "metadata": {
       "Author": "Federal Reserve Board",
       "CreationDate": "D:20251125085733-05'00'",
@@ -253,7 +253,7 @@
     "size": 2170319,
     "source": "Board of Governors of the Federal Reserve System publications",
     "sourceDocumentId": "federal-reserve-2024-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
     "title": "Federal Reserve Board Publication"
   },
@@ -274,7 +274,7 @@
     "creator": "XPP",
     "id": "cycle-13/holdout/c13-107-financial-report-federal-reserve-2024-ar-p98",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "localPath": "corpus/external/federal-reserve-2024-ar.pdf",
     "metadata": {
       "Author": "Federal Reserve Board",
       "CreationDate": "D:20251125085733-05'00'",
@@ -296,7 +296,7 @@
     "size": 2170319,
     "source": "Board of Governors of the Federal Reserve System publications",
     "sourceDocumentId": "federal-reserve-2024-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
     "title": "Federal Reserve Board Publication"
   },
@@ -317,7 +317,7 @@
     "creator": "XPP",
     "id": "cycle-13/holdout/c13-108-financial-report-federal-reserve-2024-ar-p104",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "localPath": "corpus/external/federal-reserve-2024-ar.pdf",
     "metadata": {
       "Author": "Federal Reserve Board",
       "CreationDate": "D:20251125085733-05'00'",
@@ -339,7 +339,7 @@
     "size": 2170319,
     "source": "Board of Governors of the Federal Reserve System publications",
     "sourceDocumentId": "federal-reserve-2024-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
     "title": "Federal Reserve Board Publication"
   },
@@ -360,7 +360,7 @@
     "creator": "XPP",
     "id": "cycle-13/holdout/c13-109-financial-report-federal-reserve-2024-ar-p111",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "localPath": "corpus/external/federal-reserve-2024-ar.pdf",
     "metadata": {
       "Author": "Federal Reserve Board",
       "CreationDate": "D:20251125085733-05'00'",
@@ -382,7 +382,7 @@
     "size": 2170319,
     "source": "Board of Governors of the Federal Reserve System publications",
     "sourceDocumentId": "federal-reserve-2024-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
     "title": "Federal Reserve Board Publication"
   },
@@ -403,7 +403,7 @@
     "creator": "XPP",
     "id": "cycle-13/holdout/c13-110-financial-report-federal-reserve-2024-ar-p117",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "localPath": "corpus/external/federal-reserve-2024-ar.pdf",
     "metadata": {
       "Author": "Federal Reserve Board",
       "CreationDate": "D:20251125085733-05'00'",
@@ -425,7 +425,7 @@
     "size": 2170319,
     "source": "Board of Governors of the Federal Reserve System publications",
     "sourceDocumentId": "federal-reserve-2024-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
     "title": "Federal Reserve Board Publication"
   },
@@ -446,7 +446,7 @@
     "creator": "Adobe InDesign 18.4 (Macintosh)",
     "id": "cycle-13/holdout/c13-111-financial-report-boeing-2024-ar-p1",
     "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "localPath": "corpus/external-holdout/boeing-2024-ar.pdf",
     "metadata": {
       "CreationDate": "D:20250219152036-06'00'",
       "Creator": "Adobe InDesign 18.4 (Macintosh)",
@@ -465,7 +465,7 @@
     "size": 6971675,
     "source": "Boeing annual reports",
     "sourceDocumentId": "boeing-2024-ar",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
     "title": ""
   },
@@ -486,7 +486,7 @@
     "creator": "Adobe InDesign 18.4 (Macintosh)",
     "id": "cycle-13/holdout/c13-112-financial-report-boeing-2024-ar-p2",
     "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "localPath": "corpus/external-holdout/boeing-2024-ar.pdf",
     "metadata": {
       "CreationDate": "D:20250219152036-06'00'",
       "Creator": "Adobe InDesign 18.4 (Macintosh)",
@@ -505,7 +505,7 @@
     "size": 6971675,
     "source": "Boeing annual reports",
     "sourceDocumentId": "boeing-2024-ar",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
     "title": ""
   },
@@ -526,7 +526,7 @@
     "creator": "Adobe InDesign 18.4 (Macintosh)",
     "id": "cycle-13/holdout/c13-113-financial-report-boeing-2024-ar-p3",
     "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "localPath": "corpus/external-holdout/boeing-2024-ar.pdf",
     "metadata": {
       "CreationDate": "D:20250219152036-06'00'",
       "Creator": "Adobe InDesign 18.4 (Macintosh)",
@@ -545,7 +545,7 @@
     "size": 6971675,
     "source": "Boeing annual reports",
     "sourceDocumentId": "boeing-2024-ar",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
     "title": ""
   },
@@ -566,7 +566,7 @@
     "creator": "Adobe InDesign 18.4 (Macintosh)",
     "id": "cycle-13/holdout/c13-114-financial-report-boeing-2024-ar-p6",
     "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "localPath": "corpus/external-holdout/boeing-2024-ar.pdf",
     "metadata": {
       "CreationDate": "D:20250219152036-06'00'",
       "Creator": "Adobe InDesign 18.4 (Macintosh)",
@@ -585,7 +585,7 @@
     "size": 6971675,
     "source": "Boeing annual reports",
     "sourceDocumentId": "boeing-2024-ar",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
     "title": ""
   },
@@ -606,7 +606,7 @@
     "creator": "Adobe InDesign 18.4 (Macintosh)",
     "id": "cycle-13/holdout/c13-115-financial-report-boeing-2024-ar-p10",
     "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "localPath": "corpus/external-holdout/boeing-2024-ar.pdf",
     "metadata": {
       "CreationDate": "D:20250219152036-06'00'",
       "Creator": "Adobe InDesign 18.4 (Macintosh)",
@@ -625,7 +625,7 @@
     "size": 6971675,
     "source": "Boeing annual reports",
     "sourceDocumentId": "boeing-2024-ar",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
     "title": ""
   },
@@ -646,7 +646,7 @@
     "creator": "Adobe InDesign 18.4 (Macintosh)",
     "id": "cycle-13/holdout/c13-116-financial-report-boeing-2024-ar-p15",
     "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "localPath": "corpus/external-holdout/boeing-2024-ar.pdf",
     "metadata": {
       "CreationDate": "D:20250219152036-06'00'",
       "Creator": "Adobe InDesign 18.4 (Macintosh)",
@@ -665,7 +665,7 @@
     "size": 6971675,
     "source": "Boeing annual reports",
     "sourceDocumentId": "boeing-2024-ar",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
     "title": ""
   },
@@ -686,7 +686,7 @@
     "creator": "Adobe InDesign 18.4 (Macintosh)",
     "id": "cycle-13/holdout/c13-117-financial-report-boeing-2024-ar-p19",
     "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "localPath": "corpus/external-holdout/boeing-2024-ar.pdf",
     "metadata": {
       "CreationDate": "D:20250219152036-06'00'",
       "Creator": "Adobe InDesign 18.4 (Macintosh)",
@@ -705,7 +705,7 @@
     "size": 6971675,
     "source": "Boeing annual reports",
     "sourceDocumentId": "boeing-2024-ar",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
     "title": ""
   },
@@ -726,7 +726,7 @@
     "creator": "Adobe InDesign 18.4 (Macintosh)",
     "id": "cycle-13/holdout/c13-118-financial-report-boeing-2024-ar-p24",
     "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "localPath": "corpus/external-holdout/boeing-2024-ar.pdf",
     "metadata": {
       "CreationDate": "D:20250219152036-06'00'",
       "Creator": "Adobe InDesign 18.4 (Macintosh)",
@@ -745,7 +745,7 @@
     "size": 6971675,
     "source": "Boeing annual reports",
     "sourceDocumentId": "boeing-2024-ar",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
     "title": ""
   },
@@ -766,7 +766,7 @@
     "creator": "Adobe InDesign 18.4 (Macintosh)",
     "id": "cycle-13/holdout/c13-119-financial-report-boeing-2024-ar-p28",
     "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "localPath": "corpus/external-holdout/boeing-2024-ar.pdf",
     "metadata": {
       "CreationDate": "D:20250219152036-06'00'",
       "Creator": "Adobe InDesign 18.4 (Macintosh)",
@@ -785,7 +785,7 @@
     "size": 6971675,
     "source": "Boeing annual reports",
     "sourceDocumentId": "boeing-2024-ar",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
     "title": ""
   },
@@ -806,7 +806,7 @@
     "creator": "Adobe InDesign 18.4 (Macintosh)",
     "id": "cycle-13/holdout/c13-120-financial-report-boeing-2024-ar-p33",
     "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/boeing-2024-ar.pdf",
+    "localPath": "corpus/external-holdout/boeing-2024-ar.pdf",
     "metadata": {
       "CreationDate": "D:20250219152036-06'00'",
       "Creator": "Adobe InDesign 18.4 (Macintosh)",
@@ -825,7 +825,7 @@
     "size": 6971675,
     "source": "Boeing annual reports",
     "sourceDocumentId": "boeing-2024-ar",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.boeing.com/content/dam/boeing/boeingdotcom/company/annual-report/2024/2024-annual-report.pdf",
     "title": ""
   }

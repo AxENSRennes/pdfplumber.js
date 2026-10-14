@@ -49,8 +49,8 @@ Start with 20-30 files rather than a huge corpus:
 
 ## Integration Shape
 
-The external corpus lives in `test/fixtures/external-pdfs/` and is described
-by `test/fixtures/external-pdfs/manifest.json`. The PDFs are not checked into
+The external corpus lives in `corpus/external/` and is described
+by `corpus/external/manifest.json`. The PDFs are not checked into
 Git; each manifest entry records `sourceUrl`, `size`, and `sha256` so another
 machine can recreate the corpus exactly. Restore the stabilization corpus with:
 
@@ -93,7 +93,7 @@ layouts, image-heavy government report pages, and long-document page sampling.
 ## Holdout Corpus
 
 The anti-overfit holdout lives in
-`test/fixtures/external-holdout-pdfs/manifest.json`. It contains 20 separate
+`corpus/external-holdout/manifest.json`. It contains 20 separate
 PDFs, about 65 MB total, from public companies, government forms, USPTO, FDA,
 CMS, arXiv, Federal Register/GovInfo, the European Banking Authority, the Bank
 of Japan, PDF.js, and SCOTUS.
@@ -133,7 +133,7 @@ The manifest shape is:
     "license": "Source-specific terms",
     "sha256": "...",
     "category": ["tagged-pdf", "table", "form"],
-    "localPath": "test/fixtures/external-pdfs/pdfua-reference-complex-table.pdf",
+    "localPath": "corpus/external/pdfua-reference-complex-table.pdf",
     "checks": ["document.snapshot", "page.textSummary", "page.findTablesSummary"]
   }
 ]

@@ -15,4 +15,4 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-pdfplumber = { path = "pdfplumber-python", editable = true }
+pdfplumber = { path = "upstream/pdfplumber-python", editable = true }

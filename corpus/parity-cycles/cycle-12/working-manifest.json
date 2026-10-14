@@ -16,7 +16,7 @@
     "creator": "Workiva",
     "id": "cycle-12/working/c12-001-financial-report-apple-2024-10k-p63",
     "licenseOrTerms": "Company investor-relations publication / SEC filing; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/apple-2024-10k.pdf",
+    "localPath": "corpus/external/apple-2024-10k.pdf",
     "metadata": {
       "Author": "anonymous",
       "CreationDate": "D:20241031191725Z",
@@ -36,7 +36,7 @@
     "size": 963934,
     "source": "Apple investor relations SEC filing PDF",
     "sourceDocumentId": "apple-2024-10k",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://s2.q4cdn.com/470004039/files/doc_earnings/2024/q4/filing/10-Q4-2024-As-Filed.pdf",
     "title": "10-K 2024, 09.28.2024-2024-10-31-12-16"
   },
@@ -57,7 +57,7 @@
     "creator": "Workiva",
     "id": "cycle-12/working/c12-002-financial-report-apple-2024-10k-p66",
     "licenseOrTerms": "Company investor-relations publication / SEC filing; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/apple-2024-10k.pdf",
+    "localPath": "corpus/external/apple-2024-10k.pdf",
     "metadata": {
       "Author": "anonymous",
       "CreationDate": "D:20241031191725Z",
@@ -77,7 +77,7 @@
     "size": 963934,
     "source": "Apple investor relations SEC filing PDF",
     "sourceDocumentId": "apple-2024-10k",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://s2.q4cdn.com/470004039/files/doc_earnings/2024/q4/filing/10-Q4-2024-As-Filed.pdf",
     "title": "10-K 2024, 09.28.2024-2024-10-31-12-16"
   },
@@ -98,7 +98,7 @@
     "creator": "Workiva",
     "id": "cycle-12/working/c12-003-financial-report-apple-2024-10k-p70",
     "licenseOrTerms": "Company investor-relations publication / SEC filing; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/apple-2024-10k.pdf",
+    "localPath": "corpus/external/apple-2024-10k.pdf",
     "metadata": {
       "Author": "anonymous",
       "CreationDate": "D:20241031191725Z",
@@ -118,7 +118,7 @@
     "size": 963934,
     "source": "Apple investor relations SEC filing PDF",
     "sourceDocumentId": "apple-2024-10k",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://s2.q4cdn.com/470004039/files/doc_earnings/2024/q4/filing/10-Q4-2024-As-Filed.pdf",
     "title": "10-K 2024, 09.28.2024-2024-10-31-12-16"
   },
@@ -139,7 +139,7 @@
     "creator": "Workiva",
     "id": "cycle-12/working/c12-004-financial-report-apple-2024-10k-p73",
     "licenseOrTerms": "Company investor-relations publication / SEC filing; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/apple-2024-10k.pdf",
+    "localPath": "corpus/external/apple-2024-10k.pdf",
     "metadata": {
       "Author": "anonymous",
       "CreationDate": "D:20241031191725Z",
@@ -159,7 +159,7 @@
     "size": 963934,
     "source": "Apple investor relations SEC filing PDF",
     "sourceDocumentId": "apple-2024-10k",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://s2.q4cdn.com/470004039/files/doc_earnings/2024/q4/filing/10-Q4-2024-As-Filed.pdf",
     "title": "10-K 2024, 09.28.2024-2024-10-31-12-16"
   },
@@ -180,7 +180,7 @@
     "creator": "Workiva",
     "id": "cycle-12/working/c12-005-financial-report-apple-2024-10k-p76",
     "licenseOrTerms": "Company investor-relations publication / SEC filing; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/apple-2024-10k.pdf",
+    "localPath": "corpus/external/apple-2024-10k.pdf",
     "metadata": {
       "Author": "anonymous",
       "CreationDate": "D:20241031191725Z",
@@ -200,7 +200,7 @@
     "size": 963934,
     "source": "Apple investor relations SEC filing PDF",
     "sourceDocumentId": "apple-2024-10k",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://s2.q4cdn.com/470004039/files/doc_earnings/2024/q4/filing/10-Q4-2024-As-Filed.pdf",
     "title": "10-K 2024, 09.28.2024-2024-10-31-12-16"
   },
@@ -221,7 +221,7 @@
     "creator": "Workiva",
     "id": "cycle-12/working/c12-006-financial-report-apple-2024-10k-p80",
     "licenseOrTerms": "Company investor-relations publication / SEC filing; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/apple-2024-10k.pdf",
+    "localPath": "corpus/external/apple-2024-10k.pdf",
     "metadata": {
       "Author": "anonymous",
       "CreationDate": "D:20241031191725Z",
@@ -241,7 +241,7 @@
     "size": 963934,
     "source": "Apple investor relations SEC filing PDF",
     "sourceDocumentId": "apple-2024-10k",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://s2.q4cdn.com/470004039/files/doc_earnings/2024/q4/filing/10-Q4-2024-As-Filed.pdf",
     "title": "10-K 2024, 09.28.2024-2024-10-31-12-16"
   },
@@ -262,7 +262,7 @@
     "creator": "Workiva",
     "id": "cycle-12/working/c12-007-financial-report-apple-2024-10k-p83",
     "licenseOrTerms": "Company investor-relations publication / SEC filing; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/apple-2024-10k.pdf",
+    "localPath": "corpus/external/apple-2024-10k.pdf",
     "metadata": {
       "Author": "anonymous",
       "CreationDate": "D:20241031191725Z",
@@ -282,7 +282,7 @@
     "size": 963934,
     "source": "Apple investor relations SEC filing PDF",
     "sourceDocumentId": "apple-2024-10k",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://s2.q4cdn.com/470004039/files/doc_earnings/2024/q4/filing/10-Q4-2024-As-Filed.pdf",
     "title": "10-K 2024, 09.28.2024-2024-10-31-12-16"
   },
@@ -303,7 +303,7 @@
     "creator": "Workiva",
     "id": "cycle-12/working/c12-008-financial-report-apple-2024-10k-p87",
     "licenseOrTerms": "Company investor-relations publication / SEC filing; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/apple-2024-10k.pdf",
+    "localPath": "corpus/external/apple-2024-10k.pdf",
     "metadata": {
       "Author": "anonymous",
       "CreationDate": "D:20241031191725Z",
@@ -323,7 +323,7 @@
     "size": 963934,
     "source": "Apple investor relations SEC filing PDF",
     "sourceDocumentId": "apple-2024-10k",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://s2.q4cdn.com/470004039/files/doc_earnings/2024/q4/filing/10-Q4-2024-As-Filed.pdf",
     "title": "10-K 2024, 09.28.2024-2024-10-31-12-16"
   },
@@ -344,7 +344,7 @@
     "creator": "Workiva",
     "id": "cycle-12/working/c12-009-financial-report-apple-2024-10k-p90",
     "licenseOrTerms": "Company investor-relations publication / SEC filing; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/apple-2024-10k.pdf",
+    "localPath": "corpus/external/apple-2024-10k.pdf",
     "metadata": {
       "Author": "anonymous",
       "CreationDate": "D:20241031191725Z",
@@ -364,7 +364,7 @@
     "size": 963934,
     "source": "Apple investor relations SEC filing PDF",
     "sourceDocumentId": "apple-2024-10k",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://s2.q4cdn.com/470004039/files/doc_earnings/2024/q4/filing/10-Q4-2024-As-Filed.pdf",
     "title": "10-K 2024, 09.28.2024-2024-10-31-12-16"
   },
@@ -385,7 +385,7 @@
     "creator": "Workiva",
     "id": "cycle-12/working/c12-010-financial-report-apple-2024-10k-p94",
     "licenseOrTerms": "Company investor-relations publication / SEC filing; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/apple-2024-10k.pdf",
+    "localPath": "corpus/external/apple-2024-10k.pdf",
     "metadata": {
       "Author": "anonymous",
       "CreationDate": "D:20241031191725Z",
@@ -405,7 +405,7 @@
     "size": 963934,
     "source": "Apple investor relations SEC filing PDF",
     "sourceDocumentId": "apple-2024-10k",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://s2.q4cdn.com/470004039/files/doc_earnings/2024/q4/filing/10-Q4-2024-As-Filed.pdf",
     "title": "10-K 2024, 09.28.2024-2024-10-31-12-16"
   },
@@ -425,7 +425,7 @@
     "creator": "Microsoft® Word 2016",
     "id": "cycle-12/working/c12-011-financial-report-boj-semiannual-2024-jp-p48",
     "licenseOrTerms": "Bank of Japan publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/boj-semiannual-2024-jp.pdf",
+    "localPath": "corpus/external-holdout/boj-semiannual-2024-jp.pdf",
     "metadata": {
       "Author": "日本銀行",
       "CreationDate": "D:20241114145022+09'00'",
@@ -445,7 +445,7 @@
     "size": 2723665,
     "source": "Bank of Japan reports to the Diet",
     "sourceDocumentId": "boj-semiannual-2024-jp",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.boj.or.jp/mopo/diet/d_report_2024/semi2412a.pdf",
     "title": "通貨及び金融の調節に関する報告書（令和6年12月）"
   },
@@ -465,7 +465,7 @@
     "creator": "Microsoft® Word 2016",
     "id": "cycle-12/working/c12-012-financial-report-boj-semiannual-2024-jp-p51",
     "licenseOrTerms": "Bank of Japan publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/boj-semiannual-2024-jp.pdf",
+    "localPath": "corpus/external-holdout/boj-semiannual-2024-jp.pdf",
     "metadata": {
       "Author": "日本銀行",
       "CreationDate": "D:20241114145022+09'00'",
@@ -485,7 +485,7 @@
     "size": 2723665,
     "source": "Bank of Japan reports to the Diet",
     "sourceDocumentId": "boj-semiannual-2024-jp",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.boj.or.jp/mopo/diet/d_report_2024/semi2412a.pdf",
     "title": "通貨及び金融の調節に関する報告書（令和6年12月）"
   },
@@ -505,7 +505,7 @@
     "creator": "Microsoft® Word 2016",
     "id": "cycle-12/working/c12-013-financial-report-boj-semiannual-2024-jp-p53",
     "licenseOrTerms": "Bank of Japan publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/boj-semiannual-2024-jp.pdf",
+    "localPath": "corpus/external-holdout/boj-semiannual-2024-jp.pdf",
     "metadata": {
       "Author": "日本銀行",
       "CreationDate": "D:20241114145022+09'00'",
@@ -525,7 +525,7 @@
     "size": 2723665,
     "source": "Bank of Japan reports to the Diet",
     "sourceDocumentId": "boj-semiannual-2024-jp",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.boj.or.jp/mopo/diet/d_report_2024/semi2412a.pdf",
     "title": "通貨及び金融の調節に関する報告書（令和6年12月）"
   },
@@ -545,7 +545,7 @@
     "creator": "Microsoft® Word 2016",
     "id": "cycle-12/working/c12-014-financial-report-boj-semiannual-2024-jp-p56",
     "licenseOrTerms": "Bank of Japan publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/boj-semiannual-2024-jp.pdf",
+    "localPath": "corpus/external-holdout/boj-semiannual-2024-jp.pdf",
     "metadata": {
       "Author": "日本銀行",
       "CreationDate": "D:20241114145022+09'00'",
@@ -565,7 +565,7 @@
     "size": 2723665,
     "source": "Bank of Japan reports to the Diet",
     "sourceDocumentId": "boj-semiannual-2024-jp",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.boj.or.jp/mopo/diet/d_report_2024/semi2412a.pdf",
     "title": "通貨及び金融の調節に関する報告書（令和6年12月）"
   },
@@ -585,7 +585,7 @@
     "creator": "Microsoft® Word 2016",
     "id": "cycle-12/working/c12-015-financial-report-boj-semiannual-2024-jp-p58",
     "licenseOrTerms": "Bank of Japan publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/boj-semiannual-2024-jp.pdf",
+    "localPath": "corpus/external-holdout/boj-semiannual-2024-jp.pdf",
     "metadata": {
       "Author": "日本銀行",
       "CreationDate": "D:20241114145022+09'00'",
@@ -605,7 +605,7 @@
     "size": 2723665,
     "source": "Bank of Japan reports to the Diet",
     "sourceDocumentId": "boj-semiannual-2024-jp",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.boj.or.jp/mopo/diet/d_report_2024/semi2412a.pdf",
     "title": "通貨及び金融の調節に関する報告書（令和6年12月）"
   },
@@ -625,7 +625,7 @@
     "creator": "Microsoft® Word 2016",
     "id": "cycle-12/working/c12-016-financial-report-boj-semiannual-2024-jp-p61",
     "licenseOrTerms": "Bank of Japan publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/boj-semiannual-2024-jp.pdf",
+    "localPath": "corpus/external-holdout/boj-semiannual-2024-jp.pdf",
     "metadata": {
       "Author": "日本銀行",
       "CreationDate": "D:20241114145022+09'00'",
@@ -645,7 +645,7 @@
     "size": 2723665,
     "source": "Bank of Japan reports to the Diet",
     "sourceDocumentId": "boj-semiannual-2024-jp",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.boj.or.jp/mopo/diet/d_report_2024/semi2412a.pdf",
     "title": "通貨及び金融の調節に関する報告書（令和6年12月）"
   },
@@ -665,7 +665,7 @@
     "creator": "Microsoft® Word 2016",
     "id": "cycle-12/working/c12-017-financial-report-boj-semiannual-2024-jp-p63",
     "licenseOrTerms": "Bank of Japan publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/boj-semiannual-2024-jp.pdf",
+    "localPath": "corpus/external-holdout/boj-semiannual-2024-jp.pdf",
     "metadata": {
       "Author": "日本銀行",
       "CreationDate": "D:20241114145022+09'00'",
@@ -685,7 +685,7 @@
     "size": 2723665,
     "source": "Bank of Japan reports to the Diet",
     "sourceDocumentId": "boj-semiannual-2024-jp",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.boj.or.jp/mopo/diet/d_report_2024/semi2412a.pdf",
     "title": "通貨及び金融の調節に関する報告書（令和6年12月）"
   },
@@ -705,7 +705,7 @@
     "creator": "Microsoft® Word 2016",
     "id": "cycle-12/working/c12-018-financial-report-boj-semiannual-2024-jp-p66",
     "licenseOrTerms": "Bank of Japan publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/boj-semiannual-2024-jp.pdf",
+    "localPath": "corpus/external-holdout/boj-semiannual-2024-jp.pdf",
     "metadata": {
       "Author": "日本銀行",
       "CreationDate": "D:20241114145022+09'00'",
@@ -725,7 +725,7 @@
     "size": 2723665,
     "source": "Bank of Japan reports to the Diet",
     "sourceDocumentId": "boj-semiannual-2024-jp",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.boj.or.jp/mopo/diet/d_report_2024/semi2412a.pdf",
     "title": "通貨及び金融の調節に関する報告書（令和6年12月）"
   },
@@ -745,7 +745,7 @@
     "creator": "Microsoft® Word 2016",
     "id": "cycle-12/working/c12-019-financial-report-boj-semiannual-2024-jp-p68",
     "licenseOrTerms": "Bank of Japan publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/boj-semiannual-2024-jp.pdf",
+    "localPath": "corpus/external-holdout/boj-semiannual-2024-jp.pdf",
     "metadata": {
       "Author": "日本銀行",
       "CreationDate": "D:20241114145022+09'00'",
@@ -765,7 +765,7 @@
     "size": 2723665,
     "source": "Bank of Japan reports to the Diet",
     "sourceDocumentId": "boj-semiannual-2024-jp",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.boj.or.jp/mopo/diet/d_report_2024/semi2412a.pdf",
     "title": "通貨及び金融の調節に関する報告書（令和6年12月）"
   },
@@ -785,7 +785,7 @@
     "creator": "Microsoft® Word 2016",
     "id": "cycle-12/working/c12-020-financial-report-boj-semiannual-2024-jp-p71",
     "licenseOrTerms": "Bank of Japan publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/boj-semiannual-2024-jp.pdf",
+    "localPath": "corpus/external-holdout/boj-semiannual-2024-jp.pdf",
     "metadata": {
       "Author": "日本銀行",
       "CreationDate": "D:20241114145022+09'00'",
@@ -805,7 +805,7 @@
     "size": 2723665,
     "source": "Bank of Japan reports to the Diet",
     "sourceDocumentId": "boj-semiannual-2024-jp",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.boj.or.jp/mopo/diet/d_report_2024/semi2412a.pdf",
     "title": "通貨及び金融の調節に関する報告書（令和6年12月）"
   },
@@ -825,7 +825,7 @@
     "creator": null,
     "id": "cycle-12/working/c12-021-financial-report-berkshire-2024-ar-p27",
     "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/berkshire-2024-ar.pdf",
+    "localPath": "corpus/external/berkshire-2024-ar.pdf",
     "metadata": {
       "CreationDate": "D:20250221205741-05'00'",
       "ModDate": "D:20250221204156-06'00'",
@@ -843,7 +843,7 @@
     "size": 1852116,
     "source": "Berkshire Hathaway annual reports",
     "sourceDocumentId": "berkshire-2024-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.berkshirehathaway.com/2024ar/2024ar.pdf",
     "title": "printmgr file"
   },
@@ -863,7 +863,7 @@
     "creator": null,
     "id": "cycle-12/working/c12-022-financial-report-berkshire-2024-ar-p31",
     "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/berkshire-2024-ar.pdf",
+    "localPath": "corpus/external/berkshire-2024-ar.pdf",
     "metadata": {
       "CreationDate": "D:20250221205741-05'00'",
       "ModDate": "D:20250221204156-06'00'",
@@ -881,7 +881,7 @@
     "size": 1852116,
     "source": "Berkshire Hathaway annual reports",
     "sourceDocumentId": "berkshire-2024-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.berkshirehathaway.com/2024ar/2024ar.pdf",
     "title": "printmgr file"
   },
@@ -901,7 +901,7 @@
     "creator": null,
     "id": "cycle-12/working/c12-023-financial-report-berkshire-2024-ar-p35",
     "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/berkshire-2024-ar.pdf",
+    "localPath": "corpus/external/berkshire-2024-ar.pdf",
     "metadata": {
       "CreationDate": "D:20250221205741-05'00'",
       "ModDate": "D:20250221204156-06'00'",
@@ -919,7 +919,7 @@
     "size": 1852116,
     "source": "Berkshire Hathaway annual reports",
     "sourceDocumentId": "berkshire-2024-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.berkshirehathaway.com/2024ar/2024ar.pdf",
     "title": "printmgr file"
   },
@@ -939,7 +939,7 @@
     "creator": null,
     "id": "cycle-12/working/c12-024-financial-report-berkshire-2024-ar-p39",
     "licenseOrTerms": "Company investor-relations publication; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/berkshire-2024-ar.pdf",
+    "localPath": "corpus/external/berkshire-2024-ar.pdf",
     "metadata": {
       "CreationDate": "D:20250221205741-05'00'",
       "ModDate": "D:20250221204156-06'00'",
@@ -957,7 +957,7 @@
     "size": 1852116,
     "source": "Berkshire Hathaway annual reports",
     "sourceDocumentId": "berkshire-2024-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.berkshirehathaway.com/2024ar/2024ar.pdf",
     "title": "printmgr file"
   },
@@ -978,7 +978,7 @@
     "creator": "Designer 6.5",
     "id": "cycle-12/working/c12-025-forms-annotations-va-21-526ez-p15",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/va-21-526ez.pdf",
+    "localPath": "corpus/external-holdout/va-21-526ez.pdf",
     "metadata": {
       "Author": "Y. Allmond",
       "CreationDate": "D:20260224140547-05'00'",
@@ -999,7 +999,7 @@
     "size": 1927445,
     "source": "U.S. Department of Veterans Affairs forms",
     "sourceDocumentId": "va-21-526ez",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.vba.va.gov/pubs/forms/VBA-21-526EZ-ARE.pdf",
     "title": "VA Form 21-526EZ"
   },
@@ -1019,7 +1019,7 @@
     "creator": "Acrobat PDFMaker 8.1 for Word",
     "id": "cycle-12/working/c12-026-forms-annotations-fda-1572-p8",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/fda-1572.pdf",
+    "localPath": "corpus/external-holdout/fda-1572.pdf",
     "metadata": {
       "Author": "Food and Drug Administration",
       "CreationDate": "D:20100602105417-04'00'",
@@ -1041,7 +1041,7 @@
     "size": 107719,
     "source": "U.S. Food and Drug Administration forms and guidance",
     "sourceDocumentId": "fda-1572",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.fda.gov/media/78830/download",
     "title": "Frequently Asked Questions – Statement of Investigator (Form FDA 1572) Information Sheet Guidance for IRBs,  Clinical Investigators, and Sponsors"
   },
@@ -1061,7 +1061,7 @@
     "creator": "Acrobat PDFMaker 8.1 for Word",
     "id": "cycle-12/working/c12-027-forms-annotations-fda-1572-p9",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/fda-1572.pdf",
+    "localPath": "corpus/external-holdout/fda-1572.pdf",
     "metadata": {
       "Author": "Food and Drug Administration",
       "CreationDate": "D:20100602105417-04'00'",
@@ -1083,7 +1083,7 @@
     "size": 107719,
     "source": "U.S. Food and Drug Administration forms and guidance",
     "sourceDocumentId": "fda-1572",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.fda.gov/media/78830/download",
     "title": "Frequently Asked Questions – Statement of Investigator (Form FDA 1572) Information Sheet Guidance for IRBs,  Clinical Investigators, and Sponsors"
   },
@@ -1103,7 +1103,7 @@
     "creator": "Acrobat PDFMaker 8.1 for Word",
     "id": "cycle-12/working/c12-028-forms-annotations-fda-1572-p10",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/fda-1572.pdf",
+    "localPath": "corpus/external-holdout/fda-1572.pdf",
     "metadata": {
       "Author": "Food and Drug Administration",
       "CreationDate": "D:20100602105417-04'00'",
@@ -1125,7 +1125,7 @@
     "size": 107719,
     "source": "U.S. Food and Drug Administration forms and guidance",
     "sourceDocumentId": "fda-1572",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.fda.gov/media/78830/download",
     "title": "Frequently Asked Questions – Statement of Investigator (Form FDA 1572) Information Sheet Guidance for IRBs,  Clinical Investigators, and Sponsors"
   },
@@ -1145,7 +1145,7 @@
     "creator": "Acrobat PDFMaker 8.1 for Word",
     "id": "cycle-12/working/c12-029-forms-annotations-fda-1572-p11",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/fda-1572.pdf",
+    "localPath": "corpus/external-holdout/fda-1572.pdf",
     "metadata": {
       "Author": "Food and Drug Administration",
       "CreationDate": "D:20100602105417-04'00'",
@@ -1167,7 +1167,7 @@
     "size": 107719,
     "source": "U.S. Food and Drug Administration forms and guidance",
     "sourceDocumentId": "fda-1572",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.fda.gov/media/78830/download",
     "title": "Frequently Asked Questions – Statement of Investigator (Form FDA 1572) Information Sheet Guidance for IRBs,  Clinical Investigators, and Sponsors"
   },
@@ -1187,7 +1187,7 @@
     "creator": "Acrobat PDFMaker 8.1 for Word",
     "id": "cycle-12/working/c12-030-forms-annotations-fda-1572-p12",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/fda-1572.pdf",
+    "localPath": "corpus/external-holdout/fda-1572.pdf",
     "metadata": {
       "Author": "Food and Drug Administration",
       "CreationDate": "D:20100602105417-04'00'",
@@ -1209,7 +1209,7 @@
     "size": 107719,
     "source": "U.S. Food and Drug Administration forms and guidance",
     "sourceDocumentId": "fda-1572",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.fda.gov/media/78830/download",
     "title": "Frequently Asked Questions – Statement of Investigator (Form FDA 1572) Information Sheet Guidance for IRBs,  Clinical Investigators, and Sponsors"
   },
@@ -1229,7 +1229,7 @@
     "creator": "Acrobat PDFMaker 8.1 for Word",
     "id": "cycle-12/working/c12-031-forms-annotations-fda-1572-p13",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/fda-1572.pdf",
+    "localPath": "corpus/external-holdout/fda-1572.pdf",
     "metadata": {
       "Author": "Food and Drug Administration",
       "CreationDate": "D:20100602105417-04'00'",
@@ -1251,7 +1251,7 @@
     "size": 107719,
     "source": "U.S. Food and Drug Administration forms and guidance",
     "sourceDocumentId": "fda-1572",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.fda.gov/media/78830/download",
     "title": "Frequently Asked Questions – Statement of Investigator (Form FDA 1572) Information Sheet Guidance for IRBs,  Clinical Investigators, and Sponsors"
   },
@@ -1271,7 +1271,7 @@
     "creator": "Acrobat PDFMaker 8.1 for Word",
     "id": "cycle-12/working/c12-032-forms-annotations-fda-1572-p14",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/fda-1572.pdf",
+    "localPath": "corpus/external-holdout/fda-1572.pdf",
     "metadata": {
       "Author": "Food and Drug Administration",
       "CreationDate": "D:20100602105417-04'00'",
@@ -1293,7 +1293,7 @@
     "size": 107719,
     "source": "U.S. Food and Drug Administration forms and guidance",
     "sourceDocumentId": "fda-1572",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.fda.gov/media/78830/download",
     "title": "Frequently Asked Questions – Statement of Investigator (Form FDA 1572) Information Sheet Guidance for IRBs,  Clinical Investigators, and Sponsors"
   },
@@ -1313,7 +1313,7 @@
     "creator": "Acrobat PDFMaker 8.1 for Word",
     "id": "cycle-12/working/c12-033-forms-annotations-fda-1572-p15",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/fda-1572.pdf",
+    "localPath": "corpus/external-holdout/fda-1572.pdf",
     "metadata": {
       "Author": "Food and Drug Administration",
       "CreationDate": "D:20100602105417-04'00'",
@@ -1335,7 +1335,7 @@
     "size": 107719,
     "source": "U.S. Food and Drug Administration forms and guidance",
     "sourceDocumentId": "fda-1572",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.fda.gov/media/78830/download",
     "title": "Frequently Asked Questions – Statement of Investigator (Form FDA 1572) Information Sheet Guidance for IRBs,  Clinical Investigators, and Sponsors"
   },
@@ -1355,7 +1355,7 @@
     "creator": "Acrobat PDFMaker 8.1 for Word",
     "id": "cycle-12/working/c12-034-forms-annotations-fda-1572-p16",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/fda-1572.pdf",
+    "localPath": "corpus/external-holdout/fda-1572.pdf",
     "metadata": {
       "Author": "Food and Drug Administration",
       "CreationDate": "D:20100602105417-04'00'",
@@ -1377,7 +1377,7 @@
     "size": 107719,
     "source": "U.S. Food and Drug Administration forms and guidance",
     "sourceDocumentId": "fda-1572",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.fda.gov/media/78830/download",
     "title": "Frequently Asked Questions – Statement of Investigator (Form FDA 1572) Information Sheet Guidance for IRBs,  Clinical Investigators, and Sponsors"
   },
@@ -1397,7 +1397,7 @@
     "creator": "Acrobat PDFMaker 8.1 for Word",
     "id": "cycle-12/working/c12-035-forms-annotations-fda-1572-p17",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/fda-1572.pdf",
+    "localPath": "corpus/external-holdout/fda-1572.pdf",
     "metadata": {
       "Author": "Food and Drug Administration",
       "CreationDate": "D:20100602105417-04'00'",
@@ -1419,7 +1419,7 @@
     "size": 107719,
     "source": "U.S. Food and Drug Administration forms and guidance",
     "sourceDocumentId": "fda-1572",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.fda.gov/media/78830/download",
     "title": "Frequently Asked Questions – Statement of Investigator (Form FDA 1572) Information Sheet Guidance for IRBs,  Clinical Investigators, and Sponsors"
   },
@@ -1439,7 +1439,7 @@
     "creator": "Acrobat PDFMaker 22 for Word",
     "id": "cycle-12/working/c12-036-forms-annotations-uspto-sb38-p2",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/uspto-sb38.pdf",
+    "localPath": "corpus/external-holdout/uspto-sb38.pdf",
     "metadata": {
       "Author": "USPTO",
       "CreationDate": "D:20220408111718-06'00'",
@@ -1459,7 +1459,7 @@
     "size": 265942,
     "source": "USPTO patent form-fillable PDFs",
     "sourceDocumentId": "uspto-sb38",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.uspto.gov/sites/default/files/documents/sb0038.pdf",
     "title": "PTO/SB/38 - Request to Retrieve Priority Application(s) Filed with Nonparticipating Office(s) That is Available in a Participating Office (37 CFR 1.55(i)(4))"
   },
@@ -1479,7 +1479,7 @@
     "creator": "veraPDF Test Builder",
     "id": "cycle-12/working/c12-037-forms-annotations-verapdf-pdfua-forms-pass-p1",
     "licenseOrTerms": "CC-BY-4.0",
-    "localPath": "test/fixtures/external-pdfs/verapdf-pdfua-forms-pass.pdf",
+    "localPath": "corpus/external/verapdf-pdfua-forms-pass.pdf",
     "metadata": {
       "Author": "veraPDF Consortium",
       "CreationDate": "D:20200104144333+03'00'",
@@ -1499,7 +1499,7 @@
     "size": 29426,
     "source": "veraPDF PDF/UA corpus",
     "sourceDocumentId": "verapdf-pdfua-forms-pass",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://raw.githubusercontent.com/veraPDF/veraPDF-corpus/staging/PDF_UA-1/7.18%20Annotations/7.18.4%20Forms/7.18.4-t01-pass-a.pdf",
     "title": "Widget-pass"
   },
@@ -1519,7 +1519,7 @@
     "creator": "veraPDF Test Builder",
     "id": "cycle-12/working/c12-038-forms-annotations-verapdf-pdfua-links-pass-p1",
     "licenseOrTerms": "CC-BY-4.0",
-    "localPath": "test/fixtures/external-pdfs/verapdf-pdfua-links-pass.pdf",
+    "localPath": "corpus/external/verapdf-pdfua-links-pass.pdf",
     "metadata": {
       "Author": "veraPDF Consortium",
       "CreationDate": "D:20200104140735+03'00'",
@@ -1539,7 +1539,7 @@
     "size": 22935,
     "source": "veraPDF PDF/UA corpus",
     "sourceDocumentId": "verapdf-pdfua-links-pass",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://raw.githubusercontent.com/veraPDF/veraPDF-corpus/staging/PDF_UA-1/7.18%20Annotations/7.18.5%20Links/7.18.5-t01-pass-a.pdf",
     "title": "Link-pass"
   },
@@ -1560,7 +1560,7 @@
     "creator": "govinfo, U. S. Government Publishing Office",
     "id": "cycle-12/working/c12-039-legal-regulatory-federal-register-2024-01-02-p118",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-register-2024-01-02.pdf",
+    "localPath": "corpus/external/federal-register-2024-01-02.pdf",
     "metadata": {
       "CreationDate": "D:20240528192055Z",
       "Creator": "govinfo, U. S. Government Publishing Office",
@@ -1578,7 +1578,7 @@
     "size": 13257131,
     "source": "GovInfo Federal Register",
     "sourceDocumentId": "federal-register-2024-01-02",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/FR-2024-01-02/pdf/FR-2024-01-02.pdf",
     "title": null
   },
@@ -1599,7 +1599,7 @@
     "creator": "govinfo, U. S. Government Publishing Office",
     "id": "cycle-12/working/c12-040-legal-regulatory-federal-register-2024-01-02-p125",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-register-2024-01-02.pdf",
+    "localPath": "corpus/external/federal-register-2024-01-02.pdf",
     "metadata": {
       "CreationDate": "D:20240528192055Z",
       "Creator": "govinfo, U. S. Government Publishing Office",
@@ -1617,7 +1617,7 @@
     "size": 13257131,
     "source": "GovInfo Federal Register",
     "sourceDocumentId": "federal-register-2024-01-02",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/FR-2024-01-02/pdf/FR-2024-01-02.pdf",
     "title": null
   },
@@ -1638,7 +1638,7 @@
     "creator": "govinfo, U. S. Government Publishing Office",
     "id": "cycle-12/working/c12-041-legal-regulatory-federal-register-2024-01-02-p131",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-register-2024-01-02.pdf",
+    "localPath": "corpus/external/federal-register-2024-01-02.pdf",
     "metadata": {
       "CreationDate": "D:20240528192055Z",
       "Creator": "govinfo, U. S. Government Publishing Office",
@@ -1656,7 +1656,7 @@
     "size": 13257131,
     "source": "GovInfo Federal Register",
     "sourceDocumentId": "federal-register-2024-01-02",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/FR-2024-01-02/pdf/FR-2024-01-02.pdf",
     "title": null
   },
@@ -1677,7 +1677,7 @@
     "creator": "govinfo, U. S. Government Publishing Office",
     "id": "cycle-12/working/c12-042-legal-regulatory-federal-register-2024-01-02-p138",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-register-2024-01-02.pdf",
+    "localPath": "corpus/external/federal-register-2024-01-02.pdf",
     "metadata": {
       "CreationDate": "D:20240528192055Z",
       "Creator": "govinfo, U. S. Government Publishing Office",
@@ -1695,7 +1695,7 @@
     "size": 13257131,
     "source": "GovInfo Federal Register",
     "sourceDocumentId": "federal-register-2024-01-02",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/FR-2024-01-02/pdf/FR-2024-01-02.pdf",
     "title": null
   },
@@ -1716,7 +1716,7 @@
     "creator": "govinfo, U. S. Government Publishing Office",
     "id": "cycle-12/working/c12-043-legal-regulatory-federal-register-2024-01-02-p144",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-register-2024-01-02.pdf",
+    "localPath": "corpus/external/federal-register-2024-01-02.pdf",
     "metadata": {
       "CreationDate": "D:20240528192055Z",
       "Creator": "govinfo, U. S. Government Publishing Office",
@@ -1734,7 +1734,7 @@
     "size": 13257131,
     "source": "GovInfo Federal Register",
     "sourceDocumentId": "federal-register-2024-01-02",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/FR-2024-01-02/pdf/FR-2024-01-02.pdf",
     "title": null
   },
@@ -1755,7 +1755,7 @@
     "creator": "govinfo, U. S. Government Publishing Office",
     "id": "cycle-12/working/c12-044-legal-regulatory-federal-register-2024-01-02-p151",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-register-2024-01-02.pdf",
+    "localPath": "corpus/external/federal-register-2024-01-02.pdf",
     "metadata": {
       "CreationDate": "D:20240528192055Z",
       "Creator": "govinfo, U. S. Government Publishing Office",
@@ -1773,7 +1773,7 @@
     "size": 13257131,
     "source": "GovInfo Federal Register",
     "sourceDocumentId": "federal-register-2024-01-02",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/FR-2024-01-02/pdf/FR-2024-01-02.pdf",
     "title": null
   },
@@ -1794,7 +1794,7 @@
     "creator": "govinfo, U. S. Government Publishing Office",
     "id": "cycle-12/working/c12-045-legal-regulatory-federal-register-2024-01-02-p157",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-register-2024-01-02.pdf",
+    "localPath": "corpus/external/federal-register-2024-01-02.pdf",
     "metadata": {
       "CreationDate": "D:20240528192055Z",
       "Creator": "govinfo, U. S. Government Publishing Office",
@@ -1812,7 +1812,7 @@
     "size": 13257131,
     "source": "GovInfo Federal Register",
     "sourceDocumentId": "federal-register-2024-01-02",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/FR-2024-01-02/pdf/FR-2024-01-02.pdf",
     "title": null
   },
@@ -1833,7 +1833,7 @@
     "creator": "govinfo, U. S. Government Publishing Office",
     "id": "cycle-12/working/c12-046-legal-regulatory-federal-register-2024-01-02-p164",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-register-2024-01-02.pdf",
+    "localPath": "corpus/external/federal-register-2024-01-02.pdf",
     "metadata": {
       "CreationDate": "D:20240528192055Z",
       "Creator": "govinfo, U. S. Government Publishing Office",
@@ -1851,7 +1851,7 @@
     "size": 13257131,
     "source": "GovInfo Federal Register",
     "sourceDocumentId": "federal-register-2024-01-02",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/FR-2024-01-02/pdf/FR-2024-01-02.pdf",
     "title": null
   },
@@ -1872,7 +1872,7 @@
     "creator": "govinfo, U. S. Government Publishing Office",
     "id": "cycle-12/working/c12-047-legal-regulatory-federal-register-2024-01-02-p170",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-register-2024-01-02.pdf",
+    "localPath": "corpus/external/federal-register-2024-01-02.pdf",
     "metadata": {
       "CreationDate": "D:20240528192055Z",
       "Creator": "govinfo, U. S. Government Publishing Office",
@@ -1890,7 +1890,7 @@
     "size": 13257131,
     "source": "GovInfo Federal Register",
     "sourceDocumentId": "federal-register-2024-01-02",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/FR-2024-01-02/pdf/FR-2024-01-02.pdf",
     "title": null
   },
@@ -1911,7 +1911,7 @@
     "creator": "govinfo, U. S. Government Publishing Office",
     "id": "cycle-12/working/c12-048-legal-regulatory-federal-register-2024-01-02-p177",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-register-2024-01-02.pdf",
+    "localPath": "corpus/external/federal-register-2024-01-02.pdf",
     "metadata": {
       "CreationDate": "D:20240528192055Z",
       "Creator": "govinfo, U. S. Government Publishing Office",
@@ -1929,7 +1929,7 @@
     "size": 13257131,
     "source": "GovInfo Federal Register",
     "sourceDocumentId": "federal-register-2024-01-02",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/FR-2024-01-02/pdf/FR-2024-01-02.pdf",
     "title": null
   },
@@ -1950,7 +1950,7 @@
     "creator": "govinfo, U. S. Government Publishing Office",
     "id": "cycle-12/working/c12-049-legal-regulatory-federal-register-2024-07-01-p206",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/federal-register-2024-07-01.pdf",
+    "localPath": "corpus/external-holdout/federal-register-2024-07-01.pdf",
     "metadata": {
       "CreationDate": "D:20240629065343Z",
       "Creator": "govinfo, U. S. Government Publishing Office",
@@ -1968,7 +1968,7 @@
     "size": 8992888,
     "source": "GovInfo Federal Register",
     "sourceDocumentId": "federal-register-2024-07-01",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/FR-2024-07-01/pdf/FR-2024-07-01.pdf",
     "title": null
   },
@@ -1989,7 +1989,7 @@
     "creator": "govinfo, U. S. Government Publishing Office",
     "id": "cycle-12/working/c12-050-legal-regulatory-federal-register-2024-07-01-p217",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/federal-register-2024-07-01.pdf",
+    "localPath": "corpus/external-holdout/federal-register-2024-07-01.pdf",
     "metadata": {
       "CreationDate": "D:20240629065343Z",
       "Creator": "govinfo, U. S. Government Publishing Office",
@@ -2007,7 +2007,7 @@
     "size": 8992888,
     "source": "GovInfo Federal Register",
     "sourceDocumentId": "federal-register-2024-07-01",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/FR-2024-07-01/pdf/FR-2024-07-01.pdf",
     "title": null
   },
@@ -2028,7 +2028,7 @@
     "creator": "govinfo, U. S. Government Publishing Office",
     "id": "cycle-12/working/c12-051-legal-regulatory-federal-register-2024-07-01-p228",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/federal-register-2024-07-01.pdf",
+    "localPath": "corpus/external-holdout/federal-register-2024-07-01.pdf",
     "metadata": {
       "CreationDate": "D:20240629065343Z",
       "Creator": "govinfo, U. S. Government Publishing Office",
@@ -2046,7 +2046,7 @@
     "size": 8992888,
     "source": "GovInfo Federal Register",
     "sourceDocumentId": "federal-register-2024-07-01",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/FR-2024-07-01/pdf/FR-2024-07-01.pdf",
     "title": null
   },
@@ -2067,7 +2067,7 @@
     "creator": "govinfo, U. S. Government Publishing Office",
     "id": "cycle-12/working/c12-052-legal-regulatory-federal-register-2024-07-01-p240",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/federal-register-2024-07-01.pdf",
+    "localPath": "corpus/external-holdout/federal-register-2024-07-01.pdf",
     "metadata": {
       "CreationDate": "D:20240629065343Z",
       "Creator": "govinfo, U. S. Government Publishing Office",
@@ -2085,7 +2085,7 @@
     "size": 8992888,
     "source": "GovInfo Federal Register",
     "sourceDocumentId": "federal-register-2024-07-01",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/FR-2024-07-01/pdf/FR-2024-07-01.pdf",
     "title": null
   },
@@ -2106,7 +2106,7 @@
     "creator": "govinfo, U. S. Government Publishing Office",
     "id": "cycle-12/working/c12-053-legal-regulatory-federal-register-2024-07-01-p251",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/federal-register-2024-07-01.pdf",
+    "localPath": "corpus/external-holdout/federal-register-2024-07-01.pdf",
     "metadata": {
       "CreationDate": "D:20240629065343Z",
       "Creator": "govinfo, U. S. Government Publishing Office",
@@ -2124,7 +2124,7 @@
     "size": 8992888,
     "source": "GovInfo Federal Register",
     "sourceDocumentId": "federal-register-2024-07-01",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/FR-2024-07-01/pdf/FR-2024-07-01.pdf",
     "title": null
   },
@@ -2145,7 +2145,7 @@
     "creator": "govinfo, U. S. Government Publishing Office",
     "id": "cycle-12/working/c12-054-legal-regulatory-federal-register-2024-07-01-p263",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/federal-register-2024-07-01.pdf",
+    "localPath": "corpus/external-holdout/federal-register-2024-07-01.pdf",
     "metadata": {
       "CreationDate": "D:20240629065343Z",
       "Creator": "govinfo, U. S. Government Publishing Office",
@@ -2163,7 +2163,7 @@
     "size": 8992888,
     "source": "GovInfo Federal Register",
     "sourceDocumentId": "federal-register-2024-07-01",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/FR-2024-07-01/pdf/FR-2024-07-01.pdf",
     "title": null
   },
@@ -2184,7 +2184,7 @@
     "creator": "govinfo, U. S. Government Publishing Office",
     "id": "cycle-12/working/c12-055-legal-regulatory-federal-register-2024-07-01-p274",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/federal-register-2024-07-01.pdf",
+    "localPath": "corpus/external-holdout/federal-register-2024-07-01.pdf",
     "metadata": {
       "CreationDate": "D:20240629065343Z",
       "Creator": "govinfo, U. S. Government Publishing Office",
@@ -2202,7 +2202,7 @@
     "size": 8992888,
     "source": "GovInfo Federal Register",
     "sourceDocumentId": "federal-register-2024-07-01",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/FR-2024-07-01/pdf/FR-2024-07-01.pdf",
     "title": null
   },
@@ -2223,7 +2223,7 @@
     "creator": "govinfo, U. S. Government Publishing Office",
     "id": "cycle-12/working/c12-056-legal-regulatory-federal-register-2024-07-01-p285",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/federal-register-2024-07-01.pdf",
+    "localPath": "corpus/external-holdout/federal-register-2024-07-01.pdf",
     "metadata": {
       "CreationDate": "D:20240629065343Z",
       "Creator": "govinfo, U. S. Government Publishing Office",
@@ -2241,7 +2241,7 @@
     "size": 8992888,
     "source": "GovInfo Federal Register",
     "sourceDocumentId": "federal-register-2024-07-01",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/FR-2024-07-01/pdf/FR-2024-07-01.pdf",
     "title": null
   },
@@ -2262,7 +2262,7 @@
     "creator": "govinfo, U. S. Government Publishing Office",
     "id": "cycle-12/working/c12-057-legal-regulatory-federal-register-2024-07-01-p297",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/federal-register-2024-07-01.pdf",
+    "localPath": "corpus/external-holdout/federal-register-2024-07-01.pdf",
     "metadata": {
       "CreationDate": "D:20240629065343Z",
       "Creator": "govinfo, U. S. Government Publishing Office",
@@ -2280,7 +2280,7 @@
     "size": 8992888,
     "source": "GovInfo Federal Register",
     "sourceDocumentId": "federal-register-2024-07-01",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/FR-2024-07-01/pdf/FR-2024-07-01.pdf",
     "title": null
   },
@@ -2301,7 +2301,7 @@
     "creator": "govinfo, U. S. Government Publishing Office",
     "id": "cycle-12/working/c12-058-legal-regulatory-federal-register-2024-07-01-p308",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/federal-register-2024-07-01.pdf",
+    "localPath": "corpus/external-holdout/federal-register-2024-07-01.pdf",
     "metadata": {
       "CreationDate": "D:20240629065343Z",
       "Creator": "govinfo, U. S. Government Publishing Office",
@@ -2319,7 +2319,7 @@
     "size": 8992888,
     "source": "GovInfo Federal Register",
     "sourceDocumentId": "federal-register-2024-07-01",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/FR-2024-07-01/pdf/FR-2024-07-01.pdf",
     "title": null
   },
@@ -2338,7 +2338,7 @@
     "creator": "ACOMP.exe   WinVer 2.2a  Sep 11 2014",
     "id": "cycle-12/working/c12-059-legal-regulatory-govinfo-hr815-enr-p20",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/govinfo-hr815-enr.pdf",
+    "localPath": "corpus/external-holdout/govinfo-hr815-enr.pdf",
     "metadata": {
       "CreationDate": "D:20240423100709-04'00'",
       "Creator": "ACOMP.exe   WinVer 2.2a  Sep 11 2014",
@@ -2357,7 +2357,7 @@
     "size": 360076,
     "source": "GovInfo enrolled bills",
     "sourceDocumentId": "govinfo-hr815-enr",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/BILLS-118hr815enr/pdf/BILLS-118hr815enr.pdf",
     "title": ""
   },
@@ -2376,7 +2376,7 @@
     "creator": "ACOMP.exe   WinVer 2.2a  Sep 11 2014",
     "id": "cycle-12/working/c12-060-legal-regulatory-govinfo-hr815-enr-p23",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/govinfo-hr815-enr.pdf",
+    "localPath": "corpus/external-holdout/govinfo-hr815-enr.pdf",
     "metadata": {
       "CreationDate": "D:20240423100709-04'00'",
       "Creator": "ACOMP.exe   WinVer 2.2a  Sep 11 2014",
@@ -2395,7 +2395,7 @@
     "size": 360076,
     "source": "GovInfo enrolled bills",
     "sourceDocumentId": "govinfo-hr815-enr",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/BILLS-118hr815enr/pdf/BILLS-118hr815enr.pdf",
     "title": ""
   },
@@ -2414,7 +2414,7 @@
     "creator": "ACOMP.exe   WinVer 2.2a  Sep 11 2014",
     "id": "cycle-12/working/c12-061-legal-regulatory-govinfo-hr815-enr-p26",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/govinfo-hr815-enr.pdf",
+    "localPath": "corpus/external-holdout/govinfo-hr815-enr.pdf",
     "metadata": {
       "CreationDate": "D:20240423100709-04'00'",
       "Creator": "ACOMP.exe   WinVer 2.2a  Sep 11 2014",
@@ -2433,7 +2433,7 @@
     "size": 360076,
     "source": "GovInfo enrolled bills",
     "sourceDocumentId": "govinfo-hr815-enr",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/BILLS-118hr815enr/pdf/BILLS-118hr815enr.pdf",
     "title": ""
   },
@@ -2452,7 +2452,7 @@
     "creator": "ACOMP.exe   WinVer 2.2a  Sep 11 2014",
     "id": "cycle-12/working/c12-062-legal-regulatory-govinfo-hr815-enr-p29",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/govinfo-hr815-enr.pdf",
+    "localPath": "corpus/external-holdout/govinfo-hr815-enr.pdf",
     "metadata": {
       "CreationDate": "D:20240423100709-04'00'",
       "Creator": "ACOMP.exe   WinVer 2.2a  Sep 11 2014",
@@ -2471,7 +2471,7 @@
     "size": 360076,
     "source": "GovInfo enrolled bills",
     "sourceDocumentId": "govinfo-hr815-enr",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.govinfo.gov/content/pkg/BILLS-118hr815enr/pdf/BILLS-118hr815enr.pdf",
     "title": ""
   },
@@ -2493,7 +2493,7 @@
     "creator": "Acrobat PDFMaker 9.1 for Word",
     "id": "cycle-12/working/c12-063-multilingual-text-un-a-64-95-ar-p21",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-ar.pdf",
+    "localPath": "corpus/external/un-a-64-95-ar.pdf",
     "metadata": {
       "Author": "Hamdi.Ghazaly",
       "CreationDate": "D:20090624120155-04'00'",
@@ -2515,7 +2515,7 @@
     "size": 376956,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=ar&s=A%2F64%2F95&t=pdf",
     "title": "Normal.dot"
   },
@@ -2537,7 +2537,7 @@
     "creator": "Acrobat PDFMaker 9.1 for Word",
     "id": "cycle-12/working/c12-064-multilingual-text-un-a-64-95-ar-p22",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-ar.pdf",
+    "localPath": "corpus/external/un-a-64-95-ar.pdf",
     "metadata": {
       "Author": "Hamdi.Ghazaly",
       "CreationDate": "D:20090624120155-04'00'",
@@ -2559,7 +2559,7 @@
     "size": 376956,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=ar&s=A%2F64%2F95&t=pdf",
     "title": "Normal.dot"
   },
@@ -2581,7 +2581,7 @@
     "creator": "Acrobat PDFMaker 9.1 for Word",
     "id": "cycle-12/working/c12-065-multilingual-text-un-a-64-95-ar-p23",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-ar.pdf",
+    "localPath": "corpus/external/un-a-64-95-ar.pdf",
     "metadata": {
       "Author": "Hamdi.Ghazaly",
       "CreationDate": "D:20090624120155-04'00'",
@@ -2603,7 +2603,7 @@
     "size": 376956,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=ar&s=A%2F64%2F95&t=pdf",
     "title": "Normal.dot"
   },
@@ -2625,7 +2625,7 @@
     "creator": "Acrobat PDFMaker 9.1 for Word",
     "id": "cycle-12/working/c12-066-multilingual-text-un-a-64-95-ar-p24",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-ar.pdf",
+    "localPath": "corpus/external/un-a-64-95-ar.pdf",
     "metadata": {
       "Author": "Hamdi.Ghazaly",
       "CreationDate": "D:20090624120155-04'00'",
@@ -2647,7 +2647,7 @@
     "size": 376956,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=ar&s=A%2F64%2F95&t=pdf",
     "title": "Normal.dot"
   },
@@ -2669,7 +2669,7 @@
     "creator": "Acrobat PDFMaker 9.1 for Word",
     "id": "cycle-12/working/c12-067-multilingual-text-un-a-64-95-ar-p25",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-ar.pdf",
+    "localPath": "corpus/external/un-a-64-95-ar.pdf",
     "metadata": {
       "Author": "Hamdi.Ghazaly",
       "CreationDate": "D:20090624120155-04'00'",
@@ -2691,7 +2691,7 @@
     "size": 376956,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=ar&s=A%2F64%2F95&t=pdf",
     "title": "Normal.dot"
   },
@@ -2713,7 +2713,7 @@
     "creator": "Acrobat PDFMaker 9.1 for Word",
     "id": "cycle-12/working/c12-068-multilingual-text-un-a-64-95-ar-p26",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-ar.pdf",
+    "localPath": "corpus/external/un-a-64-95-ar.pdf",
     "metadata": {
       "Author": "Hamdi.Ghazaly",
       "CreationDate": "D:20090624120155-04'00'",
@@ -2735,7 +2735,7 @@
     "size": 376956,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=ar&s=A%2F64%2F95&t=pdf",
     "title": "Normal.dot"
   },
@@ -2757,7 +2757,7 @@
     "creator": "Acrobat PDFMaker 9.1 for Word",
     "id": "cycle-12/working/c12-069-multilingual-text-un-a-64-95-ar-p27",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-ar.pdf",
+    "localPath": "corpus/external/un-a-64-95-ar.pdf",
     "metadata": {
       "Author": "Hamdi.Ghazaly",
       "CreationDate": "D:20090624120155-04'00'",
@@ -2779,7 +2779,7 @@
     "size": 376956,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=ar&s=A%2F64%2F95&t=pdf",
     "title": "Normal.dot"
   },
@@ -2801,7 +2801,7 @@
     "creator": "Acrobat PDFMaker 9.1 for Word",
     "id": "cycle-12/working/c12-070-multilingual-text-un-a-64-95-ar-p28",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-ar.pdf",
+    "localPath": "corpus/external/un-a-64-95-ar.pdf",
     "metadata": {
       "Author": "Hamdi.Ghazaly",
       "CreationDate": "D:20090624120155-04'00'",
@@ -2823,7 +2823,7 @@
     "size": 376956,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=ar&s=A%2F64%2F95&t=pdf",
     "title": "Normal.dot"
   },
@@ -2845,7 +2845,7 @@
     "creator": "Acrobat PDFMaker 9.1 for Word",
     "id": "cycle-12/working/c12-071-multilingual-text-un-a-64-95-ar-p29",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-ar.pdf",
+    "localPath": "corpus/external/un-a-64-95-ar.pdf",
     "metadata": {
       "Author": "Hamdi.Ghazaly",
       "CreationDate": "D:20090624120155-04'00'",
@@ -2867,7 +2867,7 @@
     "size": 376956,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=ar&s=A%2F64%2F95&t=pdf",
     "title": "Normal.dot"
   },
@@ -2889,7 +2889,7 @@
     "creator": "Acrobat PDFMaker 9.1 for Word",
     "id": "cycle-12/working/c12-072-multilingual-text-un-a-64-95-ar-p30",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-ar.pdf",
+    "localPath": "corpus/external/un-a-64-95-ar.pdf",
     "metadata": {
       "Author": "Hamdi.Ghazaly",
       "CreationDate": "D:20090624120155-04'00'",
@@ -2911,7 +2911,7 @@
     "size": 376956,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=ar&s=A%2F64%2F95&t=pdf",
     "title": "Normal.dot"
   },
@@ -2932,7 +2932,7 @@
     "creator": "Acrobat PDFMaker 7.0 for Word",
     "id": "cycle-12/working/c12-073-multilingual-text-un-a-64-95-en-p20",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-en.pdf",
+    "localPath": "corpus/external/un-a-64-95-en.pdf",
     "metadata": {
       "Author": "EG (f)",
       "CreationDate": "D:20090623232627-04'00'",
@@ -2953,7 +2953,7 @@
     "size": 136854,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-en",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=en&s=A%2F64%2F95&t=pdf",
     "title": "W:\\MSWDocs\\_2Semifinal\\0937461E.doc"
   },
@@ -2974,7 +2974,7 @@
     "creator": "Acrobat PDFMaker 7.0 for Word",
     "id": "cycle-12/working/c12-074-multilingual-text-un-a-64-95-en-p21",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-en.pdf",
+    "localPath": "corpus/external/un-a-64-95-en.pdf",
     "metadata": {
       "Author": "EG (f)",
       "CreationDate": "D:20090623232627-04'00'",
@@ -2995,7 +2995,7 @@
     "size": 136854,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-en",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=en&s=A%2F64%2F95&t=pdf",
     "title": "W:\\MSWDocs\\_2Semifinal\\0937461E.doc"
   },
@@ -3016,7 +3016,7 @@
     "creator": "Acrobat PDFMaker 7.0 for Word",
     "id": "cycle-12/working/c12-075-multilingual-text-un-a-64-95-en-p22",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-en.pdf",
+    "localPath": "corpus/external/un-a-64-95-en.pdf",
     "metadata": {
       "Author": "EG (f)",
       "CreationDate": "D:20090623232627-04'00'",
@@ -3037,7 +3037,7 @@
     "size": 136854,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-en",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=en&s=A%2F64%2F95&t=pdf",
     "title": "W:\\MSWDocs\\_2Semifinal\\0937461E.doc"
   },
@@ -3058,7 +3058,7 @@
     "creator": "Acrobat PDFMaker 7.0 for Word",
     "id": "cycle-12/working/c12-076-multilingual-text-un-a-64-95-en-p23",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-en.pdf",
+    "localPath": "corpus/external/un-a-64-95-en.pdf",
     "metadata": {
       "Author": "EG (f)",
       "CreationDate": "D:20090623232627-04'00'",
@@ -3079,7 +3079,7 @@
     "size": 136854,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-en",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=en&s=A%2F64%2F95&t=pdf",
     "title": "W:\\MSWDocs\\_2Semifinal\\0937461E.doc"
   },
@@ -3100,7 +3100,7 @@
     "creator": "Acrobat PDFMaker 7.0 for Word",
     "id": "cycle-12/working/c12-077-multilingual-text-un-a-64-95-en-p24",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-en.pdf",
+    "localPath": "corpus/external/un-a-64-95-en.pdf",
     "metadata": {
       "Author": "EG (f)",
       "CreationDate": "D:20090623232627-04'00'",
@@ -3121,7 +3121,7 @@
     "size": 136854,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-en",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=en&s=A%2F64%2F95&t=pdf",
     "title": "W:\\MSWDocs\\_2Semifinal\\0937461E.doc"
   },
@@ -3142,7 +3142,7 @@
     "creator": "Acrobat PDFMaker 7.0 for Word",
     "id": "cycle-12/working/c12-078-multilingual-text-un-a-64-95-en-p25",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-en.pdf",
+    "localPath": "corpus/external/un-a-64-95-en.pdf",
     "metadata": {
       "Author": "EG (f)",
       "CreationDate": "D:20090623232627-04'00'",
@@ -3163,7 +3163,7 @@
     "size": 136854,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-en",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=en&s=A%2F64%2F95&t=pdf",
     "title": "W:\\MSWDocs\\_2Semifinal\\0937461E.doc"
   },
@@ -3184,7 +3184,7 @@
     "creator": "Acrobat PDFMaker 7.0 for Word",
     "id": "cycle-12/working/c12-079-multilingual-text-un-a-64-95-en-p26",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-en.pdf",
+    "localPath": "corpus/external/un-a-64-95-en.pdf",
     "metadata": {
       "Author": "EG (f)",
       "CreationDate": "D:20090623232627-04'00'",
@@ -3205,7 +3205,7 @@
     "size": 136854,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-en",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=en&s=A%2F64%2F95&t=pdf",
     "title": "W:\\MSWDocs\\_2Semifinal\\0937461E.doc"
   },
@@ -3226,7 +3226,7 @@
     "creator": "Acrobat PDFMaker 7.0 for Word",
     "id": "cycle-12/working/c12-080-multilingual-text-un-a-64-95-en-p27",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-en.pdf",
+    "localPath": "corpus/external/un-a-64-95-en.pdf",
     "metadata": {
       "Author": "EG (f)",
       "CreationDate": "D:20090623232627-04'00'",
@@ -3247,7 +3247,7 @@
     "size": 136854,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-en",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=en&s=A%2F64%2F95&t=pdf",
     "title": "W:\\MSWDocs\\_2Semifinal\\0937461E.doc"
   },
@@ -3268,7 +3268,7 @@
     "creator": "Acrobat PDFMaker 7.0 for Word",
     "id": "cycle-12/working/c12-081-multilingual-text-un-a-64-95-en-p28",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-en.pdf",
+    "localPath": "corpus/external/un-a-64-95-en.pdf",
     "metadata": {
       "Author": "EG (f)",
       "CreationDate": "D:20090623232627-04'00'",
@@ -3289,7 +3289,7 @@
     "size": 136854,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-en",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=en&s=A%2F64%2F95&t=pdf",
     "title": "W:\\MSWDocs\\_2Semifinal\\0937461E.doc"
   },
@@ -3310,7 +3310,7 @@
     "creator": "Acrobat PDFMaker 7.0 for Word",
     "id": "cycle-12/working/c12-082-multilingual-text-un-a-64-95-en-p29",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-en.pdf",
+    "localPath": "corpus/external/un-a-64-95-en.pdf",
     "metadata": {
       "Author": "EG (f)",
       "CreationDate": "D:20090623232627-04'00'",
@@ -3331,7 +3331,7 @@
     "size": 136854,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-en",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=en&s=A%2F64%2F95&t=pdf",
     "title": "W:\\MSWDocs\\_2Semifinal\\0937461E.doc"
   },
@@ -3353,7 +3353,7 @@
     "creator": "Acrobat PDFMaker 7.0 for Word",
     "id": "cycle-12/working/c12-083-multilingual-text-un-a-64-95-ru-p9",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-ru.pdf",
+    "localPath": "corpus/external/un-a-64-95-ru.pdf",
     "metadata": {
       "Author": "Irina Sergueenko",
       "CreationDate": "D:20090623210715-04'00'",
@@ -3373,7 +3373,7 @@
     "size": 776880,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-ru",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=ru&s=A%2F64%2F95&t=pdf",
     "title": "  "
   },
@@ -3395,7 +3395,7 @@
     "creator": "Acrobat PDFMaker 7.0 for Word",
     "id": "cycle-12/working/c12-084-multilingual-text-un-a-64-95-ru-p10",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-ru.pdf",
+    "localPath": "corpus/external/un-a-64-95-ru.pdf",
     "metadata": {
       "Author": "Irina Sergueenko",
       "CreationDate": "D:20090623210715-04'00'",
@@ -3415,7 +3415,7 @@
     "size": 776880,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-ru",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=ru&s=A%2F64%2F95&t=pdf",
     "title": "  "
   },
@@ -3437,7 +3437,7 @@
     "creator": "Acrobat PDFMaker 7.0 for Word",
     "id": "cycle-12/working/c12-085-multilingual-text-un-a-64-95-ru-p11",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-ru.pdf",
+    "localPath": "corpus/external/un-a-64-95-ru.pdf",
     "metadata": {
       "Author": "Irina Sergueenko",
       "CreationDate": "D:20090623210715-04'00'",
@@ -3457,7 +3457,7 @@
     "size": 776880,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-ru",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=ru&s=A%2F64%2F95&t=pdf",
     "title": "  "
   },
@@ -3479,7 +3479,7 @@
     "creator": "Acrobat PDFMaker 7.0 for Word",
     "id": "cycle-12/working/c12-086-multilingual-text-un-a-64-95-ru-p12",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-ru.pdf",
+    "localPath": "corpus/external/un-a-64-95-ru.pdf",
     "metadata": {
       "Author": "Irina Sergueenko",
       "CreationDate": "D:20090623210715-04'00'",
@@ -3499,7 +3499,7 @@
     "size": 776880,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-ru",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=ru&s=A%2F64%2F95&t=pdf",
     "title": "  "
   },
@@ -3519,7 +3519,7 @@
     "creator": "LaTeX with hyperref",
     "id": "cycle-12/working/c12-087-scientific-technical-arxiv-attention-1706-03762-p8",
     "licenseOrTerms": "arXiv-hosted paper; check paper metadata before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/arxiv-attention-1706.03762.pdf",
+    "localPath": "corpus/external-holdout/arxiv-attention-1706.03762.pdf",
     "metadata": {
       "Author": "",
       "CreationDate": "D:20240410211143Z",
@@ -3541,7 +3541,7 @@
     "size": 2215244,
     "source": "arXiv",
     "sourceDocumentId": "arxiv-attention-1706-03762",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://arxiv.org/pdf/1706.03762",
     "title": ""
   },
@@ -3561,7 +3561,7 @@
     "creator": "LaTeX with hyperref",
     "id": "cycle-12/working/c12-088-scientific-technical-arxiv-attention-1706-03762-p9",
     "licenseOrTerms": "arXiv-hosted paper; check paper metadata before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/arxiv-attention-1706.03762.pdf",
+    "localPath": "corpus/external-holdout/arxiv-attention-1706.03762.pdf",
     "metadata": {
       "Author": "",
       "CreationDate": "D:20240410211143Z",
@@ -3583,7 +3583,7 @@
     "size": 2215244,
     "source": "arXiv",
     "sourceDocumentId": "arxiv-attention-1706-03762",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://arxiv.org/pdf/1706.03762",
     "title": ""
   },
@@ -3603,7 +3603,7 @@
     "creator": "LaTeX with hyperref",
     "id": "cycle-12/working/c12-089-scientific-technical-arxiv-attention-1706-03762-p10",
     "licenseOrTerms": "arXiv-hosted paper; check paper metadata before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/arxiv-attention-1706.03762.pdf",
+    "localPath": "corpus/external-holdout/arxiv-attention-1706.03762.pdf",
     "metadata": {
       "Author": "",
       "CreationDate": "D:20240410211143Z",
@@ -3625,7 +3625,7 @@
     "size": 2215244,
     "source": "arXiv",
     "sourceDocumentId": "arxiv-attention-1706-03762",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://arxiv.org/pdf/1706.03762",
     "title": ""
   },
@@ -3645,7 +3645,7 @@
     "creator": "LaTeX with hyperref",
     "id": "cycle-12/working/c12-090-scientific-technical-arxiv-attention-1706-03762-p11",
     "licenseOrTerms": "arXiv-hosted paper; check paper metadata before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/arxiv-attention-1706.03762.pdf",
+    "localPath": "corpus/external-holdout/arxiv-attention-1706.03762.pdf",
     "metadata": {
       "Author": "",
       "CreationDate": "D:20240410211143Z",
@@ -3667,7 +3667,7 @@
     "size": 2215244,
     "source": "arXiv",
     "sourceDocumentId": "arxiv-attention-1706-03762",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://arxiv.org/pdf/1706.03762",
     "title": ""
   },
@@ -3687,7 +3687,7 @@
     "creator": "LaTeX with hyperref",
     "id": "cycle-12/working/c12-091-scientific-technical-arxiv-attention-1706-03762-p12",
     "licenseOrTerms": "arXiv-hosted paper; check paper metadata before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/arxiv-attention-1706.03762.pdf",
+    "localPath": "corpus/external-holdout/arxiv-attention-1706.03762.pdf",
     "metadata": {
       "Author": "",
       "CreationDate": "D:20240410211143Z",
@@ -3709,7 +3709,7 @@
     "size": 2215244,
     "source": "arXiv",
     "sourceDocumentId": "arxiv-attention-1706-03762",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://arxiv.org/pdf/1706.03762",
     "title": ""
   },
@@ -3729,7 +3729,7 @@
     "creator": "LaTeX with hyperref",
     "id": "cycle-12/working/c12-092-scientific-technical-arxiv-attention-1706-03762-p13",
     "licenseOrTerms": "arXiv-hosted paper; check paper metadata before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/arxiv-attention-1706.03762.pdf",
+    "localPath": "corpus/external-holdout/arxiv-attention-1706.03762.pdf",
     "metadata": {
       "Author": "",
       "CreationDate": "D:20240410211143Z",
@@ -3751,7 +3751,7 @@
     "size": 2215244,
     "source": "arXiv",
     "sourceDocumentId": "arxiv-attention-1706-03762",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://arxiv.org/pdf/1706.03762",
     "title": ""
   },
@@ -3771,7 +3771,7 @@
     "creator": "LaTeX with hyperref",
     "id": "cycle-12/working/c12-093-scientific-technical-arxiv-attention-1706-03762-p14",
     "licenseOrTerms": "arXiv-hosted paper; check paper metadata before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/arxiv-attention-1706.03762.pdf",
+    "localPath": "corpus/external-holdout/arxiv-attention-1706.03762.pdf",
     "metadata": {
       "Author": "",
       "CreationDate": "D:20240410211143Z",
@@ -3793,7 +3793,7 @@
     "size": 2215244,
     "source": "arXiv",
     "sourceDocumentId": "arxiv-attention-1706-03762",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://arxiv.org/pdf/1706.03762",
     "title": ""
   },
@@ -3813,7 +3813,7 @@
     "creator": "LaTeX with hyperref",
     "id": "cycle-12/working/c12-094-scientific-technical-arxiv-attention-1706-03762-p15",
     "licenseOrTerms": "arXiv-hosted paper; check paper metadata before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/arxiv-attention-1706.03762.pdf",
+    "localPath": "corpus/external-holdout/arxiv-attention-1706.03762.pdf",
     "metadata": {
       "Author": "",
       "CreationDate": "D:20240410211143Z",
@@ -3835,7 +3835,7 @@
     "size": 2215244,
     "source": "arXiv",
     "sourceDocumentId": "arxiv-attention-1706-03762",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://arxiv.org/pdf/1706.03762",
     "title": ""
   },
@@ -3854,7 +3854,7 @@
     "creator": "LaTeX with hyperref",
     "id": "cycle-12/working/c12-095-scientific-technical-arxiv-docling-2408-09869-p9",
     "licenseOrTerms": "arXiv-hosted paper; check paper metadata before redistribution outside tests",
-    "localPath": "test/fixtures/external-holdout-pdfs/arxiv-docling-2408.09869.pdf",
+    "localPath": "corpus/external-holdout/arxiv-docling-2408.09869.pdf",
     "metadata": {
       "Author": "",
       "CreationDate": "D:20241210022326Z",
@@ -3876,7 +3876,7 @@
     "size": 5566575,
     "source": "arXiv",
     "sourceDocumentId": "arxiv-docling-2408-09869",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://arxiv.org/pdf/2408.09869",
     "title": ""
   },
@@ -3896,7 +3896,7 @@
     "creator": "TeX",
     "id": "cycle-12/working/c12-096-scientific-technical-arxiv-publaynet-1908.07836-p1",
     "licenseOrTerms": "arXiv-hosted paper; check paper metadata before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/arxiv-publaynet-1908.07836.pdf",
+    "localPath": "corpus/external/arxiv-publaynet-1908.07836.pdf",
     "metadata": {
       "CreationDate": "D:20190822004945Z",
       "Creator": "TeX",
@@ -3914,7 +3914,7 @@
     "size": 3731954,
     "source": "arXiv",
     "sourceDocumentId": "arxiv-publaynet-1908.07836",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://arxiv.org/pdf/1908.07836",
     "title": null
   },
@@ -3934,7 +3934,7 @@
     "creator": "TeX",
     "id": "cycle-12/working/c12-097-scientific-technical-arxiv-publaynet-1908.07836-p2",
     "licenseOrTerms": "arXiv-hosted paper; check paper metadata before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/arxiv-publaynet-1908.07836.pdf",
+    "localPath": "corpus/external/arxiv-publaynet-1908.07836.pdf",
     "metadata": {
       "CreationDate": "D:20190822004945Z",
       "Creator": "TeX",
@@ -3952,7 +3952,7 @@
     "size": 3731954,
     "source": "arXiv",
     "sourceDocumentId": "arxiv-publaynet-1908.07836",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://arxiv.org/pdf/1908.07836",
     "title": null
   },
@@ -3972,7 +3972,7 @@
     "creator": "TeX",
     "id": "cycle-12/working/c12-098-scientific-technical-arxiv-publaynet-1908.07836-p3",
     "licenseOrTerms": "arXiv-hosted paper; check paper metadata before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/arxiv-publaynet-1908.07836.pdf",
+    "localPath": "corpus/external/arxiv-publaynet-1908.07836.pdf",
     "metadata": {
       "CreationDate": "D:20190822004945Z",
       "Creator": "TeX",
@@ -3990,7 +3990,7 @@
     "size": 3731954,
     "source": "arXiv",
     "sourceDocumentId": "arxiv-publaynet-1908.07836",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://arxiv.org/pdf/1908.07836",
     "title": null
   },
@@ -4010,7 +4010,7 @@
     "creator": "TeX",
     "id": "cycle-12/working/c12-099-scientific-technical-arxiv-publaynet-1908.07836-p4",
     "licenseOrTerms": "arXiv-hosted paper; check paper metadata before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/arxiv-publaynet-1908.07836.pdf",
+    "localPath": "corpus/external/arxiv-publaynet-1908.07836.pdf",
     "metadata": {
       "CreationDate": "D:20190822004945Z",
       "Creator": "TeX",
@@ -4028,7 +4028,7 @@
     "size": 3731954,
     "source": "arXiv",
     "sourceDocumentId": "arxiv-publaynet-1908.07836",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://arxiv.org/pdf/1908.07836",
     "title": null
   },
@@ -4048,7 +4048,7 @@
     "creator": "TeX",
     "id": "cycle-12/working/c12-100-scientific-technical-arxiv-publaynet-1908.07836-p5",
     "licenseOrTerms": "arXiv-hosted paper; check paper metadata before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/arxiv-publaynet-1908.07836.pdf",
+    "localPath": "corpus/external/arxiv-publaynet-1908.07836.pdf",
     "metadata": {
       "CreationDate": "D:20190822004945Z",
       "Creator": "TeX",
@@ -4066,7 +4066,7 @@
     "size": 3731954,
     "source": "arXiv",
     "sourceDocumentId": "arxiv-publaynet-1908.07836",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://arxiv.org/pdf/1908.07836",
     "title": null
   }

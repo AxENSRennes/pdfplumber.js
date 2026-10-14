@@ -7,6 +7,3 @@
 [submodule "pdfjs"]
 	path = upstream/pdfjs
 	url = https://github.com/mozilla/pdf.js.git
-[submodule "mupdf.js"]
-	path = mupdf.js
-	url = https://github.com/ArtifexSoftware/mupdf.js.git

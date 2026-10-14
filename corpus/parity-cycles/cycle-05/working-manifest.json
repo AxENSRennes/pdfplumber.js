@@ -9,7 +9,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-001-table-text",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-001-table-text.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-001-table-text.pdf",
     "selectedPages": [
       0
     ],
@@ -27,7 +27,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-002-page-boxes",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-002-page-boxes.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-002-page-boxes.pdf",
     "selectedPages": [
       0
     ],
@@ -45,7 +45,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-003-paths-colors",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-003-paths-colors.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-003-paths-colors.pdf",
     "selectedPages": [
       0
     ],
@@ -63,7 +63,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-004-images-masks",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-004-images-masks.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-004-images-masks.pdf",
     "selectedPages": [
       0
     ],
@@ -82,7 +82,7 @@
     ],
     "id": "cycle-05/working/c05-005-real-encrypted",
     "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
-    "localPath": "pdfplumber-python/tests/pdfs/password-example.pdf",
+    "localPath": "upstream/pdfplumber-python/tests/pdfs/password-example.pdf",
     "selectedPages": [
       0
     ],
@@ -101,7 +101,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-006-annots-widgets",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-006-annots-widgets.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-006-annots-widgets.pdf",
     "selectedPages": [
       0
     ],
@@ -119,7 +119,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-007-cmap-type3",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-007-cmap-type3.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-007-cmap-type3.pdf",
     "selectedPages": [
       0
     ],
@@ -137,7 +137,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-008-marked-content",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-008-marked-content.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-008-marked-content.pdf",
     "selectedPages": [
       0
     ],
@@ -155,7 +155,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-009-text-positioned",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-009-text-positioned.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-009-text-positioned.pdf",
     "selectedPages": [
       0
     ],
@@ -174,7 +174,7 @@
     ],
     "id": "cycle-05/working/c05-010-real-tagged-pdf",
     "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
-    "localPath": "pdfplumber-python/tests/pdfs/mcid_example.pdf",
+    "localPath": "upstream/pdfplumber-python/tests/pdfs/mcid_example.pdf",
     "selectedPages": [
       0
     ],
@@ -193,7 +193,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-011-table-grid",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-011-table-grid.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-011-table-grid.pdf",
     "selectedPages": [
       0
     ],
@@ -211,7 +211,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-012-table-text",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-012-table-text.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-012-table-text.pdf",
     "selectedPages": [
       0
     ],
@@ -229,7 +229,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-013-page-boxes",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-013-page-boxes.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-013-page-boxes.pdf",
     "selectedPages": [
       0
     ],
@@ -247,7 +247,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-014-paths-colors",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-014-paths-colors.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-014-paths-colors.pdf",
     "selectedPages": [
       0
     ],
@@ -266,7 +266,7 @@
     ],
     "id": "cycle-05/working/c05-015-real-images",
     "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
-    "localPath": "pdfplumber-python/tests/pdfs/image_structure.pdf",
+    "localPath": "upstream/pdfplumber-python/tests/pdfs/image_structure.pdf",
     "selectedPages": [
       0
     ],
@@ -285,7 +285,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-016-forms-content",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-016-forms-content.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-016-forms-content.pdf",
     "selectedPages": [
       0
     ],
@@ -303,7 +303,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-017-annots-widgets",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-017-annots-widgets.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-017-annots-widgets.pdf",
     "selectedPages": [
       0
     ],
@@ -321,7 +321,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-018-cmap-type3",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-018-cmap-type3.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-018-cmap-type3.pdf",
     "selectedPages": [
       0
     ],
@@ -339,7 +339,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-019-marked-content",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-019-marked-content.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-019-marked-content.pdf",
     "selectedPages": [
       0
     ],
@@ -358,7 +358,7 @@
     ],
     "id": "cycle-05/working/c05-020-real-dedupe",
     "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
-    "localPath": "pdfplumber-python/tests/pdfs/issue-71-duplicate-chars.pdf",
+    "localPath": "upstream/pdfplumber-python/tests/pdfs/issue-71-duplicate-chars.pdf",
     "selectedPages": [
       0
     ],
@@ -377,7 +377,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-021-text-options",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-021-text-options.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-021-text-options.pdf",
     "selectedPages": [
       0
     ],
@@ -395,7 +395,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-022-table-grid",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-022-table-grid.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-022-table-grid.pdf",
     "selectedPages": [
       0
     ],
@@ -413,7 +413,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-023-table-text",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-023-table-text.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-023-table-text.pdf",
     "selectedPages": [
       0
     ],
@@ -431,7 +431,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-024-page-boxes",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-024-page-boxes.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-024-page-boxes.pdf",
     "selectedPages": [
       0
     ],
@@ -450,7 +450,7 @@
     ],
     "id": "cycle-05/working/c05-025-real-government-form",
     "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
-    "localPath": "pdfplumber-python/tests/pdfs/nics-background-checks-2015-11.pdf",
+    "localPath": "upstream/pdfplumber-python/tests/pdfs/nics-background-checks-2015-11.pdf",
     "selectedPages": [
       0
     ],
@@ -469,7 +469,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-026-images-masks",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-026-images-masks.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-026-images-masks.pdf",
     "selectedPages": [
       0
     ],
@@ -487,7 +487,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-027-forms-content",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-027-forms-content.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-027-forms-content.pdf",
     "selectedPages": [
       0
     ],
@@ -505,7 +505,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-028-annots-widgets",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-028-annots-widgets.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-028-annots-widgets.pdf",
     "selectedPages": [
       0
     ],
@@ -523,7 +523,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-029-cmap-type3",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-029-cmap-type3.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-029-cmap-type3.pdf",
     "selectedPages": [
       0
     ],
@@ -542,7 +542,7 @@
     ],
     "id": "cycle-05/working/c05-030-real-ligatures",
     "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
-    "localPath": "pdfplumber-python/tests/pdfs/issue-598-example.pdf",
+    "localPath": "upstream/pdfplumber-python/tests/pdfs/issue-598-example.pdf",
     "selectedPages": [
       0
     ],
@@ -561,7 +561,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-031-text-positioned",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-031-text-positioned.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-031-text-positioned.pdf",
     "selectedPages": [
       0
     ],
@@ -579,7 +579,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-032-text-options",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-032-text-options.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-032-text-options.pdf",
     "selectedPages": [
       0
     ],
@@ -597,7 +597,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-033-table-grid",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-033-table-grid.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-033-table-grid.pdf",
     "selectedPages": [
       0
     ],
@@ -615,7 +615,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-034-table-text",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-034-table-text.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-034-table-text.pdf",
     "selectedPages": [
       0
     ],
@@ -634,7 +634,7 @@
     ],
     "id": "cycle-05/working/c05-035-real-tagged-pdf",
     "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
-    "localPath": "pdfplumber-python/tests/pdfs/word365_structure.pdf",
+    "localPath": "upstream/pdfplumber-python/tests/pdfs/word365_structure.pdf",
     "selectedPages": [
       0
     ],
@@ -653,7 +653,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-036-paths-colors",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-036-paths-colors.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-036-paths-colors.pdf",
     "selectedPages": [
       0
     ],
@@ -671,7 +671,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-037-images-masks",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-037-images-masks.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-037-images-masks.pdf",
     "selectedPages": [
       0
     ],
@@ -689,7 +689,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-038-forms-content",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-038-forms-content.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-038-forms-content.pdf",
     "selectedPages": [
       0
     ],
@@ -707,7 +707,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-039-annots-widgets",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-039-annots-widgets.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-039-annots-widgets.pdf",
     "selectedPages": [
       0
     ],
@@ -726,7 +726,7 @@
     ],
     "id": "cycle-05/working/c05-040-real-word-tolerance",
     "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
-    "localPath": "pdfplumber-python/tests/pdfs/issue-987-test.pdf",
+    "localPath": "upstream/pdfplumber-python/tests/pdfs/issue-987-test.pdf",
     "selectedPages": [
       0
     ],
@@ -745,7 +745,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-041-marked-content",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-041-marked-content.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-041-marked-content.pdf",
     "selectedPages": [
       0
     ],
@@ -763,7 +763,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-042-text-positioned",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-042-text-positioned.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-042-text-positioned.pdf",
     "selectedPages": [
       0
     ],
@@ -781,7 +781,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-043-text-options",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-043-text-options.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-043-text-options.pdf",
     "selectedPages": [
       0
     ],
@@ -799,7 +799,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-044-table-grid",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-044-table-grid.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-044-table-grid.pdf",
     "selectedPages": [
       0
     ],
@@ -818,7 +818,7 @@
     ],
     "id": "cycle-05/working/c05-045-real-legal",
     "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
-    "localPath": "pdfplumber-python/tests/pdfs/scotus-transcript-p1.pdf",
+    "localPath": "upstream/pdfplumber-python/tests/pdfs/scotus-transcript-p1.pdf",
     "selectedPages": [
       0
     ],
@@ -837,7 +837,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-046-page-boxes",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-046-page-boxes.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-046-page-boxes.pdf",
     "selectedPages": [
       0
     ],
@@ -855,7 +855,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-047-paths-colors",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-047-paths-colors.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-047-paths-colors.pdf",
     "selectedPages": [
       0
     ],
@@ -873,7 +873,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-048-images-masks",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-048-images-masks.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-048-images-masks.pdf",
     "selectedPages": [
       0
     ],
@@ -891,7 +891,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-049-forms-content",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-049-forms-content.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-049-forms-content.pdf",
     "selectedPages": [
       0
     ],
@@ -910,7 +910,7 @@
     ],
     "id": "cycle-05/working/c05-050-real-annotations",
     "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
-    "localPath": "pdfplumber-python/tests/pdfs/annotations-rotated-90.pdf",
+    "localPath": "upstream/pdfplumber-python/tests/pdfs/annotations-rotated-90.pdf",
     "selectedPages": [
       0
     ],
@@ -929,7 +929,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-051-cmap-type3",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-051-cmap-type3.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-051-cmap-type3.pdf",
     "selectedPages": [
       0
     ],
@@ -947,7 +947,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-052-marked-content",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-052-marked-content.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-052-marked-content.pdf",
     "selectedPages": [
       0
     ],
@@ -965,7 +965,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-053-text-positioned",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-053-text-positioned.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-053-text-positioned.pdf",
     "selectedPages": [
       0
     ],
@@ -983,7 +983,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-054-text-options",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-054-text-options.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-054-text-options.pdf",
     "selectedPages": [
       0
     ],
@@ -1002,7 +1002,7 @@
     ],
     "id": "cycle-05/working/c05-055-real-long-document",
     "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
-    "localPath": "pdfplumber-python/tests/pdfs/WARN-Report-for-7-1-2015-to-03-25-2016.pdf",
+    "localPath": "upstream/pdfplumber-python/tests/pdfs/WARN-Report-for-7-1-2015-to-03-25-2016.pdf",
     "selectedPages": [
       15
     ],
@@ -1021,7 +1021,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-056-table-text",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-056-table-text.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-056-table-text.pdf",
     "selectedPages": [
       0
     ],
@@ -1039,7 +1039,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-057-page-boxes",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-057-page-boxes.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-057-page-boxes.pdf",
     "selectedPages": [
       0
     ],
@@ -1057,7 +1057,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-058-paths-colors",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-058-paths-colors.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-058-paths-colors.pdf",
     "selectedPages": [
       0
     ],
@@ -1075,7 +1075,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-059-images-masks",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-059-images-masks.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-059-images-masks.pdf",
     "selectedPages": [
       0
     ],
@@ -1094,7 +1094,7 @@
     ],
     "id": "cycle-05/working/c05-060-real-malformed",
     "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
-    "localPath": "pdfplumber-python/tests/pdfs/malformed-from-issue-932.pdf",
+    "localPath": "upstream/pdfplumber-python/tests/pdfs/malformed-from-issue-932.pdf",
     "selectedPages": [
       0
     ],
@@ -1113,7 +1113,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-061-annots-widgets",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-061-annots-widgets.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-061-annots-widgets.pdf",
     "selectedPages": [
       0
     ],
@@ -1131,7 +1131,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-062-cmap-type3",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-062-cmap-type3.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-062-cmap-type3.pdf",
     "selectedPages": [
       0
     ],
@@ -1149,7 +1149,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-063-marked-content",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-063-marked-content.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-063-marked-content.pdf",
     "selectedPages": [
       0
     ],
@@ -1167,7 +1167,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-064-text-positioned",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-064-text-positioned.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-064-text-positioned.pdf",
     "selectedPages": [
       0
     ],
@@ -1186,7 +1186,7 @@
     ],
     "id": "cycle-05/working/c05-065-real-page-boxes",
     "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
-    "localPath": "pdfplumber-python/tests/pdfs/page-boxes-example.pdf",
+    "localPath": "upstream/pdfplumber-python/tests/pdfs/page-boxes-example.pdf",
     "selectedPages": [
       0
     ],
@@ -1205,7 +1205,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-066-table-grid",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-066-table-grid.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-066-table-grid.pdf",
     "selectedPages": [
       0
     ],
@@ -1223,7 +1223,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-067-table-text",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-067-table-text.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-067-table-text.pdf",
     "selectedPages": [
       0
     ],
@@ -1241,7 +1241,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-068-page-boxes",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-068-page-boxes.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-068-page-boxes.pdf",
     "selectedPages": [
       0
     ],
@@ -1259,7 +1259,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-069-paths-colors",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-069-paths-colors.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-069-paths-colors.pdf",
     "selectedPages": [
       0
     ],
@@ -1278,7 +1278,7 @@
     ],
     "id": "cycle-05/working/c05-070-real-tagged-pdf",
     "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
-    "localPath": "pdfplumber-python/tests/pdfs/pdf_structure.pdf",
+    "localPath": "upstream/pdfplumber-python/tests/pdfs/pdf_structure.pdf",
     "selectedPages": [
       0
     ],
@@ -1297,7 +1297,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-071-forms-content",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-071-forms-content.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-071-forms-content.pdf",
     "selectedPages": [
       0
     ],
@@ -1315,7 +1315,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-072-annots-widgets",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-072-annots-widgets.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-072-annots-widgets.pdf",
     "selectedPages": [
       0
     ],
@@ -1333,7 +1333,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-073-cmap-type3",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-073-cmap-type3.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-073-cmap-type3.pdf",
     "selectedPages": [
       0
     ],
@@ -1351,7 +1351,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-074-marked-content",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-074-marked-content.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-074-marked-content.pdf",
     "selectedPages": [
       0
     ],
@@ -1370,7 +1370,7 @@
     ],
     "id": "cycle-05/working/c05-075-real-curves",
     "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
-    "localPath": "pdfplumber-python/tests/pdfs/table-curves-example.pdf",
+    "localPath": "upstream/pdfplumber-python/tests/pdfs/table-curves-example.pdf",
     "selectedPages": [
       0
     ],
@@ -1389,7 +1389,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-076-text-options",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-076-text-options.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-076-text-options.pdf",
     "selectedPages": [
       0
     ],
@@ -1407,7 +1407,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-077-table-grid",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-077-table-grid.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-077-table-grid.pdf",
     "selectedPages": [
       0
     ],
@@ -1425,7 +1425,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-078-table-text",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-078-table-text.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-078-table-text.pdf",
     "selectedPages": [
       0
     ],
@@ -1443,7 +1443,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-079-page-boxes",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-079-page-boxes.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-079-page-boxes.pdf",
     "selectedPages": [
       0
     ],
@@ -1462,7 +1462,7 @@
     ],
     "id": "cycle-05/working/c05-080-real-financial-table",
     "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
-    "localPath": "pdfplumber-python/tests/pdfs/senate-expenditures.pdf",
+    "localPath": "upstream/pdfplumber-python/tests/pdfs/senate-expenditures.pdf",
     "selectedPages": [
       0
     ],
@@ -1481,7 +1481,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-081-images-masks",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-081-images-masks.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-081-images-masks.pdf",
     "selectedPages": [
       0
     ],
@@ -1499,7 +1499,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-082-forms-content",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-082-forms-content.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-082-forms-content.pdf",
     "selectedPages": [
       0
     ],
@@ -1517,7 +1517,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-083-annots-widgets",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-083-annots-widgets.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-083-annots-widgets.pdf",
     "selectedPages": [
       0
     ],
@@ -1535,7 +1535,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-084-cmap-type3",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-084-cmap-type3.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-084-cmap-type3.pdf",
     "selectedPages": [
       0
     ],
@@ -1554,7 +1554,7 @@
     ],
     "id": "cycle-05/working/c05-085-real-vertical-text",
     "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
-    "localPath": "pdfplumber-python/tests/pdfs/issue-192-example.pdf",
+    "localPath": "upstream/pdfplumber-python/tests/pdfs/issue-192-example.pdf",
     "selectedPages": [
       0
     ],
@@ -1573,7 +1573,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-086-text-positioned",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-086-text-positioned.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-086-text-positioned.pdf",
     "selectedPages": [
       0
     ],
@@ -1591,7 +1591,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-087-text-options",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-087-text-options.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-087-text-options.pdf",
     "selectedPages": [
       0
     ],
@@ -1609,7 +1609,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-088-table-grid",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-088-table-grid.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-088-table-grid.pdf",
     "selectedPages": [
       0
     ],
@@ -1627,7 +1627,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-089-table-text",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-089-table-text.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-089-table-text.pdf",
     "selectedPages": [
       0
     ],
@@ -1646,7 +1646,7 @@
     ],
     "id": "cycle-05/working/c05-090-real-long-document",
     "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
-    "localPath": "pdfplumber-python/tests/pdfs/chelsea_pdta.pdf",
+    "localPath": "upstream/pdfplumber-python/tests/pdfs/chelsea_pdta.pdf",
     "selectedPages": [
       32
     ],
@@ -1665,7 +1665,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-091-paths-colors",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-091-paths-colors.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-091-paths-colors.pdf",
     "selectedPages": [
       0
     ],
@@ -1683,7 +1683,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-092-images-masks",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-092-images-masks.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-092-images-masks.pdf",
     "selectedPages": [
       0
     ],
@@ -1701,7 +1701,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-093-forms-content",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-093-forms-content.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-093-forms-content.pdf",
     "selectedPages": [
       0
     ],
@@ -1719,7 +1719,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-094-annots-widgets",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-094-annots-widgets.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-094-annots-widgets.pdf",
     "selectedPages": [
       0
     ],
@@ -1738,7 +1738,7 @@
     ],
     "id": "cycle-05/working/c05-095-real-encrypted",
     "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
-    "localPath": "pdfplumber-python/tests/pdfs/password-example.pdf",
+    "localPath": "upstream/pdfplumber-python/tests/pdfs/password-example.pdf",
     "selectedPages": [
       0
     ],
@@ -1757,7 +1757,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-096-marked-content",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-096-marked-content.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-096-marked-content.pdf",
     "selectedPages": [
       0
     ],
@@ -1775,7 +1775,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-097-text-positioned",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-097-text-positioned.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-097-text-positioned.pdf",
     "selectedPages": [
       0
     ],
@@ -1793,7 +1793,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-098-text-options",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-098-text-options.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-098-text-options.pdf",
     "selectedPages": [
       0
     ],
@@ -1811,7 +1811,7 @@
     "generator": "scripts/generate-parity-cycle-cases.py",
     "id": "cycle-05/working/c05-099-table-grid",
     "licenseOrTerms": "Generated locally for parity testing; no external license.",
-    "localPath": "test/fixtures/parity-cycles/cycle-05/working/c05-099-table-grid.pdf",
+    "localPath": "corpus/parity-cycles/cycle-05/working/c05-099-table-grid.pdf",
     "selectedPages": [
       0
     ],
@@ -1830,7 +1830,7 @@
     ],
     "id": "cycle-05/working/c05-100-real-tagged-pdf",
     "licenseOrTerms": "Vendored with pdfplumber test corpus; retained for parity testing under repository test-fixture terms.",
-    "localPath": "pdfplumber-python/tests/pdfs/mcid_example.pdf",
+    "localPath": "upstream/pdfplumber-python/tests/pdfs/mcid_example.pdf",
     "selectedPages": [
       0
     ],

@@ -7,7 +7,7 @@ import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "test" / "fixtures" / "micro-pdfs"
+OUT = ROOT / "corpus" / "micro"
 
 
 class PDF:

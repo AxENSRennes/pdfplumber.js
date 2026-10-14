@@ -16,7 +16,7 @@
     "creator": "XPP",
     "id": "cycle-12/holdout/c12-101-financial-report-federal-reserve-2024-ar-p38",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "localPath": "corpus/external/federal-reserve-2024-ar.pdf",
     "metadata": {
       "Author": "Federal Reserve Board",
       "CreationDate": "D:20251125085733-05'00'",
@@ -38,7 +38,7 @@
     "size": 2170319,
     "source": "Board of Governors of the Federal Reserve System publications",
     "sourceDocumentId": "federal-reserve-2024-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
     "title": "Federal Reserve Board Publication"
   },
@@ -59,7 +59,7 @@
     "creator": "XPP",
     "id": "cycle-12/holdout/c12-102-financial-report-federal-reserve-2024-ar-p44",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "localPath": "corpus/external/federal-reserve-2024-ar.pdf",
     "metadata": {
       "Author": "Federal Reserve Board",
       "CreationDate": "D:20251125085733-05'00'",
@@ -81,7 +81,7 @@
     "size": 2170319,
     "source": "Board of Governors of the Federal Reserve System publications",
     "sourceDocumentId": "federal-reserve-2024-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
     "title": "Federal Reserve Board Publication"
   },
@@ -102,7 +102,7 @@
     "creator": "XPP",
     "id": "cycle-12/holdout/c12-103-financial-report-federal-reserve-2024-ar-p50",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "localPath": "corpus/external/federal-reserve-2024-ar.pdf",
     "metadata": {
       "Author": "Federal Reserve Board",
       "CreationDate": "D:20251125085733-05'00'",
@@ -124,7 +124,7 @@
     "size": 2170319,
     "source": "Board of Governors of the Federal Reserve System publications",
     "sourceDocumentId": "federal-reserve-2024-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
     "title": "Federal Reserve Board Publication"
   },
@@ -145,7 +145,7 @@
     "creator": "XPP",
     "id": "cycle-12/holdout/c12-104-financial-report-federal-reserve-2024-ar-p56",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/federal-reserve-2024-ar.pdf",
+    "localPath": "corpus/external/federal-reserve-2024-ar.pdf",
     "metadata": {
       "Author": "Federal Reserve Board",
       "CreationDate": "D:20251125085733-05'00'",
@@ -167,7 +167,7 @@
     "size": 2170319,
     "source": "Board of Governors of the Federal Reserve System publications",
     "sourceDocumentId": "federal-reserve-2024-ar",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://www.federalreserve.gov/publications/files/2024-annual-report.pdf",
     "title": "Federal Reserve Board Publication"
   },
@@ -187,7 +187,7 @@
     "creator": "PScript5.dll Version 5.2.2",
     "id": "cycle-12/holdout/c12-105-legal-regulatory-scotus-23-175-p16",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/scotus-23-175.pdf",
+    "localPath": "corpus/external-holdout/scotus-23-175.pdf",
     "metadata": {
       "CreationDate": "D:20240627141350-04'00'",
       "Creator": "PScript5.dll Version 5.2.2",
@@ -206,7 +206,7 @@
     "size": 359727,
     "source": "Supreme Court of the United States opinions",
     "sourceDocumentId": "scotus-23-175",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.supremecourt.gov/opinions/23pdf/23-175_19m2.pdf",
     "title": "23-175 City of Grants Pass v. Johnson (06/28/2024)"
   },
@@ -226,7 +226,7 @@
     "creator": "PScript5.dll Version 5.2.2",
     "id": "cycle-12/holdout/c12-106-legal-regulatory-scotus-23-175-p18",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/scotus-23-175.pdf",
+    "localPath": "corpus/external-holdout/scotus-23-175.pdf",
     "metadata": {
       "CreationDate": "D:20240627141350-04'00'",
       "Creator": "PScript5.dll Version 5.2.2",
@@ -245,7 +245,7 @@
     "size": 359727,
     "source": "Supreme Court of the United States opinions",
     "sourceDocumentId": "scotus-23-175",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.supremecourt.gov/opinions/23pdf/23-175_19m2.pdf",
     "title": "23-175 City of Grants Pass v. Johnson (06/28/2024)"
   },
@@ -265,7 +265,7 @@
     "creator": "PScript5.dll Version 5.2.2",
     "id": "cycle-12/holdout/c12-107-legal-regulatory-scotus-23-175-p20",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/scotus-23-175.pdf",
+    "localPath": "corpus/external-holdout/scotus-23-175.pdf",
     "metadata": {
       "CreationDate": "D:20240627141350-04'00'",
       "Creator": "PScript5.dll Version 5.2.2",
@@ -284,7 +284,7 @@
     "size": 359727,
     "source": "Supreme Court of the United States opinions",
     "sourceDocumentId": "scotus-23-175",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.supremecourt.gov/opinions/23pdf/23-175_19m2.pdf",
     "title": "23-175 City of Grants Pass v. Johnson (06/28/2024)"
   },
@@ -304,7 +304,7 @@
     "creator": "PScript5.dll Version 5.2.2",
     "id": "cycle-12/holdout/c12-108-legal-regulatory-scotus-23-175-p22",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-holdout-pdfs/scotus-23-175.pdf",
+    "localPath": "corpus/external-holdout/scotus-23-175.pdf",
     "metadata": {
       "CreationDate": "D:20240627141350-04'00'",
       "Creator": "PScript5.dll Version 5.2.2",
@@ -323,7 +323,7 @@
     "size": 359727,
     "source": "Supreme Court of the United States opinions",
     "sourceDocumentId": "scotus-23-175",
-    "sourceManifest": "test/fixtures/external-holdout-pdfs/manifest.json",
+    "sourceManifest": "corpus/external-holdout/manifest.json",
     "sourceUrl": "https://www.supremecourt.gov/opinions/23pdf/23-175_19m2.pdf",
     "title": "23-175 City of Grants Pass v. Johnson (06/28/2024)"
   },
@@ -345,7 +345,7 @@
     "creator": "Acrobat PDFMaker 7.0.7 for Word",
     "id": "cycle-12/holdout/c12-109-multilingual-text-un-a-64-95-zh-p5",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-zh.pdf",
+    "localPath": "corpus/external/un-a-64-95-zh.pdf",
     "metadata": {
       "Author": "Admieng",
       "CreationDate": "D:20090623155212-04'00'",
@@ -365,7 +365,7 @@
     "size": 448703,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-zh",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=zh&s=A%2F64%2F95&t=pdf",
     "title": "Normal"
   },
@@ -387,7 +387,7 @@
     "creator": "Acrobat PDFMaker 7.0.7 for Word",
     "id": "cycle-12/holdout/c12-110-multilingual-text-un-a-64-95-zh-p6",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-zh.pdf",
+    "localPath": "corpus/external/un-a-64-95-zh.pdf",
     "metadata": {
       "Author": "Admieng",
       "CreationDate": "D:20090623155212-04'00'",
@@ -407,7 +407,7 @@
     "size": 448703,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-zh",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=zh&s=A%2F64%2F95&t=pdf",
     "title": "Normal"
   },
@@ -429,7 +429,7 @@
     "creator": "Acrobat PDFMaker 7.0.7 for Word",
     "id": "cycle-12/holdout/c12-111-multilingual-text-un-a-64-95-zh-p7",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-zh.pdf",
+    "localPath": "corpus/external/un-a-64-95-zh.pdf",
     "metadata": {
       "Author": "Admieng",
       "CreationDate": "D:20090623155212-04'00'",
@@ -449,7 +449,7 @@
     "size": 448703,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-zh",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=zh&s=A%2F64%2F95&t=pdf",
     "title": "Normal"
   },
@@ -471,7 +471,7 @@
     "creator": "Acrobat PDFMaker 7.0.7 for Word",
     "id": "cycle-12/holdout/c12-112-multilingual-text-un-a-64-95-zh-p8",
     "licenseOrTerms": "United Nations official document; verify reuse terms before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/un-a-64-95-zh.pdf",
+    "localPath": "corpus/external/un-a-64-95-zh.pdf",
     "metadata": {
       "Author": "Admieng",
       "CreationDate": "D:20090623155212-04'00'",
@@ -491,7 +491,7 @@
     "size": 448703,
     "source": "United Nations Official Document System",
     "sourceDocumentId": "un-a-64-95-zh",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://documents.un.org/api/symbol/access?l=zh&s=A%2F64%2F95&t=pdf",
     "title": "Normal"
   },
@@ -511,7 +511,7 @@
     "creator": "LaTeX with hyperref",
     "id": "cycle-12/holdout/c12-113-scientific-technical-arxiv-pubtables-2110.00061-p1",
     "licenseOrTerms": "arXiv-hosted paper; check paper metadata before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/arxiv-pubtables-2110.00061.pdf",
+    "localPath": "corpus/external/arxiv-pubtables-2110.00061.pdf",
     "metadata": {
       "Author": "",
       "CreationDate": "D:20211122014807Z",
@@ -533,7 +533,7 @@
     "size": 2636957,
     "source": "arXiv",
     "sourceDocumentId": "arxiv-pubtables-2110.00061",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://arxiv.org/pdf/2110.00061",
     "title": ""
   },
@@ -553,7 +553,7 @@
     "creator": "LaTeX with hyperref",
     "id": "cycle-12/holdout/c12-114-scientific-technical-arxiv-pubtables-2110.00061-p2",
     "licenseOrTerms": "arXiv-hosted paper; check paper metadata before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/arxiv-pubtables-2110.00061.pdf",
+    "localPath": "corpus/external/arxiv-pubtables-2110.00061.pdf",
     "metadata": {
       "Author": "",
       "CreationDate": "D:20211122014807Z",
@@ -575,7 +575,7 @@
     "size": 2636957,
     "source": "arXiv",
     "sourceDocumentId": "arxiv-pubtables-2110.00061",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://arxiv.org/pdf/2110.00061",
     "title": ""
   },
@@ -595,7 +595,7 @@
     "creator": "LaTeX with hyperref",
     "id": "cycle-12/holdout/c12-115-scientific-technical-arxiv-pubtables-2110.00061-p3",
     "licenseOrTerms": "arXiv-hosted paper; check paper metadata before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/arxiv-pubtables-2110.00061.pdf",
+    "localPath": "corpus/external/arxiv-pubtables-2110.00061.pdf",
     "metadata": {
       "Author": "",
       "CreationDate": "D:20211122014807Z",
@@ -617,7 +617,7 @@
     "size": 2636957,
     "source": "arXiv",
     "sourceDocumentId": "arxiv-pubtables-2110.00061",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://arxiv.org/pdf/2110.00061",
     "title": ""
   },
@@ -637,7 +637,7 @@
     "creator": "LaTeX with hyperref",
     "id": "cycle-12/holdout/c12-116-scientific-technical-arxiv-pubtables-2110.00061-p4",
     "licenseOrTerms": "arXiv-hosted paper; check paper metadata before redistribution outside tests",
-    "localPath": "test/fixtures/external-pdfs/arxiv-pubtables-2110.00061.pdf",
+    "localPath": "corpus/external/arxiv-pubtables-2110.00061.pdf",
     "metadata": {
       "Author": "",
       "CreationDate": "D:20211122014807Z",
@@ -659,7 +659,7 @@
     "size": 2636957,
     "source": "arXiv",
     "sourceDocumentId": "arxiv-pubtables-2110.00061",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://arxiv.org/pdf/2110.00061",
     "title": ""
   },
@@ -678,7 +678,7 @@
     "creator": "veraPDF Test Builder",
     "id": "cycle-12/holdout/c12-117-tagged-accessibility-verapdf-pdfua-embedded-files-pass-p1",
     "licenseOrTerms": "CC-BY-4.0",
-    "localPath": "test/fixtures/external-pdfs/verapdf-pdfua-embedded-files-pass.pdf",
+    "localPath": "corpus/external/verapdf-pdfua-embedded-files-pass.pdf",
     "metadata": {
       "Author": "veraPDF Consortium",
       "CreationDate": "D:20200224140258+03'00'",
@@ -699,7 +699,7 @@
     "size": 92757,
     "source": "veraPDF PDF/UA corpus",
     "sourceDocumentId": "verapdf-pdfua-embedded-files-pass",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://raw.githubusercontent.com/veraPDF/veraPDF-corpus/staging/PDF_UA-1/7.11%20Embedded%20files/7.11-t01-pass-a.pdf",
     "title": "Embedded files-pass"
   },
@@ -718,7 +718,7 @@
     "creator": "veraPDF Test Builder",
     "id": "cycle-12/holdout/c12-118-tagged-accessibility-verapdf-pdfua-table-pass-p1",
     "licenseOrTerms": "CC-BY-4.0",
-    "localPath": "test/fixtures/external-pdfs/verapdf-pdfua-table-pass.pdf",
+    "localPath": "corpus/external/verapdf-pdfua-table-pass.pdf",
     "metadata": {
       "Author": "veraPDF Consortium",
       "CreationDate": "D:20191230165523+03'00'",
@@ -738,7 +738,7 @@
     "size": 37174,
     "source": "veraPDF PDF/UA corpus",
     "sourceDocumentId": "verapdf-pdfua-table-pass",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://raw.githubusercontent.com/veraPDF/veraPDF-corpus/staging/PDF_UA-1/7.5%20Tables/7.5-t01-pass-a.pdf",
     "title": "Scope-pass"
   },
@@ -757,7 +757,7 @@
     "creator": "veraPDF Test Builder",
     "id": "cycle-12/holdout/c12-119-tagged-accessibility-verapdf-pdfua-text-pass-p1",
     "licenseOrTerms": "CC-BY-4.0",
-    "localPath": "test/fixtures/external-pdfs/verapdf-pdfua-text-pass.pdf",
+    "localPath": "corpus/external/verapdf-pdfua-text-pass.pdf",
     "metadata": {
       "Author": "veraPDF Consortium",
       "CreationDate": "D:20191227111216+03'00'",
@@ -777,7 +777,7 @@
     "size": 60259,
     "source": "veraPDF PDF/UA corpus",
     "sourceDocumentId": "verapdf-pdfua-text-pass",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://raw.githubusercontent.com/veraPDF/veraPDF-corpus/staging/PDF_UA-1/7.2%20Text/7.2-t02-pass-a.pdf",
     "title": "Outlines-pass"
   },
@@ -798,7 +798,7 @@
     "creator": "USPTO PDF Builder",
     "id": "cycle-12/holdout/c12-120-text-geometry-uspto-patent-10000000-p1",
     "licenseOrTerms": "Public domain / U.S. government work",
-    "localPath": "test/fixtures/external-pdfs/uspto-patent-10000000.pdf",
+    "localPath": "corpus/external/uspto-patent-10000000.pdf",
     "metadata": {
       "CreationDate": "May 10, 2026, 4:38:35â•¯PM",
       "Creator": "USPTO PDF Builder",
@@ -816,7 +816,7 @@
     "size": 713322,
     "source": "USPTO Patent Public Search",
     "sourceDocumentId": "uspto-patent-10000000",
-    "sourceManifest": "test/fixtures/external-pdfs/manifest.json",
+    "sourceManifest": "corpus/external/manifest.json",
     "sourceUrl": "https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/10000000",
     "title": "10000000"
   }

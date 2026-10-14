@@ -7,8 +7,8 @@ import https from "node:https";
 import path from "node:path";
 
 const DEFAULT_MANIFESTS = [
-  "test/fixtures/external-pdfs/manifest.json",
-  "test/fixtures/external-holdout-pdfs/manifest.json"
+  "corpus/external/manifest.json",
+  "corpus/external-holdout/manifest.json"
 ];
 
 const MAX_REDIRECTS = 8;
@@ -29,7 +29,7 @@ function hasArg(name) {
 }
 
 function usage() {
-  console.log(`Usage: node scripts/download-external-fixtures.mjs [options]
+  console.log(`Usage: node scripts/download-corpus.mjs [options]
 
 Downloads external PDF fixtures from manifest sourceUrl entries and verifies
 size plus SHA-256 before leaving files in place.
