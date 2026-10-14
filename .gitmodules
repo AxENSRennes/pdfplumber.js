@@ -1,11 +1,11 @@
 [submodule "pdfplumber-python"]
-	path = pdfplumber-python
+	path = upstream/pdfplumber-python
 	url = https://github.com/jsvine/pdfplumber.git
 [submodule "pdfminer-six"]
-	path = pdfminer-six
+	path = upstream/pdfminer-six
 	url = https://github.com/pdfminer/pdfminer.six.git
 [submodule "pdfjs"]
-	path = pdfjs
+	path = upstream/pdfjs
 	url = https://github.com/mozilla/pdf.js.git
 [submodule "mupdf.js"]
 	path = mupdf.js
