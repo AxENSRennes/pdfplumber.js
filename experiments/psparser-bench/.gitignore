@@ -1,4 +1,0 @@
-out/
-rust/target/
-out_skips.log
-rust/*.wasm

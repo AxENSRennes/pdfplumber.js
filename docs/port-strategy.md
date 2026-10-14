@@ -2,10 +2,9 @@
 
 Document de passation (octobre 2026). À lire avant de toucher au port. Il
 résume le diagnostic du code actuel, la décision d'architecture prise après deux
-expériences mesurées, et la méthode de vérification à suivre. Les détails et les
-commandes pour reproduire sont dans
-[`experiments/psparser-bench/README.md`](../experiments/psparser-bench/README.md)
-et [`experiments/tables-bench/README.md`](../experiments/tables-bench/README.md).
+expériences mesurées, et la méthode de vérification à suivre. Les mesures et
+les leçons des deux expériences sont dans
+[`decision-experiments.md`](decision-experiments.md).
 
 ## Objectif
 
@@ -51,7 +50,8 @@ fichiers, le JS sort un *meilleur* texte que pdfminer (`à` au lieu de
 **Ce qui est réutilisable.** Le harnais de tests, les manifestes et le corpus,
 l'API publique et ses types, et les briques bas niveau de `src/pdf/` (à
 revalider par traces). Les couches mots et tables sont à refaire par port
-fidèle, comme dans `experiments/tables-bench`.
+fidèle, comme dans l'expérience sur les tables
+(`git show legacy-pdfjs:experiments/tables-bench/rust/lib.rs`).
 
 ## Décision d'architecture
 
@@ -143,6 +143,14 @@ Lecture :
   sort des résultats identiques sous 3.12, 3.13 et 3.14 ; sous 3.11, 54 pages
   ont des coordonnées de tables différentes (contenu extrait identique). Le
   contrat est donc « Python ≥ 3.12 », l'outillage reste figé sur 3.12.
+- Le dossier `experiments/` (prototypes TS et Rust des deux expériences) a été
+  retiré du dépôt au commit « Remove experiments/ … » qui suit l'intégration de
+  la fondation Rust et du harnais Python ; on le lit avec
+  `git show legacy-pdfjs:experiments/<chemin>` (par exemple
+  `git ls-tree -r --name-only legacy-pdfjs experiments`). Le prototype de
+  parsing vit désormais dans `crates/pdfminer` ; celui des tables sera repris
+  lors du port de `pdfplumber/table.py`. Mesures et leçons :
+  [`decision-experiments.md`](decision-experiments.md).
 - Le port suit l'ordre des dépendances : fondations (`pycompat`, `psparser`,
   modèle d'objets, outillage de traces), puis filtres, chiffrement, CMaps et
   polices, puis document et pages, interpréteur et mise en page, puis
