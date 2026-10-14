@@ -23,3 +23,14 @@ Rewrite in progress. The previous pdf.js-based port is tagged `legacy-pdfjs`.
 ```sh
 scripts/setup-dev.sh   # submodules, Python oracle, Node, Rust + wasm32, external PDFs
 ```
+
+Rust workspace (`crates/`): generate the oracle data, then run the tests
+(see [`docs/verification.md`](docs/verification.md), "Étapes"):
+
+```sh
+for m in pycompat exceptions pdftypes psparser; do .venv/bin/python oracle/unit/$m.py; done
+.venv/bin/python oracle/unit/psparser.py --fuzz 4000
+cargo test --release
+cargo clippy --workspace --all-targets -- -D warnings
+cargo build --target wasm32-unknown-unknown --profile dist -p pdfplumber-wasm
+```

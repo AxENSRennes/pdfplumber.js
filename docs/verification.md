@@ -69,6 +69,28 @@ CMap, analyse de mise en page, tables à partir de bords) ont aussi des **tests
 différentiels unitaires** : `oracle/unit/<module>.py` génère des cas (graine
 fixe) et les sorties Python, Rust les rejoue (`cargo test`).
 
+- Les cas sont écrits dans `$PDFPLUMBER_ROOT/.cache/unit/<module>/`
+  (`<nom>.jsonl`, une ligne `{"in": [...], "out": ...}` au format typé
+  ci-dessous), avec `meta.json` qui contient le SHA-256 du générateur. Les
+  tests Rust (`crates/pdftrace/tests/<module>_unit.rs`, via
+  `pdftrace::unit::UnitData`) échouent si les données manquent ou viennent
+  d'une autre version du générateur, en affichant la commande qui les
+  régénère.
+- Générateurs actuels : `pycompat.py` (sémantique CPython, bibliothèque
+  standard seule), `exceptions.py` (classes d'exception de pdfminer et
+  pdfplumber), `pdftypes.py` (modèle d'objets, références, flux),
+  `psparser.py` (corpus réel de flux de contenu et corpus adverse
+  `--fuzz 4000`, comparés job par job par empreinte de la sérialisation
+  canonique).
+
+```sh
+export PDFPLUMBER_ROOT=/chemin/du/dépôt/principal   # .venv, corpus/, .cache/
+for m in pycompat exceptions pdftypes; do $PDFPLUMBER_ROOT/.venv/bin/python oracle/unit/$m.py; done
+$PDFPLUMBER_ROOT/.venv/bin/python oracle/unit/psparser.py --fuzz 4000
+$PDFPLUMBER_ROOT/.venv/bin/python oracle/unit/psparser.py          # corpus réel, ~1 min
+cargo test --release
+```
+
 ### Format d'échange typé (entrées et sorties des tests unitaires)
 
 Les cas unitaires sont des fichiers JSON Lines. Les valeurs Python y sont
