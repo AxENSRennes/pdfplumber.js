@@ -69,6 +69,27 @@ CMap, analyse de mise en page, tables à partir de bords) ont aussi des **tests
 différentiels unitaires** : `oracle/unit/<module>.py` génère des cas (graine
 fixe) et les sorties Python, Rust les rejoue (`cargo test`).
 
+### Format d'échange typé (entrées et sorties des tests unitaires)
+
+Les cas unitaires sont des fichiers JSON Lines. Les valeurs Python y sont
+encodées sans perte, en gardant la distinction int/float et tuple/list :
+
+| Valeur Python | JSON |
+|---|---|
+| `None`, `True`, `False`, `str` | `null`, `true`, `false`, chaîne JSON |
+| `int` | `{"i": "<décimal>"}` |
+| `float` | `{"f": "<16 hexa des bits IEEE-754, gros-boutiste>"}` |
+| `bytes` | `{"b": "<hexa>"}` |
+| `list` | tableau JSON |
+| `tuple` | `{"t": [ … ]}` |
+| `dict` | `{"d": [[clé, valeur], …]}` (ordre d'insertion) |
+| `PSLiteral`, `PSKeyword` | `{"lit": <str ou {"b": …}>}`, `{"kw": "<hexa>"}` |
+| `PDFObjRef` | `{"ref": objid}` |
+| exception | `{"exc": "<classe>", "msg": "<str(e)>"}` |
+
+`oracle/typed_json.py` et `crates/pdftrace/src/typed_json.rs` implémentent ce
+format des deux côtés.
+
 ## Outils
 
 - `oracle/trace.py --stage S [--password P] FICHIER.pdf` : trace Python sur
