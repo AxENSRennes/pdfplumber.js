@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from hashlib import md5
 from pathlib import Path
 import re
-import subprocess
+import struct
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,10 +27,12 @@ class PDF:
         body = f"<< {dictionary} /Length {len(data)} >>\nstream\n".encode("latin1") + data + b"\nendstream"
         return self.add(body)
 
-    def write(self, path: Path, root_obj: int) -> None:
+    def write(self, path: Path, root_obj: int, encryption: RC4Encryption | None = None) -> None:
         out = bytearray(b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")
         offsets = [0]
         for index, body in enumerate(self.objects, start=1):
+            if encryption is not None:
+                body = encryption.encrypt_object(index, body)
             offsets.append(len(out))
             out.extend(f"{index} 0 obj\n".encode("latin1"))
             out.extend(body)
@@ -39,8 +42,68 @@ class PDF:
         out.extend(b"0000000000 65535 f \n")
         for offset in offsets[1:]:
             out.extend(f"{offset:010d} 00000 n \n".encode("latin1"))
-        out.extend(f"trailer\n<< /Size {len(self.objects) + 1} /Root {root_obj} 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode("latin1"))
+        trailer = f"/Size {len(self.objects) + 1} /Root {root_obj} 0 R"
+        if encryption is not None:
+            trailer += " " + encryption.trailer_entries()
+        out.extend(f"trailer\n<< {trailer} >>\nstartxref\n{xref}\n%%EOF\n".encode("latin1"))
         path.write_bytes(bytes(out))
+
+
+def rc4(key: bytes, data: bytes) -> bytes:
+    state = list(range(256))
+    j = 0
+    for i in range(256):
+        j = (j + state[i] + key[i % len(key)]) % 256
+        state[i], state[j] = state[j], state[i]
+    out = bytearray()
+    i = j = 0
+    for byte in data:
+        i = (i + 1) % 256
+        j = (j + state[i]) % 256
+        state[i], state[j] = state[j], state[i]
+        out.append(byte ^ state[(state[i] + state[j]) % 256])
+    return bytes(out)
+
+
+PASSWORD_PADDING = bytes.fromhex("28BF4E5E4E758A4164004E56FFFA01082E2E00B6D0683E802F0CA9FE6453697A")
+STREAM_BODY = re.compile(rb"(<<.*? >>\nstream\n)(.*)(\nendstream)", re.DOTALL)
+
+
+class RC4Encryption:
+    """Standard security handler, revision 2 (40-bit RC4), with a fixed file /ID.
+
+    mutool picks a fresh random /ID on every run, which changes the derived key
+    and therefore every encrypted byte; a fixed /ID keeps the fixture stable.
+    """
+
+    def __init__(self, user: str, owner: str, file_id: bytes, permissions: int) -> None:
+        self.file_id = file_id
+        self.permissions = permissions
+        owner_key = md5(self._pad(owner)).digest()[:5]
+        self.owner_entry = rc4(owner_key, self._pad(user))
+        self.key = md5(self._pad(user) + self.owner_entry + struct.pack("<i", permissions) + file_id).digest()[:5]
+        self.user_entry = rc4(self.key, PASSWORD_PADDING)
+
+    @staticmethod
+    def _pad(password: str) -> bytes:
+        return (password.encode("latin1") + PASSWORD_PADDING)[:32]
+
+    def encrypt_object(self, objid: int, body: bytes) -> bytes:
+        match = STREAM_BODY.fullmatch(body)
+        dictionary = match.group(1) if match else body
+        if b"(" in dictionary or re.search(rb"(?<!<)<(?!<)", dictionary):
+            raise ValueError(f"object {objid}: only stream data is encrypted, not strings")
+        if not match:
+            return body
+        object_key = md5(self.key + struct.pack("<i", objid)[:3] + b"\x00\x00").digest()[:10]
+        return match.group(1) + rc4(object_key, match.group(2)) + match.group(3)
+
+    def trailer_entries(self) -> str:
+        return (
+            f"/ID [<{self.file_id.hex()}> <{self.file_id.hex()}>] "
+            f"/Encrypt << /Filter /Standard /V 1 /R 2 /Length 40 /P {self.permissions} "
+            f"/O <{self.owner_entry.hex()}> /U <{self.user_entry.hex()}> >>"
+        )
 
 
 def page_tree(pdf: PDF, page_obj: int, extra_catalog: str = "") -> int:
@@ -345,14 +408,9 @@ def main() -> None:
         pdf.write(OUT / name, pdf.root)  # type: ignore[attr-defined]
     broken = OUT / "broken-recovery.pdf"
     broken.write_bytes(re.sub(rb"startxref\n\d+", b"startxref\n0", broken.read_bytes()))
-    plain = OUT / "text-operators.pdf"
-    encrypted = OUT / "encrypted-password.pdf"
-    subprocess.run(
-        ["mutool", "clean", "-E", "rc4-40", "-U", "user", "-O", "owner", "-P", "none", str(plain), str(encrypted)],
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    encrypted = text_operators()
+    encryption = RC4Encryption("user", "owner", bytes.fromhex("00112233445566778899aabbccddeeff"), permissions=-3904)
+    encrypted.write(OUT / "encrypted-password.pdf", encrypted.root, encryption)  # type: ignore[attr-defined]
 
 
 if __name__ == "__main__":

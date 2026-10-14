@@ -142,8 +142,5 @@ Lecture :
   (largeurs, ToUnicode, CMaps), `converter` (LTChar, LTCurve…), puis les objets
   de page pdfplumber. Chaque étape avec sa trace Python.
 - Points ouverts dans le dépôt :
-  - Lancer la suite de tests réécrit `test/fixtures/micro-pdfs/encrypted-password.pdf`
-    de façon non déterministe : un fichier suivi par git ne devrait pas changer
-    à chaque run.
   - Des goldens `external-*-parity.json` régénérés le 1er juin, avec des
     empreintes changées, attendent sur le Mac d'origine, sans explication.
