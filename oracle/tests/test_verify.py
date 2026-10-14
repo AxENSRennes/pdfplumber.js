@@ -54,6 +54,7 @@ class VerifyWithFakePdftrace(unittest.TestCase):
         cmd = [sys.executable, "-m", "oracle.verify", "--stage", stage, "--json", "--pdftrace", str(self.pdftrace)]
         cmd += [*extra, "--files", *map(str, files)]
         proc = subprocess.run(cmd, env=env, capture_output=True, cwd=REPO)
+        self.stderr = proc.stderr.decode("utf-8", "replace")
         try:
             summary = json.loads(proc.stdout) if proc.stdout.strip() else {}
         except ValueError:
@@ -124,6 +125,15 @@ class VerifyWithFakePdftrace(unittest.TestCase):
         code, summary = self.verify(mode="unimplemented")
         self.assertEqual(code, 2)
         self.assertEqual(summary, {})
+
+    def test_unlisted_stage_stops_before_the_oracle(self) -> None:
+        # pdftrace --list-stages says "not implemented": verify stops before
+        # building any oracle trace, with a clear message.
+        code, summary = self.verify(mode="unlisted", cache="unlisted")
+        self.assertEqual(code, 2)
+        self.assertEqual(summary, {})
+        self.assertIn("does not implement stage 'psparser'", self.stderr)
+        self.assertFalse((self.tmp / "unlisted" / "oracle").exists())
 
     def test_missing_binary(self) -> None:
         env_missing = self.tmp / "nope" / "pdftrace"

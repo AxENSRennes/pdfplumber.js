@@ -3,6 +3,7 @@
 Same command line as the real binary::
 
     fake_pdftrace.py --stage S [--password P] [--max-pages N] --out DIR F1.pdf ...
+    fake_pdftrace.py --list-stages
 
 It writes the oracle's own trace to ``DIR/<sha256>.txt``, then misbehaves as
 ``FAKE_PDFTRACE_MODE`` says, for the files whose name contains
@@ -13,7 +14,9 @@ It writes the oracle's own trace to ``DIR/<sha256>.txt``, then misbehaves as
   appended;
 - ``truncate``: the trace loses its last line;
 - ``crash``: the process dies (``os._exit(101)``) when it reaches the file;
-- ``unimplemented``: exit status 2 before doing anything.
+- ``unimplemented``: exit status 2 before doing anything;
+- ``unlisted``: like ``unimplemented``, and ``--list-stages`` lists every
+  stage as not implemented (otherwise it lists them as implemented).
 """
 
 from __future__ import annotations
@@ -26,10 +29,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from oracle.stages import trace_text  # noqa: E402
+from oracle.stages import available_stages, trace_text  # noqa: E402
 
 
 def main() -> int:
+    mode = os.environ.get("FAKE_PDFTRACE_MODE", "copy")
+    if sys.argv[1:] == ["--list-stages"]:
+        for name in available_stages():
+            print(name + (" (not implemented)" if mode == "unlisted" else ""))
+        return 0
     ap = argparse.ArgumentParser()
     ap.add_argument("--stage", required=True)
     ap.add_argument("--password")
@@ -37,9 +45,8 @@ def main() -> int:
     ap.add_argument("--out", required=True)
     ap.add_argument("files", nargs="+")
     args = ap.parse_args()
-    mode = os.environ.get("FAKE_PDFTRACE_MODE", "copy")
     target = os.environ.get("FAKE_PDFTRACE_TARGET", "")
-    if mode == "unimplemented":
+    if mode in ("unimplemented", "unlisted"):
         print(f"pdftrace: stage {args.stage} is not implemented", file=sys.stderr)
         return 2
     for name in args.files:

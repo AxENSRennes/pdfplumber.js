@@ -15,7 +15,9 @@
        pdftrace --stage S --max-pages N [--password P] --out DIR F1.pdf F2.pdf ...
 
    which writes ``DIR/<sha256 of the PDF>.txt`` for each file. Exit status 2
-   means "stage not implemented" and stops verify (status 2). If a batch fails
+   means "stage not implemented" and stops verify (status 2); before building
+   the oracle cache, verify asks ``pdftrace --list-stages`` and stops at once
+   when the stage is listed as not implemented. If a batch fails
    otherwise (non-zero status, signal, time limit of ``--timeout`` per file),
    each of its files is run again alone, and a file that still fails is
    counted as ``rust-crashed``.
@@ -83,6 +85,21 @@ def _run_pdftrace(pdftrace: Path, stage: str, max_pages: int, password: str | No
         return None, f"time limit ({timeout:g} s per file) exceeded"
     stderr = proc.stderr.decode("utf-8", "replace").strip().splitlines()
     return proc.returncode, " | ".join(stderr[-5:])
+
+
+def rust_stage_implemented(pdftrace: Path, stage: str) -> bool | None:
+    """What ``pdftrace --list-stages`` says of ``stage`` (``None``: no answer)."""
+    try:
+        proc = subprocess.run([str(pdftrace), "--list-stages"], capture_output=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    for line in proc.stdout.decode("utf-8", "replace").splitlines():
+        name, _, note = line.strip().partition(" ")
+        if name == stage:
+            return "not implemented" not in note
+    return False
 
 
 def run_rust(pdftrace: Path, stage: str, max_pages: int, files: list[CorpusFile], out_root: Path, jobs: int, timeout: float, batch_size: int) -> RustRun:
@@ -233,15 +250,18 @@ def main(argv: list[str] | None = None) -> int:
     files = load_set(args.set) if args.set else files_from_paths(args.files)
     if args.limit is not None:
         files = files[: args.limit]
+    if not args.oracle_only:
+        if not (args.pdftrace.is_file() and os.access(args.pdftrace, os.X_OK)):
+            print(f"verify: no executable pdftrace at {args.pdftrace} (build it: cargo build --release -p pdftrace)", file=sys.stderr)
+            return 2
+        if rust_stage_implemented(args.pdftrace, args.stage) is False:
+            print(f"verify: pdftrace does not implement stage {args.stage!r} yet (see pdftrace --list-stages); nothing compared", file=sys.stderr)
+            return 2
     cache = OracleCache(args.stage, args.max_pages)
     started = time.monotonic()
     oracle = cache.build(files, jobs=args.jobs, timeout=args.timeout, retry_timeouts=args.retry_timeouts, progress=not args.json)
     if args.oracle_only:
         return _oracle_report(args, cache, oracle, time.monotonic() - started)
-
-    if not (args.pdftrace.is_file() and os.access(args.pdftrace, os.X_OK)):
-        print(f"verify: no executable pdftrace at {args.pdftrace} (build it: cargo build --release -p pdftrace)", file=sys.stderr)
-        return 2
     comparable = [r.file for r in oracle if r.status == "ok"]
     tmp_root = cache_dir() / "tmp"
     tmp_root.mkdir(parents=True, exist_ok=True)
