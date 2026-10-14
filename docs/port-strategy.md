@@ -1,0 +1,149 @@
+# Stratégie du port : diagnostic, décision, méthode
+
+Document de passation (octobre 2026). À lire avant de toucher au port. Il
+résume le diagnostic du code actuel, la décision d'architecture prise après deux
+expériences mesurées, et la méthode de vérification à suivre. Les détails et les
+commandes pour reproduire sont dans
+[`experiments/psparser-bench/README.md`](../experiments/psparser-bench/README.md)
+et [`experiments/tables-bench/README.md`](../experiments/tables-bench/README.md).
+
+## Objectif
+
+Un pdfplumber qui tourne dans le navigateur avec un runtime aussi efficace que
+possible, et le même comportement que pdfplumber/pdfminer en Python. La valeur
+de pdfplumber tient surtout à son extraction de tables, qui marche là où les
+solutions artisanales échouent. Pyodide est écarté : trop lourd au démarrage et
+à l'exécution.
+
+## Diagnostic du port actuel (`src/`)
+
+**Deux moteurs qui se contredisent.** pdf.js fait l'interprétation (liste
+d'opérateurs, polices, texte), alors que l'oracle est pdfminer. Un parseur
+natif partiel (`src/pdf/`) relit les flux de contenu pour produire des
+« indices » (couleurs, transformations, épaisseurs, chemins). Ces indices ne
+sont réinjectés que si les nombres d'opérations coïncident des deux côtés, et
+les caractères sont parfois remplacés en bloc sur une heuristique
+(`src/open.ts`, autour des lignes 328 à 420 :
+`native > 2 × pdfjs && native >= pdfjs + 100`). Chaque divergence entre pdf.js
+et pdfminer devient un patch qui défait le travail de pdf.js.
+
+**Des cas spéciaux calés sur les données observées.** Exemples :
+
+- `src/pdfminer-compat.ts:58` : reconnaissance d'**un fichier précis** à son
+  empreinte (Producer PyPDF2, Title IntMetadata, etc.).
+- `src/font-decoding.ts:315` : police TimesNewRoman sans ToUnicode et glyphe `&`
+  donne `"C"`.
+- `src/text.ts:257` (chiffres en Times Bold avec `x0 > 500`) et `src/text.ts:276`
+  (`splitChartSizeGroup` : Times-Roman entre 6 et 9 pt, « paysage » si hauteur
+  < 700).
+- `src/pdf.ts:309` : correction de bbox réservée à TimesNewRoman.
+- `src/open.ts:203` : regex sur le texte brut pour **simuler** l'erreur Python
+  `maximum recursion depth exceeded`.
+
+**Généralisation mesurée.** Sur 60 PDF de la suite de tests pdf.js jamais vus
+par le port : 52/60 identiques à pdfplumber sur des métriques grossières, et
+**34/42** pages avec texte identiques au caractère près (position, police,
+couleur). La doc du projet annonçait 119/120 sur ses holdouts. Sur deux
+fichiers, le JS sort un *meilleur* texte que pdfminer (`à` au lieu de
+`(cid:224)`) parce que pdf.js décode mieux les polices, et c'est compté comme un
+échec : c'est le symptôme du mauvais choix de moteur.
+
+**Ce qui est réutilisable.** Le harnais de tests, les manifestes et le corpus,
+l'API publique et ses types, et les briques bas niveau de `src/pdf/` (à
+revalider par traces). Les couches mots et tables sont à refaire par port
+fidèle, comme dans `experiments/tables-bench`.
+
+## Décision d'architecture
+
+**Un cœur en Rust compilé en Wasm, porté module par module depuis pdfminer et
+pdfplumber, avec une API à gros grain** : le JS ne reçoit que des résultats par
+page (caractères en tableaux par colonne, tables), jamais chaque objet
+intermédiaire. pdf.js sort du chemin d'extraction. Le même cœur donne aussi un
+module natif (PyO3), soit un pdfplumber environ 60× plus rapide que CPython.
+
+Cette décision vient de deux expériences, chacune avec deux ports
+(TS et Rust/Wasm) identiques au bit près à Python et optimisés avec le même
+effort (mesures sur Mac M-series, médianes en ms) :
+
+| Étage | Python | TS optimisé | Wasm, objets renvoyés au JS | Wasm, rien ne revient au JS | Rust natif |
+|---|---|---|---|---|---|
+| Parsing des flux de contenu (63,8 Mo) | 17 225 | 575 (Chromium) / 487 (WebKit) / 1 273 (Firefox) | 586 / 520 / 745 | 375 / 373 / 495 | 289 |
+| Tables, pages réelles (1 083 pages) | 2 214 | 105 / 71 / 89 | 51 / 40 / 53 | 36 / 35 / 45 | 29 |
+
+Lecture :
+
+- Au grain du token, le Wasm ne gagne rien sur V8 et JSC : le coût de la
+  frontière avec le JS annule le gain. Avec une frontière grossière, il gagne
+  1,3 à 1,5× sur le parsing et environ 2× sur les tables.
+- Un premier jet TS peut être 3,6× plus lent que sa version optimisée, à cause
+  de pièges propres à V8. Ne jamais conclure sans profiler.
+- Le Firefox fourni par Playwright (build Nightly) exécute le Wasm environ 7×
+  plus lentement. Mesurer avec un vrai Firefox.
+
+## Méthode (obligatoire)
+
+1. **Port fidèle, module par module** : mêmes noms, même structure, une
+   référence `fichier:ligne` upstream par fonction. Les optimisations ne
+   changent pas la sortie et sont vérifiées par les traces.
+2. **Oracle à chaque étape, pas seulement à la fin.** Python écrit une trace
+   canonique de l'étape (tokens et objets, bords fusionnés, intersections,
+   cellules, etc.) ; le port écrit la même ; on compare des SHA-256. La
+   première divergence localise le bug.
+3. **Corpus adverse généré, avec Python comme oracle**, en plus du corpus réel.
+   Le corpus réel seul ne détecte pas les erreurs aux frontières (blocs de 4 096
+   octets, tolérances exactes, échappements).
+4. **Tests de mutation** : casser volontairement des détails et vérifier que le
+   test échoue. Si une mutation passe, le corpus est trop gentil.
+5. **Aucun cas spécial.** Pas de nom de police, d'empreinte de fichier ou de
+   seuil numérique dans le code sans contrepartie upstream citée. Un écart avec
+   Python se corrige à sa cause, en remontant la trace.
+6. **Profiler avant de conclure** sur la performance, et donner le même effort
+   d'optimisation aux implémentations comparées.
+
+## Sémantique Python à émuler (pièges rencontrés)
+
+À centraliser dans un module `pycompat` plutôt qu'à éparpiller :
+
+- **`sum()` en Python 3.12** : les ints sont additionnés exactement ; le premier
+  float est ajouté sans compensation, puis les floats suivants avec la
+  compensation de Neumaier, et les ints rencontrés ensuite sans compensation ;
+  enfin `+ c` si c est fini et non nul. Avec une somme naïve, 219 des 418 pages
+  réelles avec tables ont des coordonnées différentes (une a une structure
+  différente). **La sortie de pdfplumber dépend donc de la version de Python** :
+  l'oracle est figé sur 3.12 (`.python-version`).
+- **int contre float** : JS ne les distingue pas. Sans effet sur les données
+  réelles (pdfplumber ne produit que des floats), mais visible sur des entrées
+  construites à la main.
+- `min()` et `max()` gardent le premier élément à égalité (signe de zéro) ;
+  `float.__repr__` (exposant hors de [1e-4, 1e16)) ; `int()` refuse plus de
+  4 300 chiffres ; `\s` des regex bytes vaut `[\t\n\v\f\r ]` ; ordre d'insertion
+  des dicts ; tris stables.
+- **pdfminer lit par blocs de 4 096 octets**, et certains comportements en
+  dépendent (échappement `\` suivi de `\r\n` coupé entre deux blocs). Le port
+  garde ce découpage.
+- Les exceptions Python qui s'échappent (AssertionError, PSSyntaxError,
+  IndexError, TypeError, KeyError) font partie du comportement à reproduire.
+
+## Environnement
+
+- Python **3.12** (oracle), uv, Node 26, Rust 1.99 avec la cible
+  `wasm32-unknown-unknown` (`rust-toolchain.toml`).
+- Installation : `scripts/setup-dev.sh`. Les PDF externes, ignorés par git, se
+  téléchargent depuis leurs manifestes (avec vérification des SHA-256) ou se
+  copient depuis une machine qui les a.
+- Les mesures de performance ne se comparent qu'entre runs d'une même machine.
+
+## État et prochaines étapes
+
+- Fait : parseur de flux de contenu (`psparser` + `PDFContentParser`) et
+  détection de tables (`TableFinder`, stratégies lines), en TS et en Rust,
+  identiques au bit près à Python sur corpus réel et adverse.
+- Ensuite : `pdfinterp` (opérateurs et état graphique), `pdffont` et `cmapdb`
+  (largeurs, ToUnicode, CMaps), `converter` (LTChar, LTCurve…), puis les objets
+  de page pdfplumber. Chaque étape avec sa trace Python.
+- Points ouverts dans le dépôt :
+  - Lancer la suite de tests réécrit `test/fixtures/micro-pdfs/encrypted-password.pdf`
+    de façon non déterministe : un fichier suivi par git ne devrait pas changer
+    à chaque run.
+  - Des goldens `external-*-parity.json` régénérés le 1er juin, avec des
+    empreintes changées, attendent sur le Mac d'origine, sans explication.

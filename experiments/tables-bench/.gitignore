@@ -1,0 +1,4 @@
+out/
+rust/target/
+*.log
+rust/*.wasm
