@@ -161,9 +161,11 @@ through typed JSON before it is written.
 ## Self-tests
 
 ```bash
-$PY -m unittest discover -s oracle/tests -t .
+$PY -m unittest                              # from the repository root, with PYTHONPATH=.
+$PY -m unittest oracle.tests.test_verify     # one module
 ```
 
+They need only this checkout (`corpus/micro`) and use a temporary cache.
 `tests/test_verify.py` drives `verify.py` with `tests/fake_pdftrace.py`, a
 stand-in for the Rust binary that copies the oracle's traces and can perturb a
 line, truncate a trace, crash on a file or answer "not implemented".
