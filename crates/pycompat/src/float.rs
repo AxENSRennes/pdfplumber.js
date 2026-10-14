@@ -347,16 +347,17 @@ pub fn round_float_ndigits(x: f64, ndigits: i64) -> PyResult<f64> {
     let (mant, exp) = if biased == 0 { (frac, -1074) } else { (frac | (1u64 << 52), biased - 1075) };
     let mut num = BigInt::from(mant);
     let mut den = BigInt::from(1);
+    let shift = exp.unsigned_abs() as usize; // at most 1074
     if exp >= 0 {
-        num <<= exp as usize;
+        num <<= shift;
     } else {
-        den <<= (-exp) as usize;
+        den <<= shift;
     }
-    let ten = BigInt::from(10);
+    let scale = num_traits::pow(BigInt::from(10), ndigits.unsigned_abs() as usize); // at most 10**323
     if ndigits >= 0 {
-        num *= num_traits::pow(ten, ndigits as usize);
+        num *= scale;
     } else {
-        den *= num_traits::pow(ten, (-ndigits) as usize);
+        den *= scale;
     }
     let (mut q, r) = num.div_rem(&den);
     let twice = &r * 2;

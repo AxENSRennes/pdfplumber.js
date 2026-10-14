@@ -868,6 +868,64 @@ impl Deref for Buf {
     }
 }
 
+/// A debug-build watchdog over the read position of a parser.
+///
+/// Between two `seek`s, a parser only reads forward: the position returned
+/// by [`PSStackParserExt::read_position`] grows (unless something else moves
+/// `fp`, as `revreadlines` and `PDFParser` do, which restarts the guard),
+/// except when the tokenizer
+/// switches state without consuming a byte, which never happens more than
+/// twice in a row. The reading loops (`nexttoken`, `nextline`,
+/// `get_inline_data`) report the position after each step; a broken port
+/// (or a mutant, see `docs/verification.md`, "Mutations") that stops
+/// consuming its input, or rereads it, panics after a few steps instead of
+/// looping, often while allocating, until a timeout or the memory limit.
+/// Without `debug_assertions` it is empty and costs nothing.
+#[derive(Default)]
+pub struct ProgressGuard {
+    /// The furthest position reached since the last seek.
+    #[cfg(debug_assertions)]
+    high: Option<(usize, usize)>,
+    #[cfg(debug_assertions)]
+    stalls: u32,
+}
+
+impl ProgressGuard {
+    /// Consecutive steps without progress tolerated (correct code needs two).
+    #[cfg(debug_assertions)]
+    const MAX_STALLS: u32 = 8;
+
+    /// Records a step that ended at `position`; panics after too many steps
+    /// in a row that did not go beyond the furthest position.
+    #[inline]
+    pub fn check(&mut self, position: (usize, usize), what: &str) {
+        #[cfg(debug_assertions)]
+        {
+            if self.high.is_some_and(|high| position <= high) {
+                self.stalls += 1;
+                assert!(self.stalls < Self::MAX_STALLS, "{what}: no progress at {position:?}");
+            } else {
+                self.high = Some(position);
+                self.stalls = 0;
+            }
+        }
+        #[cfg(not(debug_assertions))]
+        let _ = (position, what);
+    }
+
+    /// Restarts the guard when `fp` is not where the parser left it
+    /// (`expected`): something else moved it.
+    #[inline]
+    pub fn restart_if_moved(&mut self, expected: usize, tell: usize) {
+        #[cfg(debug_assertions)]
+        if expected != tell {
+            *self = ProgressGuard::default();
+        }
+        #[cfg(not(debug_assertions))]
+        let _ = (expected, tell);
+    }
+}
+
 /// Methods a Python subclass of `PSStackParser` overrides (see the module
 /// documentation). Every default is the base-class behavior.
 pub trait PSStackParserExt: Sized {
@@ -889,6 +947,14 @@ pub trait PSStackParserExt: Sized {
     /// `flush()`
     fn flush(_p: &mut PSStackParser<Self>) -> PyResult<()> {
         Ok(())
+    }
+
+    /// The position of the next byte to read, for [`ProgressGuard`] (not a
+    /// Python method): it only grows between two seeks. The default is the
+    /// offset in `fp`; a parser that reads several files one after the
+    /// other puts the file's ordinal first.
+    fn read_position(p: &PSStackParser<Self>) -> (usize, usize) {
+        (0, p.bufpos + p.charpos)
     }
 }
 
@@ -916,6 +982,8 @@ pub struct PSStackParser<X: PSStackParserExt = ()> {
     /// `KEYWORD_ARRAY_BEGIN`, `_END`, `KEYWORD_DICT_BEGIN`, `_END`,
     /// `KEYWORD_PROC_BEGIN`, `_END`.
     structure_keywords: [PSKeyword; 6],
+    /// Reset by every seek.
+    progress: ProgressGuard,
 }
 
 /// pdfminer/psparser.py:161 `PSBaseParser`.
@@ -948,6 +1016,7 @@ impl<X: PSStackParserExt> PSStackParser<X> {
                 *KEYWORD_PROC_BEGIN,
                 *KEYWORD_PROC_END,
             ],
+            progress: ProgressGuard::default(),
         };
         p.seek(0)?;
         p.reset();
@@ -993,7 +1062,16 @@ impl<X: PSStackParserExt> PSStackParser<X> {
         self.lexer.curtokenpos = 0;
         self.lexer.tokens.clear();
         self.eof = false;
+        self.progress = ProgressGuard::default();
         Ok(())
+    }
+
+    /// Reports the read position after a step of a reading loop (see
+    /// [`ProgressGuard`]).
+    #[inline]
+    pub fn check_progress(&mut self, what: &str) {
+        let position = X::read_position(self);
+        self.progress.check(position, what);
     }
 
     // pdfminer/psparser.py:533 PSStackParser.seek
@@ -1011,10 +1089,12 @@ impl<X: PSStackParserExt> PSStackParser<X> {
             return Ok(false);
         }
         // fetch next chunk.
+        let expected = self.bufpos + self.buf.len();
         let fp = self.fp_mut("tell")?;
         let bufpos = fp.tell();
         let range = fp.read(Some(BUFSIZ));
         let data = fp.data().clone();
+        self.progress.restart_if_moved(expected, bufpos);
         self.bufpos = bufpos;
         self.buf = Buf::new(data, range);
         if self.buf.is_empty() {
@@ -1055,6 +1135,7 @@ impl<X: PSStackParserExt> PSStackParser<X> {
                     self.charpos = self.buf.len();
                 }
             }
+            self.check_progress("nextline");
         }
         Ok((linepos, linebuf))
     }
@@ -1074,7 +1155,7 @@ impl<X: PSStackParserExt> PSStackParser<X> {
         }
         while self.lexer.tokens.is_empty() {
             match self.nexttoken_step() {
-                Ok(()) => {}
+                Ok(()) => self.check_progress("nexttoken"),
                 Err(e) if e.is_instance(ExcKind::PSEOF) => {
                     // If we hit EOF in the middle of a token, try to parse
                     // it by tacking on whitespace, and delay raising PSEOF

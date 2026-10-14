@@ -8,6 +8,10 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
+
+use pdfminer::pdftypes::{PDFDict, PDFObject, PDFStream};
+use pdfminer::psparser::LIT;
 
 use crate::canon::sha256_hex;
 use crate::typed_json::{self, Json};
@@ -93,4 +97,67 @@ impl UnitData {
             })
             .collect()
     }
+}
+
+/// A content-stream job of `oracle/unit/psparser.py`: the streams given to
+/// `PDFContentParser`, each a kind (`STREAM_KINDS` of the generator) and
+/// bytes.
+pub struct ContentJob {
+    pub streams: Vec<(u8, Rc<[u8]>)>,
+}
+
+impl ContentJob {
+    /// Total length of the stream bytes.
+    pub fn bytes(&self) -> usize {
+        self.streams.iter().map(|(_, data)| data.len()).sum()
+    }
+
+    /// The objects the generator builds (`STREAM_KINDS`): 0 a stream of
+    /// decoded data, 1 a stream with the unsupported filter `/FooDecode`,
+    /// 2 a stream with `/DCTDecode` (data returned as is), 3 the bytes
+    /// themselves (not a stream), 4 a stream with `/Crypt`.
+    pub fn stream_objects(&self) -> Vec<PDFObject> {
+        let filtered = |filter: &str, data: &Rc<[u8]>| {
+            let attrs = PDFDict::new();
+            attrs.insert("Filter".into(), PDFObject::Literal(LIT(filter)));
+            PDFObject::Stream(Rc::new(PDFStream::new(attrs, data.clone(), None)))
+        };
+        self.streams
+            .iter()
+            .map(|(kind, data)| match kind {
+                0 => PDFObject::Stream(Rc::new(PDFStream::new(PDFDict::new(), data.clone(), None))),
+                1 => filtered("FooDecode", data),
+                2 => filtered("DCTDecode", data),
+                3 => PDFObject::Bytes(data.clone()),
+                4 => filtered("Crypt", data),
+                other => panic!("unknown stream kind {other}"),
+            })
+            .collect()
+    }
+}
+
+/// Reads a content-stream corpus `*.bin` of `oracle/unit/psparser.py`
+/// (`b"PSC2" u32 njobs`, then per job `u32 nstreams` and per stream
+/// `u8 kind`, `u32 len` + bytes, little-endian).
+pub fn read_content_jobs(path: &Path) -> Vec<ContentJob> {
+    let data = fs::read(path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    assert_eq!(&data[..4], b"PSC2", "{}: not a PSC2 file (regenerate it)", path.display());
+    let rd = |o: usize| u32::from_le_bytes(data[o..o + 4].try_into().expect("4 bytes")) as usize;
+    let mut off = 8;
+    let mut jobs = Vec::with_capacity(rd(4));
+    for _ in 0..rd(4) {
+        let n = rd(off);
+        off += 4;
+        let mut streams = Vec::with_capacity(n);
+        for _ in 0..n {
+            let kind = data[off];
+            let len = rd(off + 1);
+            off += 5;
+            streams.push((kind, Rc::from(&data[off..off + len])));
+            off += len;
+        }
+        jobs.push(ContentJob { streams });
+    }
+    assert_eq!(off, data.len(), "{}: trailing bytes", path.display());
+    jobs
 }

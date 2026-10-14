@@ -67,15 +67,17 @@ fn even_tie_alternative(x: f64, digits: &str, decpt: i32) -> Option<String> {
         let twice_mid = if down { &d * 2u32 - 1u32 } else { &d * 2u32 + 1u32 };
         let (mut lhs, mut rhs) = (BigUint::from(m), twice_mid);
         let a = e + 1; // 2x = m * 2**a
+        let shift = a.unsigned_abs() as usize;
         if a >= 0 {
-            lhs <<= a as usize;
+            lhs <<= shift;
         } else {
-            rhs <<= (-a) as usize;
+            rhs <<= shift;
         }
+        let scale = num_traits::pow(BigUint::from(10u32), k.unsigned_abs() as usize);
         if k >= 0 {
-            rhs *= num_traits::pow(BigUint::from(10u32), k as usize);
+            rhs *= scale;
         } else {
-            lhs *= num_traits::pow(BigUint::from(10u32), (-k) as usize);
+            lhs *= scale;
         }
         if lhs != rhs {
             continue;
@@ -116,11 +118,11 @@ pub fn float_repr(x: f64) -> String {
         let _ = write!(out, "e{}{:02}", if exp < 0 { '-' } else { '+' }, exp.abs());
     } else if decpt <= 0 {
         out.push_str("0.");
-        out.extend(std::iter::repeat_n('0', (-decpt) as usize));
+        out.extend(std::iter::repeat_n('0', decpt.unsigned_abs() as usize));
         out.push_str(&digits);
     } else if decpt >= n {
         out.push_str(&digits);
-        out.extend(std::iter::repeat_n('0', (decpt - n) as usize));
+        out.extend(std::iter::repeat_n('0', (decpt - n).unsigned_abs() as usize));
         out.push_str(".0");
     } else {
         out.push_str(&digits[..decpt as usize]);

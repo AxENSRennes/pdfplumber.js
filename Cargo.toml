@@ -37,6 +37,13 @@ module_inception = "allow"
 opt-level = 3
 codegen-units = 16
 
+# Mutation testing (docs/verification.md, "Mutations"): release speed with
+# debug assertions, so that psparser::ProgressGuard turns a mutant that stops
+# consuming input into an immediate panic.
+[profile.mutants]
+inherits = "release"
+debug-assertions = true
+
 # Production Wasm/native builds: `cargo build --profile dist`.
 [profile.dist]
 inherits = "release"

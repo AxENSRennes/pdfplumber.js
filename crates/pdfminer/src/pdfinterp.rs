@@ -100,6 +100,7 @@ impl PSStackParser<ContentStreams> {
                     }
                 }
             }
+            self.check_progress("get_inline_data");
         }
         // strip the last part
         data.truncate(data.len().saturating_sub(target.len() + 1));
@@ -157,6 +158,11 @@ impl PSStackParserExt for ContentStreams {
         }
         p.charpos = 0;
         Ok(new_stream)
+    }
+
+    /// The ordinal of the current stream, then the offset in it.
+    fn read_position(p: &PSStackParser<Self>) -> (usize, usize) {
+        (p.ext.istream, p.bufpos + p.charpos)
     }
 
     // pdfminer/pdfinterp.py:327 PDFContentParser.flush

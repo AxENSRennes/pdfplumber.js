@@ -6,8 +6,8 @@ pdfminer's PDFParser and CMapParser use them: ``nexttoken`` to the end,
 ``nextline`` to the end, ``revreadlines``, ``seek`` to arbitrary positions,
 and ``nextobject`` (which never returns for a bare ``PSStackParser``, whose
 ``flush`` does nothing: the objects pile up on the stack) followed by
-``pop``. Data are generated around the 4096-byte read blocks and line
-endings.
+``pop``, ``popall`` and ``add_results`` as subclasses use them. Data are
+generated around the 4096-byte read blocks and line endings.
 
 Writes ``$PDFPLUMBER_ROOT/.cache/unit/psparser_base/cases.jsonl`` (typed JSON
 lines ``{"in": [data, ops], "out": [results...]}``) and ``meta.json``. The
@@ -116,6 +116,12 @@ def run(data, ops):
                 out.append(parser.nextobject())
             elif kind == "pop":
                 out.append(parser.pop(op[1]))
+            elif kind == "popall":
+                out.append(parser.popall())
+            elif kind == "add_results":
+                # what PDFContentParser.flush and PDFParser.do_keyword do
+                parser.add_results(*parser.pop(op[1]))
+                out.append(list(parser.results))
             elif kind == "stack":
                 out.append([parser.curtype, list(parser.curstack), len(parser.context)])
             else:
@@ -144,8 +150,12 @@ def gen_ops(rng, n):
         elif r < 0.85:
             ops.append(["nextobject"])
             ops.append(["stack"])
-        else:
+        elif r < 0.9:
             ops.append(["pop", rng.choice([0, 1, 2, 5])])
+        elif r < 0.95:
+            ops.append(["popall"])
+        else:
+            ops.append(["add_results", rng.choice([0, 1, 3])])
     return ops
 
 

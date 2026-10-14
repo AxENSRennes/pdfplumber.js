@@ -1,7 +1,10 @@
 """Content-stream corpora and Python oracle for psparser + PDFContentParser.
 
 Adapted from experiments/psparser-bench/dump_corpus.py. A job is a list of
-decoded content streams. The oracle runs pdfminer's real ``PDFContentParser``
+content streams, each given by a kind and bytes (see ``STREAM_KINDS``: a
+plain stream of decoded data, or the cases where ``PDFContentParser.fillfp``
+meets an unsupported filter, a pass-through filter or an object that is not
+a stream). The oracle runs pdfminer's real ``PDFContentParser``
 over each job and records the SHA-256 of its canonical serialization: one line
 ``<pos> <canon(obj)>`` per object yielded by ``nextobject()``, then the line of
 the exception that ended the job (``!PSEOF("Unexpected EOF")`` normally), with
@@ -19,9 +22,9 @@ Modes (outputs in ``$PDFPLUMBER_ROOT/.cache/unit/psparser/``):
   ``fuzz.bin`` and ``fuzz.json``.
 - ``--dump INDEX [--corpus fuzz]``: prints the serialization of one job.
 
-``*.bin``: little-endian ``b"PSC1" u32 njobs``, then per job ``u32 nstreams``
-and per stream ``u32 len`` + bytes. ``*.json``: ``{"generator_sha256", "records":
-[{"id", "bytes", "objects", "outcome", "sha256"}]}``.
+``*.bin``: little-endian ``b"PSC2" u32 njobs``, then per job ``u32 nstreams``
+and per stream ``u8 kind``, ``u32 len`` + bytes. ``*.json``: ``{"generator_sha256",
+"records": [{"id", "bytes", "objects", "outcome", "sha256"}]}``.
 
 Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python oracle/unit/psparser.py [--fuzz 4000]
 """
@@ -44,7 +47,7 @@ from pdfminer.pdfinterp import PDFContentParser
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfparser import PDFParser
 from pdfminer.pdftypes import PDFObjRef, PDFStream, resolve1, stream_value
-from pdfminer.psparser import PSKeyword, PSLiteral
+from pdfminer.psparser import LIT, PSKeyword, PSLiteral
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
@@ -107,11 +110,21 @@ def canon(v) -> str:
 # -- the job ------------------------------------------------------------------
 
 
+# Stream kinds of a job (the Rust replay builds the same objects).
+STREAM_KINDS = {
+    0: lambda data: PDFStream({}, data),  # decoded content
+    1: lambda data: PDFStream({"Filter": LIT("FooDecode")}, data),  # get_data raises PDFNotImplementedError
+    2: lambda data: PDFStream({"Filter": LIT("DCTDecode")}, data),  # get_data returns the raw data
+    3: lambda data: data,  # not a stream: stream_value gives PDFStream({}, b"")
+    4: lambda data: PDFStream({"Filter": LIT("Crypt")}, data),  # get_data raises PDFNotImplementedError
+}
+
+
 def parse_job(streams):
     """Like PDFPageInterpreter.execute: the (pos, obj) pairs, then the exception."""
     out = []
     try:
-        parser = PDFContentParser([PDFStream({}, s) for s in streams])
+        parser = PDFContentParser([STREAM_KINDS[kind](data) for kind, data in streams])
     except Exception as e:  # PSEOF for a job without streams
         return out, e
     while True:
@@ -131,7 +144,7 @@ def record(job_id, streams):
     objs, exc = parse_job(streams)
     return {
         "id": job_id,
-        "bytes": sum(len(s) for s in streams),
+        "bytes": sum(len(data) for _, data in streams),
         "objects": len(objs),
         "outcome": type(exc).__name__,
         "sha256": hashlib.sha256(serialize(objs, exc)).hexdigest(),
@@ -155,7 +168,7 @@ def collect_jobs(path: str, max_pages: int):
             except Exception:
                 datas = []
             if datas:
-                yield f"{pageno}:page", datas
+                yield f"{pageno}:page", [(0, d) for d in datas]
             try:
                 xobjects = resolve1((page.resources or {}).get("XObject")) or {}
                 items = list(xobjects.items()) if isinstance(xobjects, dict) else []
@@ -165,7 +178,7 @@ def collect_jobs(path: str, max_pages: int):
                 try:
                     xobj = resolve1(ref)
                     if isinstance(xobj, PDFStream) and getattr(xobj.get("Subtype"), "name", None) == "Form":
-                        yield f"{pageno}:form:{name}", [xobj.get_data()]
+                        yield f"{pageno}:form:{name}", [(0, xobj.get_data())]
                 except Exception:
                     continue
 
@@ -200,17 +213,17 @@ def process_file(args):
 
 def write_corpus(name: str, payload) -> None:
     with open(os.path.join(OUT, name + ".bin"), "wb") as f:
-        f.write(b"PSC1" + struct.pack("<I", len(payload)))
+        f.write(b"PSC2" + struct.pack("<I", len(payload)))
         for streams in payload:
             f.write(struct.pack("<I", len(streams)))
-            for s in streams:
-                f.write(struct.pack("<I", len(s)) + s)
+            for kind, data in streams:
+                f.write(struct.pack("<BI", kind, len(data)) + data)
 
 
 def read_corpus(name: str):
     with open(os.path.join(OUT, name + ".bin"), "rb") as f:
         data = f.read()
-    assert data[:4] == b"PSC1"
+    assert data[:4] == b"PSC2"
     (n,) = struct.unpack_from("<I", data, 4)
     off, jobs = 8, []
     for _ in range(n):
@@ -218,9 +231,9 @@ def read_corpus(name: str):
         off += 4
         streams = []
         for _ in range(ns):
-            (ln,) = struct.unpack_from("<I", data, off)
-            off += 4
-            streams.append(data[off : off + ln])
+            kind, ln = struct.unpack_from("<BI", data, off)
+            off += 5
+            streams.append((kind, data[off : off + ln]))
             off += ln
         jobs.append(streams)
     return jobs
@@ -246,6 +259,7 @@ FUZZ_FRAGMENTS = [
     # strings and escapes
     b"(plain)", b"(nested (paren) ok)", b"(unbalanced (", b"(esc \\n\\t\\b\\f\\r\\( \\) \\\\)", b"(oct \\101\\7\\0123)",
     b"(cont \\\r\nline)", b"(cont \\\nline)", b"(unknown \\q)", b"(cr\rlf\n)", b")",
+    b"(lone \\\rcr)", b"(\\\r)", b"(q \\q\nz)", b"(\\\r\r\n)",
     # hex strings and dict delimiters
     b"<48656c6c6f>", b"<4 8 6>", b"<ABC>", b"<zz>", b"<<", b">>", b">", b"<", b"<</A 1>>",
     b"<</A 1 /B [1 2 <</C (x)>>]>>", b"<<1 2>>", b"<<(k) 1>>", b"<<[1] 2>>",
@@ -272,7 +286,8 @@ FUZZ_ERRORS = [b"(bad oct \\777)", b"<</A>>", b"BI /F [] ID x EI ", b"BI /F 5 ID
                b"<</x#c2#a0 (it's\"q) 1.5 /bad#ff -0. true /k 0.1 [/caf\xc3\xa9]>>",
                b"BI /F Tj ID x EI ", b"BI /F true ID x EI ", b"BI /F 1.5 ID x EI ", b"BI /F () ID x EI "]
 # Fragments whose byte at `offset` should land exactly on a 4096-byte read-chunk edge.
-FUZZ_EDGE = [(b"(cont \\\r\nline)", 7), (b"(a\\101)", 3), (b"/N#41x", 2), (b"<4142>", 0), (b"BI /W 1 ID x E\nEI\r\n", 13)]
+FUZZ_EDGE = [(b"(cont \\\r\nline)", 7), (b"(a\\101)", 3), (b"/N#41x", 2), (b"<4142>", 0), (b"BI /W 1 ID x E\nEI\r\n", 13),
+             (b"(e\\\rx)", 3), (b"(q\\q\nz)", 3)]
 FUZZ_SEPARATORS = [b" ", b" ", b"\n", b"\r\n", b"\r", b"\t", b"\x0c", b"\x0b", b"", b"  \n "]
 # Fragments that swallow the rest of a job: an unclosed string, comment,
 # array or procedure (whose objects never reach nextobject's caller), or an
@@ -307,9 +322,18 @@ def fuzz_job(rng):
         size += len(parts[-1])
     data = b"".join(parts)
     cuts = sorted(rng.sample(range(1, len(data)), k=min(len(data) - 1, rng.choice([0, 0, 1, 2, 3]))))
-    streams = [data[a:b] for a, b in zip([0] + cuts, cuts + [len(data)])]
+    streams = [(0, data[a:b]) for a, b in zip([0] + cuts, cuts + [len(data)])]
     if rng.random() < 0.1:
-        streams.insert(rng.randint(0, len(streams)), b"")
+        streams.insert(rng.randint(0, len(streams)), (0, b""))
+    if rng.random() < 0.05:
+        # the same data through a filter that returns it unchanged
+        k = rng.randrange(len(streams))
+        streams[k] = (2, streams[k][1])
+    if rng.random() < 0.1:
+        # a stream that fails to decode, or an object that is not a stream,
+        # often right after a token cut by a stream boundary
+        kind = rng.choice([1, 3, 4])
+        streams.insert(rng.randint(1, len(streams)), (kind, rng.choice(FUZZ_FRAGMENTS)))
     return streams
 
 

@@ -21,10 +21,17 @@ fn result<T>(r: PyResult<T>, ok: impl FnOnce(T) -> Value) -> Value {
     }
 }
 
-/// Calls `next` until it raises; the exception ends the list.
-fn until_error<T>(mut next: impl FnMut() -> PyResult<T>, mut value: impl FnMut(T) -> Value) -> Value {
+/// Calls `next` until it raises; the exception ends the list. Stops after
+/// `limit` items: a parser cannot return more tokens or lines than its input
+/// has bytes, so a broken one that loops without consuming input fails at
+/// once instead of filling the memory.
+fn until_error<T>(limit: usize, mut next: impl FnMut() -> PyResult<T>, mut value: impl FnMut(T) -> Value) -> Value {
     let mut items = Vec::new();
     loop {
+        if items.len() > limit {
+            items.push(Value::Str("too many items".into()));
+            return Value::List(items);
+        }
         match next() {
             Ok(v) => items.push(value(v)),
             Err(e) => {
@@ -43,6 +50,8 @@ fn run(data: &[u8], ops: &[Value]) -> Value {
     let fp = BytesIO::new(Rc::from(data));
     let mut p: PSBaseParser = PSStackParser::init(Some(fp), ()).expect("a BytesIO parser opens");
     let mut out = Vec::new();
+    // At most one token or line per byte, plus the end.
+    let limit = data.len() + 2;
     for op in ops {
         let Value::List(op) = op else { panic!("{op:?}") };
         let Value::Str(kind) = &op[0] else { panic!() };
@@ -53,16 +62,22 @@ fn run(data: &[u8], ops: &[Value]) -> Value {
         out.push(match kind.as_str() {
             "seek" => result(p.seek(arg()), |()| Value::None),
             "nexttoken" => result(p.nexttoken(), |t| entry(&t)),
-            "tokens" => until_error(|| p.nexttoken(), |t| entry(&t)),
+            "tokens" => until_error(limit, || p.nexttoken(), |t| entry(&t)),
             "nextline" => result(p.nextline(), line),
-            "lines" => until_error(|| p.nextline(), line),
-            "revreadlines" => result(p.revreadlines().map(|lines| lines.collect::<Vec<_>>()), |l| {
+            "lines" => until_error(limit, || p.nextline(), line),
+            "revreadlines" => result(p.revreadlines().map(|lines| lines.take(limit).collect::<Vec<_>>()), |l| {
                 Value::List(l.into_iter().map(Value::Bytes).collect())
             }),
             "nextobject" => result(p.nextobject(), |e| entry(&e)),
             "pop" => {
                 let popped = p.pop(arg() as usize);
                 Value::List(popped.iter().map(entry).collect())
+            }
+            "popall" => Value::List(p.popall().iter().map(entry).collect()),
+            "add_results" => {
+                let popped = p.pop(arg() as usize);
+                p.add_results(popped);
+                Value::List(p.results.iter().map(entry).collect())
             }
             "stack" => Value::List(vec![
                 p.curtype.map_or(Value::None, |t| Value::Str(t.to_owned())),

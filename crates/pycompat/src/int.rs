@@ -513,11 +513,12 @@ pub(crate) fn ratio_to_f64(n: &BigUint, d: &BigUint) -> Option<f64> {
     // bits: two guard bits beyond the 53-bit significand plus a sticky
     // remainder decide the rounding exactly.
     let e = bits(n) - bits(d) - 55;
-    let (q, r) = if e >= 0 { n.div_rem(&(d << e as usize)) } else { (n << (-e) as usize).div_rem(d) };
+    let scale = e.unsigned_abs() as usize;
+    let (q, r) = if e >= 0 { n.div_rem(&(d << scale)) } else { (n << scale).div_rem(d) };
     // Binary exponent of the quotient and weight of its last kept bit.
     let top = bits(&q) - 1 + e;
     let lsb = (top - 52).max(-1074);
-    let shift = (lsb - e) as usize; // >= 2 since q has >= 55 bits
+    let shift = usize::try_from(lsb - e).expect("q has at least 55 bits, so shift >= 2");
     let mut m = (&q >> shift).to_u64().expect("at most 54 bits");
     let rest = &q - (BigUint::from(m) << shift);
     let half = BigUint::one() << (shift - 1);
@@ -552,7 +553,9 @@ pub(crate) fn bigint_from_integral_f64(x: f64) -> BigInt {
     let exp = ((bits >> 52) & 0x7ff) as i64;
     let frac = bits & ((1u64 << 52) - 1);
     let (mant, e) = if exp == 0 { (frac, -1074) } else { (frac | (1u64 << 52), exp - 1075) };
-    let mag = if e >= 0 { BigInt::from(mant) << e as usize } else { BigInt::from(mant >> (-e) as u32) };
+    let shift = e.unsigned_abs(); // at most 1074
+    let mag =
+        if e >= 0 { BigInt::from(mant) << shift } else { BigInt::from(mant.checked_shr(shift as u32).unwrap_or(0)) };
     if x < 0.0 {
         -mag
     } else {

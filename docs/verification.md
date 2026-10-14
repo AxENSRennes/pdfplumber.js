@@ -167,6 +167,33 @@ parité. **Toute mutation survivante** est soit tuée par un nouveau cas
 adverse, soit justifiée par écrit (mutation équivalente, avec preuve). La
 commande et le résultat sont notés dans le rapport du module.
 
+Une mutation peut faire boucler le code sans consommer son entrée, souvent en
+allouant : sur la machine partagée, un mutant a atteint 16,5 Go. D'où trois
+règles :
+
+- **Plafond mémoire** : chaque `cargo mutants`, génération de corpus adverse
+  ou passe sur le corpus complet tourne dans
+  `systemd-run --user --scope --quiet -p MemoryMax=5G -p MemorySwapMax=0 …`,
+  avec `-j 1 --timeout 20` pour `cargo mutants`, et jamais deux travaux lourds
+  à la fois. Les tests corrects restent sous 250 Mo.
+- **Profil `mutants`** (`--profile mutants`) : `release` avec les
+  `debug_assertions`, qui activent `psparser::ProgressGuard`. Entre deux
+  `seek`, un parseur ne lit qu'en avant (position
+  `PSStackParserExt::read_position`) ; une boucle qui ne progresse plus
+  panique en quelques pas au lieu d'épuiser la mémoire. Le code du garde est
+  exclu des mutations (`-E ProgressGuard`), ses mutants étant équivalents par
+  construction.
+- **Bornes dans les tests de rejeu** : un job ne peut pas produire plus
+  d'objets que pdfminer (`psparser_unit`), ni plus de tokens ou de lignes que
+  d'octets en entrée (`psparser_base_unit`).
+
+```sh
+systemd-run --user --scope --quiet -p MemoryMax=5G -p MemorySwapMax=0 \
+  cargo mutants -f crates/pdfminer/src/psparser.rs -E ProgressGuard \
+  --test-package pdftrace --cargo-test-arg=--test=psparser_unit \
+  --profile mutants -j 1 --timeout 20
+```
+
 ## Définition de « fini » pour un module
 
 1. Port fidèle : un module Rust par module Python, références upstream sur
