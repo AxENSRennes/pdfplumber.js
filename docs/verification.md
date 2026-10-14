@@ -78,14 +78,16 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   régénère.
 - Générateurs actuels : `pycompat.py` (sémantique CPython, bibliothèque
   standard seule), `exceptions.py` (classes d'exception de pdfminer et
-  pdfplumber), `pdftypes.py` (modèle d'objets, références, flux),
-  `psparser.py` (corpus réel de flux de contenu et corpus adverse
-  `--fuzz 4000`, comparés job par job par empreinte de la sérialisation
-  canonique).
+  pdfplumber), `pdftypes.py` (modèle d'objets, références, flux,
+  déchiffrement), `psparser_base.py` (`PSStackParser` sur un fichier :
+  `nexttoken`, `nextline`, `revreadlines`, `seek`, `pop`), `psparser.py`
+  (corpus réel de flux de contenu et corpus adverse `--fuzz 4000` pour
+  `PDFContentParser`, comparés job par job par empreinte de la
+  sérialisation canonique).
 
 ```sh
 export PDFPLUMBER_ROOT=/chemin/du/dépôt/principal   # .venv, corpus/, .cache/
-for m in pycompat exceptions pdftypes; do $PDFPLUMBER_ROOT/.venv/bin/python oracle/unit/$m.py; done
+for m in pycompat exceptions pdftypes psparser_base; do $PDFPLUMBER_ROOT/.venv/bin/python oracle/unit/$m.py; done
 $PDFPLUMBER_ROOT/.venv/bin/python oracle/unit/psparser.py --fuzz 4000
 $PDFPLUMBER_ROOT/.venv/bin/python oracle/unit/psparser.py          # corpus réel, ~1 min
 cargo test --release
