@@ -192,6 +192,42 @@ pub fn str_repr(s: &str) -> String {
     out
 }
 
+/// [`str_repr`] of a Python `str` given by its code points, which may include
+/// surrogates (not printable: `\udxxx`). The quote is chosen as in
+/// `unicode_repr`.
+pub fn str_repr_code_points(code_points: &[u32]) -> String {
+    let has = |c: char| code_points.contains(&(c as u32));
+    let quote = if has('\'') && !has('"') { '"' } else { '\'' };
+    let mut out = String::with_capacity(code_points.len() + 2);
+    out.push(quote);
+    for &c in code_points {
+        match char::from_u32(c) {
+            Some(ch) if ch == quote || ch == '\\' => {
+                out.push('\\');
+                out.push(ch);
+            }
+            Some('\t') => out.push_str("\\t"),
+            Some('\n') => out.push_str("\\n"),
+            Some('\r') => out.push_str("\\r"),
+            _ if c < 0x20 || c == 0x7f => {
+                let _ = write!(out, "\\x{c:02x}");
+            }
+            Some(ch) if c < 0x7f || str_isprintable(ch) => out.push(ch),
+            _ if c <= 0xff => {
+                let _ = write!(out, "\\x{c:02x}");
+            }
+            _ if c <= 0xffff => {
+                let _ = write!(out, "\\u{c:04x}");
+            }
+            _ => {
+                let _ = write!(out, "\\U{c:08x}");
+            }
+        }
+    }
+    out.push(quote);
+    out
+}
+
 /// `json.dumps(s)` with the default `ensure_ascii=True` (`ascii_escape_unicode`
 /// in Modules/_json.c): ASCII printable characters except `"` and `\` as is,
 /// the short escapes `\" \\ \n \r \t \b \f`, everything else as `\uXXXX`

@@ -227,6 +227,59 @@ fn atan2() {
     });
 }
 
+/// `pycompat::PyStr` and `unicodedata.normalize` on strings with lone
+/// surrogates, combining marks, Hangul and compatibility characters.
+#[test]
+fn pystr() {
+    use pycompat::unicodedata::NormalizationForm;
+    use pycompat::PyStr;
+    let s = |v: &Value| match v {
+        Value::Str(s) => PyStr::from(s),
+        other => panic!("not a str: {other:?}"),
+    };
+    let sv = |s: &PyStr| Value::py_str(s);
+    let usize_arg = |v: &Value| int(v) as usize;
+    replay("pystr", |a| {
+        let op = str_arg(&a[0]);
+        match op {
+            "normalize" => {
+                let x = s(&a[2]);
+                match NormalizationForm::parse(str_arg(&a[1])) {
+                    Some(form) => sv(&x.normalize(form)),
+                    None => result(pycompat::unicodedata::normalize_named(str_arg(&a[1]), &x), |r| sv(&r)),
+                }
+            }
+            "repr" => Value::str(s(&a[1]).repr()),
+            "json" => Value::str(s(&a[1]).json()),
+            "len" => Value::Int(PyInt::Small(s(&a[1]).len() as i64)),
+            "isspace" => Value::Bool(s(&a[1]).isspace()),
+            "strip" => sv(&s(&a[1]).strip()),
+            "split" => Value::List(s(&a[1]).split_whitespace().iter().map(sv).collect()),
+            "split_sep" => Value::List(s(&a[1]).split(&s(&a[2])).iter().map(sv).collect()),
+            "bytes" => Value::Bytes(s(&a[1]).as_bytes().to_vec()),
+            "utf16" => {
+                Value::List(s(&a[1]).to_utf16().into_iter().map(|u| Value::Int(PyInt::Small(i64::from(u)))).collect())
+            }
+            "from_utf16" => {
+                let Value::List(units) = &a[1] else { panic!("units") };
+                let units: Vec<u16> = units.iter().map(|u| int(u) as u16).collect();
+                sv(&PyStr::from_utf16(&units))
+            }
+            "cmp" => {
+                let (x, y) = (s(&a[1]), s(&a[2]));
+                Value::List(vec![
+                    Value::Bool(x == y),
+                    Value::Bool(x < y),
+                    sv(&x.concat(&y)),
+                    Value::Bool(x.contains(&y)),
+                ])
+            }
+            "slice" => sv(&s(&a[1]).slice(usize_arg(&a[2]), usize_arg(&a[3]))),
+            other => panic!("{other}"),
+        }
+    });
+}
+
 #[test]
 fn compare() {
     replay("compare", |a| {

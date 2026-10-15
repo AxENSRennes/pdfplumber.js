@@ -519,6 +519,66 @@ def gen_json_str(rng):
         yield [s], json.dumps(s, ensure_ascii=True)
 
 
+#: Code point pools of the str cases: every kind normalization and the
+#: character classes treat differently.
+PYSTR_POOLS = [
+    (0x20, 0x7E),  # ASCII
+    (0x09, 0x0D), (0x1C, 0x20), (0x85, 0x85), (0xA0, 0xA0), (0x2000, 0x200B), (0x3000, 0x3000),  # spaces
+    (0xC0, 0x17F),  # Latin with canonical decompositions
+    (0x300, 0x36F), (0x1AB0, 0x1AFF), (0x20D0, 0x20FF), (0x591, 0x5C7), (0x0F71, 0x0F84),  # combining marks
+    (0x1100, 0x11FF), (0xAC00, 0xD7A3),  # Hangul jamo and syllables
+    (0xFB00, 0xFB06), (0xFF00, 0xFFEF), (0x2460, 0x24FF), (0x3300, 0x33FF), (0xFDFA, 0xFDFB),  # compatibility
+    (0x0344, 0x0344), (0x0958, 0x095F), (0x2ADC, 0x2ADC), (0x1D15E, 0x1D164),  # composition exclusions
+    (0xD800, 0xDFFF),  # surrogates
+    (0x1D400, 0x1D7FF), (0x2F800, 0x2FA1D), (0x1F600, 0x1F64F),  # astral
+    (0x00, 0x10FFFF),  # anything
+]
+
+
+def rand_pystr(rng, n):
+    out = []
+    for _ in range(n):
+        lo, hi = rng.choice(PYSTR_POOLS)
+        out.append(chr(rng.randint(lo, hi)))
+    return "".join(out)
+
+
+def gen_pystr(rng):
+    """``str`` operations of ``pycompat::PyStr`` on strings with lone
+    surrogates, combining marks, Hangul and compatibility characters."""
+    fixed = ["", "\ud800", "😀", "\U0001f600", "a\udc00b", "é", "ẛ̣", "각",
+             "각", "ﬁ", "ﷺ", "̈́", "क़", " \t\n", "\x1c", "'\"", "\ud800́"]
+    strs = fixed + [rand_pystr(rng, rng.randint(0, 10)) for _ in range(6000)]
+    for s in strs:
+        for form in ("NFC", "NFKC", "NFD", "NFKD"):
+            yield ["normalize", form, s], unicodedata.normalize(form, s)
+        yield ["repr", s], repr(s)
+        yield ["json", s], json.dumps(s)
+        yield ["len", s], len(s)
+        yield ["isspace", s], s.isspace()
+        yield ["strip", s], s.strip()
+        yield ["split", s], s.split()
+        yield ["bytes", s], s.encode("utf-8", "surrogatepass")
+        units = s.encode("utf-16-le", "surrogatepass")
+        yield ["utf16", s], [int.from_bytes(units[i : i + 2], "little") for i in range(0, len(units), 2)]
+    for s in fixed[:6]:
+        yield ["normalize", "NFX", s], call(unicodedata.normalize, "NFX", s)
+    for _ in range(3000):
+        a, b = rng.choice(strs), rng.choice(strs)
+        if rng.random() < 0.3 and a:
+            i = rng.randint(0, len(a) - 1)
+            b = a[i : i + rng.randint(1, 3)]
+        yield ["cmp", a, b], [a == b, a < b, a + b, b in a]
+        if b:
+            yield ["split_sep", a, b], a.split(b)
+        i, j = rng.randint(0, 12), rng.randint(0, 12)
+        yield ["slice", a, i, j], a[i:j]
+    for _ in range(2000):
+        units = [rng.choice([rng.randint(0, 0xFFFF), rng.randint(0xD800, 0xDFFF), 0x61]) for _ in range(rng.randint(0, 8))]
+        raw = b"".join(u.to_bytes(2, "little") for u in units)
+        yield ["from_utf16", units], raw.decode("utf-16-le", "surrogatepass")
+
+
 def gen_bytes_repr(rng):
     for b in [b"", b"'", b'"', b"'\"", b"\\", bytes(range(256))]:
         yield [b], repr(b)
@@ -660,6 +720,7 @@ GENERATORS = {
     "float_parse": gen_float_parse,
     "str_repr": gen_str_repr,
     "json_str": gen_json_str,
+    "pystr": gen_pystr,
     "bytes_repr": gen_bytes_repr,
     "utf8_ignore": gen_utf8_ignore,
     "unicode": gen_unicode,
