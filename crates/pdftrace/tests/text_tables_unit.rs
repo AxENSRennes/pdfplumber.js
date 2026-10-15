@@ -23,7 +23,7 @@ use pdfplumber::utils::clustering::{cluster_list, cluster_objects};
 use pdfplumber::utils::geometry::{self, Axis, SnapAttr};
 use pdfplumber::utils::text::{
     chars_to_textmap, dedupe_chars, extract_text_kwargs, extract_text_simple, extract_words_kwargs, text_line_matches,
-    Kwargs, RegexMatch, TextMap,
+    Kwargs, RegexMatch, TextMap, TextMapOptions, WordExtractor,
 };
 use pdftrace::canon::{canon, sha256_hex};
 use pdftrace::plumber::{from_value, obj_from_value, to_value};
@@ -565,6 +565,23 @@ fn run_op(page: &CasePage, op: &[Value]) -> Value {
                 }
             });
             result(r, |t| t.map_or(Value::None, table_text))
+        }
+        "wordmap" => {
+            // WordExtractor(**op[1]).extract_wordmap(chars).to_textmap(**op[2])
+            let r = WordExtractor::from_kwargs(&kw(&op[1]), true)
+                .and_then(|ex| ex.extract_wordmap(&page.chars))
+                .and_then(|wm| wm.to_textmap(&TextMapOptions::from_kwargs(&kw(&op[2]), true)?));
+            result(r, |tm| {
+                let tuples = tm
+                    .tuples
+                    .iter()
+                    .map(|(t, c)| {
+                        let c = c.as_ref().map_or(Value::None, |c| to_value(&PyValue::Dict(c.clone())));
+                        Value::Tuple(vec![Value::str(t.to_string()), c])
+                    })
+                    .collect();
+                Value::Tuple(vec![Value::str(tm.as_string.clone()), Value::List(tuples)])
+            })
         }
         other => panic!("unknown op {other}"),
     }

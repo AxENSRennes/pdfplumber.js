@@ -136,6 +136,11 @@ def run_op(page, op):
         return page.extract_tables(op[1])
     if name == "extract_table":
         return page.extract_table(op[1])
+    if name == "wordmap":
+        # WordMap.to_textmap called directly (presorted may be false)
+        wordmap = ptext.WordExtractor(**op[1]).extract_wordmap(page.chars)
+        tm = wordmap.to_textmap(**op[2])
+        return (tm.as_string, [(t, c) for t, c in tm.tuples])
     raise ValueError(f"unknown op {name}")
 
 

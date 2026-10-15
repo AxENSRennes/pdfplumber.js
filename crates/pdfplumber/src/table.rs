@@ -460,8 +460,9 @@ pub fn intersections_to_cells(intersections: &Intersections) -> PyResult<Vec<Bbo
         let p = points[i];
         let (x, y) = pt(p);
         // Get all the points directly below and directly right
-        let below = after(&by_x[&HashKey(x.clone())], i);
-        let right = after(&by_y[&HashKey(y.clone())], i);
+        // (a NaN equals no point, not even itself: no group)
+        let below = by_x.get(&HashKey(x.clone())).map_or_else(Vec::new, |l| after(l, i));
+        let right = by_y.get(&HashKey(y.clone())).map_or_else(Vec::new, |l| after(l, i));
         'search: for &b in &below {
             let below_pt = points[b];
             if !edge_connects(p, below_pt) {
@@ -760,8 +761,17 @@ pub struct TableSettings {
 }
 
 impl Default for TableSettings {
-    /// The field defaults, before `__post_init__`.
+    /// `TableSettings()`: the field defaults, resolved by `__post_init__`.
     fn default() -> TableSettings {
+        let mut s = TableSettings::field_defaults();
+        s.post_init().expect("the defaults are valid");
+        s
+    }
+}
+
+impl TableSettings {
+    /// The field defaults, before `__post_init__`.
+    fn field_defaults() -> TableSettings {
         TableSettings {
             vertical_strategy: PyValue::str("lines"),
             horizontal_strategy: PyValue::str("lines"),
@@ -785,16 +795,20 @@ impl Default for TableSettings {
     }
 }
 
-/// The value of a resolved `UNSET`-defaulted field.
+/// `UNSET` (pdfplumber/table.py:482 UNSET): `UnsetFloat(0)`, a float.
+const UNSET_VALUE: PyValue = PyValue::Float(0.0);
+
+/// The value of an `UNSET`-defaulted field (`__post_init__` resolves them
+/// all; a field left unresolved reads as `UNSET`, a `0.0`).
 fn resolved(v: &Option<PyValue>) -> &PyValue {
-    v.as_ref().expect("TableSettings.__post_init__ resolves every UNSET field")
+    v.as_ref().unwrap_or(&UNSET_VALUE)
 }
 
 impl TableSettings {
     /// `TableSettings(**kwargs)`: the dataclass `__init__` (unknown keyword:
     /// `TypeError`), then `__post_init__`.
     pub fn new(kwargs: &Kwargs) -> PyResult<TableSettings> {
-        let mut s = TableSettings::default();
+        let mut s = TableSettings::field_defaults();
         for (k, v) in kwargs.items() {
             let v = v.clone();
             match k.as_ref() {

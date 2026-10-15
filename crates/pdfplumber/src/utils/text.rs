@@ -559,9 +559,11 @@ pub const TEXTMAP_KWARGS: [&str; 21] = [
 ];
 
 impl TextMapOptions {
-    /// `WordMap.to_textmap(**{k: kwargs[k] for k in TEXTMAP_KWARGS if k in
-    /// kwargs})`: the keys of `kwargs` that are parameters of `to_textmap`.
-    pub fn from_kwargs(kwargs: &Kwargs) -> PyResult<TextMapOptions> {
+    /// `WordMap.to_textmap(**kwargs)`: with `strict`, an unknown keyword
+    /// raises `TypeError` as Python's call does; otherwise only the keys of
+    /// `TEXTMAP_KWARGS` are taken (`{k: kwargs[k] for k in TEXTMAP_KWARGS
+    /// if k in kwargs}`, where `self` is one of them).
+    pub fn from_kwargs(kwargs: &Kwargs, strict: bool) -> PyResult<TextMapOptions> {
         let mut o = TextMapOptions::default();
         if kwargs.contains("self") {
             return Err(exc::TypeError("WordMap.to_textmap() got multiple values for argument 'self'"));
@@ -589,6 +591,11 @@ impl TextMapOptions {
                 "use_text_flow" => o.use_text_flow = v.truthy(),
                 "presorted" => o.presorted = v.truthy(),
                 "expand_ligatures" => o.expand_ligatures = v.truthy(),
+                other if strict => {
+                    return Err(exc::TypeError(format!(
+                        "WordMap.to_textmap() got an unexpected keyword argument '{other}'"
+                    )))
+                }
                 _ => {}
             }
         }
@@ -1331,7 +1338,7 @@ pub fn chars_to_textmap(chars: &[Obj], kwargs: &Kwargs) -> PyResult<TextMap> {
 
     let extractor = WordExtractor::from_kwargs(&kwargs, false)?;
     let wordmap = extractor.extract_wordmap(chars)?;
-    wordmap.to_textmap(&TextMapOptions::from_kwargs(&kwargs)?)
+    wordmap.to_textmap(&TextMapOptions::from_kwargs(&kwargs, false)?)
 }
 
 // pdfplumber/utils/text.py:723 extract_text

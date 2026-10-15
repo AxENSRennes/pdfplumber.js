@@ -42,6 +42,7 @@ import sys
 
 from pdfplumber.table import TableSettings
 from pdfplumber.utils import clustering, geometry
+from pdfplumber.utils import text as ptext
 
 from ..canon import canon
 from ._common import require_oracle_python, unit_dir, write_cases, write_meta
@@ -243,7 +244,7 @@ def rand_text_kwargs(rng, layout_ok=True):
         maybe(0.15, "layout_height_chars", [0, 5, 40])
         maybe(0.1, "layout_width", [0, 100, 300.5])
         maybe(0.1, "layout_height", [0, 50, 200])
-        maybe(0.1, "layout_bbox", [(0, 0, 200, 300), (10, 5, 100.5, 80), (0.0, 0.0, 612.0, 792.0)])
+        maybe(0.1, "layout_bbox", [(0, 0, 200, 300), (10, 5, 100.5, 80), (0.0, 0.0, 612.0, 792.0), None, ()])
         maybe(0.08, "presorted", [True, False])
     if pick() < 0.12:
         kw["line_dir_render"], kw["char_dir_render"] = rng.choice(VALID_PAIRS + [(None, None)])
@@ -284,6 +285,9 @@ def rand_table_settings(rng, page_bbox, chars, edges):
     pool_v = [10, 20.5, 30, 45, 60, 80.25, 100, 3]
     pool_h = [5, 15, 20, 30.5, 40, 60, 75]
     objs = [e for e in edges][:4]
+    if pick() < 0.3:
+        # rects and curves as explicit lines (obj_to_edges)
+        objs += [rand_obj(rng, rng.choice(["rect", "curve", "line"])) for _ in range(rng.randint(1, 3))]
     if s.get("vertical_strategy") == "explicit" or pick() < 0.15:
         lines = rng.sample(pool_v, rng.randint(0, 5))
         if objs and pick() < 0.4:
@@ -331,7 +335,15 @@ def synth_page_case(rng):
     ops = []
     for _ in range(rng.randint(6, 14)):
         r = rng.random()
-        if r < 0.14:
+        if rng.random() < 0.08:
+            kw = rand_text_kwargs(rng)
+            ex = {k: v for k, v in kw.items() if k in ptext.WORD_EXTRACTOR_KWARGS}
+            tm = {k: v for k, v in kw.items() if k in ptext.TEXTMAP_KWARGS}
+            tm["presorted"] = rng.choice([False, False, True, 0])
+            if rng.random() < 0.03:
+                (ex if rng.random() < 0.5 else tm)["bogus"] = 1
+            ops.append(("wordmap", ex, tm))
+        elif r < 0.14:
             ops.append(("text", rand_text_kwargs(rng)))
         elif r < 0.24:
             ops.append(("utext", rand_text_kwargs(rng)))
