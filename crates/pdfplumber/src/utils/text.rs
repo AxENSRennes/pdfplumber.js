@@ -495,9 +495,9 @@ fn match_text_line_at(s: &[char], start: usize, spaces_from: &impl Fn(usize) -> 
             if s[q] == '\n' {
                 return Some(RegexMatch { spans: vec![Some((start, q + 1)), Some((g1, g1_end)), Some((q, q + 1))] });
             }
-            if g1_end >= n || s[g1_end] == '\n' {
-                break;
-            }
+            // `[^\n]+?` takes one more character: there is one, and it is
+            // not a newline (`q` would have stopped at it or at the end)
+            debug_assert!(g1_end < n && s[g1_end] != '\n', "group 1 extends");
             g1_end += 1;
         }
     }
