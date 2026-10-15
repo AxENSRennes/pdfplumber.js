@@ -330,8 +330,16 @@ fn raw_image(i: &LTImage<TP>) -> Value {
     named("LTImage", f)
 }
 
+/// A dump named after `LTItem::class_name`.
+fn renamed(item: &LTItem<TP>, mut v: Value) -> Value {
+    if let Value::Named { name, .. } = &mut v {
+        *name = item.class_name().to_owned();
+    }
+    v
+}
+
 fn raw_item(item: &LTItem<TP>) -> Value {
-    match item {
+    let v = match item {
         LTItem::Char(c) => raw_char(c),
         LTItem::Curve(c) => raw_curve(c),
         LTItem::Image(i) => raw_image(i),
@@ -345,7 +353,8 @@ fn raw_item(item: &LTItem<TP>) -> Value {
             named("LTFigure", f)
         }
         _ => panic!("not a raw object"),
-    }
+    };
+    renamed(item, v)
 }
 
 fn raw_page(p: &LTPage<TP>) -> Value {
@@ -409,21 +418,36 @@ impl TreeDumper<'_> {
                 let mut f = vec![("name", Value::str(fig.name.clone())), ("matrix", tuple(&fig.matrix))];
                 f.extend(self.container(&fig.layout));
                 f.extend(attr_fields(&fig.attrs));
-                named("LTFigure", f)
+                renamed(item, named("LTFigure", f))
             }
-            LTItem::TextLine(l) => self.line(&l.borrow()),
-            LTItem::TextBox(b) => self.textbox(&b.borrow()),
+            LTItem::TextLine(l) => renamed(item, self.line(&l.borrow())),
+            LTItem::TextBox(b) => renamed(item, self.textbox(&b.borrow())),
         }
     }
 
     fn group(&self, g: &TextGroupElement<TP>, positions: &HashMap<usize, i64>) -> Value {
-        match g {
-            TextGroupElement::Box(b) => named("box#", vec![("i", Value::Int(PyInt::Small(positions[&ptr(b)])))]),
+        self.group_height(g, positions).0
+    }
+
+    /// The dump of a group and the height of its tree (the generator's
+    /// `group_height`: `get_text()` of the groups no higher than
+    /// `GROUP_TEXT_HEIGHT`).
+    fn group_height(&self, element: &TextGroupElement<TP>, positions: &HashMap<usize, i64>) -> (Value, usize) {
+        const GROUP_TEXT_HEIGHT: usize = 100;
+        match element {
+            TextGroupElement::Box(b) => (named("box#", vec![("i", Value::Int(PyInt::Small(positions[&ptr(b)])))]), 0),
             TextGroupElement::Group(g) => {
                 let g = g.borrow();
                 let mut f = comp_fields(&g.comp);
-                f.push(("_objs", Value::List(g._objs.iter().map(|c| self.group(c, positions)).collect())));
-                named(g.class_name(), f)
+                let children: Vec<(Value, usize)> = g._objs.iter().map(|c| self.group_height(c, positions)).collect();
+                let height = 1 + children.iter().map(|(_, h)| *h).max().unwrap_or(0);
+                f.push(("_objs", Value::List(children.into_iter().map(|(v, _)| v).collect())));
+                let name = g.class_name();
+                drop(g);
+                if height <= GROUP_TEXT_HEIGHT {
+                    f.push(("get_text()", text_value(element.get_text())));
+                }
+                (named(name, f), height)
             }
         }
     }

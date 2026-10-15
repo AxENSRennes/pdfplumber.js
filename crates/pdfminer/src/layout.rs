@@ -1193,11 +1193,6 @@ impl<P: LTPayload> TextGroupElement<P> {
         }
     }
 
-    /// `a is b`
-    pub fn ptr_eq(&self, other: &TextGroupElement<P>) -> bool {
-        self.plane_id() == other.plane_id()
-    }
-
     /// `obj.analyze(laparams)`
     pub fn analyze(&self, laparams: &LAParams) -> PyResult<()> {
         match self {
@@ -1491,7 +1486,7 @@ impl<P: LTPayload> HeapEntry<P> {
         if self.id1 != other.id1 {
             return self.id1 < other.id1;
         }
-        debug_assert!(self.id2 != other.id2 || (self.obj1.ptr_eq(&other.obj1) && self.obj2.ptr_eq(&other.obj2)));
+        debug_assert!(self.id2 != other.id2, "two heap entries for one pair of objects");
         self.id2 < other.id2
     }
 }

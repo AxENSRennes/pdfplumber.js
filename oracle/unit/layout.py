@@ -30,7 +30,8 @@ Each run analyzes a fresh copy of the page rebuilt from the dump
 (``rebuild``: the same classes, ``__dict__`` restored in order; checked to
 dump back identically). Output: for each run, ``canon`` of the analyzed
 tree (``dump_tree``): containers with all their attributes, plus
-``get_text()`` of lines and boxes; the raw objects (chars, curves, images)
+``get_text()`` of lines, boxes and groups (those of a tree no higher than
+``GROUP_TEXT_HEIGHT``); the raw objects (chars, curves, images)
 by their index in the raw page (``Named("#", {"i": n})``, depth-first
 order); the boxes of a group by their position in the container's
 ``_objs`` (``Named("box#", ...)``). An analysis that raises gives the
@@ -47,7 +48,8 @@ exception.
   margin boundaries (``char_margin``, ``line_overlap``, ``word_margin``,
   ``line_margin``), overlapping and duplicated chars, vertical text, blank
   and zero-size chars, grids of equal boxes (ties in the heap), NaN, infinite
-  and huge coordinates, chars outside the page, figures (nested, with
+  and huge coordinates, chars outside the page, lines of different lengths
+  aligned on one edge or on the center only, figures (nested, with
   chars), curves and images among chars, many boxes, chains of groups
   whose depth reaches Python's recursion limit, and objects (figures
   included) given ``mcid``/``tag`` attributes as pdfplumber's
@@ -124,6 +126,8 @@ MAX_CHARS = 1500
 SMALL = 800
 ZERO_MAX_CHARS = 600
 FILE_TIMEOUT_S = 300
+#: The highest group whose get_text() the tree dump includes.
+GROUP_TEXT_HEIGHT = 100
 
 #: LAParams keyword arguments of the runs.
 CONFIGS = [
@@ -219,12 +223,25 @@ def dump_tree(container, index):
         raise TypeError(type(obj))
 
     def group(g):
+        return group_height(g)[0]
+
+    def group_height(g):
+        """The dump of a group and the height of its tree (a box is 0). A
+        group no higher than GROUP_TEXT_HEIGHT also gets its ``get_text()``
+        (a higher one would recurse near the limit, at the dump's depth)."""
         if isinstance(g, LTTextBox):
-            return Named("box#", {"i": positions[id(g)]})
+            return Named("box#", {"i": positions[id(g)]}), 0
         fields = {}
+        height = 0
         for k, v in g.__dict__.items():
-            fields[k] = [group(c) for c in v] if k == "_objs" else v
-        return Named(type(g).__name__, fields)
+            if k == "_objs":
+                children = [group_height(c) for c in v]
+                height = 1 + max((h for _, h in children), default=0)
+                v = [d for d, _ in children]
+            fields[k] = v
+        if height <= GROUP_TEXT_HEIGHT:
+            fields["get_text()"] = g.get_text()
+        return Named(type(g).__name__, fields), height
 
     def figure(fig):
         return dump_tree(fig, index)
@@ -446,6 +463,17 @@ def adversarial_pages(rng):
             for r in range(5):
                 objs.append(char_at(100 + c * (10 + col_gap), 700 - r * 10, font=VFONT, text="v"))
         yield f"vertical {col_gap}", page_of(objs)
+    # two lines of different lengths aligned on one edge only, or on the
+    # center only, or not at all (find_neighbors: one alignment suffices)
+    for align, offset in (("start", 0), ("end", 4), ("center", 2), ("none", 1)):
+        for vertical in (False, True):
+            objs = []
+            for r in range(6):
+                objs.append(char_at(100, 700 - r * 10, font=VFONT, text="v") if vertical else char_at(10 + r * 6, 700))
+            for r in range(2):
+                objs.append(char_at(113, 700 - (r + offset) * 10, font=VFONT, text="w") if vertical
+                            else char_at(10 + (r + offset) * 6, 687, text="b"))
+            yield f"aligned {align} {'vertical' if vertical else 'horizontal'}", page_of(objs)
     # mixed horizontal and vertical, overlapping, duplicates
     for k in range(20):
         objs = []
