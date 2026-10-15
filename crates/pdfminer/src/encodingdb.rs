@@ -204,7 +204,8 @@ impl EncodingDB {
                         Ok(text) => {
                             cid2unicode.insert(cid.clone(), text);
                         }
-                        // log.debug(str(e))
+                        // log.debug(str(e)); name2unicode raises nothing else
+                        // (an equivalent mutant: see tests/cmaps_unit.rs)
                         Err(e) if e.is_instance(ExcKind::KeyError) || e.is_instance(ExcKind::ValueError) => {}
                         Err(e) => return Err(e),
                     }

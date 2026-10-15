@@ -12,6 +12,17 @@
 //!
 //! The cases of a set run in their order on one thread, as in the
 //! generator, so that the CMap caches hold the same objects.
+//!
+//! Mutations (`cargo mutants -f crates/pdfminer/src/<file> --test-package
+//! pdftrace --cargo-test-arg=--test=cmaps_unit --profile mutants -j 1
+//! --timeout 20 --baseline skip`, one file per run, `-E check_growth` for
+//! cmapdb.rs): every mutant of cmapdb.rs is caught, unviable or a timeout
+//! (an endless loop); fontmetrics.rs: all caught; glyphlist.rs and
+//! latin_enc.rs: no mutant. One equivalent mutant survives in
+//! encodingdb.rs: the guard `KeyError || ValueError` of `get_encoding` made
+//! `true`, since `name2unicode` raises nothing else (`PDFKeyError`, or the
+//! `ValueError` of `int()`/`chr()`; at most six hex digits never overflow
+//! the C int of `chr()`).
 
 use std::fs;
 use std::rc::Rc;
@@ -698,7 +709,7 @@ fn providers() {
     }
     CMapDB::set_provider(None);
     // (load_data: get_cmap may have "H" in its cache, from another test of this thread)
-    let err = CMapDB::load_data("H").err().expect("no provider: not found");
+    let err = CMapDB::load_data("H").expect_err("no provider: not found");
     assert_eq!((err.kind.name(), err.message.as_str()), ("CMapNotFound", "H"));
     CMapDB::set_provider(Some(Rc::new(Fixed(b"PMCM".to_vec()))));
     let err = CMapDB::get_cmap("Corrupt").err().expect("corrupt data");
