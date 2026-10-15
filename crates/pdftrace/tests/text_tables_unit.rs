@@ -12,6 +12,10 @@
 //! To investigate a mismatch: `python -m oracle.unit.text_tables --dump
 //! pages_fuzz:LINE:OP` prints Python's full canon of one operation, and
 //! `TEXT_TABLES_DUMP=1` prints the Rust one.
+//!
+//! `HashKey` holds `Rc`-shared values (no interior mutability reaches its
+//! hash), hence the allowed `mutable_key_type`.
+#![allow(clippy::mutable_key_type)]
 
 use std::fs::File;
 use std::io::{BufRead, BufReader};
