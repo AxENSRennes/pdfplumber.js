@@ -312,6 +312,26 @@ pub fn pow(x: f64, y: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    //! Mutation testing (`cargo mutants -f crates/pycompat/src/libm.rs
+    //! --test-package=pycompat --profile mutants -j 1`): every mutant is
+    //! caught except these, equivalent for every input:
+    //!
+    //! - `__pow`, the first special-case test (`topy & 0x7ff` made `|` or
+    //!   `^`, `0x43e - 0x3be` made a division): it only sends more inputs to
+    //!   the special cases, which test again and fall through.
+    //! - `__pow`, `x + y` made `x - y` or `x * y` where `x` or `y` is a NaN:
+    //!   a NaN either way.
+    //! - `__pow`, `2 * ix < 2 * 1.0` made `<=`: equality returned 1.0 just
+    //!   before. `2 * ix == 0` (divzero) made `ix >> 1 == 0`: the operand is
+    //!   0, inf or nan there; for -0.0 the fallback `1 / x2` gives the same
+    //!   signed infinity.
+    //! - `exp_inline`, `1.0 + x` made `1.0 - x` for `|x| < 2**-54`: both round
+    //!   to 1.0 in the default rounding mode (the branch exists for directed
+    //!   rounding).
+    //! - `specialcase`, `|y| < 1.0` made `<=`: for `|y| == 1` the rounding
+    //!   step gives `y` back (`|lo| <= 2**-53`); `y < 0.0` made `<=`: `y == 0`
+    //!   only when `scale + scale * tmp` cancels exactly, then `lo == 0` and
+    //!   the sign is fixed from `sbits` anyway.
     use super::pow;
 
     /// A small deterministic generator (SplitMix64).
@@ -363,15 +383,16 @@ mod tests {
                 ),
                 // zero, infinite, nan (signaling ones included) and subnormal operands
                 _ => {
-                    const ODD: [u64; 6] = [
+                    const ODD: [u64; 7] = [
                         0x7ff0_0000_0000_0001, // signaling NaN
                         0xfff4_0000_0000_0000, // negative signaling NaN
                         0x7ff8_0000_0000_0000, // quiet NaN
+                        0x7ff8_0000_0000_0001, // quiet NaN with a payload
                         0x7ff0_0000_0000_0000, // inf
                         0x0000_0000_0000_0003, // subnormal
                         0x8000_0000_0000_0000, // -0.0
                     ];
-                    let special = f64::from_bits(ODD[(rng.next() % 6) as usize]);
+                    let special = f64::from_bits(ODD[(rng.next() % ODD.len() as u64) as usize]);
                     let other = [1.0, -1.0, 0.0, 3.0, -3.0, 0.5, 2.0, -0.5][(rng.next() % 8) as usize];
                     if rng.next() & 1 == 0 {
                         (special, other)
