@@ -26,15 +26,28 @@
 //!   `object_type`, `y0`, `y1`) are found through a small index instead of
 //!   a scan.
 //!
-//! Not modeled (documented limits): the identity of float objects. CPython
-//! compares containers with an identity shortcut (`x is y or x == y`), so a
-//! NaN found twice through the *same* object compares equal to itself, and
-//! `hash(nan)` is its object's identity (Python results that depend on it
-//! vary between runs). Here a NaN is never equal to anything; results on
-//! NaN coordinates match Python wherever only `<`/`<=` are involved
-//! (sorting, clustering thresholds), not where NaNs are dict keys or set
-//! members. A `str` holding a lone surrogate cannot be represented (`str`
-//! is a Rust `str`).
+//! The identity of float objects is not part of a [`PyValue`]. CPython
+//! compares container items and looks up set and dict keys with an
+//! identity shortcut (`x is y or x == y`), so a NaN found again through the
+//! *same* object is equal to itself, and `hash(nan)` is its object's
+//! address. Here [`PyValue::py_eq`] never finds a NaN equal to anything;
+//! the places where pdfplumber meets a NaN again through the same object
+//! model it from where the value comes from:
+//!
+//! - `cluster_objects` (`utils/clustering.rs`): a key read from the item
+//!   (`itemgetter`) finds its own cluster, a computed one does not; the
+//!   order of the NaNs in `set(values)`, which in CPython follows their
+//!   addresses, is fixed (after the other values, in their order).
+//! - `intersections_to_cells` (`table.rs`): the bbox of one edge dict
+//!   ([`Obj::addr`]) is equal to itself.
+//!
+//! Every other occurrence of a NaN is taken to be its own object, as
+//! pdfplumber computes each coordinate of each object. Not modeled (no
+//! real page gives them): two distinct objects sharing one NaN object (a
+//! dict copied by the user), and NaN cell coordinates in `Table.rows` and
+//! `Table.columns`, where Python looks a NaN up in a dict by identity. A
+//! `str` holding a lone surrogate cannot be represented (`str` is a Rust
+//! `str`).
 
 use rustc_hash::FxHashMap as HashMap;
 use std::cell::RefCell;
@@ -877,6 +890,13 @@ impl Obj {
     /// Same dict object (`a is b`).
     pub fn ptr_eq(&self, other: &Obj) -> bool {
         Rc::ptr_eq(&self.0, &other.0)
+    }
+
+    /// The address of the shared dict (`id(obj)`), valid while this `Obj`
+    /// lives. Copies that share it hold the very same values, as a dict
+    /// copied in Python (`dict(obj)`) holds the same value objects.
+    pub fn addr(&self) -> *const () {
+        Rc::as_ptr(&self.0) as *const ()
     }
 
     pub fn len(&self) -> usize {

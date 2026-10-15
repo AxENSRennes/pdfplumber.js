@@ -7,7 +7,7 @@
 use pycompat::{exc, PyResult};
 
 use crate::obj::{bbox_from_value, Bbox, Hot, Obj, PyValue};
-use crate::utils::clustering::cluster_objects;
+use crate::utils::clustering::{cluster_objects, KeyKind};
 
 /// `max(a, b)`: `b` only when `b > a`.
 pub fn max2(a: &PyValue, b: &PyValue) -> PyResult<PyValue> {
@@ -234,7 +234,7 @@ pub fn snap_objects(objs: &[Obj], attr: SnapAttr, tolerance: &PyValue) -> PyResu
         SnapAttr::Top | SnapAttr::Bottom => Axis::V,
     };
     let h = attr.hot();
-    let clusters = cluster_objects(objs, |o| Ok(o.hot(h)?.clone()), tolerance, false)?;
+    let clusters = cluster_objects(objs, |o| Ok(o.hot(h)?.clone()), KeyKind::Stored, tolerance, false)?;
     let mut avgs = Vec::with_capacity(clusters.len());
     for cluster in &clusters {
         let values = cluster.iter().map(|o| o.hot(h)).collect::<PyResult<Vec<_>>>()?;

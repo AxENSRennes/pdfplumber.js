@@ -25,7 +25,7 @@ use pdfplumber::obj::{bbox_from_value, bbox_value, Bbox, Obj, PyValue};
 use pdfplumber::table::{
     self, cells_to_tables, CellGroup, Intersections, Table, TableFinder, TablePage, TableSettings,
 };
-use pdfplumber::utils::clustering::{cluster_list, cluster_objects};
+use pdfplumber::utils::clustering::{cluster_list, cluster_objects, KeyKind};
 use pdfplumber::utils::geometry::{self, Axis, SnapAttr};
 use pdfplumber::utils::text::{
     chars_to_textmap, dedupe_chars, extract_text_kwargs, extract_text_simple, extract_words_kwargs, text_line_matches,
@@ -285,12 +285,17 @@ fn cluster_cases() {
                     Value::List(groups.iter().map(|g| Value::List(g.iter().map(to_value).collect())).collect())
                 })
             }
-            "cluster_objects" => {
+            // key "v" (itemgetter: the stored object), or lambda o: -o["v"]
+            // (a new object)
+            "cluster_objects" | "cluster_objects_neg" => {
                 let xs = objs(&args[1]);
                 let preserve = matches!(args[3], Value::Bool(true));
-                result(cluster_objects(&xs, |o| Ok(o.item("v")?.clone()), &py(&args[2]), preserve), |groups| {
-                    Value::List(groups.into_iter().map(list_of_objs).collect())
-                })
+                let r = if name == "cluster_objects" {
+                    cluster_objects(&xs, |o| Ok(o.item("v")?.clone()), KeyKind::Stored, &py(&args[2]), preserve)
+                } else {
+                    cluster_objects(&xs, |o| o.item("v")?.neg(), KeyKind::Computed, &py(&args[2]), preserve)
+                };
+                result(r, |groups| Value::List(groups.into_iter().map(list_of_objs).collect()))
             }
             other => panic!("{other}"),
         };

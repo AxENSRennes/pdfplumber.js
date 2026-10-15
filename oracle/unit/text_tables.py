@@ -14,7 +14,9 @@ Writes typed JSON lines (docs/verification.md) to
   ``sum``, ``bool``) on pairs of values of every type, with their results
   or exceptions.
 - ``cluster``: ``cluster_list`` and ``cluster_objects`` on numbers on
-  tolerance boundaries, ints vs floats, duplicates.
+  tolerance boundaries, ints vs floats, duplicates, and NaN keys
+  (``_nan_objects.py``), from the item (``"v"``) or computed
+  (``-o["v"]``).
 - ``geometry``: every function of ``utils/geometry.py`` on generated
   objects (asserts and errors included).
 - ``textlines``: the spans ``re.finditer`` gives for the two patterns of
@@ -28,7 +30,9 @@ Writes typed JSON lines (docs/verification.md) to
   (``_plumber_ops.py``) on synthetic pages: chars and edges on exact
   tolerance boundaries, ints vs floats, rotated (``upright`` false) chars,
   ligatures, blank and empty texts, duplicates, degenerate tables, explicit
-  lines, invalid options. The real-PDF cases are written by
+  lines (some with an odd ``x1``), invalid options; then pages with NaN and
+  infinite char and edge coordinates (``nan_coord_cases``,
+  ``_nan_objects.py``). The real-PDF cases are written by
   ``text_tables_real.py``.
 
 Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.text_tables [--fuzz 800]
@@ -52,6 +56,7 @@ from pdfplumber.utils import text as ptext
 
 from ..canon import canon
 from ._common import require_oracle_python, unit_dir, write_cases, write_meta
+from ._nan_objects import NanPool, SetOrderCheck
 from ._plumber_ops import FakePage, exc_value, guarded, page_case, run_op
 
 MODULE = "text_tables"
@@ -343,6 +348,12 @@ def synth_page_case(rng):
         rng.choice(chars)["text"] = rng.choice([["x"], ("x",), 5])
     edges = synth_edges(rng, bbox) if rng.random() < 0.8 else []
     page = FakePage(chars, edges, bbox)
+    ops = synth_ops(rng, bbox, chars, edges)
+    record = {"chars": chars, "edges": edges, "bbox": bbox}
+    return page_case(page, record, ops)
+
+
+def synth_ops(rng, bbox, chars, edges):
     ops = []
     for _ in range(rng.randint(12, 26)):
         r = rng.random()
@@ -392,11 +403,10 @@ def synth_page_case(rng):
             ops.append(("extract_tables", rand_table_settings(rng, bbox, chars, edges)))
         else:
             ops.append(("extract_table", rand_table_settings(rng, bbox, chars, edges)))
-    record = {"chars": chars, "edges": edges, "bbox": bbox}
-    return page_case(page, record, ops)
+    return ops
 
 
-def fuzz_cases(n: int):
+def fuzz_cases(n: int, nan_sets: dict):
     rng = random.Random(1)
     for _ in range(n):
         yield synth_page_case(rng)
@@ -404,6 +414,121 @@ def fuzz_cases(n: int):
     yield from odd_text_cases()
     yield from huge_count_cases()
     yield from nan_attr_cases()
+    yield from odd_explicit_cases()
+    yield from nan_coord_cases(n // 2, nan_sets)
+
+
+def odd_explicit_cases():
+    """Explicit vertical lines given as dicts whose ``x1``, which no step
+    before ``intersections_to_cells`` reads, is missing, unhashable, a NaN
+    (equal to itself only as the same object), ``None`` or a ``str``.
+    Python reads it only when ``edge_connects`` compares the intersections
+    of that line (``obj_to_bbox``, then a ``set`` of bboxes), or when
+    snapping moves the line."""
+    rng = random.Random(17)
+    for i in range(80):
+        bbox = (0, 0, 612, 792)
+        chars = synth_chars(rng)
+        edges = synth_edges(rng, bbox) if rng.random() < 0.5 else []
+        ops = []
+        for _ in range(6):
+            vlines = sorted(rng.sample([20, 60, 100, 140, 200], rng.randint(2, 4)))
+            for _ in range(rng.randint(1, 2)):
+                x = rng.choice([20, 60, 100, 200, 250])
+                top, bottom = rng.choice([(5, 15), (0, 200), (40, 100), (8, 52), (10, 50)])
+                d = {"object_type": "line", "x0": x, "x1": x, "top": top, "bottom": bottom, "height": bottom - top, "width": 0}
+                odd = rng.choice(["list", "missing", "nan", "nan", "none", "str"])
+                if odd == "missing":
+                    del d["x1"]
+                else:
+                    d["x1"] = {"list": [x], "nan": nan(), "none": None, "str": "a"}[odd]
+                vlines.insert(rng.randint(0, len(vlines)), d)
+            s = {
+                "vertical_strategy": "explicit",
+                "horizontal_strategy": rng.choice(["explicit", "explicit", "lines"]),
+                "explicit_vertical_lines": vlines,
+                "explicit_horizontal_lines": sorted(rng.sample([10, 50, 90, 130], rng.randint(2, 3))),
+                "snap_tolerance": rng.choice([0, 0, 0, 3]),
+                "join_tolerance": rng.choice([0, 3]),
+                "intersection_tolerance": rng.choice([0, 3]),
+            }
+            ops += [("tables", s), ("extract_tables", s)]
+        yield page_case(FakePage(chars, edges, bbox), {"chars": chars, "edges": edges, "bbox": bbox}, ops)
+
+
+#: the coordinates of a char or an edge (a ``NanPool`` salt each)
+COORDS = ("x0", "x1", "top", "bottom", "doctop", "y0", "y1", "width", "height")
+NAN_PATTERNS = [
+    COORDS,  # a NaN matrix (1e400 in a cm operator: inf * 0)
+    COORDS,
+    ("x0", "x1", "width"),
+    ("top", "bottom", "doctop", "y0", "y1", "height"),
+    ("x0",),
+    ("x1",),
+    ("top",),
+    ("bottom",),
+    ("doctop",),
+    ("x0", "top"),
+]
+
+
+def put_nans(rng, objs, pool, max_m):
+    """NaN coordinates on up to ``max_m`` of ``objs`` (``NanPool`` objects,
+    ranked in list order)."""
+    m = min(len(objs), rng.randint(0, max_m))
+    for rank, k in enumerate(sorted(rng.sample(range(len(objs)), m))):
+        o = objs[k]
+        for a in rng.choice(NAN_PATTERNS):
+            if a in o:
+                o[a] = pool.take(rank, m, COORDS.index(a))
+    return m
+
+
+def put_infs(rng, objs):
+    """Infinite coordinates (a char drawn with a 1e400 matrix entry)."""
+    for o in rng.sample(objs, min(len(objs), rng.randint(0, 2))):
+        for a in rng.choice(NAN_PATTERNS):
+            if a in o:
+                o[a] = rng.choice([math.inf, -math.inf])
+
+
+def nan_coord_cases(n: int, nan_sets: dict):
+    """Pages whose chars and edges have NaN or infinite coordinates, as a
+    real PDF gives them (a ``1e400`` in a ``cm`` matrix: ``inf`` and
+    ``inf * 0``). NaN coordinates are ``NanPool`` objects; each operation is
+    kept only when CPython lists the NaNs of every set the clustering builds
+    after the other values, in their order (``SetOrderCheck``): the order
+    the port takes, see ``crates/pdfplumber/src/utils/clustering.rs``."""
+    rng = random.Random(15)
+    k = 0
+    while k < n:
+        bbox = rng.choice([(0, 0, 612, 792), (0, 0, 200.5, 300), (0.0, 0.0, 595.0, 842.0)])
+        chars = synth_chars(rng) or [synth_char(rng, 0, 0, 5, 10, "a", True, 0, "F1", 10.0, (0,))]
+        edges = synth_edges(rng, bbox) if rng.random() < 0.7 else []
+        pool = NanPool()
+        m = put_nans(rng, chars, pool, 4) + put_nans(rng, edges, pool, 2 if rng.random() < 0.5 else 0)
+        if m == 0:
+            continue
+        for c in chars:
+            if c["x0"] != c["x0"] and rng.random() < 0.7:
+                c["upright"] = False  # a NaN matrix is not upright
+        if rng.random() < 0.3:
+            put_infs(rng, chars)
+        if rng.random() < 0.2:
+            put_infs(rng, edges)
+        ops = [
+            ("text", {}),
+            ("simple", {}),
+            ("words", {}),
+            ("dedupe", {}),
+            ("text", {"layout": True}),
+            ("lines", True, False, {}),
+            ("tables", {}),
+            ("tables", {"vertical_strategy": "text", "horizontal_strategy": "text", "min_words_horizontal": 1}),
+        ] + synth_ops(rng, bbox, chars, edges)
+        record = {"chars": chars, "edges": edges, "bbox": bbox}
+        yield page_case(FakePage(chars, edges, bbox), record, ops, nan_sets)
+        k += 1
 
 
 def nan_attr_cases():
@@ -765,6 +890,60 @@ def cluster_cases():
             yield ["cluster_objects", objs, tol, preserve], guarded(clustering.cluster_objects, objs, "v", tol, preserve)
     for xs, tol in [([1, None], 1), ([None], 1), ([1.0, "a"], 0), ([(1, 2), (1, 3)], 0), ([[1]], 1)]:
         yield ["cluster_list", xs, tol], guarded(clustering.cluster_list, xs, tol)
+    yield from nan_cluster_cases()
+
+
+def nan_cluster_cases():
+    """NaN keys. ``cluster_list`` sorts its list as given. ``cluster_objects``
+    with the key ``"v"`` (``itemgetter``: the lookup gets the stored object,
+    so a NaN finds its own cluster): ``NanPool`` NaNs, a case kept only when
+    CPython's set lists them as the port does (``SetOrderCheck``). With the
+    key ``lambda o: -o["v"]`` (a new NaN each call: not found, cluster
+    ``None``), whose set the generator cannot order: only inputs whose
+    result does not depend on it (all keys NaN; one other value; or a NaN
+    first or second, whose ``None`` the sort compares first)."""
+    rng = random.Random(16)
+    kept = 0
+    while kept < 1200:
+        n = rng.randint(1, 14)
+        step = rng.choice([0.5, 1, 0.1, 1 / 3, 3])
+        xs = [num(rng, rng.randint(0, 20) * step) for _ in range(n)]
+        tol = rng.choice([0, 0.0, 1, 0.5, 1.5, 3, 0.1, step, 2 * step])
+        preserve = rng.random() < 0.3
+        kind = rng.random()
+        if kind < 0.2:
+            for k in rng.sample(range(n), rng.randint(1, n)):
+                xs[k] = nan()
+            yield ["cluster_list", xs, tol], guarded(clustering.cluster_list, xs, tol)
+        elif kind < 0.75:
+            pool = NanPool()
+            m = rng.randint(1, min(4, n))
+            for rank, k in enumerate(sorted(rng.sample(range(n), m))):
+                xs[k] = pool.take(rank, m, 0)
+            objs = [{"v": x, "i": k} for k, x in enumerate(xs)]
+            with SetOrderCheck() as check:
+                out = guarded(clustering.cluster_objects, objs, "v", tol, preserve)
+            if not check.ok:
+                continue
+            yield ["cluster_objects", objs, tol, preserve], out
+        else:
+            form = rng.choice(["all", "one", "first"])
+            if form == "all":
+                xs = [nan() for _ in xs]
+            elif form == "one":
+                v = xs[0]
+                xs = [nan() if rng.random() < 0.5 else v for _ in xs]
+            else:
+                if n < 2:
+                    continue
+                preserve = False
+                xs[rng.choice([0, 1])] = nan()
+                for k in rng.sample(range(n), rng.randint(0, n)):
+                    xs[k] = nan()
+            objs = [{"v": x, "i": k} for k, x in enumerate(xs)]
+            out = guarded(clustering.cluster_objects, objs, lambda o: -o["v"], tol, preserve)
+            yield ["cluster_objects_neg", objs, tol, preserve], out
+        kept += 1
 
 
 def rand_obj(rng, kind=None):
@@ -962,23 +1141,31 @@ def table_group_cases(rng):
 def merge_cases(rng):
     """``merge_edges`` with NaN group keys (h tops, v x0s: each edge its own
     group, ``groupby`` compares distinct NaN objects), ties and ints vs
-    floats. Snapping goes through dicts keyed by coordinates, where a NaN is
-    found by identity: no snapping when a NaN is present."""
-    for i in range(400):
+    floats. Snapping clusters the edges by these coordinates: NaN ones are
+    ``NanPool`` objects, a case kept only when CPython's sets list them as
+    the port does (``SetOrderCheck``)."""
+    kept = 0
+    while kept < 400:
         edges = []
         has_nan = rng.random() < 0.6
-        for _ in range(rng.randint(0, 8)):
+        pool = NanPool()
+        n = rng.randint(0, 8)
+        nan_at = sorted(rng.sample(range(n), min(n, rng.randint(0, 4)))) if has_nan else []
+        for k in range(n):
             o = rng.choice(["h", "v"])
-            pos = nan() if has_nan and rng.random() < 0.4 else rng.choice([10, 10.0, 12, 20.5, 30])
+            pos = pool.take(nan_at.index(k), len(nan_at), 0) if k in nan_at else rng.choice([10, 10.0, 12, 20.5, 30])
             a = rng.choice([0, 5, 10.5, 20])
             b = a + rng.choice([0, 3, 10, 25.5])
             if rng.random() < 0.15 and has_nan:
                 a = nan()  # NaN along the edge: join comparisons are false
             edges.append(window_edge(a, pos, b, pos, "h") if o == "h" else window_edge(pos, a, pos, b, "v"))
         tols = [0, 1, 3, 2.5, 0.0]
-        snap = (0, 0) if has_nan else (rng.choice(tols), rng.choice(tols))
-        args = [edges, *snap, rng.choice(tols), rng.choice(tols)]
-        yield ["merge_edges", *args], guarded(table.merge_edges, *args)
+        args = [edges, rng.choice(tols), rng.choice(tols), rng.choice(tols), rng.choice(tols)]
+        with SetOrderCheck() as check:
+            out = guarded(table.merge_edges, *args)
+        if check.ok:
+            kept += 1
+            yield ["merge_edges", *args], out
 
 
 def textline_cases():
@@ -1049,9 +1236,10 @@ def main() -> int:
     counts["textlines"] = write_cases(MODULE, "textlines", textline_cases())
     counts["settings"] = write_cases(MODULE, "settings", settings_cases())
     counts["dicts"] = write_cases(MODULE, "dicts", dict_cases())
-    counts["pages_fuzz"] = write_cases(MODULE, "pages_fuzz", fuzz_cases(args.fuzz))
-    write_meta(MODULE, counts=counts, fuzz=args.fuzz)
-    print(counts, flush=True)
+    nan_sets: dict = {}
+    counts["pages_fuzz"] = write_cases(MODULE, "pages_fuzz", fuzz_cases(args.fuzz, nan_sets))
+    write_meta(MODULE, counts=counts, fuzz=args.fuzz, nan_coord_ops=nan_sets)
+    print(counts, "NaN coordinate page ops:", nan_sets, flush=True)
     return 0
 
 

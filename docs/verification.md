@@ -174,6 +174,13 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   `PDFContentParser`, comparés job par job par empreinte de la sérialisation
   canonique, chaque job rejoué depuis la profondeur de récursion où pdfminer
   l'a exécuté).
+- Un résultat Python qui dépend d'adresses mémoire (l'ordre d'un `set` de
+  NaN : `hash(nan)` est l'adresse de l'objet) n'est jamais comparé tel quel.
+  Le port fixe un ordre que CPython peut donner ; le générateur fabrique des
+  objets dont le hachage donne cet ordre et vérifie, en observant chaque
+  `set` construit (rejeu de `setobject.c`, pour plusieurs valeurs des bits
+  d'adresse non choisis), que CPython l'a bien donné ; sinon le cas est
+  écarté, de façon déterministe (`oracle/unit/_nan_objects.py`).
 
 ```sh
 export PDFPLUMBER_ROOT=/chemin/du/dépôt/principal   # .venv, corpus/, .cache/

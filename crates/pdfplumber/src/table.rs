@@ -24,7 +24,7 @@ use pycompat::listsort::sort_by_key;
 use pycompat::{exc, PyErr, PyResult};
 
 use crate::obj::{bbox_value, Bbox, HashKey, Hot, Obj, PyValue};
-use crate::utils::clustering::cluster_objects;
+use crate::utils::clustering::{cluster_objects, KeyKind};
 use crate::utils::geometry::{
     bbox_to_rect, filter_edges, get_bbox_overlap, obj_to_bbox, obj_to_edges, objects_to_bbox, objects_to_rect,
     resize_object, snap_objects, SnapAttr,
@@ -173,7 +173,8 @@ fn len_ge(n: usize, threshold: &PyValue) -> PyResult<bool> {
 
 // pdfplumber/table.py:101 words_to_edges_h
 pub fn words_to_edges_h(words: &[Obj], word_threshold: &PyValue) -> PyResult<Vec<Obj>> {
-    let by_top = cluster_objects(words, |w| Ok(w.hot(Hot::Top)?.clone()), &PyValue::from(1i64), false)?;
+    let by_top =
+        cluster_objects(words, |w| Ok(w.hot(Hot::Top)?.clone()), KeyKind::Stored, &PyValue::from(1i64), false)?;
     let mut rects = Vec::new();
     for cluster in by_top {
         if len_ge(cluster.len(), word_threshold)? {
@@ -209,11 +210,11 @@ pub fn words_to_edges_h(words: &[Obj], word_threshold: &PyValue) -> PyResult<Vec
 pub fn words_to_edges_v(words: &[Obj], word_threshold: &PyValue) -> PyResult<Vec<Obj>> {
     let one = PyValue::from(1i64);
     // Find words that share the same left, right, or centerpoints
-    let by_x0 = cluster_objects(words, |w| Ok(w.hot(Hot::X0)?.clone()), &one, false)?;
-    let by_x1 = cluster_objects(words, |w| Ok(w.hot(Hot::X1)?.clone()), &one, false)?;
+    let by_x0 = cluster_objects(words, |w| Ok(w.hot(Hot::X0)?.clone()), KeyKind::Stored, &one, false)?;
+    let by_x1 = cluster_objects(words, |w| Ok(w.hot(Hot::X1)?.clone()), KeyKind::Stored, &one, false)?;
     // get_center (nested in words_to_edges_v)
     let get_center = |w: &Obj| w.hot(Hot::X0)?.add(w.hot(Hot::X1)?)?.to_float()?.truediv(&PyValue::from(2i64));
-    let by_center = cluster_objects(words, get_center, &one, false)?;
+    let by_center = cluster_objects(words, get_center, KeyKind::Computed, &one, false)?;
     let mut clusters = by_x0;
     clusters.extend(by_x1);
     clusters.extend(by_center);
@@ -393,12 +394,39 @@ fn partition_point(items: &[Obj], mut pred: impl FnMut(&Obj) -> PyResult<bool>) 
     Ok(lo)
 }
 
-// pdfplumber/table.py:234 intersections_to_cells
-pub fn intersections_to_cells(intersections: &Intersections) -> PyResult<Vec<Bbox>> {
-    // edges_to_set (nested in edge_connects): edges compared by bbox value;
-    // one id per distinct bbox.
-    let mut bbox_ids: HashMap<[HashKey; 4], u32> = HashMap::default();
-    let mut ids_of = |edges: &[Obj]| -> PyResult<Vec<u32>> {
+/// `edges_to_set(intersections[p]["v"])` and `["h"]` (nested in
+/// `intersections_to_cells`) as sorted ids of distinct bboxes, computed the
+/// first time `edge_connects` needs them, so that its `KeyError` (a missing
+/// coordinate) or `TypeError` (an unhashable one) is raised where Python
+/// raises it, or not at all. Two edges have the same id when their bboxes
+/// are equal, or when they are the same dict: CPython compares tuple items
+/// with an identity shortcut, so the bbox of one edge is equal to itself
+/// even with a NaN (two dicts sharing a NaN object are not modeled, see
+/// `obj.rs`).
+struct EdgeSets<'a> {
+    points: &'a [(Point, Vec<Obj>, Vec<Obj>)],
+    by_bbox: HashMap<[HashKey; 4], u32>,
+    by_dict: HashMap<*const (), u32>,
+    /// `[v, h]` of each point, once computed
+    sets: Vec<[Option<Vec<u32>>; 2]>,
+}
+
+impl<'a> EdgeSets<'a> {
+    fn new(points: &'a [(Point, Vec<Obj>, Vec<Obj>)]) -> Self {
+        EdgeSets {
+            points,
+            by_bbox: HashMap::default(),
+            by_dict: HashMap::default(),
+            sets: vec![[None, None]; points.len()],
+        }
+    }
+
+    // pdfplumber/table.py:245 edges_to_set
+    fn compute(&mut self, p: usize, axis: usize) -> PyResult<()> {
+        if self.sets[p][axis].is_some() {
+            return Ok(());
+        }
+        let edges = if axis == 0 { &self.points[p].1 } else { &self.points[p].2 };
         let mut ids = Vec::with_capacity(edges.len());
         for e in edges {
             let b = obj_to_bbox(e)?;
@@ -408,40 +436,53 @@ pub fn intersections_to_cells(intersections: &Intersections) -> PyResult<Vec<Bbo
                 HashKey::new(b[2].clone())?,
                 HashKey::new(b[3].clone())?,
             ];
-            let next = bbox_ids.len() as u32;
-            ids.push(*bbox_ids.entry(key).or_insert(next));
+            let next = (self.by_bbox.len() + self.by_dict.len()) as u32;
+            let id = if key.iter().all(|k| k.0.py_eq(&k.0)) {
+                *self.by_bbox.entry(key).or_insert(next)
+            } else {
+                *self.by_dict.entry(e.addr()).or_insert(next)
+            };
+            ids.push(id);
         }
         ids.sort_unstable();
         ids.dedup();
-        Ok(ids)
-    };
-    let n = intersections.points.len();
-    let mut v_ids = Vec::with_capacity(n);
-    let mut h_ids = Vec::with_capacity(n);
-    for (_, v, h) in &intersections.points {
-        v_ids.push(ids_of(v)?);
-        h_ids.push(ids_of(h)?);
+        self.sets[p][axis] = Some(ids);
+        Ok(())
     }
-    let share = |a: &[u32], b: &[u32]| {
+
+    /// `len(edges_to_set(p1 edges).intersection(edges_to_set(p2 edges)))`
+    /// along `axis` (0: "v", 1: "h")
+    fn share(&mut self, p1: usize, p2: usize, axis: usize) -> PyResult<bool> {
+        self.compute(p1, axis)?;
+        self.compute(p2, axis)?;
+        let a = self.sets[p1][axis].as_deref().expect("computed");
+        let b = self.sets[p2][axis].as_deref().expect("computed");
         let (mut i, mut j) = (0, 0);
         while i < a.len() && j < b.len() {
             match a[i].cmp(&b[j]) {
-                std::cmp::Ordering::Equal => return true,
+                std::cmp::Ordering::Equal => return Ok(true),
                 std::cmp::Ordering::Less => i += 1,
                 std::cmp::Ordering::Greater => j += 1,
             }
         }
-        false
-    };
-    let pt = |k: usize| &intersections.points[k].0;
-    // edge_connects (nested in intersections_to_cells), on positions in
-    // intersections
-    let edge_connects = |p1: usize, p2: usize| -> bool {
-        if pt(p1).0.py_eq(&pt(p2).0) && share(&v_ids[p1], &v_ids[p2]) {
-            return true;
+        Ok(false)
+    }
+
+    // pdfplumber/table.py:244 edge_connects
+    /// On positions in `intersections`.
+    fn edge_connects(&mut self, p1: usize, p2: usize) -> PyResult<bool> {
+        if self.points[p1].0 .0.py_eq(&self.points[p2].0 .0) && self.share(p1, p2, 0)? {
+            return Ok(true);
         }
-        pt(p1).1.py_eq(&pt(p2).1) && share(&h_ids[p1], &h_ids[p2])
-    };
+        Ok(self.points[p1].0 .1.py_eq(&self.points[p2].0 .1) && self.share(p1, p2, 1)?)
+    }
+}
+
+// pdfplumber/table.py:234 intersections_to_cells
+pub fn intersections_to_cells(intersections: &Intersections) -> PyResult<Vec<Bbox>> {
+    let n = intersections.points.len();
+    let mut sets = EdgeSets::new(&intersections.points);
+    let pt = |k: usize| &intersections.points[k].0;
 
     // points = list(sorted(intersections.keys()))
     let mut points: Vec<usize> = (0..n).collect();
@@ -473,17 +514,17 @@ pub fn intersections_to_cells(intersections: &Intersections) -> PyResult<Vec<Bbo
         let right = by_y.get(&HashKey(y.clone())).map_or_else(Vec::new, |l| after(l, i));
         'search: for &b in &below {
             let below_pt = points[b];
-            if !edge_connects(p, below_pt) {
+            if !sets.edge_connects(p, below_pt)? {
                 continue;
             }
             for &r in &right {
                 let right_pt = points[r];
-                if !edge_connects(p, right_pt) {
+                if !sets.edge_connects(p, right_pt)? {
                     continue;
                 }
                 let bottom_right = (pt(right_pt).0.clone(), pt(below_pt).1.clone());
                 if let Some(br) = intersections.find(&bottom_right)? {
-                    if edge_connects(br, right_pt) && edge_connects(br, below_pt) {
+                    if sets.edge_connects(br, right_pt)? && sets.edge_connects(br, below_pt)? {
                         cells.push([x.clone(), y.clone(), bottom_right.0, bottom_right.1]);
                         break 'search;
                     }

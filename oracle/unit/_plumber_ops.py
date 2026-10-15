@@ -28,6 +28,7 @@ from pdfplumber.utils import geometry
 from pdfplumber.utils import text as ptext
 
 from ..canon import ExcValue, canon, exception_name
+from ._nan_objects import SetOrderCheck
 
 FULL_CANON_LIMIT = 4096
 
@@ -153,14 +154,31 @@ def rust_op(page, op):
     return list(op)
 
 
-def page_case(page, record, ops):
+def page_case(page, record, ops, nan_sets=None):
     """(args, out) of one page: the record, the ops as Rust replays them,
-    and the canon of each result."""
+    and the canon of each result.
+
+    ``nan_sets`` (a dict of counts) is for pages whose NaN coordinates come
+    from ``NanPool``: each op runs under ``SetOrderCheck``, with an empty
+    textmap cache, and is left out when a set it builds does not list its
+    NaNs as the port does (``_nan_objects.py``)."""
     outs = []
     rops = []
     for op in ops:
-        rops.append(rust_op(page, op))
-        outs.append(canon_out(guarded(run_op, page, op)))
+        if nan_sets is None:
+            rops.append(rust_op(page, op))
+            outs.append(canon_out(guarded(run_op, page, op)))
+            continue
+        page.get_textmap.cache_clear()
+        with SetOrderCheck() as check:
+            rop = rust_op(page, op)
+            out = canon_out(guarded(run_op, page, op))
+        key = "kept" if check.ok else "left out"
+        nan_sets[key] = nan_sets.get(key, 0) + 1
+        nan_sets["sets with NaNs"] = nan_sets.get("sets with NaNs", 0) + check.nan_sets
+        if check.ok:
+            rops.append(rop)
+            outs.append(out)
     return [record, rops], outs
 
 
