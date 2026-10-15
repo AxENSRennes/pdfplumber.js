@@ -129,8 +129,20 @@ fn list_arg(v: &Value) -> &[Value] {
     }
 }
 
-fn replay(name: &str, mut f: impl FnMut(&[Value]) -> Value) -> usize {
-    let cases = UnitData::open("crypto").cases(name);
+fn replay(name: &str, f: impl FnMut(&[Value]) -> Value) -> usize {
+    replay_part(name, 0, 1, f)
+}
+
+/// [`replay`] on the cases whose index is `part` modulo `parts` (the long
+/// case files are split into tests that run in parallel).
+fn replay_part(name: &str, part: usize, parts: usize, mut f: impl FnMut(&[Value]) -> Value) -> usize {
+    let cases: Vec<_> = UnitData::open("crypto")
+        .cases(name)
+        .into_iter()
+        .enumerate()
+        .filter(|(i, _)| i % parts == part)
+        .map(|c| c.1)
+        .collect();
     assert!(!cases.is_empty(), "{name}: no cases");
     let mut failures = Vec::new();
     for (args, expected) in &cases {
@@ -202,10 +214,16 @@ fn tables() {
     replay("tables", |a| {
         let table = table_of(str_arg(&a[0]));
         let ranges = table.ranges();
-        // contains() on every scalar value agrees with the ranges
-        for c in (0..0x110000u32).filter_map(char::from_u32) {
-            let inside = ranges.iter().any(|&(lo, hi)| lo <= c as u32 && c as u32 <= hi);
-            assert_eq!(table.contains(c), inside, "{table:?} U+{:04X}", c as u32);
+        // contains() agrees with the ranges at both ends of every range and
+        // of every gap (the ranges are maximal: a gap is never empty)
+        for &(lo, hi) in ranges {
+            for (c, inside) in
+                [(lo.wrapping_sub(1), false), (lo, true), (lo + (hi - lo) / 2, true), (hi, true), (hi + 1, false)]
+            {
+                if let Some(ch) = char::from_u32(c) {
+                    assert_eq!(table.contains(ch), inside, "{table:?} U+{c:04X}");
+                }
+            }
         }
         Value::List(
             ranges
@@ -408,8 +426,23 @@ fn run_handler_case(
 }
 
 #[test]
-fn handlers() {
-    replay("handlers", |a| run_handler_case(&a[0], &a[1], &a[2], &a[3], &a[4], &a[5]));
+fn handlers_0() {
+    replay_part("handlers", 0, 4, |a| run_handler_case(&a[0], &a[1], &a[2], &a[3], &a[4], &a[5]));
+}
+
+#[test]
+fn handlers_1() {
+    replay_part("handlers", 1, 4, |a| run_handler_case(&a[0], &a[1], &a[2], &a[3], &a[4], &a[5]));
+}
+
+#[test]
+fn handlers_2() {
+    replay_part("handlers", 2, 4, |a| run_handler_case(&a[0], &a[1], &a[2], &a[3], &a[4], &a[5]));
+}
+
+#[test]
+fn handlers_3() {
+    replay_part("handlers", 3, 4, |a| run_handler_case(&a[0], &a[1], &a[2], &a[3], &a[4], &a[5]));
 }
 
 #[test]

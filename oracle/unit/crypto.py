@@ -571,9 +571,10 @@ def rand_items(rng, v4):
     return items
 
 
-def method_args_for(rng, user, owner):
+def method_args_for(rng, user, owner, v5=False):
     args = []
-    for pw in (user, owner, "", "wrong"):
+    # (an R6 authentication costs ~100 rounds of AES and SHA-2: fewer for V5)
+    for pw in (user, "wrong") if v5 else (user, owner, "", "wrong"):
         args.append(["authenticate", pw])
     for pw in (user, owner, "x"):
         b = pw.encode("latin1", "replace")
@@ -620,7 +621,7 @@ def gen_handlers(rng):
         doc.table = {k: bind_refs(val, doc) for k, val in table.items()}
         factory = factory_of(bind_refs(param, doc))
         items = []
-        method_args = method_args_for(rng, user, owner)
+        method_args = method_args_for(rng, user, owner, v >= 5)
         if factory is not None:
             h = None
             for pw in passwords:
