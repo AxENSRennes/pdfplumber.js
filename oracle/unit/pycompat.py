@@ -81,20 +81,65 @@ def rand_num(rng):
 # -- case generators ------------------------------------------------------------
 
 
+#: Upstream modules outside the port (docs/architecture.md, "Règles de port", 5).
+OUT_OF_SCOPE = {
+    "pdfminer/high_level.py",
+    "pdfminer/image.py",
+    "pdfminer/jbig2.py",
+    "pdfplumber/cli.py",
+    "pdfplumber/display.py",
+    "pdfplumber/repair.py",
+}
+
+
+def upstream_stdlib_modules():
+    """The standard library modules imported by the ported upstream modules
+    (``import m`` / ``from m import ...`` anywhere in their source)."""
+    import ast
+    import sys
+
+    from ..corpus import corpus_root
+
+    found = set()
+    for package, directory in (("pdfminer", "upstream/pdfminer-six/pdfminer"), ("pdfplumber", "upstream/pdfplumber-python/pdfplumber")):
+        root = corpus_root() / directory
+        for path in sorted(root.rglob("*.py")):
+            if f"{package}/{path.relative_to(root).as_posix()}" in OUT_OF_SCOPE:
+                continue
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                names = [a.name for a in node.names] if isinstance(node, ast.Import) else []
+                if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                    names = [node.module]
+                found.update(n for n in names if n.split(".")[0] in sys.stdlib_module_names)
+    return sorted(found)
+
+
 def exc_classes():
-    """Every exception class of the ported modules, with its bases."""
+    """Every builtin exception class, and every exception class defined by a
+    standard library module the ported upstream code imports (``struct.error``,
+    ``zlib.error``, ``binascii.Error``...): the classes the port may raise or
+    catch. The Rust test checks the ``ExcKind`` of each, or its written reason
+    for having none."""
     import builtins
-    import struct as struct_mod
-    import zlib
+    import importlib
 
     classes = [c for c in vars(builtins).values() if isinstance(c, type) and issubclass(c, BaseException)]
-    classes += [struct_mod.error, zlib.error]
+    for name in upstream_stdlib_modules():
+        module = importlib.import_module(name)
+        for value in vars(module).values():
+            if isinstance(value, type) and issubclass(value, BaseException) and value.__module__ != "builtins" and value not in classes:
+                classes.append(value)
     return classes
 
 
 def gen_exc_hierarchy(rng):
     for cls in exc_classes():
         yield [cls.__module__, cls.__qualname__], [cls.__name__, [[b.__module__, b.__qualname__] for b in cls.__bases__]]
+    # binascii.Error as pdfminer raises it (ascii85.asciihexdecode on non-hex data)
+    from binascii import unhexlify
+
+    for data in [b"4g", b"414", b"41"]:
+        yield ["raise", "binascii.unhexlify", data], call(unhexlify, data)
 
 
 def gen_int_parse(rng):
@@ -188,6 +233,55 @@ def gen_binop(rng):
         yield ["/", 2**k + 1, 2], call(BINOPS["/"], 2**k + 1, 2)
     for a, b in [(0, -5), (-0, 5), (2**2000, 2**2000 + 1), (1, 2**1074), (1, 2**1075), (3, 2**1076), (2**1100, 2**76)]:
         yield ["/", a, b], call(BINOPS["/"], a, b)
+    # every operator on every pair of special values (a negative number to a
+    # fractional power, a complex in Python, is not ported)
+    specials = [0.0, -0.0, 1.0, -1.0, 0.5, -0.5, 2.0, -2.0, 3.0, -3.0, math.inf, -math.inf, math.nan, 5e-324, -5e-324,
+                1e308, -1e308, 0, 1, -1, 2, -2, 3, -3, 2**53 + 1, 2**63, -(2**63), 2**1024, -(2**1024)]
+    for op in BINOPS:
+        for a in specials:
+            for b in specials:
+                if op == "**" and isinstance(a, int) and isinstance(b, int) and b > 64:
+                    continue  # an int of more than 2**64 digits
+                r = call(BINOPS[op], a, b)
+                if isinstance(r, complex):
+                    continue
+                yield [op, a, b], r
+
+
+def pow_operands(rng):
+    """Operands of ``**`` that reach the C library's pow (crates/pycompat/src/libm.rs)."""
+    r = rng.random()
+    if r < 0.2:  # int ** negative int: float_pow(float(a), float(b))
+        return rng.randint(2, 100000), -rng.randint(1, 20)
+    if r < 0.35:
+        return rng.uniform(0, 1e4), rng.uniform(-10, 10)
+    if r < 0.45:
+        return rng.uniform(0, 2), rng.uniform(-1000, 1000)
+    if r < 0.55:  # close to 1, to a large power
+        return 1 + rng.uniform(-1e-6, 1e-6), rng.uniform(-1e9, 1e9)
+    if r < 0.65:  # results near overflow
+        x = rng.uniform(1.5, 1e3)
+        return x, 709.78 / math.log(x) * rng.uniform(0.999, 1.001)
+    if r < 0.75:  # results in the subnormal range and near underflow
+        x = rng.uniform(1e-3, 0.9)
+        return x, 744.4 / -math.log(x) * rng.uniform(0.95, 1.01)
+    if r < 0.85:  # subnormal bases
+        return rng.random() * 2.0**-1022, rng.uniform(-0.5, 1.5)
+    if r < 0.95:  # integral exponents of negative bases
+        return -rng.uniform(0, 100), float(rng.randint(-40, 40))
+    return abs(rand_float(rng)), rand_float(rng)
+
+
+def gen_pow(rng):
+    for a, b in [(10, -5), (7, -2), (5, -5), (267, -5), (172, -13), (4330, -10), (26552, -2.0),
+                 (7195.88241561633, -2.0), (1.6057360683282984, 4.916811935195643)]:
+        yield ["**", a, b], call(BINOPS["**"], a, b)
+    for a in range(2, 401):
+        for k in (-1, -2, -3, -5, -7):
+            yield ["**", a, k], call(BINOPS["**"], a, k)
+    for _ in range(40000):
+        a, b = pow_operands(rng)
+        yield ["**", a, b], call(BINOPS["**"], a, b)
 
 
 def gen_compare(rng):
@@ -228,6 +322,19 @@ def gen_sum(rng):
             yield [items, start], call(sum, items, start)
         else:
             yield [items], call(sum, items)
+    # A float run whose compensation is not zero, then an int outside the C
+    # long range (the float path stops: the compensation is added before the
+    # generic `+`), then terms that cancel the big parts.
+    big_ints = [2**63, -(2**63) - 1, 2**70, -(2**70), 2**64 + 1, 10**20]
+    yield [[1e30, 7e13, 3e13, -(2**70), -1e30]], call(sum, [1e30, 7e13, 3e13, -(2**70), -1e30])
+    for _ in range(3000):
+        run = [rng.choice([1e30, 1e20, 1e16, -1e30, 2.0**60]) for _ in range(rng.randint(1, 3))]
+        run += [rng.uniform(-1, 1) * 10.0 ** rng.randint(-3, 15) for _ in range(rng.randint(1, 4))]
+        big = rng.choice(big_ints)
+        tail = [-x for x in run[: rng.randint(0, len(run))]] + [rng.choice([-big, 0.5, 1, -1e16])]
+        rng.shuffle(tail)
+        items = run + [big] + tail
+        yield [items], call(sum, items)
 
 
 def gen_minmax(rng):
@@ -398,6 +505,51 @@ def gen_bytesio(rng):
             ops.append(op)
             results.append(res)
         yield [data, ops], results
+    # positions beyond 32 bits (Py_ssize_t), kept by seek() and tell()
+    for pos in [2**31 - 1, 2**31, 2**32 - 1, 2**32, 2**32 + 5, 2**53 + 1, 2**63 - 1]:
+        f = io.BytesIO(b"abc")
+        ops = [["seek", pos, 0], ["tell"], ["read", 1], ["tell"], ["seek", 0, 1], ["seek", -pos, 1], ["seek", 0, 2]]
+        results = [call(f.seek, pos, 0), f.tell(), f.read(1), f.tell(), f.seek(0, 1), f.seek(-pos, 1), f.seek(0, 2)]
+        yield [b"abc", ops], results
+
+
+def gen_num_hash(rng):
+    """``hash()`` of numbers (CPython's numeric hash: equal numbers, equal hashes)."""
+    for x in [0, -1, -2, 1, 2**61 - 1, 2**61, 2**61 - 2, -(2**61), 2**64, -(2**63), 0.0, -0.0, 1.0, -1.0, 0.5, 1.5,
+              math.inf, -math.inf, 5e-324, 1e308, 2.0**61, 2.0**-1074, 2.0**1023, 1e-300]:
+        yield [x], hash(x)
+    for _ in range(3000):
+        x = rand_num(rng)
+        if isinstance(x, float) and math.isnan(x):
+            continue
+        yield [x], hash(x)
+
+
+def gen_num_dict(rng):
+    """A dict with number keys: assignments, lookups, deletions; the items
+    and the ``repr`` at the end (an existing key keeps its first form)."""
+    pool = [0, 0.0, -0.0, 1, 1.0, 3, 3.0, 2.5, -1, -1.0, 2**53, float(2**53), 2**53 + 1, 2**63, float(2**63), 2**70,
+            float(2**70), 1e16, 10**16, 0.1, math.inf]
+    for _ in range(1000):
+        d = {}
+        ops, results = [], []
+        for _ in range(rng.randint(1, 12)):
+            r = rng.random()
+            k = rng.choice(pool) if rng.random() < 0.85 else rand_num(rng)
+            if isinstance(k, float) and math.isnan(k):
+                k = 0.5
+            if r < 0.5:
+                v = rng.randint(0, 99)
+                d[k] = v
+                ops.append(["set", k, v])
+                results.append(None)
+            elif r < 0.8:
+                ops.append(["get", k])
+                results.append(d.get(k))
+            else:
+                ops.append(["del", k])
+                results.append(d.pop(k, None))
+        yield [ops], [results, list(d.items()), repr(d)]
 
 
 GENERATORS = {
@@ -406,6 +558,7 @@ GENERATORS = {
     "int_str": gen_int_str,
     "int_to_float": gen_int_to_float,
     "binop": gen_binop,
+    "pow": gen_pow,
     "compare": gen_compare,
     "sum": gen_sum,
     "minmax": gen_minmax,
@@ -418,6 +571,8 @@ GENERATORS = {
     "utf8_ignore": gen_utf8_ignore,
     "unicode": gen_unicode,
     "bytesio": gen_bytesio,
+    "num_hash": gen_num_hash,
+    "num_dict": gen_num_dict,
 }
 
 

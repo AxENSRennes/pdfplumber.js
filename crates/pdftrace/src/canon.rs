@@ -53,7 +53,7 @@ pub fn canon_obj(obj: &PDFObject) -> String {
 /// The line of a raised exception: `!Class("message")`.
 pub fn canon_exc(e: &PyErr) -> String {
     let mut out = String::new();
-    write_exc(&mut out, e.kind.name(), ExcMessage::Text(&e.message));
+    write_exc(&mut out, &e.kind.trace_name(), ExcMessage::Text(&e.message));
     out
 }
 
@@ -324,6 +324,10 @@ mod tests {
         let e = PyErr::new(ExcKind::PSEOF, "Unexpected EOF");
         assert_eq!(canon_exc(&e), "!PSEOF(\"Unexpected EOF\")");
         assert_eq!(canon(&Value::from(&e)), "!PSEOF(\"Unexpected EOF\")");
+        // classes outside builtins, pdfminer and pdfplumber carry their module
+        assert_eq!(canon_exc(&PyErr::new(ExcKind::ZlibError, "x")), "!zlib.error(\"x\")");
+        let hex = PyErr::new(ExcKind::BinasciiError, "Non-hexadecimal digit found");
+        assert_eq!(canon(&Value::from(&hex)), "!binascii.Error(\"Non-hexadecimal digit found\")");
         let addr = PyErr::new(ExcKind::ValueError, "<a.B object at 0x7f3aDEAD> at 0x>, at 0xg>");
         assert_eq!(canon_exc(&addr), "!ValueError(\"<a.B object at 0x?> at 0x>, at 0xg>\")");
         let lone = Value::Exception {

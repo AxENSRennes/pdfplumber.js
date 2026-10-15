@@ -9,7 +9,7 @@
 use std::rc::Rc;
 use std::sync::LazyLock;
 
-use pycompat::io::BytesIO;
+use pycompat::io::{BytesIO, Pos};
 use pycompat::{exc, ExcKind, PyResult};
 
 use crate::pdftypes::{
@@ -71,8 +71,8 @@ impl PSStackParser<ContentStreams> {
     // pdfminer/pdfinterp.py:294 PDFContentParser.get_inline_data
     /// Reads the data of an inline image up to `target` followed by a
     /// whitespace (`EI`), or up to `target` (`~>`, for ASCII85 data).
-    pub fn get_inline_data(&mut self, pos: usize, target: &[u8]) -> PyResult<(usize, Vec<u8>)> {
-        self.seek(pos as i64)?;
+    pub fn get_inline_data(&mut self, pos: Pos, target: &[u8]) -> PyResult<(Pos, Vec<u8>)> {
+        self.seek(pos)?;
         let mut i = 0;
         let mut data: Vec<u8> = Vec::new();
         while i <= target.len() {
@@ -132,7 +132,7 @@ fn strip_trailing_eol(data: &[u8]) -> usize {
 
 impl PSStackParserExt for ContentStreams {
     // pdfminer/pdfinterp.py:276 PDFContentParser.seek
-    fn seek(p: &mut PSStackParser<Self>, pos: i64) -> PyResult<()> {
+    fn seek(p: &mut PSStackParser<Self>, pos: Pos) -> PyResult<()> {
         p.fillfp()?;
         p.psstackparser_seek(pos)
     }
@@ -161,8 +161,8 @@ impl PSStackParserExt for ContentStreams {
     }
 
     /// The ordinal of the current stream, then the offset in it.
-    fn read_position(p: &PSStackParser<Self>) -> (usize, usize) {
-        (p.ext.istream, p.bufpos + p.charpos)
+    fn read_position(p: &PSStackParser<Self>) -> (usize, Pos) {
+        (p.ext.istream, p.position())
     }
 
     // pdfminer/pdfinterp.py:324 PDFContentParser.flush
@@ -182,7 +182,7 @@ impl PSStackParserExt for ContentStreams {
     }
 
     // pdfminer/pdfinterp.py:331 PDFContentParser.do_keyword
-    fn do_keyword(p: &mut PSStackParser<Self>, pos: usize, token: PSKeyword) -> PyResult<()> {
+    fn do_keyword(p: &mut PSStackParser<Self>, pos: Pos, token: PSKeyword) -> PyResult<()> {
         let [keyword_bi, keyword_id, _] = p.ext.keywords;
         if token == keyword_bi {
             // inline image within a content stream
@@ -200,7 +200,7 @@ impl PSStackParserExt for ContentStreams {
 }
 
 /// The `try:` block of `do_keyword` for `ID`.
-fn inline_image(p: &mut PDFContentParser, pos: usize) -> PyResult<()> {
+fn inline_image(p: &mut PDFContentParser, pos: Pos) -> PyResult<()> {
     let (_, objs) = p.end_type("inline")?;
     if !objs.len().is_multiple_of(2) {
         let error_msg = format!("Invalid dictionary construct: {}", PDFObject::list_repr(&objs));
@@ -222,7 +222,7 @@ fn inline_image(p: &mut PDFContentParser, pos: usize) -> PyResult<()> {
             }
         }
     }
-    let (pos, mut data) = p.get_inline_data(pos + b"ID ".len(), eos)?;
+    let (pos, mut data) = p.get_inline_data(pos + b"ID ".len() as Pos, eos)?;
     if eos != b"EI" {
         // it may be necessary for decoding
         data.extend_from_slice(eos);

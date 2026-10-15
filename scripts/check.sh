@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Local CI: formatting, lints, upstream references, Rust tests on the unit
-# oracle data, Wasm build and the oracle self-tests. Regenerates the unit oracle data first when it is
+# Local CI: formatting, lints, upstream references, generated tables, Rust
+# tests on the unit oracle data (natively and compiled to WebAssembly, run by
+# Node's WASI), Wasm build and the oracle self-tests. Regenerates the unit oracle data first when it is
 # missing or stale (`python -m oracle.unit`).
 #
 #   scripts/check.sh            # from any directory
@@ -42,11 +43,18 @@ cargo clippy --workspace --all-targets -- -D warnings
 step "upstream file:line references (python -m oracle.upstream_refs)"
 "$PY" -m oracle.upstream_refs
 
+step "generated tables are up to date"
+"$PY" oracle/codegen/libm_tables.py --check
+
 step "unit oracle data (python -m oracle.unit)"
 capped "$PY" -m oracle.unit
 
 step "cargo test --release"
 capped cargo test --release --workspace
+
+step "cargo test on wasm32-wasip1 (Node WASI): the same unit replays compiled to WebAssembly"
+CARGO_TARGET_WASM32_WASIP1_RUNNER="node --no-warnings $ROOT/scripts/wasi-runner.mjs" \
+  capped cargo test --release --target wasm32-wasip1 -p pycompat -p pdfminer -p pdftrace
 
 step "wasm32 build (dist profile)"
 cargo build --target wasm32-unknown-unknown --profile dist -p pdfplumber-wasm

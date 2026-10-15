@@ -296,9 +296,9 @@ pub fn float_pow(iv: f64, iw: f64) -> PyResult<f64> {
     if base == 1.0 {
         return Ok(if negate { -1.0 } else { 1.0 });
     }
-    // The platform pow(): glibc natively, the same correctly-rounded-in-
-    // practice algorithm (ARM optimized-routines) in Rust's wasm libm.
-    let ix = base.powf(iw);
+    // The C library's pow(): the oracle's, ported (`libm::pow`), not the
+    // platform's (`f64::powf` is FreeBSD's e_pow.c on wasm32).
+    let ix = crate::libm::pow(base, iw);
     if ix.is_infinite() {
         return Err(exc::OverflowError("(34, 'Numerical result out of range')"));
     }

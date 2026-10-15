@@ -143,6 +143,7 @@ version = "0.0.0"
 name = "pdftrace"
 version = "0.0.0"
 dependencies = [
+ "indexmap",
  "pdfminer",
  "pycompat",
  "sha2",

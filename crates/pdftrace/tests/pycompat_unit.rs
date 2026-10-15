@@ -11,7 +11,7 @@ use pycompat::float::{float_from_bytes, float_from_str};
 use pycompat::io::BytesIO;
 use pycompat::repr::{bytes_repr, float_repr, json_dumps_str, str_repr};
 use pycompat::text::{self, tables};
-use pycompat::{ExcKind, Num, PyInt, PyResult};
+use pycompat::{ExcKind, Num, NumKey, PyInt, PyResult};
 
 fn data() -> UnitData {
     UnitData::open("pycompat")
@@ -89,25 +89,49 @@ fn bytes_arg(v: &Value) -> &[u8] {
     }
 }
 
+/// Exception classes of the standard library modules the ported upstream
+/// code imports that have no [`ExcKind`], each with why the port can never
+/// raise or catch it. `exc_hierarchy` fails on any other class without a
+/// kind: a new stdlib exception reaching the port must get one.
+const NEVER_RAISED: &[(&str, &str)] = &[
+    ("binascii.Incomplete", "raised only by incremental a2b_* decoding; upstream calls binascii.unhexlify"),
+    ("_csv.Error", "only Container.to_csv writes CSV, through a default csv.DictWriter, which quotes any field"),
+    ("dataclasses.FrozenInstanceError", "raised by assigning a field of a frozen dataclass, which upstream never does"),
+    ("gzip.BadGzipFile", "only for a corrupt pdfminer/cmap/*.json.gz, the package's own data"),
+    ("importlib.metadata.PackageNotFoundError", "pdfminer/__init__.py reads its own version at import"),
+    ("inspect.ClassFoundException", "internal to inspect.getsource; upstream only calls inspect.signature"),
+    ("inspect.EndOfBlock", "internal to inspect.getsource; upstream only calls inspect.signature"),
+    ("io.UnsupportedOperation", "raised by a file object missing an operation; the port reads through io::BytesIO"),
+    ("json.decoder.JSONDecodeError", "only for a corrupt pdfminer/cmap/*.json.gz, the package's own data"),
+    ("unittest.case.SkipTest", "only in the test class of pdfminer/ccitt.py"),
+    ("warnings._OptionError", "raised while parsing -W command line options"),
+];
+
 #[test]
 fn exc_hierarchy() {
     // Every builtin/stdlib kind of ExcKind must exist in CPython with the
-    // same name and bases.
+    // same name and bases, and every stdlib class the upstream modules can
+    // meet must have a kind or a reason in NEVER_RAISED.
     let cases = data().cases("exc_hierarchy");
     let qualified = |v: &Value| match v {
         Value::List(p) => format!("{}.{}", str_arg(&p[0]), str_arg(&p[1])),
         other => panic!("{other:?}"),
     };
+    let classes: Vec<(String, &Value)> = cases
+        .iter()
+        .filter(|(args, _)| args.len() == 2)
+        .map(|(args, out)| (format!("{}.{}", str_arg(&args[0]), str_arg(&args[1])), out))
+        .collect();
     let mut checked = 0;
     for kind in ExcKind::ALL {
-        if !matches!(kind.module(), "builtins" | "struct" | "zlib") {
+        if matches!(kind.module().split('.').next(), Some("pdfminer" | "pdfplumber" | "pycompat")) {
             continue;
         }
         let key = format!("{}.{}", kind.module(), kind.qualname());
-        let (_, out) = cases
+        let (_, out) = classes
             .iter()
-            .find(|(args, _)| format!("{}.{}", str_arg(&args[0]), str_arg(&args[1])) == key)
-            .unwrap_or_else(|| panic!("{key} is not a CPython exception class"));
+            .find(|(k, _)| *k == key)
+            .unwrap_or_else(|| panic!("{key} is not a CPython exception class of the modules upstream imports"));
         let Value::List(out) = out else { panic!() };
         assert_eq!(str_arg(&out[0]), kind.name(), "{key}: __name__");
         let Value::List(bases) = &out[1] else { panic!() };
@@ -117,6 +141,22 @@ fn exc_hierarchy() {
         checked += 1;
     }
     assert!(checked > 20);
+    let missing: Vec<&String> = classes
+        .iter()
+        .map(|(k, _)| k)
+        .filter(|k| !k.starts_with("builtins."))
+        .filter(|k| !ExcKind::ALL.iter().any(|kind| format!("{}.{}", kind.module(), kind.qualname()) == **k))
+        .filter(|k| !NEVER_RAISED.iter().any(|(name, _)| name == k))
+        .collect();
+    assert!(missing.is_empty(), "stdlib exception classes without an ExcKind or a reason: {missing:?}");
+    for (name, _) in NEVER_RAISED {
+        assert!(classes.iter().any(|(k, _)| k == name), "{name} is no longer imported by upstream: drop it");
+    }
+    // The class name traces give binascii.Error (`exception_name`).
+    let raised: Vec<&Value> = cases.iter().filter(|(args, _)| args.len() == 3).map(|(_, out)| out).collect();
+    assert!(raised
+        .iter()
+        .any(|v| matches!(v, Value::Exception { class, .. } if *class == ExcKind::BinasciiError.trace_name())));
 }
 
 #[test]
@@ -164,6 +204,16 @@ fn binop() {
             op => panic!("{op}"),
         };
         result(r, num_value)
+    });
+}
+
+/// `a ** b` on the operands that reach the C library's `pow` (the port of
+/// glibc's, `pycompat::libm`).
+#[test]
+fn pow() {
+    replay("pow", |a| {
+        assert_eq!(str_arg(&a[0]), "**");
+        result(num(&a[1]).pow(&num(&a[2])), num_value)
     });
 }
 
@@ -309,5 +359,37 @@ fn bytesio() {
             })
             .collect();
         Value::List(results)
+    });
+}
+
+#[test]
+fn num_hash() {
+    replay("num_hash", |a| Value::Int(num(&a[0]).py_hash().expect("not a NaN").into()));
+}
+
+/// A Python dict with number keys: an `IndexMap` of [`NumKey`].
+#[test]
+fn num_dict() {
+    replay("num_dict", |a| {
+        let Value::List(ops) = &a[0] else { panic!() };
+        let mut d: indexmap::IndexMap<NumKey, i64> = indexmap::IndexMap::new();
+        let mut results = Vec::new();
+        for op in ops {
+            let Value::List(op) = op else { panic!() };
+            let key = NumKey::new(num(&op[1]));
+            let found = |v: Option<i64>| v.map_or(Value::None, |v| Value::Int(v.into()));
+            results.push(match str_arg(&op[0]) {
+                "set" => {
+                    d.insert(key, int(&op[2]));
+                    Value::None
+                }
+                "get" => found(d.get(&key).copied()),
+                "del" => found(d.shift_remove(&key)),
+                other => panic!("{other}"),
+            });
+        }
+        let items = d.iter().map(|(k, v)| Value::Tuple(vec![num_value(k.num().clone()), Value::Int((*v).into())]));
+        let repr = d.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join(", ");
+        Value::List(vec![Value::List(results), Value::List(items.collect()), Value::str(format!("{{{repr}}}"))])
     });
 }

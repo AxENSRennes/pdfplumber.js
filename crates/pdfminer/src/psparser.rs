@@ -54,11 +54,11 @@
 //! ```ignore
 //! pub struct ContentStreams { pub streams: Vec<PDFObject>, pub istream: usize }
 //! impl PSStackParserExt for ContentStreams {
-//!     fn seek(p: &mut PSStackParser<Self>, pos: i64) -> PyResult<()> {
+//!     fn seek(p: &mut PSStackParser<Self>, pos: Pos) -> PyResult<()> {
 //!         p.fillfp()?;                     // PDFContentParser.seek
 //!         p.psstackparser_seek(pos)        // PSStackParser.seek(self, pos)
 //!     }
-//!     fn do_keyword(p: &mut PSStackParser<Self>, pos: usize, token: PSKeyword) -> PyResult<()> { ... }
+//!     fn do_keyword(p: &mut PSStackParser<Self>, pos: Pos, token: PSKeyword) -> PyResult<()> { ... }
 //! }
 //! impl PSStackParser<ContentStreams> { pub fn fillfp(&mut self) -> PyResult<bool> { ... } }
 //! pub type PDFContentParser = PSStackParser<ContentStreams>;
@@ -89,7 +89,7 @@ use std::rc::Rc;
 use std::sync::{LazyLock, Mutex, OnceLock};
 
 use pycompat::float::float_from_bytes;
-use pycompat::io::BytesIO;
+use pycompat::io::{BytesIO, Pos};
 use pycompat::repr::{bytes_repr, str_repr};
 use pycompat::{exc, ExcKind, PyInt, PyResult};
 use rustc_hash::FxHashMap;
@@ -472,11 +472,12 @@ fn hex_digit(c: u8) -> u8 {
 pub const BUFSIZ: usize = 4096;
 
 /// A `(pos, token)` pair from `nexttoken()`; the token is an int, float,
-/// bool, bytes, literal or keyword.
-pub type PSToken = (usize, PDFObject);
+/// bool, bytes, literal or keyword. Positions are file offsets
+/// ([`Pos`], Python's `Py_ssize_t`).
+pub type PSToken = (Pos, PDFObject);
 
 /// A `(pos, obj)` stack entry (`PSStackEntry`).
-pub type PSStackEntry = (usize, PDFObject);
+pub type PSStackEntry = (Pos, PDFObject);
 
 /// `self._parse1`: the bound method that consumes the next bytes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -538,7 +539,7 @@ impl fmt::Debug for KeywordCache {
 pub struct Lexer {
     pub parse1: Parse1,
     pub curtoken: Vec<u8>,
-    pub curtokenpos: usize,
+    pub curtokenpos: Pos,
     pub tokens: VecDeque<PSToken>,
     pub paren: i64,
     pub hex: Vec<u8>,
@@ -569,7 +570,7 @@ impl Lexer {
     }
 
     /// `self._parse1(s, i)`; `bufpos` is `self.bufpos`.
-    pub fn parse1(&mut self, s: &[u8], i: usize, bufpos: usize) -> PyResult<usize> {
+    pub fn parse1(&mut self, s: &[u8], i: usize, bufpos: Pos) -> PyResult<usize> {
         Ok(match self.parse1 {
             Parse1::Main => self.parse_main(s, i, bufpos),
             Parse1::Comment => self.parse_comment(s, i),
@@ -587,12 +588,12 @@ impl Lexer {
     }
 
     // pdfminer/psparser.py:256 PSBaseParser._parse_main
-    fn parse_main(&mut self, s: &[u8], i: usize, bufpos: usize) -> usize {
+    fn parse_main(&mut self, s: &[u8], i: usize, bufpos: Pos) -> usize {
         let Some(j) = search(s, i, C_SPACE, false) else {
             return s.len();
         };
         let c = s[j];
-        self.curtokenpos = bufpos + j;
+        self.curtokenpos = bufpos + j as Pos;
         match c {
             b'%' => {
                 self.curtoken.clear();
@@ -894,7 +895,7 @@ impl Deref for Buf {
 pub struct ProgressGuard {
     /// The furthest position reached since the last seek.
     #[cfg(debug_assertions)]
-    high: Option<(usize, usize)>,
+    high: Option<(usize, Pos)>,
     #[cfg(debug_assertions)]
     stalls: u32,
 }
@@ -907,7 +908,7 @@ impl ProgressGuard {
     /// Records a step that ended at `position`; panics after too many steps
     /// in a row that did not go beyond the furthest position.
     #[inline]
-    pub fn check(&mut self, position: (usize, usize), what: &str) {
+    pub fn check(&mut self, position: (usize, Pos), what: &str) {
         #[cfg(debug_assertions)]
         {
             if self.high.is_some_and(|high| position <= high) {
@@ -926,9 +927,9 @@ impl ProgressGuard {
     /// left it, right after the chunk `buf` read at `bufpos`: something
     /// else moved it. The chunk's raw range is used, not its contents.
     #[inline]
-    pub fn restart_if_moved(&mut self, bufpos: usize, buf: &Buf, tell: usize) {
+    pub fn restart_if_moved(&mut self, bufpos: Pos, buf: &Buf, tell: Pos) {
         #[cfg(debug_assertions)]
-        if bufpos + (buf.end - buf.start) != tell {
+        if bufpos + (buf.end - buf.start) as Pos != tell {
             *self = ProgressGuard::default();
         }
         #[cfg(not(debug_assertions))]
@@ -940,7 +941,7 @@ impl ProgressGuard {
 /// documentation). Every default is the base-class behavior.
 pub trait PSStackParserExt: Sized {
     /// `seek(pos)`
-    fn seek(p: &mut PSStackParser<Self>, pos: i64) -> PyResult<()> {
+    fn seek(p: &mut PSStackParser<Self>, pos: Pos) -> PyResult<()> {
         p.psstackparser_seek(pos)
     }
 
@@ -950,7 +951,7 @@ pub trait PSStackParserExt: Sized {
     }
 
     /// `do_keyword(pos, token)`
-    fn do_keyword(_p: &mut PSStackParser<Self>, _pos: usize, _token: PSKeyword) -> PyResult<()> {
+    fn do_keyword(_p: &mut PSStackParser<Self>, _pos: Pos, _token: PSKeyword) -> PyResult<()> {
         Ok(())
     }
 
@@ -963,8 +964,8 @@ pub trait PSStackParserExt: Sized {
     /// Python method): it only grows between two seeks. The default is the
     /// offset in `fp`; a parser that reads several files one after the
     /// other puts the file's ordinal first.
-    fn read_position(p: &PSStackParser<Self>) -> (usize, usize) {
-        (0, p.bufpos + p.charpos)
+    fn read_position(p: &PSStackParser<Self>) -> (usize, Pos) {
+        (0, p.position())
     }
 }
 
@@ -978,12 +979,12 @@ pub struct PSStackParser<X: PSStackParserExt = ()> {
     /// `self.fp`; `None` only for `PDFContentParser` between streams.
     pub fp: Option<BytesIO>,
     pub eof: bool,
-    pub bufpos: usize,
+    pub bufpos: Pos,
     pub buf: Buf,
     pub charpos: usize,
     pub lexer: Lexer,
     // PSStackParser
-    pub context: Vec<(usize, Option<&'static str>, Vec<PSStackEntry>)>,
+    pub context: Vec<(Pos, Option<&'static str>, Vec<PSStackEntry>)>,
     pub curtype: Option<&'static str>,
     pub curstack: Vec<PSStackEntry>,
     pub results: VecDeque<PSStackEntry>,
@@ -1039,7 +1040,7 @@ impl<X: PSStackParserExt> PSStackParser<X> {
     }
 
     /// `self.seek(pos)`, dispatched to the subclass.
-    pub fn seek(&mut self, pos: i64) -> PyResult<()> {
+    pub fn seek(&mut self, pos: Pos) -> PyResult<()> {
         X::seek(self, pos)
     }
 
@@ -1054,16 +1055,21 @@ impl<X: PSStackParserExt> PSStackParser<X> {
     }
 
     /// `self.do_keyword(pos, token)`, dispatched to the subclass.
-    pub fn do_keyword(&mut self, pos: usize, token: PSKeyword) -> PyResult<()> {
+    pub fn do_keyword(&mut self, pos: Pos, token: PSKeyword) -> PyResult<()> {
         X::do_keyword(self, pos, token)
+    }
+
+    /// `self.bufpos + self.charpos`: the file offset of the next byte.
+    pub fn position(&self) -> Pos {
+        self.bufpos + self.charpos as Pos
     }
 
     // pdfminer/psparser.py:177 PSBaseParser.seek
     /// `PSBaseParser.seek(self, pos)`.
-    pub fn psbaseparser_seek(&mut self, pos: i64) -> PyResult<()> {
+    pub fn psbaseparser_seek(&mut self, pos: Pos) -> PyResult<()> {
         self.fp_mut("seek")?.seek(pos)?;
         // reset the status for nextline()
-        self.bufpos = pos as usize;
+        self.bufpos = pos;
         self.buf = Buf::empty();
         self.charpos = 0;
         // reset the status for nexttoken()
@@ -1086,7 +1092,7 @@ impl<X: PSStackParserExt> PSStackParser<X> {
 
     // pdfminer/psparser.py:533 PSStackParser.seek
     /// `PSStackParser.seek(self, pos)`.
-    pub fn psstackparser_seek(&mut self, pos: i64) -> PyResult<()> {
+    pub fn psstackparser_seek(&mut self, pos: Pos) -> PyResult<()> {
         self.psbaseparser_seek(pos)?;
         self.reset();
         Ok(())
@@ -1115,9 +1121,9 @@ impl<X: PSStackParserExt> PSStackParser<X> {
 
     // pdfminer/psparser.py:203 PSBaseParser.nextline
     /// Fetches a next line that ends either with `\r` or `\n`.
-    pub fn nextline(&mut self) -> PyResult<(usize, Vec<u8>)> {
+    pub fn nextline(&mut self) -> PyResult<(Pos, Vec<u8>)> {
         let mut linebuf = Vec::new();
-        let linepos = self.bufpos + self.charpos;
+        let linepos = self.position();
         let mut eol = false;
         loop {
             self.fillbuf()?;
@@ -1227,14 +1233,14 @@ impl<X: PSStackParserExt> PSStackParser<X> {
     }
 
     // pdfminer/psparser.py:557 PSStackParser.start_type
-    pub fn start_type(&mut self, pos: usize, type_: &'static str) {
+    pub fn start_type(&mut self, pos: Pos, type_: &'static str) {
         let stack = std::mem::take(&mut self.curstack);
         self.context.push((pos, self.curtype, stack));
         self.curtype = Some(type_);
     }
 
     // pdfminer/psparser.py:562 PSStackParser.end_type
-    pub fn end_type(&mut self, type_: &'static str) -> PyResult<(usize, Vec<PDFObject>)> {
+    pub fn end_type(&mut self, type_: &'static str) -> PyResult<(Pos, Vec<PDFObject>)> {
         if self.curtype != Some(type_) {
             let cur = self.curtype.map_or_else(|| "None".to_owned(), str_repr);
             return Err(exc::PSTypeError(format!("Type mismatch: {cur} != {}", str_repr(type_))));
@@ -1322,7 +1328,7 @@ impl<X: PSStackParserExt> PSStackParser<X> {
 pub struct RevReadLines<'a> {
     fp: &'a mut BytesIO,
     started: bool,
-    pos: usize,
+    pos: Pos,
     buf: Vec<u8>,
     /// The chunk being split (`s`), once read.
     s: Option<Vec<u8>>,
@@ -1357,9 +1363,9 @@ impl Iterator for RevReadLines<'_> {
                 return None;
             }
             let prevpos = self.pos;
-            self.pos = self.pos.saturating_sub(BUFSIZ);
-            self.fp.seek(self.pos as i64).expect("non-negative position");
-            let s = self.fp.read_bytes(Some(prevpos - self.pos)).to_vec();
+            self.pos = (self.pos - BUFSIZ as Pos).max(0);
+            self.fp.seek(self.pos).expect("non-negative position");
+            let s = self.fp.read_bytes(Some((prevpos - self.pos) as usize)).to_vec();
             if s.is_empty() {
                 self.pos = 0;
                 return None;

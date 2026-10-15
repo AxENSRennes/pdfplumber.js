@@ -42,7 +42,7 @@ fn until_error<T>(limit: usize, mut next: impl FnMut() -> PyResult<T>, mut value
     }
 }
 
-fn line(l: (usize, Vec<u8>)) -> Value {
+fn line(l: (i64, Vec<u8>)) -> Value {
     Value::Tuple(vec![Value::Int(PyInt::from(l.0)), Value::Bytes(l.1)])
 }
 
@@ -127,6 +127,7 @@ fn base_parser() {
 /// of `PSLiteralTable`/`PSKeywordTable`: the same name gives the same
 /// symbol, in any thread, and a `str` name differs from a `bytes` one.
 #[test]
+#[cfg_attr(target_family = "wasm", ignore = "WebAssembly has no threads here")]
 fn interning_is_process_wide() {
     let intern =
         || (KWD(b"Tj"), LIT("F1"), LIT_bytes(b"\xff"), KWD(b"a-long-keyword"), LIT("a-long-literal-name"), KWD(b""));

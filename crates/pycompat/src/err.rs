@@ -8,8 +8,12 @@
 //! and its subclasses that is the `repr()` of the argument
 //! (`str(KeyError("a"))` is `"'a'"`), so their constructors take the repr.
 //!
-//! The classes come from CPython 3.12 builtins and stdlib modules
-//! (`struct.error`, `zlib.error`), from every `Exception` subclass defined in
+//! The classes come from CPython 3.12 builtins and the stdlib modules the
+//! ported upstream code imports (`struct.error`, `zlib.error`,
+//! `binascii.Error`, `re.error`; `crates/pdftrace/tests/pycompat_unit.rs`
+//! checks this list against every exception class of those modules, the
+//! others with the reason they cannot be raised), from every `Exception`
+//! subclass defined in
 //! pdfminer.six 20260107 (`psexceptions.py`, `pdfexceptions.py`,
 //! `pdfparser.py`, `pdfdocument.py`, `pdffont.py`, `pdfinterp.py`,
 //! `cmapdb.py`, `lzw.py`, `ccitt.py`; `pdftypes.py` and `layout.py` only
@@ -92,6 +96,10 @@ exc_kinds! {
     StructError = "error" in "struct": [Exception],
     /// `zlib.error`
     ZlibError = "error" in "zlib": [Exception],
+    /// `binascii.Error` (`ascii85.asciihexdecode` calls `binascii.unhexlify`)
+    BinasciiError = "Error" in "binascii": [ValueError],
+    /// `re.error` (pdfplumber compiles the patterns given to `search`)
+    ReError = "error" in "re": [Exception],
 
     // --- pdfminer/psexceptions.py ----------------------------------------
     PSException = "PSException" in "pdfminer.psexceptions": [Exception],
@@ -168,6 +176,16 @@ impl ExcKind {
     /// ancestors (multiple inheritance included).
     pub fn is_instance(self, base: ExcKind) -> bool {
         self == base || self.bases().iter().any(|b| b.is_instance(base))
+    }
+
+    /// The class as traces name it (`oracle/canon.py` `exception_name`):
+    /// `type(e).__name__` for builtins, pdfminer and pdfplumber classes,
+    /// `module.name` for the others (`zlib.error`, `binascii.Error`).
+    pub fn trace_name(self) -> String {
+        match self.module().split('.').next() {
+            Some("builtins" | "pdfminer" | "pdfplumber" | "pycompat") => self.name().to_owned(),
+            _ => format!("{}.{}", self.module(), self.name()),
+        }
     }
 
     /// `type(e).__qualname__`: the name, prefixed by the enclosing class for
@@ -256,7 +274,8 @@ pub mod exc {
     ctors! {
         Exception, ZeroDivisionError, OverflowError, AssertionError, AttributeError,
         IndexError, KeyError, ValueError, UnicodeDecodeError, TypeError, RecursionError,
-        NotImplementedError, EOFError, OSError, MemoryError, ReferenceError, StructError, ZlibError,
+        NotImplementedError, EOFError, OSError, MemoryError, ReferenceError, StructError, ZlibError, BinasciiError,
+        ReError,
         PSException, PSEOF, PSSyntaxError, PSTypeError, PSValueError,
         PDFException, PDFTypeError, PDFValueError, PDFObjectNotFound, PDFNotImplementedError,
         PDFKeyError, PDFEOFError, PDFIOError, PDFSyntaxError, PDFNoValidXRef,

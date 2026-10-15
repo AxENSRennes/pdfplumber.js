@@ -13,7 +13,11 @@ Contrat commun à tout le code du dépôt. À lire avec
   depuis une autre version.
 - La sortie de pdfplumber est identique sous 3.12, 3.13 et 3.14, mais diffère
   sous 3.11 (`sum()` compensé, voir `port-strategy.md`). Le contrat public est
-  « identique à pdfplumber sous Python ≥ 3.12 ».
+  « identique à pdfplumber sous Python ≥ 3.12 ». Les derniers bits de
+  `float ** float` viennent de la bibliothèque C : la référence est glibc sur
+  un processeur avec FMA (variante `__pow_fma`, celle de l'oracle) ; la
+  variante sans FMA de la même glibc diffère sur environ 0,05 % des entrées,
+  une autre libm (macOS, `libm` de FreeBSD) bien plus souvent.
 
 ## Organisation
 
@@ -95,6 +99,10 @@ observable, et seulement là.
 
 Tout ce qui imite Python vit ici, une seule fois, testé contre CPython :
 `sum()` 3.12 (Neumaier, ints exacts), `min`/`max` (premier à égalité),
+`float ** float` avec le `pow` de la bibliothèque C de l'oracle (glibc 2.39,
+variante FMA choisie sur un processeur x86-64 qui a FMA et AVX2, portée dans
+`pycompat::libm` : `f64::powf` n'est pas cette fonction en Wasm), le `hash()`
+numérique et les nombres comme clés de dict (`NumKey` : `3` trouve `3.0`),
 `round()` (arrondi bancaire décimal exact), `float.__repr__`, `int()` (limite de
 4 300 chiffres), conversions `int`→`float` (OverflowError), division réelle et
 entière, `%` Python, tris stables, `str.split()`/`strip()` et classes de
