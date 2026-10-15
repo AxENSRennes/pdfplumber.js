@@ -667,21 +667,32 @@ impl Table {
         let mut kwargs = kwargs.clone();
         let mut table_arr = Vec::new();
 
-        // char_in_bbox (nested in Table.extract)
-        fn char_in_bbox(char: &Obj, bbox: &Bbox) -> PyResult<bool> {
+        // char_in_bbox (nested in Table.extract), in two steps: the
+        // midpoints of each char, then the comparisons. The midpoints depend
+        // on the char only, so they are computed once, in the order of the
+        // first row's scan (char by char, `v_mid` before `h_mid`): the first
+        // exception, if any, is the one that scan raises (comparing the
+        // numbers of a cell's bbox raises nothing).
+        fn midpoints(char: &Obj) -> PyResult<(PyValue, PyValue)> {
             let two = PyValue::from(2i64);
             let v_mid = char.hot(Hot::Top)?.add(char.hot(Hot::Bottom)?)?.truediv(&two)?;
             let h_mid = char.hot(Hot::X0)?.add(char.hot(Hot::X1)?)?.truediv(&two)?;
+            Ok((v_mid, h_mid))
+        }
+        fn char_in_bbox((v_mid, h_mid): &(PyValue, PyValue), bbox: &Bbox) -> PyResult<bool> {
             let [x0, top, x1, bottom] = bbox;
             Ok(h_mid.ge(x0)? && h_mid.lt(x1)? && v_mid.ge(top)? && v_mid.lt(bottom)?)
         }
 
-        for row in self.rows()? {
+        let rows = self.rows()?;
+        let mids =
+            if rows.is_empty() { Vec::new() } else { chars.iter().map(midpoints).collect::<PyResult<Vec<_>>>()? };
+        for row in rows {
             let mut arr = Vec::with_capacity(row.cells.len());
             let mut row_chars = Vec::new();
-            for char in &chars {
-                if char_in_bbox(char, &row.bbox)? {
-                    row_chars.push(char.clone());
+            for (k, mid) in mids.iter().enumerate() {
+                if char_in_bbox(mid, &row.bbox)? {
+                    row_chars.push(k);
                 }
             }
             for cell in &row.cells {
@@ -689,9 +700,9 @@ impl Table {
                     None => None,
                     Some(cell) => {
                         let mut cell_chars = Vec::new();
-                        for char in &row_chars {
-                            if char_in_bbox(char, cell)? {
-                                cell_chars.push(char.clone());
+                        for &k in &row_chars {
+                            if char_in_bbox(&mids[k], cell)? {
+                                cell_chars.push(chars[k].clone());
                             }
                         }
                         if !cell_chars.is_empty() {
