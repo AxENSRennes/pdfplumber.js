@@ -81,8 +81,13 @@ fn output(r: PyResult<Vec<u8>>) -> Value {
     }
 }
 
-fn replay(name: &str, mut f: impl FnMut(&[Value]) -> Value) {
-    let cases = UnitData::open("ccitt").cases(name);
+fn replay(name: &str, f: impl FnMut(&[Value]) -> Value) {
+    replay_in("ccitt", name, f);
+}
+
+/// The cases `name` of the generator `module`.
+fn replay_in(module: &str, name: &str, mut f: impl FnMut(&[Value]) -> Value) {
+    let cases = UnitData::open(module).cases(name);
     assert!(!cases.is_empty(), "{name}: no cases");
     let mut failures = Vec::new();
     for (k, (args, expected)) in cases.iter().enumerate() {
@@ -313,8 +318,9 @@ fn deep() {
     });
 }
 
-/// Every `ccittfaxdecode` call pdfminer makes on the corpus set `all`.
+/// Every `ccittfaxdecode` call pdfminer makes on the corpus set `all`
+/// (`oracle/unit/ccitt_corpus.py`).
 #[test]
 fn corpus() {
-    replay("corpus", |a| output(ccittfaxdecode_obj(bytes(&a[1]), &build(&a[2]))));
+    replay_in("ccitt_corpus", "corpus", |a| output(ccittfaxdecode_obj(bytes(&a[1]), &build(&a[2]))));
 }
