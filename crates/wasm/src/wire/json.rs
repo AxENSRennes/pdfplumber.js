@@ -198,6 +198,9 @@ impl JsonWriter {
     fn key_or_value_str(&mut self, s: &str) {
         let key = self.begin();
         self.string(s, key);
+        if key {
+            self.out.push(b':');
+        }
         self.end();
     }
 
@@ -275,6 +278,9 @@ impl Writer for JsonWriter {
             }
         }
         self.out.push(b'"');
+        if key {
+            self.out.push(b':');
+        }
         self.end();
         Ok(())
     }
