@@ -50,7 +50,7 @@ fn geometry() {
         "bbox2str" => result(bbox2str(&nums(&a[1])), Value::str),
         "matrix2str" => result(matrix2str(&nums(&a[1])), Value::str),
         "parse_rect" => {
-            let seq: Vec<PDFObject> = items(&a[1]).iter().map(|x| build(x, &weak)).collect();
+            let seq: Vec<_> = items(&a[1]).iter().map(|x| iter_item(x, &weak)).collect();
             result(parse_rect(seq.into_iter().map(Ok)), |r| float_tuple(&r))
         }
         other => panic!("{other}"),

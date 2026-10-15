@@ -37,7 +37,7 @@ use pycompat::float::float_to_int;
 use pycompat::{exc, Num, PyInt, PyResult};
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::casting::py_float;
+use crate::casting::IterItem;
 use crate::pdftypes::PDFObject;
 
 // ===========================================================================
@@ -183,8 +183,12 @@ fn py_max_of(items: &[&Num]) -> Num {
 /// values"; an error of the iterator propagates) and converts each with
 /// `float()`. A wrong count or a `ValueError` of `float()` becomes
 /// `PDFValueError("Could not parse rectangle")`; other errors (a
-/// `TypeError` of `float(None)`, an `OverflowError`) propagate.
-pub fn parse_rect(o: impl IntoIterator<Item = PyResult<PDFObject>>) -> PyResult<[f64; 4]> {
+/// `TypeError` of `float(None)`, an `OverflowError`) propagate. The items
+/// are whatever iterating the caller's object yields ([`IterItem`]):
+/// `pdfpage` iterates a resolved `/MediaBox` or `/CropBox` of any type, and
+/// a dict yields its `str` keys, which `float()` reads as a `str` (Unicode
+/// digits and spaces count), not as bytes.
+pub fn parse_rect(o: impl IntoIterator<Item = PyResult<IterItem>>) -> PyResult<[f64; 4]> {
     let attempt = || -> PyResult<[f64; 4]> {
         let mut it = o.into_iter();
         let mut items = Vec::with_capacity(4);
@@ -203,7 +207,7 @@ pub fn parse_rect(o: impl IntoIterator<Item = PyResult<PDFObject>>) -> PyResult<
             x?;
             return Err(exc::ValueError("too many values to unpack (expected 4)"));
         }
-        Ok([py_float(&items[0])?, py_float(&items[1])?, py_float(&items[2])?, py_float(&items[3])?])
+        Ok([items[0].py_float()?, items[1].py_float()?, items[2].py_float()?, items[3].py_float()?])
     };
     attempt().map_err(|e| {
         if e.is_instance(pycompat::ExcKind::ValueError) {

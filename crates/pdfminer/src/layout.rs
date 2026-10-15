@@ -65,6 +65,7 @@ use pycompat::recursion::{eval_entry, py_frame, Guard};
 use pycompat::{exc, Num, PyInt, PyResult};
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::casting::IterItem;
 use crate::pdfcolor::PDFColorSpace;
 use crate::pdftypes::{PDFList, PDFObject, PDFStream};
 use crate::utils::{
@@ -263,12 +264,76 @@ pub trait LTCharFont<P: LTPayload> {
 }
 
 /// The `textdisp` argument of `LTChar`: `font.char_disp(cid)`, a number for
-/// a horizontal font, a `(vx, vy)` tuple (`vx` maybe `None`) for a vertical
-/// one.
+/// a horizontal font, a `(vx, vy)` tuple for a vertical one.
+///
+/// `vx` and `vy` are whatever `pdffont` found, unchecked: the items of a
+/// `/W2` array (any PDF object), `vy` of `(vy, w) = resolve1(DW2)` (an
+/// item of any iterable: a dict key is a `str`, a byte of a bytes string an
+/// int), and `vx` is `None` ([`PDFObject::Null`]) for the default
+/// displacement. `LTChar.__init__` does the arithmetic and raises Python's
+/// `TypeError` on a value that is not a number.
 #[derive(Clone, Debug)]
 pub enum CharDisp {
     Scalar(Num),
-    Vertical(Option<Num>, Num),
+    Vertical(IterItem, IterItem),
+}
+
+/// `x * y` where `y` is a number and `x` any value, as far as
+/// `LTChar.__init__` needs it: a number gives the product; a sequence
+/// (`bytes`, `str`, `list`) is repeated by an int (the result is a
+/// sequence again: `None`) and raises with a float; any other type raises
+/// the `TypeError` of an unsupported operand.
+///
+/// A repetition is not built: its only use is a further `* 0.001`, which
+/// raises. Only the size checks CPython makes before allocating are
+/// reproduced (`OverflowError` for a count beyond `Py_ssize_t` or a too
+/// long result, `MemoryError` for a list); a repetition that fits these
+/// checks but not in memory raises `MemoryError` in Python, depending on
+/// the machine, and not here. The interpreter passes a float `fontsize`,
+/// or the int `0` of a text state without `Tf`, which repeats nothing.
+fn item_mul(x: &IterItem, y: &Num) -> PyResult<Option<Num>> {
+    if let IterItem::Obj(o) = x {
+        if let Some(n) = o.as_num() {
+            return n.mul(y).map(Some);
+        }
+    }
+    let len = match x {
+        IterItem::Obj(PDFObject::Bytes(b)) => b.len(),
+        IterItem::Obj(PDFObject::List(l)) => l.borrow().len(),
+        IterItem::Str(s) => s.chars().count(),
+        _ => {
+            let y_name = if y.is_float() { "float" } else { "int" };
+            return Err(exc::TypeError(format!(
+                "unsupported operand type(s) for *: '{}' and '{y_name}'",
+                x.type_name()
+            )));
+        }
+    };
+    let Num::Int(count) = y else {
+        return Err(exc::TypeError("can't multiply sequence by non-int of type 'float'"));
+    };
+    // sequence_repeat: PyNumber_AsSsize_t(count, OverflowError), then the
+    // repeat function of the type
+    let Some(count) = count.as_i64() else {
+        return Err(exc::OverflowError("cannot fit 'int' into an index-sized integer"));
+    };
+    if count <= 0 || len == 0 {
+        return Ok(None);
+    }
+    let len = i128::from(i64::try_from(len).unwrap_or(i64::MAX));
+    let max = i128::from(i64::MAX);
+    if len > max / i128::from(count) {
+        return Err(match x {
+            IterItem::Obj(PDFObject::Bytes(_)) => exc::OverflowError("repeated bytes are too long"),
+            IterItem::Str(_) => exc::OverflowError("repeated string is too long"),
+            _ => exc::MemoryError(""),
+        });
+    }
+    // list_new_prealloc: PyMem_New(PyObject *, size)
+    if matches!(x, IterItem::Obj(PDFObject::List(_))) && len * i128::from(count) > max / 8 {
+        return Err(exc::MemoryError(""));
+    }
+    Ok(None)
 }
 
 // ---------------------------------------------------------------------------
@@ -666,11 +731,25 @@ impl<P: LTPayload> LTChar<P> {
             let CharDisp::Vertical(vx, vy) = textdisp else {
                 return Err(exc::AssertionError(""));
             };
+            let milli = Num::Float(0.001);
             let vx = match vx {
-                None => fontsize.mul(&Num::Float(0.5))?,
-                Some(vx) => vx.mul(&fontsize)?.mul(&Num::Float(0.001))?,
+                IterItem::Obj(PDFObject::Null) => fontsize.mul(&Num::Float(0.5))?,
+                vx => match item_mul(&vx, &fontsize)? {
+                    Some(product) => product.mul(&milli)?,
+                    // a repeated sequence times a float
+                    None => return Err(exc::TypeError("can't multiply sequence by non-int of type 'float'")),
+                },
             };
-            let vy = int(1000).sub(&vy)?.mul(&fontsize)?.mul(&Num::Float(0.001))?;
+            let Some(vy_num) = (match &vy {
+                IterItem::Obj(o) => o.as_num(),
+                IterItem::Str(_) => None,
+            }) else {
+                return Err(exc::TypeError(format!(
+                    "unsupported operand type(s) for -: 'int' and '{}'",
+                    vy.type_name()
+                )));
+            };
+            let vy = int(1000).sub(&vy_num)?.mul(&fontsize)?.mul(&milli)?;
             [vx.neg(), vy.add(&rise)?.add(&adv)?, vx.neg().add(&fontsize)?, vy.add(&rise)?]
         } else {
             // horizontal

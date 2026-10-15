@@ -645,14 +645,13 @@ fn gray() -> Rc<PDFColorSpace> {
 
 #[test]
 fn ltchar() {
+    let (_doc, weak) = doc();
     replay("layout", "ltchar", |a| {
         let f = items(&a[1]);
         let font =
             TestFont { fontname: f[0].clone(), vertical: matches!(f[1], Value::Bool(true)), descent: num(&f[2]) };
         let textdisp = match &a[7] {
-            Value::Tuple(t) => {
-                CharDisp::Vertical(if matches!(t[0], Value::None) { None } else { Some(num(&t[0])) }, num(&t[1]))
-            }
+            Value::Tuple(t) => CharDisp::Vertical(iter_item(&t[0], &weak), iter_item(&t[1], &weak)),
             v => CharDisp::Scalar(num(v)),
         };
         let c = LTChar::<TP>::new(

@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
+use pdfminer::casting::IterItem;
 use pdfminer::pdftypes::{PDFDict, PDFList, PDFObjRef, PDFObject, PDFResolver, PDFStream};
 use pdfminer::psparser::{LIT_bytes, KWD, LIT};
 use pdftrace::unit::UnitData;
@@ -72,6 +73,15 @@ pub fn build(v: &Value, doc: &Weak<dyn PDFResolver>) -> PDFObject {
             PDFObject::Stream(Rc::new(s))
         }
         other => panic!("not a PDF object: {other:?}"),
+    }
+}
+
+/// A value yielded by iterating a PDF object: a `str` (a dict key) or a
+/// PDF object.
+pub fn iter_item(v: &Value, doc: &Weak<dyn PDFResolver>) -> IterItem {
+    match v {
+        Value::Str(s) => IterItem::Str(Rc::from(s.as_str().expect("a str without surrogates"))),
+        other => IterItem::Obj(build(other, doc)),
     }
 }
 

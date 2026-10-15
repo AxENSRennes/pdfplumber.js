@@ -94,19 +94,40 @@ pub fn safe_cmyk(c: &PDFObject, m: &PDFObject, y: &PDFObject, k: &PDFObject) -> 
     safe_float_quadruple(c, m, y, k)
 }
 
-/// An item of an iterated PDF object: the items of a list, the keys (`str`)
-/// of a dict, the ints of a bytes string.
-enum Item {
+/// A Python value obtained by iterating a PDF object: an item of a list
+/// (any PDF object), a key of a dict (a `str`, which [`PDFObject`] cannot
+/// hold), the value (an int) of a byte of a bytes string. Upstream code
+/// that iterates or unpacks an object it did not type-check passes such
+/// values on: `safe_rect_list`, `parse_rect(resolve1(v) for v in
+/// resolve1(box))` in `pdfpage`, `(vy, w) = resolve1(spec["DW2"])` and the
+/// `/W2` items in `pdffont` (the `textdisp` of a vertical `LTChar`).
+#[derive(Clone, Debug)]
+pub enum IterItem {
     Obj(PDFObject),
     Str(std::rc::Rc<str>),
 }
 
-impl Item {
-    fn safe_float(&self) -> Option<f64> {
+impl IterItem {
+    /// `type(x).__name__`
+    pub fn type_name(&self) -> &'static str {
         match self {
-            Item::Obj(o) => safe_float(o),
-            Item::Str(s) => float_from_str(s).ok(),
+            IterItem::Obj(o) => o.type_name(),
+            IterItem::Str(_) => "str",
         }
+    }
+
+    /// `float(x)`: a `str` converts as Python's `float(str)` does (Unicode
+    /// digits and whitespace count), not as a bytes string.
+    pub fn py_float(&self) -> PyResult<f64> {
+        match self {
+            IterItem::Obj(o) => py_float(o),
+            IterItem::Str(s) => float_from_str(s),
+        }
+    }
+
+    /// `safe_float(x)`
+    fn safe_float(&self) -> Option<f64> {
+        self.py_float().ok()
     }
 }
 
@@ -117,11 +138,11 @@ impl Item {
 /// values; a stream iterates through `__getitem__(0)`, which raises the
 /// `PDFKeyError` of a missing attribute (not caught, as in Python).
 pub fn safe_rect_list(value: &PDFObject) -> PyResult<Option<[f64; 4]>> {
-    let values: Vec<Item> = match value {
-        PDFObject::List(l) => l.borrow().iter().take(4).cloned().map(Item::Obj).collect(),
-        PDFObject::Dict(d) => d.keys().into_iter().take(4).map(Item::Str).collect(),
+    let values: Vec<IterItem> = match value {
+        PDFObject::List(l) => l.borrow().iter().take(4).cloned().map(IterItem::Obj).collect(),
+        PDFObject::Dict(d) => d.keys().into_iter().take(4).map(IterItem::Str).collect(),
         PDFObject::Bytes(b) => {
-            b.iter().take(4).map(|&c| Item::Obj(PDFObject::Int(PyInt::Small(i64::from(c))))).collect()
+            b.iter().take(4).map(|&c| IterItem::Obj(PDFObject::Int(PyInt::Small(i64::from(c))))).collect()
         }
         PDFObject::Stream(_) => {
             value.py_getitem_index0()?;

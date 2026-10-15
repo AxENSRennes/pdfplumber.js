@@ -15,7 +15,8 @@ raises ``PDFObjectNotFound``, object 13 ``PDFSyntaxError``).
 - ``geometry``: ``get_bound`` (no point: ints; NaN and huge coordinates),
   ``drange``, ``bbox2str``/``matrix2str`` (rounding ties, ``-0.0``,
   ``inf``, huge ints), ``parse_rect`` (wrong counts, ``float()`` errors that
-  are and are not caught).
+  are and are not caught, ``str`` items such as the keys of a dict box,
+  which ``float()`` reads with Unicode digits and spaces).
 - ``iter``: ``uniq``, ``fsplit``, ``pick`` on numbers (``1 == 1.0 ==
   True``, NaN scores).
 - ``numbers``: ``isnumber``, ``nunpack``, ``format_int_roman``,
@@ -148,6 +149,19 @@ def gen_geometry(rng):
     for _ in range(1500):
         seq = [rng.choice(items) for _ in range(rng.choice([3, 4, 4, 4, 5]))]
         yield ["parse_rect", seq], call(utils.parse_rect, iter(seq))
+    # str items: pdfpage iterates a resolved /MediaBox of any type, and a
+    # dict yields its str keys, which float() reads as str (Unicode digits
+    # and spaces, underscores), unlike bytes
+    strs = ["0", "0.5", "612", "792", "-3", "١٢", " 1_0 ", " 1", "　-2.5　", "nan", "-inf",
+            "Infinity", "iNf", "1e400", "-1e400", "", " ", "x", "0x10", "1__0", "_1", "1_", "٣.٥",
+            "१२३", "\U0001d7d9\U0001d7da", "1\x00", "+.5", "5.", "1e5", "²", "Ⅷ", "\xa012\x85"]
+    for _ in range(800):
+        seq = [rng.choice(strs) if rng.random() < 0.6 else rng.choice(items)
+               for _ in range(rng.choice([3, 4, 4, 4, 5]))]
+        yield ["parse_rect", seq], call(utils.parse_rect, iter(seq))
+    for _ in range(200):
+        d = {rng.choice(strs): 0 for _ in range(rng.choice([3, 4, 4, 4, 5, 6]))}
+        yield ["parse_rect", list(d)], call(lambda: utils.parse_rect(resolve1(x) for x in resolve1(d)))
 
 
 def gen_iter(rng):

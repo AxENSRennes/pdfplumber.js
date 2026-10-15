@@ -53,7 +53,10 @@ Object cases
 ------------
 - ``ltchar``: ``LTChar(...)`` with a test font (``fontname``,
   ``is_vertical()``, ``get_descent()``) on random arguments: the dumped
-  attributes.
+  attributes or the exception; then vertical chars whose ``(vx, vy)`` are
+  any value ``pdffont`` can hand over (PDF objects of every type, ``str``
+  dict keys) with float and int font sizes (``TypeError``/``OverflowError``
+  of the arithmetic, sequence repetition).
 - ``objects``: the constructors of ``LTCurve``, ``LTLine``, ``LTRect``,
   ``LTImage``, ``LTFigure``, ``LTPage``, ``LAParams`` (validation), and the
   ``LTComponent`` distance methods on random boxes.
@@ -98,8 +101,8 @@ from pdfminer.layout import (
 from pdfminer.pdfcolor import PREDEFINED_COLORSPACE, PDFColorSpace
 from pdfminer.pdfinterp import PDFPageInterpreter, PDFResourceManager
 from pdfminer.pdfpage import PDFPage
-from pdfminer.pdftypes import PDFStream
-from pdfminer.psparser import LIT
+from pdfminer.pdftypes import PDFObjRef, PDFStream
+from pdfminer.psparser import KWD, LIT
 
 from ..canon import Named, canon
 from ..corpus import load_set
@@ -580,6 +583,28 @@ def gen_ltchar(rng):
         args = [matrix, [font.fontname, vertical, font.descent], fontsize, scaling, rise, "t", textwidth, textdisp]
         out = call(LTChar, matrix, font, fontsize, scaling, rise, "t", textwidth, textdisp, GRAY, None)
         yield args, out if isinstance(out, BaseException) else dump_raw(out)
+    # vertical fonts: pdffont hands over (vx, vy) unchecked, from /W2 items
+    # (any object) or `(vy, w) = resolve1(DW2)` (a dict key is a str); the
+    # fontsize is a float, or the int 0 of a text state without Tf (ints that
+    # repeat a sequence too, but not into an allocation Python would attempt)
+    for _ in range(1500):
+        vx, vy = rng.choice(DISP_ITEMS), rng.choice(DISP_ITEMS)
+        if rng.random() < 0.3:
+            vx = None
+        fontsize = rng.choice([10.0, 0, 0.0, rng.uniform(1, 30), 2, -1, 2**62, 2**63, 10**30, math.nan])
+        if fontsize == 2**62 and isinstance(vx, (bytes, str)) and len(vx) == 1:
+            continue  # a 4 EiB allocation: MemoryError, depending on the machine
+        textdisp = (vx, vy)
+        font = TestFont("V", True, rand_num(rng))
+        matrix = (1.0, 0.0, 0.0, 1.0, rng.uniform(0, 600), rng.uniform(0, 800))
+        args = [matrix, [font.fontname, True, font.descent], fontsize, 1.0, 0.0, "t", 0.5, textdisp]
+        out = call(LTChar, matrix, font, fontsize, 1.0, 0.0, "t", 0.5, textdisp, GRAY, None)
+        yield args, out if isinstance(out, BaseException) else dump_raw(out)
+
+
+DISP_ITEMS = [None, True, False, 0, 880, -1000, 1000, 0.5, -0.0, math.nan, math.inf, 1e308, 10**400, b"9", b"", b"ab",
+              "880", "a", "", "ab", [1], [], [1, 2], {"a": 1}, LIT("x"), KWD(b"Tj"), PDFStream({}, b""),
+              PDFObjRef(None, 3)]
 
 
 def gen_objects(rng):
