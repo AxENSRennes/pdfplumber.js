@@ -849,7 +849,9 @@ fn bits_text(bits: &[i8]) -> String {
 fn py_int_digit(c: Option<char>) -> PyResult<i64> {
     match c {
         Some(c) if c.is_ascii_digit() => Ok(i64::from(u32::from(c) - u32::from('0'))),
-        Some(c) if c.is_ascii_alphabetic() => Err(exc::ValueError(format!("invalid literal for int() with base 10: '{c}'"))),
+        Some(c) if c.is_ascii_alphabetic() => {
+            Err(exc::ValueError(format!("invalid literal for int() with base 10: '{c}'")))
+        }
         Some(c) => unreachable!("int({c:?}): the codes are made of digits"),
         None => Err(exc::IndexError("string index out of range")),
     }
@@ -858,7 +860,11 @@ fn py_int_digit(c: Option<char>) -> PyResult<i64> {
 /// The value an `array('b')` item can take (`OverflowError` otherwise).
 fn signed_char(v: i64) -> PyResult<i8> {
     i8::try_from(v).map_err(|_| {
-        exc::OverflowError(if v > 0 { "signed char is greater than maximum" } else { "signed char is less than minimum" })
+        exc::OverflowError(if v > 0 {
+            "signed char is greater than maximum"
+        } else {
+            "signed char is less than minimum"
+        })
     })
 }
 
