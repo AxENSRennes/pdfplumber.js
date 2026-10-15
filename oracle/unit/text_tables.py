@@ -229,7 +229,7 @@ def rand_text_kwargs(rng, layout_ok=True):
         ld, cd = rng.choice(VALID_PAIRS)
         kw["line_dir"], kw["char_dir"] = ld, cd
     if pick() < 0.03:
-        kw["line_dir"] = rng.choice(["ltr", "foo", None, "ttb"])
+        kw["line_dir"] = rng.choice(["ltr", "foo", None, "ttb", ["ttb"]])
         kw["char_dir"] = rng.choice(["ltr", "rtl", "x"])
     if pick() < 0.12:
         kw["line_dir_rotated"], kw["char_dir_rotated"] = rng.choice(VALID_PAIRS + [(None, None)])
@@ -399,6 +399,25 @@ def fuzz_cases(n: int):
     for _ in range(n):
         yield synth_page_case(rng)
     yield from rounding_cases()
+    yield from odd_text_cases()
+
+
+def odd_text_cases():
+    """A char whose text is not a str, through every word path: blank
+    test (``isspace``), punctuation test (``in``), ligature lookup (hashing)
+    and join, with ligatures expanded or not."""
+    rng = random.Random(9)
+    for text in [["x"], ("x",), 5, None, {"a": 1}, b"x", b" \t", b""]:
+        chars = synth_chars(rng) or [synth_char(rng, 0, 0, 5, 10, "a", True, 0, "F1", 10.0, (0,))]
+        chars[0]["text"] = text
+        page = FakePage(chars, [], (0, 0, 612, 792))
+        ops = []
+        for keep in [False, True]:
+            for expand in [False, True]:
+                for punct in [False, True]:
+                    kw = {"keep_blank_chars": keep, "expand_ligatures": expand, "split_at_punctuation": punct}
+                    ops += [("words", kw), ("text", kw), ("utext", kw), ("dedupe", {})]
+        yield page_case(page, {"chars": chars, "edges": [], "bbox": (0, 0, 612, 792)}, ops)
 
 
 def rounding_triples():

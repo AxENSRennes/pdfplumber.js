@@ -124,13 +124,10 @@ fn expanded_letters(text: &PyValue, expand: bool) -> PyResult<Vec<char>> {
             (true, Some(e)) => e.chars().collect(),
             _ => s.chars().collect(),
         }),
-        PyValue::List(_) | PyValue::Dict(_) if expand => {
-            Err(exc::TypeError(format!("unhashable type: '{}'", text.type_name())))
-        }
-        PyValue::Tuple(_) | PyValue::List(_) | PyValue::Bytes(_) => {
-            Err(PyErr::not_ported("iterating a non-str char text"))
-        }
-        other => Err(exc::TypeError(format!("'{}' object is not iterable", other.type_name()))),
+        // Only the chars of words reach a text map, and `merge_chars` has
+        // already joined their texts, so a char's text is a `str` here
+        // unless the WordMap was built by hand.
+        _ => Err(PyErr::not_ported("a WordMap char whose text is not a str")),
     }
 }
 
@@ -1004,7 +1001,8 @@ impl WordExtractor {
                     (true, Some(e)) => text.push_str(e),
                     _ => text.push_str(s),
                 },
-                PyValue::List(_) | PyValue::Dict(_) if self.expand_ligatures => {
+                // dict.get hashes its key (even the empty dict of expand_ligatures=False)
+                PyValue::List(_) | PyValue::Dict(_) => {
                     return Err(exc::TypeError(format!("unhashable type: '{}'", t.type_name())))
                 }
                 other => {
@@ -1120,6 +1118,8 @@ impl WordExtractor {
             } else {
                 match text {
                     PyValue::Str(s) => !s.is_empty() && s.chars().all(str_isspace),
+                    // bytes.isspace()
+                    PyValue::Bytes(b) => !b.is_empty() && b.iter().all(|&c| pycompat::text::bytes_isspace(c)),
                     other => {
                         return Err(exc::AttributeError(format!(
                             "'{}' object has no attribute 'isspace'",
