@@ -20,6 +20,8 @@ num-integer = "0.1"
 num-traits = "0.2"
 rustc-hash = "2.1"
 sha2 = "0.10"
+md-5 = "0.10"
+aes = "0.8"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

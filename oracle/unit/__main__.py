@@ -40,6 +40,7 @@ GENERATORS: dict[str, tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]] = {
     "utils": (("meta.json",), ((),)),
     # generated layouts and every configuration of LAParams on the corpus pages (minutes)
     "layout": (("meta.json",), ((),)),
+    "crypto": (("meta.json",), ((),)),
     # the adversarial corpus (seconds), then the real one (minutes: every PDF)
     "psparser": (("meta.json", "fuzz.json", "corpus.json"), (("--fuzz", "4000"), ())),
     "zlib": (("meta.json",), ((),)),
