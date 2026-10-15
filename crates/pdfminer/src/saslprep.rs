@@ -184,13 +184,12 @@ fn combining(code: u32) -> u8 {
     }
 }
 
-/// `get_decomp_record` of UCD 3.2.0: `(prefix != 0, code points)`, or
-/// `None` for no decomposition (also for a code point unassigned in 3.2.0).
-fn decomposition(code: u32) -> Option<(bool, &'static [u32])> {
-    tables::DECOMPOSITION
-        .binary_search_by_key(&code, |&(c, _, _)| c)
-        .ok()
-        .map(|i| (tables::DECOMPOSITION[i].1, tables::DECOMPOSITION[i].2))
+/// `get_decomp_record` of UCD 3.2.0: the code points of the decomposition,
+/// canonical or compatibility (NFKC takes both: the table's `prefix` flag,
+/// which NFD reads, is not needed), or `None` for no decomposition (also for
+/// a code point unassigned in 3.2.0).
+fn decomposition(code: u32) -> Option<&'static [u32]> {
+    tables::DECOMPOSITION.binary_search_by_key(&code, |&(c, _, _)| c).ok().map(|i| tables::DECOMPOSITION[i].2)
 }
 
 /// `PreviousDBVersion.normalization(code)` of UCD 3.2.0 (0: none).
@@ -209,8 +208,9 @@ fn compose(first: u32, last: u32) -> Option<u32> {
     tables::COMPOSITION.binary_search_by(|&(a, b, _)| (a, b).cmp(&(first, last))).ok().map(|i| tables::COMPOSITION[i].2)
 }
 
-/// `nfd_nfkd(ucd_3_2_0, input, k)`: decomposition, then canonical ordering.
-fn nfd_nfkd(input: &[u32], k: bool) -> Vec<u32> {
+/// `nfd_nfkd(ucd_3_2_0, input, k=1)`: decomposition, then canonical
+/// ordering.
+fn nfd_nfkd(input: &[u32]) -> Vec<u32> {
     let mut output: Vec<u32> = Vec::with_capacity(input.len());
     let mut stack: Vec<u32> = Vec::new();
     for &c in input {
@@ -234,12 +234,11 @@ fn nfd_nfkd(input: &[u32], k: bool) -> Vec<u32> {
             }
             // Other decompositions.
             match decomposition(code) {
-                // Copy character if it is not decomposable, or has a
-                // compatibility decomposition, but we do NFD.
+                // Copy character if it is not decomposable (or has a
+                // compatibility decomposition, but we do NFD: never here).
                 None => output.push(code),
-                Some((prefix, _)) if prefix && !k => output.push(code),
                 // Copy decomposition onto the stack, in reverse order.
-                Some((_, codes)) => stack.extend(codes.iter().rev()),
+                Some(codes) => stack.extend(codes.iter().rev()),
             }
         }
     }
@@ -275,7 +274,7 @@ fn nfd_nfkd(input: &[u32], k: bool) -> Vec<u32> {
 /// `nfc_nfkc(ucd_3_2_0, input, k=1)`: `nfd_nfkd`, then canonical
 /// composition.
 fn nfc_nfkc(input: &[u32]) -> Vec<u32> {
-    let data = nfd_nfkd(input, true);
+    let data = nfd_nfkd(input);
     let len = data.len();
     let mut output: Vec<u32> = Vec::with_capacity(len);
     // indices of characters already composed into an earlier one
