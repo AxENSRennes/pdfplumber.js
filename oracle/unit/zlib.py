@@ -599,6 +599,15 @@ def far_block_streams(rng, first, n):
 
 
 def gen_decompressobj(rng):
+    # a match copied from the end of the circular window, then its start,
+    # then the output (inflate_fast's double wrap): calls cut by max_length
+    # just past a multiple of the window size, in data whose matches are all
+    # `period` bytes back
+    for period in (150, 250):
+        data = rng.randbytes(1000) + (rng.randbytes(period) * (130000 // period))
+        stream = zlib.compress(data, 9)
+        feeds = [[[len(stream), x, 1], [0, x, 9]] for x in (16394, 16404, 16424, 10933, 8202, 6563)]
+        yield run_decompressobj(stream, 15, feeds)
     # the output blocks of one decompress() call (32 KiB first)
     for stream in far_block_streams(rng, 32 << 10, 5):
         yield run_decompressobj(stream, 0, [[[len(stream), 0, 1]], [[len(stream), 40000, 1], [0, 40000, 3]],

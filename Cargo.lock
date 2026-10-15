@@ -156,7 +156,6 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "num-traits",
- "sha2",
 ]
 
 [[package]]

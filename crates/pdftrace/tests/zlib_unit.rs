@@ -143,3 +143,16 @@ fn decompressobj() {
         )
     });
 }
+
+/// The fixed Huffman tables are those of zlib 1.3: `makefixed()` writes
+/// `inffixed.h` of its sources byte for byte.
+#[test]
+fn fixed_tables_are_inffixed_h() {
+    let text = zlib::inflate::makefixed();
+    // sha256sum zlib-1.3/inffixed.h
+    assert_eq!(
+        sha256_hex(text.as_bytes()),
+        "237ba710f090e432b62ebf963bee8b302867e9691406b2d3f8ee89ee7bfef9b0",
+        "{text}"
+    );
+}
