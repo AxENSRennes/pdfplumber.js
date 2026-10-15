@@ -394,6 +394,14 @@ fn partition_point(items: &[Obj], mut pred: impl FnMut(&Obj) -> PyResult<bool>) 
     Ok(lo)
 }
 
+/// What makes two edges the same member of an `edges_to_set` set: an
+/// equal bbox, or for a bbox not equal to itself (a NaN), the same dict.
+#[derive(PartialEq, Eq, Hash)]
+enum EdgeKey {
+    Bbox([HashKey; 4]),
+    Dict(*const ()),
+}
+
 /// `edges_to_set(intersections[p]["v"])` and `["h"]` (nested in
 /// `intersections_to_cells`) as sorted ids of distinct bboxes, computed the
 /// first time `edge_connects` needs them, so that its `KeyError` (a missing
@@ -405,20 +413,14 @@ fn partition_point(items: &[Obj], mut pred: impl FnMut(&Obj) -> PyResult<bool>) 
 /// `obj.rs`).
 struct EdgeSets<'a> {
     points: &'a [(Point, Vec<Obj>, Vec<Obj>)],
-    by_bbox: HashMap<[HashKey; 4], u32>,
-    by_dict: HashMap<*const (), u32>,
+    ids: HashMap<EdgeKey, u32>,
     /// `[v, h]` of each point, once computed
     sets: Vec<[Option<Vec<u32>>; 2]>,
 }
 
 impl<'a> EdgeSets<'a> {
     fn new(points: &'a [(Point, Vec<Obj>, Vec<Obj>)]) -> Self {
-        EdgeSets {
-            points,
-            by_bbox: HashMap::default(),
-            by_dict: HashMap::default(),
-            sets: vec![[None, None]; points.len()],
-        }
+        EdgeSets { points, ids: HashMap::default(), sets: vec![[None, None]; points.len()] }
     }
 
     // edges_to_set (nested in edge_connects)
@@ -436,13 +438,9 @@ impl<'a> EdgeSets<'a> {
                 HashKey::new(b[2].clone())?,
                 HashKey::new(b[3].clone())?,
             ];
-            let next = (self.by_bbox.len() + self.by_dict.len()) as u32;
-            let id = if key.iter().all(|k| k.0.py_eq(&k.0)) {
-                *self.by_bbox.entry(key).or_insert(next)
-            } else {
-                *self.by_dict.entry(e.addr()).or_insert(next)
-            };
-            ids.push(id);
+            let key = if key.iter().all(|k| k.0.py_eq(&k.0)) { EdgeKey::Bbox(key) } else { EdgeKey::Dict(e.addr()) };
+            let next = self.ids.len() as u32;
+            ids.push(*self.ids.entry(key).or_insert(next));
         }
         ids.sort_unstable();
         ids.dedup();
