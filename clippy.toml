@@ -1,0 +1,4 @@
+# pdftypes::ObjId keys hash and compare like Python dict keys: it never holds
+# a list or a dict (ObjId::new refuses them), the only objects whose RefCell
+# contents could change; clippy's mutable_key_type only sees the RefCells.
+ignore-interior-mutability = ["pdfminer::pdftypes::ObjId"]

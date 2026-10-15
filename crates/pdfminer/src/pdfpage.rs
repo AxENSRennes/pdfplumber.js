@@ -363,9 +363,6 @@ impl CreatePages {
 /// caller), which resumes each generator of the `yield from` chain: their
 /// frames are back on the stack while the walk goes on, and a generator
 /// that returns leaves it.
-// An ObjId never holds a list or a dict, the only values whose hash could
-// change (see pdftypes::ObjId): clippy only sees its RefCells.
-#[allow(clippy::mutable_key_type)]
 fn depth_first_search(
     doc: &Rc<PDFDocument>,
     stack: &mut Vec<Search>,
