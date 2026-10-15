@@ -1360,6 +1360,7 @@ pub fn extract_text(
     char_dir_render: &PyValue,
     kwargs: &Kwargs,
 ) -> PyResult<String> {
+    let chars = &crate::utils::generic::to_list(chars)[..];
     if chars.is_empty() {
         return Ok(String::new());
     }
