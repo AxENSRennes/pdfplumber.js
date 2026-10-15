@@ -7,7 +7,8 @@
 //!
 //! Optimizations (the results are upstream's, see the comments at each):
 //! `edges_to_intersections` only visits the horizontal edges whose `top`
-//! can satisfy the predicate when every coordinate is a finite number;
+//! can satisfy the predicate (binary search, when the coordinates are
+//! ordered numbers);
 //! `intersections_to_cells` and `cells_to_tables` find equal points and
 //! shared edges through hash maps (Python `==`/`hash`) instead of scanning
 //! lists.
@@ -303,15 +304,15 @@ impl Intersections {
     }
 }
 
-/// A finite number that converts exactly to `f64` (for the search window of
-/// [`edges_to_intersections`]).
-fn exact_f64(v: &PyValue) -> Option<f64> {
-    const LIMIT: i64 = 1 << 53;
+/// A number whose additions, subtractions and comparisons with other such
+/// numbers cannot raise and are monotone: a float that is not a NaN, an
+/// `int` in the `i64` range (its conversion to float cannot overflow), a
+/// `bool`.
+fn ordered_number(v: &PyValue) -> bool {
     match v {
-        PyValue::Float(x) if x.is_finite() => Some(*x),
-        PyValue::Int(pycompat::PyInt::Small(i)) if (-LIMIT..=LIMIT).contains(i) => Some(*i as f64),
-        PyValue::Bool(b) => Some(f64::from(u8::from(*b))),
-        _ => None,
+        PyValue::Float(x) => !x.is_nan(),
+        PyValue::Int(pycompat::PyInt::Small(_)) | PyValue::Bool(_) => true,
+        _ => false,
     }
 }
 
@@ -339,26 +340,25 @@ pub fn edges_to_intersections(edges: &[Obj], x_tolerance: &PyValue, y_tolerance:
     // result each time: sorting once is equivalent.
     sort_by_key(&mut h_edges, |e| key2(e, Hot::Top, Hot::X0), pair_lt)?;
 
-    // Search window: when the tolerances and every h edge's top are finite
-    // numbers exact in f64, the h edges are sorted by top, and only those
-    // whose top lies within [v.top - ytol, v.bottom + ytol] (widened by a
-    // relative margin covering the rounding of `h.top + ytol`) can satisfy
-    // the first two conditions; the exact predicate is still evaluated on
-    // each of them, in the same order.
-    let h_tops: Option<Vec<f64>> = h_edges.iter().map(|h| h.get_hot(Hot::Top).and_then(exact_f64)).collect();
-    let ytol_f = exact_f64(y_tolerance);
+    // Search window: when the y tolerance, the v edge's top and bottom and
+    // every h edge's top are ordered numbers (`ordered_number`), the h edges
+    // are sorted by top, `v.top <= h.top + ytol` is false then true along
+    // them and `v.bottom >= h.top - ytol` true then false (rounded addition
+    // is monotone), so the h edges that satisfy both form one range, found
+    // by binary search with the same expressions. Python evaluates the
+    // predicate on every h edge; outside the range it is false without
+    // raising, so visiting the range only, in order, gives the same result.
+    let tops_ordered =
+        ordered_number(y_tolerance) && h_edges.iter().all(|h| h.get_hot(Hot::Top).is_some_and(ordered_number));
 
     for v in &v_edges {
         let mut range = 0..h_edges.len();
-        if let (Some(tops), Some(ytol)) = (&h_tops, ytol_f) {
-            if let (Some(vt), Some(vb)) =
-                (v.get_hot(Hot::Top).and_then(exact_f64), v.get_hot(Hot::Bottom).and_then(exact_f64))
-            {
-                let slack = 1e-9 * (vt.abs() + vb.abs() + ytol.abs() + 1.0);
-                let from = vt - ytol - slack;
-                let to = vb + ytol + slack;
-                let lo = tops.partition_point(|&t| t < from);
-                let hi = lo + tops[lo..].partition_point(|&t| t <= to);
+        if let (true, Some(vt), Some(vb)) = (tops_ordered, v.get_hot(Hot::Top), v.get_hot(Hot::Bottom)) {
+            if ordered_number(vt) && ordered_number(vb) {
+                let above = |h: &Obj| -> PyResult<bool> { Ok(!vt.le(&h.hot(Hot::Top)?.add(y_tolerance)?)?) };
+                let reaches = |h: &Obj| -> PyResult<bool> { vb.ge(&h.hot(Hot::Top)?.sub(y_tolerance)?) };
+                let lo = partition_point(&h_edges, above)?;
+                let hi = lo + partition_point(&h_edges[lo..], reaches)?;
                 range = lo..hi;
             }
         }
@@ -384,6 +384,21 @@ pub fn edges_to_intersections(edges: &[Obj], x_tolerance: &PyValue, y_tolerance:
         }
     }
     Ok(intersections)
+}
+
+/// `slice.partition_point(pred)` with a fallible predicate: the first
+/// index where `pred` is false (it must be true then false along `items`).
+fn partition_point(items: &[Obj], mut pred: impl FnMut(&Obj) -> PyResult<bool>) -> PyResult<usize> {
+    let (mut lo, mut hi) = (0, items.len());
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        if pred(&items[mid])? {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    Ok(lo)
 }
 
 // pdfplumber/table.py:234 intersections_to_cells
