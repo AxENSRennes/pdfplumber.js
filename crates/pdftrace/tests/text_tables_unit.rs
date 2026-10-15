@@ -817,6 +817,44 @@ fn sequence_operations_are_not_ported() {
     assert_eq!(e.message, "can't multiply sequence by non-int of type 'float'");
 }
 
+/// The resource guard of layout text: `for i in range(n)` that appends a
+/// line per iteration, with `n` beyond `MAX_REPEAT` (10**7) or beyond 64
+/// bits, raises `MemoryError` where Python would run until memory is
+/// exhausted (no oracle case can exist). A huge *negative* `n` is an empty
+/// range (oracle cases in `pages_fuzz`).
+#[test]
+fn layout_range_resource_guard() {
+    let big = |s: &str| PyValue::Int(pycompat::PyInt::from_decimal(s).expect("an int"));
+    let bbox = PyValue::tuple([0i64, 0, 612, 792].map(PyValue::from));
+    let n = |x: i64| PyValue::from(x);
+    let chars = [Obj::from_pairs([
+        ("text", PyValue::str("a")),
+        ("x0", n(10)),
+        ("x1", n(15)),
+        ("top", n(20)),
+        ("bottom", n(30)),
+        ("doctop", n(20)),
+        ("upright", PyValue::from(true)),
+        ("size", n(10)),
+        ("fontname", PyValue::str("F")),
+    ])];
+    for n in [big("1180591620717411303424"), PyValue::from(100_000_000i64)] {
+        let kwargs = Obj::from_pairs([
+            ("layout", PyValue::from(true)),
+            ("layout_bbox", bbox.clone()),
+            ("layout_height_chars", n.clone()),
+        ]);
+        let e = chars_to_textmap(&chars, &kwargs).unwrap_err();
+        assert_eq!((e.kind, e.message.as_str()), (pycompat::ExcKind::MemoryError, ""), "{n:?}");
+    }
+    let kwargs = Obj::from_pairs([
+        ("layout", PyValue::from(true)),
+        ("layout_bbox", bbox),
+        ("layout_height_chars", PyValue::from(3i64)),
+    ]);
+    assert_eq!(chars_to_textmap(&chars, &kwargs).unwrap().as_string, "\n\n a"); // Python: chars_to_textmap([c], layout=True, ...)
+}
+
 /// `{:?}` of a value or a dict is its Python `repr` (the replay's mismatch
 /// messages and the port's panics print it); the reprs themselves are
 /// oracle cases (`ops`).
