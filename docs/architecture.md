@@ -126,6 +126,18 @@ deux). Règles :
   le port de l'interpréteur, dont la récursion (`do_Do` → `render_contents`)
   les y amène, chaque module étant vérifié par des cas unitaires à la
   frontière, comme `pdftypes`.
+  Vague 2 : `pdfparser` (`do_keyword`), `pdfdocument` (`getobj`,
+  `read_xref_from`, les chargements de xref, `lookup`, la recherche des
+  plans), `pdfpage` (`create_pages` et chaque générateur
+  `depth_first_search` de la chaîne `yield from`, repris à chaque page) et
+  `pdfinternals.resolve_all` prennent leurs cadres : une boucle (`/Prev`,
+  flux d'objets, `/Length` égal au flux, arbre de pages ou de plans, cycle
+  de références) finit en `RecursionError` comme en Python. Mais un
+  `getobj` passe par les méthodes du parseur (`nextobject`, `nexttoken`,
+  `_parse_*`…), qui ne comptent pas encore les leurs : la page où un arbre
+  profond juste à la limite échoue peut différer d'un niveau (cas laissé
+  hors du corpus adverse `adv-pages`). Le compte des cadres de `psparser`
+  réglera ce cas.
 - Le harnais fixe la profondeur de départ (`with_depth`) à celle que
   l'oracle a mesurée au même point d'appel ; le code porté ne la fixe jamais.
 
