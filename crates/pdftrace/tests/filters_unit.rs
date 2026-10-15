@@ -7,9 +7,9 @@
 //! built from the case (`TableDoc` of `oracle/unit/pdftypes.py`): object 13
 //! raises `PDFSyntaxError` like a broken object.
 //!
-//! `/CCITTFaxDecode` is ported separately: a case whose Rust result is the
-//! `NotPorted` error of the `ccitt` stub is counted as skipped (only cases
-//! with that filter may be).
+//! `/CCITTFaxDecode` streams go through the real `pdfminer::ccitt` port, as
+//! every other filter: no case is skipped (`ccitt_unit.rs` replays the
+//! decoder itself).
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -26,7 +26,7 @@ use pdftrace::canon::sha256_hex;
 use pdftrace::typed_json::{self, Json};
 use pdftrace::unit::UnitData;
 use pdftrace::value::{NameValue, Value};
-use pycompat::{exc, recursion, ExcKind, PyErr, PyInt, PyResult};
+use pycompat::{exc, recursion, PyInt, PyResult};
 
 /// `BLOB_MAX` of the generator.
 const BLOB_MAX: usize = 2048;
@@ -44,16 +44,12 @@ fn blob(b: &[u8]) -> Value {
     }
 }
 
-/// A result; `None` for the `NotPorted` error of a module not ported yet.
-fn result(r: PyResult<impl AsRef<[u8]>>) -> Option<Value> {
+/// A result: the data (or its digest), or the exception.
+fn result(r: PyResult<impl AsRef<[u8]>>) -> Value {
     match r {
-        Ok(b) => Some(blob(b.as_ref())),
-        Err(e) => err(&e),
+        Ok(b) => blob(b.as_ref()),
+        Err(e) => Value::from(&e),
     }
-}
-
-fn err(e: &PyErr) -> Option<Value> {
-    (e.kind != ExcKind::NotPorted).then(|| Value::from(e))
 }
 
 fn bytes(v: &Value) -> &[u8] {
@@ -138,30 +134,20 @@ fn uses_ccitt(text: &str) -> bool {
     text.contains("CCITTFaxDecode") || text.contains("\"CCF\"")
 }
 
-/// Replays `<name>.jsonl`; `run` returns `None` for a skipped case.
-fn check(name: &str, min_cases: usize, run: impl Fn(&[Value]) -> Option<Value>) {
+/// Replays `<name>.jsonl`.
+fn check(name: &str, min_cases: usize, run: impl Fn(&[Value]) -> Value) {
     let cases = UnitData::open("filters").cases(name);
     assert!(cases.len() >= min_cases, "{name}: only {} cases", cases.len());
     let mut differ = Vec::new();
-    let mut skipped = 0;
+    let mut ccitt = 0;
     for (k, (args, expected)) in cases.iter().enumerate() {
-        match run(args) {
-            None => {
-                // only /CCITTFaxDecode (ported separately) may be missing
-                assert!(uses_ccitt(&format!("{args:?}")), "{name} #{k}: NotPorted without /CCITTFaxDecode: {args:?}");
-                skipped += 1;
-            }
-            Some(got) if !got.same(expected) => {
-                differ.push(format!("#{k} {args:?}\n  expected {expected:?}\n       got {got:?}"))
-            }
-            Some(_) => {}
+        ccitt += usize::from(uses_ccitt(&format!("{args:?}")));
+        let got = run(args);
+        if !got.same(expected) {
+            differ.push(format!("#{k} {args:?}\n  expected {expected:?}\n       got {got:?}"))
         }
     }
-    println!(
-        "{name}: {}/{} identical, {skipped} skipped (not ported)",
-        cases.len() - differ.len() - skipped,
-        cases.len()
-    );
+    println!("{name}: {}/{} identical ({ccitt} with /CCITTFaxDecode)", cases.len() - differ.len(), cases.len());
     assert!(
         differ.is_empty(),
         "{name}: {} differ:\n{}",
@@ -194,7 +180,7 @@ fn runlength() {
 fn paeth() {
     check("paeth", 2000, |a| {
         let v = |i: usize| int(&a[i]).as_i64().expect("small");
-        Some(Value::Int(PyInt::Small(paeth_predictor(v(0), v(1), v(2)))))
+        Value::Int(PyInt::Small(paeth_predictor(v(0), v(1), v(2))))
     });
 }
 
@@ -230,11 +216,11 @@ fn streams() {
             Ok(pairs) => {
                 Value::List(pairs.iter().map(|(f, p)| Value::Tuple(vec![Value::from(f), Value::from(p)])).collect())
             }
-            Err(e) => err(&e)?,
+            Err(e) => Value::from(&e),
         };
-        let data = result(s.get_data())?;
+        let data = result(s.get_data());
         let raw = s.get_rawdata().map_or(Value::None, |r| Value::Bytes(r.to_vec()));
-        Some(Value::List(vec![filters, data, raw]))
+        Value::List(vec![filters, data, raw])
     });
 }
 
@@ -257,7 +243,7 @@ fn real_corpus() {
     assert!(records.len() >= 1000, "only {} streams", records.len());
     let mut off = 8;
     let mut differ = Vec::new();
-    let mut skipped = 0;
+    let mut ccitt = 0;
     let mut total = 0;
     for rec in records {
         let n = rd(off);
@@ -270,25 +256,19 @@ fn real_corpus() {
         let attrs = typed_json::from_json(&typed_json::parse_json(attrs_json).expect("attrs")).expect("typed attrs");
         let PDFObject::Dict(attrs) = build_direct(&attrs) else { panic!("attrs") };
         let expected = typed_json::from_json(rec.get("out").expect("out")).expect("typed out");
+        ccitt += usize::from(uses_ccitt(attrs_json));
         let got = match PDFStream::new(attrs, Rc::from(raw), None).get_data() {
-            Ok(b) => Some(sha(&b)),
-            Err(e) => err(&e),
+            Ok(b) => sha(&b),
+            Err(e) => Value::from(&e),
         };
-        match got {
-            None => {
-                assert!(uses_ccitt(attrs_json), "NotPorted without /CCITTFaxDecode: {:?}", rec.get("id"));
-                skipped += 1;
-            }
-            Some(got) if !got.same(&expected) => {
-                differ.push(format!("{:?}: expected {expected:?}, got {got:?}", rec.get("id")));
-            }
-            Some(_) => {}
+        if !got.same(&expected) {
+            differ.push(format!("{:?}: expected {expected:?}, got {got:?}", rec.get("id")));
         }
     }
     assert_eq!(off, bin.len(), "trailing bytes in corpus.bin");
     println!(
-        "real corpus: {}/{} streams identical, {skipped} skipped (not ported), {:.1} MB raw",
-        records.len() - differ.len() - skipped,
+        "real corpus: {}/{} streams identical ({ccitt} with /CCITTFaxDecode), {:.1} MB raw",
+        records.len() - differ.len(),
         records.len(),
         total as f64 / 1e6
     );

@@ -1,35 +1,969 @@
-//! Port of `pdfminer/ccitt.py`: not ported yet.
+//! Port of `pdfminer/ccitt.py`: the CCITT Group 4 (T.6) fax decoder behind
+//! the `/CCITTFaxDecode` filter.
 //!
-//! Only the signatures `pdftypes::PDFStream.decode` calls are here, as a
-//! stub (the module is ported separately and replaces this file). The
-//! dispatch on the type of `params` lives in `ccittfaxdecode_obj`, so that
-//! `decode` keeps calling it unchanged once the port lands.
+//! # Structure
+//!
+//! - `BitParser` walks binary trees of codes one bit at a time. Python's
+//!   trees are nested two-element lists (`BitParserState`) whose leaves are
+//!   `int`/`str` values; here a tree is an arena ([`BitParserState`]) of
+//!   nodes holding two [`Slot`]s, built by the same `BitParser.add`. The four
+//!   class-level trees of `CCITTG4Parser` (`MODE`, `WHITE`, `BLACK`,
+//!   `UNCOMPRESSED`) are built once from the `add` calls of the class body,
+//!   generated into `ccitt_tables.rs` by `oracle/codegen/ccitt_tables.py`.
+//! - `CCITTG4Parser` and its subclass `CCITTFaxDecoder` are one generic
+//!   struct, [`CCITTG4Parser<X>`], holding the state of `BitParser` and
+//!   `CCITTG4Parser` as public fields (Python's underscored names kept), and
+//!   `ext: X`, whose [`CCITTG4ParserExt::output_line`] is the method the
+//!   subclasses override. [`PrintLines`] is `CCITTG4Parser.output_line`
+//!   (which `print`s each line: the text is collected), [`FaxOutput`] is
+//!   `CCITTFaxDecoder.output_line` and `close`; the Python class names are
+//!   type aliases ([`CCITTFaxDecoder`]).
+//! - `self._accept` (a bound method) is the enum [`Accept`], and
+//!   `self._state` (a list) the pair tree + node ([`State`]).
+//! - The exceptions `CCITTG4Parser.EOFB`/`InvalidData`/`ByteSkip` are
+//!   [`PyErr`]s of the kinds of the same names.
+//!
+//! # Upstream behavior kept as is
+//!
+//! - `ccittfaxdecode` decodes only `K == -1` (pure 2-D, Group 4): any other
+//!   `/K` (missing, `0`, positive, anything) raises `PDFValueError(K)`.
+//!   `/EncodedByteAlign` and `/BlackIs1` are only tested for truthiness;
+//!   `/Rows`, `/EndOfLine`, `/EndOfBlock` and `/DamagedRowsBeforeError` are
+//!   never read, and `/Columns` has no default (a missing one is `None`:
+//!   `[1] * None` raises `TypeError`).
+//! - Pixels are 1 for white (the reference line starts white); a line is
+//!   written when `_curpos` reaches `width`, packed MSB first, `BlackIs1`
+//!   inverting it. A pass code at the start of a line writes the last pixel
+//!   of the line (`range(-1, x1)` indexes `-1`), an uncompressed-mode code
+//!   too: Python's negative indexing is kept ([`array_get`]/[`array_set`]).
+//! - Errors leave the stream: `InvalidData` and `IndexError` propagate (the
+//!   lines decoded so far are lost), `EOFB` ends decoding, `ByteSkip`
+//!   (byte-aligned lines) skips the rest of the byte.
+//!
+//! # Recursion depth
+//!
+//! Every ported Python function takes its frame ([`recursion::py_frame`]),
+//! including `typing.cast` (a Python function), `PDFStream.get` and the
+//! `get_bytes` generator, whose creation and every resumption run a frame
+//! one level below `feedbytes` (`oracle/unit/ccitt.py` checks the depths
+//! around the frame limit).
+//!
+//! C recursion units are taken where CPython 3.12 takes them before the
+//! decoder runs, as `oracle/unit/ccitt.py` measures them (`deep` cases with
+//! 0 to 5 units left, each job in a fresh interpreter warmed up on it):
+//!
+//! - instantiating `CCITTG4Parser` or `CCITTFaxDecoder` calls a class (one
+//!   unit, `" while calling a Python object"`, held during the call), whose
+//!   `__init__` is entered from C (two units, `recursion::eval_entry`);
+//!   inside, each `array.array(...)` is a class call too (one unit);
+//! - `K == -1` takes one unit (`" in comparison"`) unless `K` is a compact
+//!   int (`|K| < 2^30`), which the specialized comparison handles without;
+//! - creating the instance of an exception raised by C code (`TypeError`,
+//!   `OverflowError`, `AttributeError`) or by `raise PDFValueError(K)` calls
+//!   its class: one unit (`MemoryError` is preallocated: none). The text of
+//!   `PDFValueError(K)`, `str(K)`, is only computed by whoever prints the
+//!   exception, so the port computes it at the top of a fresh stack, not at
+//!   the depth of the call.
+//!
+//! This models warm, specialized bytecode (`dict.get` and the comparison of
+//! compact ints run without a unit): the first runs of a function, or a
+//! call site that saw other types, may take one more in CPython. Once the
+//! decoder exists, at least four units are free, more than anything later
+//! takes (the builtins called while decoding take at most two, never
+//! nested), so the decoding methods count frames only.
+//!
+//! # Memory
+//!
+//! `[1] * width` raises `MemoryError` in CPython when the list cannot be
+//! allocated (always from 2^60 columns, `PyMem_New`'s size check; below
+//! that, when `malloc` fails). The port allocates the `array('b')` only
+//! (one byte per column) and raises `MemoryError` when the allocation fails
+//! (always from 2^60 columns too); between the two, where CPython's
+//! outcome depends on the machine, they may differ.
 
-use pycompat::recursion::py_frame;
-use pycompat::{exc, PyErr, PyResult};
+use std::borrow::Cow;
+use std::sync::LazyLock;
+
+use pycompat::recursion::{self, py_frame, Guard};
+use pycompat::{exc, ExcKind, PyErr, PyInt, PyResult};
 
 use crate::pdftypes::{PDFDict, PDFObject};
 
-// pdfminer/ccitt.py:556 ccittfaxdecode
-/// Stub: raises `NotPorted` until `ccitt.py` is ported.
-pub fn ccittfaxdecode(_data: &[u8], _params: &PDFDict) -> PyResult<Vec<u8>> {
+#[rustfmt::skip] // generated by oracle/codegen/ccitt_tables.py
+#[path = "ccitt_tables.rs"]
+mod tables;
+
+// ---------------------------------------------------------------------------
+// Parse trees
+
+/// A leaf value of the generated tables (`BitParser.add(TABLE, value, bits)`).
+#[derive(Clone, Copy, Debug)]
+pub enum TableValue {
+    Int(i64),
+    Str(&'static str),
+}
+
+/// A leaf of a parse tree: an `int` or a `str`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Leaf {
+    Int(i64),
+    Str(Cow<'static, str>),
+}
+
+impl From<TableValue> for Leaf {
+    fn from(v: TableValue) -> Leaf {
+        match v {
+            TableValue::Int(i) => Leaf::Int(i),
+            TableValue::Str(s) => Leaf::Str(Cow::Borrowed(s)),
+        }
+    }
+}
+
+/// An element of a two-element list of a tree: `None`, a subtree (the
+/// index of its node) or a leaf.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Slot {
+    None,
+    Node(u32),
+    Leaf(Leaf),
+}
+
+/// `BitParserState`: a tree of nested `[x, y]` lists, as an arena whose
+/// node 0 is the root.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BitParserState {
+    pub nodes: Vec<[Slot; 2]>,
+}
+
+impl Default for BitParserState {
+    /// `[None, None]`
+    fn default() -> BitParserState {
+        BitParserState { nodes: vec![[Slot::None, Slot::None]] }
+    }
+}
+
+/// Where `BitParser.add` is in the tree: Python's `p`, a list, or the
+/// leaf it walked into when a code goes through another code's leaf.
+enum Cursor {
+    Node(u32),
+    Int,
+    Str(Vec<char>),
+}
+
+impl BitParserState {
+    // pdfminer/ccitt.py:46 BitParser.add
+    /// Adds the code `bits` (a string of `'0'`/`'1'`; any other character
+    /// is a 0) for `v`, creating the lists on its path. Raises as Python
+    /// does when `bits` is empty (`AssertionError`) or goes through a leaf
+    /// (indexing an `int` or a `str`).
+    pub fn add(&mut self, v: Leaf, bits: &str) -> PyResult<()> {
+        let mut p = Cursor::Node(0);
+        let mut b: Option<usize> = None;
+        for (i, c) in bits.chars().enumerate() {
+            if i > 0 {
+                let Some(b) = b else { return Err(exc::AssertionError("")) };
+                p = match p {
+                    Cursor::Node(n) => {
+                        if self.nodes[n as usize][b] == Slot::None {
+                            self.nodes.push([Slot::None, Slot::None]);
+                            let new = u32::try_from(self.nodes.len() - 1).expect("fewer than 2^32 nodes");
+                            self.nodes[n as usize][b] = Slot::Node(new);
+                        }
+                        match &self.nodes[n as usize][b] {
+                            Slot::Node(m) => Cursor::Node(*m),
+                            Slot::Leaf(Leaf::Int(_)) => Cursor::Int,
+                            Slot::Leaf(Leaf::Str(s)) => Cursor::Str(s.chars().collect()),
+                            Slot::None => unreachable!("just filled"),
+                        }
+                    }
+                    Cursor::Int => return Err(exc::TypeError("'int' object is not subscriptable")),
+                    // `s[b]` is a one-character string, never None
+                    Cursor::Str(s) => match s.get(b) {
+                        Some(&ch) => Cursor::Str(vec![ch]),
+                        None => return Err(exc::IndexError("string index out of range")),
+                    },
+                };
+            }
+            b = Some(usize::from(c == '1'));
+        }
+        let Some(b) = b else { return Err(exc::AssertionError("")) };
+        match p {
+            Cursor::Node(n) => {
+                self.nodes[n as usize][b] = Slot::Leaf(v);
+                Ok(())
+            }
+            Cursor::Int => Err(exc::TypeError("'int' object does not support item assignment")),
+            Cursor::Str(_) => Err(exc::TypeError("'str' object does not support item assignment")),
+        }
+    }
+
+    /// A tree from `BitParser.add` calls (the class body of `CCITTG4Parser`).
+    fn build(entries: &[(TableValue, &str)]) -> BitParserState {
+        let mut root = BitParserState::default();
+        for &(v, bits) in entries {
+            root.add(v.into(), bits).expect("the upstream tables are prefix codes");
+        }
+        root
+    }
+}
+
+// pdfminer/ccitt.py:75 CCITTG4Parser.MODE
+pub static MODE: LazyLock<BitParserState> = LazyLock::new(|| BitParserState::build(tables::MODE));
+// pdfminer/ccitt.py:95 CCITTG4Parser.WHITE
+pub static WHITE: LazyLock<BitParserState> = LazyLock::new(|| BitParserState::build(tables::WHITE));
+// pdfminer/ccitt.py:201 CCITTG4Parser.BLACK
+pub static BLACK: LazyLock<BitParserState> = LazyLock::new(|| BitParserState::build(tables::BLACK));
+// pdfminer/ccitt.py:307 CCITTG4Parser.UNCOMPRESSED
+pub static UNCOMPRESSED: LazyLock<BitParserState> = LazyLock::new(|| BitParserState::build(tables::UNCOMPRESSED));
+
+/// `self._state`: a list of one of the class trees, as the tree and the
+/// index of the node.
+#[derive(Clone, Copy, Debug)]
+pub struct State {
+    pub tree: &'static BitParserState,
+    pub node: u32,
+}
+
+impl State {
+    /// The root of `tree` (`return self.MODE`...).
+    fn root(tree: &'static BitParserState) -> State {
+        State { tree, node: 0 }
+    }
+}
+
+/// `self._accept`: the bound method called with each leaf.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Accept {
+    ParseMode,
+    ParseHoriz1,
+    ParseHoriz2,
+    ParseUncompressed,
+}
+
+impl Accept {
+    /// `self._accept.__name__`
+    pub fn name(self) -> &'static str {
+        match self {
+            Accept::ParseMode => "_parse_mode",
+            Accept::ParseHoriz1 => "_parse_horiz1",
+            Accept::ParseHoriz2 => "_parse_horiz2",
+            Accept::ParseUncompressed => "_parse_uncompressed",
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Python helpers
+
+// pdfminer/ccitt.py:25 get_bytes
+/// One frame of the `get_bytes` generator: created by `feedbytes`, then
+/// resumed for each byte and once more at the end (`StopIteration`), each
+/// time one level below the caller, as a Python function call.
+fn get_bytes() -> PyResult<()> {
     let _frame = py_frame()?;
-    Err(PyErr::not_ported("pdfminer.ccitt.ccittfaxdecode"))
+    Ok(())
+}
+
+/// `typing.cast(typ, val)`: a Python function (its frame), returning `val`.
+fn cast(val: PDFObject) -> PyResult<PDFObject> {
+    let _frame = py_frame()?;
+    Ok(val)
+}
+
+/// `a[i]` on an `array('b')`, with Python's negative indexes.
+pub fn array_get(a: &[i8], i: i64) -> PyResult<i8> {
+    py_index(a.len(), i).map(|i| a[i]).ok_or_else(|| exc::IndexError("array index out of range"))
+}
+
+/// `a[i] = v` on an `array('b')`, with Python's negative indexes: the
+/// index is checked first (`array_ass_item`), then `v` converted to a
+/// signed char.
+pub fn array_set(a: &mut [i8], i: i64, v: i64) -> PyResult<()> {
+    match py_index(a.len(), i) {
+        Some(i) => {
+            a[i] = signed_char(v)?;
+            Ok(())
+        }
+        None => Err(exc::IndexError("array assignment index out of range")),
+    }
+}
+
+fn py_index(len: usize, i: i64) -> Option<usize> {
+    let len = i64::try_from(len).expect("a slice length fits i64");
+    let i = if i < 0 { i + len } else { i };
+    if (0..len).contains(&i) {
+        usize::try_from(i).ok()
+    } else {
+        None
+    }
+}
+
+/// `len(a)` as a Python `int`.
+fn len_i64(a: &[i8]) -> i64 {
+    i64::try_from(a.len()).expect("a slice length fits i64")
+}
+
+/// The count of `[1] * n`: an `int` (a `bool` is one), else `TypeError`;
+/// beyond a C `ssize_t`, `OverflowError`.
+pub fn sequence_repeat_count(n: &PDFObject) -> PyResult<i64> {
+    match n {
+        PDFObject::Bool(b) => Ok(i64::from(*b)),
+        PDFObject::Int(PyInt::Small(i)) => Ok(*i),
+        PDFObject::Int(PyInt::Big(_)) => Err(exc::OverflowError("cannot fit 'int' into an index-sized integer")),
+        other => Err(exc::TypeError(format!("can't multiply sequence by non-int of type '{}'", other.type_name()))),
+    }
+}
+
+/// Makes `v` hold `array.array("b", [1] * n)`: `n` ones, none for `n <= 0`,
+/// reusing its memory. `MemoryError` when the memory cannot be had, as
+/// CPython's (from 2^60 items, more than `PY_SSIZE_T_MAX / 8`, `PyMem_New`
+/// refuses the list at once; no machine has that much memory, so
+/// `try_reserve` fails there too).
+fn fill_ones(v: &mut Vec<i8>, n: i64) -> PyResult<()> {
+    v.clear();
+    let n = usize::try_from(n.max(0)).map_err(|_| exc::MemoryError(""))?;
+    v.try_reserve_exact(n).map_err(|_| exc::MemoryError(""))?;
+    v.resize(n, 1);
+    Ok(())
+}
+
+fn ccitt_exc(kind: ExcKind, message: impl Into<String>) -> PyErr {
+    PyErr::new(kind, message)
+}
+
+const WHILE_CALLING: &str = " while calling a Python object";
+
+/// `e`, an exception raised by C code (`PyErr_Format`): creating its
+/// instance calls its class, which takes a C unit; without one, the
+/// `RecursionError` is raised instead.
+fn raised_by_c(e: PyErr) -> PyErr {
+    match recursion::c_call(WHILE_CALLING) {
+        Ok(_unit) => e,
+        Err(recursion_error) => recursion_error,
+    }
+}
+
+/// A Python class called by Python code (`CCITTFaxDecoder(...)`): the call
+/// of the class (one C unit), then its `__init__`, entered from C
+/// (`slot_tp_init`: two units), both held until the instance is made. The
+/// `__init__` takes its frame after these.
+fn class_call() -> PyResult<(Guard, Guard)> {
+    let call = recursion::c_call(WHILE_CALLING)?;
+    Ok((call, recursion::eval_entry()?))
+}
+
+/// `array.array("b", [1] * width)` into `v`: `[1] * width` first, then the
+/// call of the class `array.array` (one C unit).
+fn array_of_ones(v: &mut Vec<i8>, width: i64) -> PyResult<()> {
+    fill_ones(v, width)?;
+    drop(recursion::c_call(WHILE_CALLING)?);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// The parser
+
+/// What a subclass of `CCITTG4Parser` overrides: `output_line`.
+pub trait CCITTG4ParserExt {
+    /// `type(self).__name__`
+    const CLASS_NAME: &'static str;
+
+    /// `self.output_line(y, bits)`, a Python method (it takes its frame).
+    fn output_line(&mut self, y: i64, bits: &[i8]) -> PyResult<()>;
+}
+
+/// `CCITTG4Parser.output_line`: `print(y, "".join(str(b) for b in bits))`.
+/// The printed text is collected in `text`.
+#[derive(Clone, Debug, Default)]
+pub struct PrintLines {
+    pub text: String,
+}
+
+impl CCITTG4ParserExt for PrintLines {
+    const CLASS_NAME: &'static str = "CCITTG4Parser";
+
+    // pdfminer/ccitt.py:442 CCITTG4Parser.output_line
+    fn output_line(&mut self, y: i64, bits: &[i8]) -> PyResult<()> {
+        let _frame = py_frame()?;
+        {
+            // the generator expression consumed by join
+            let _genexpr = py_frame()?;
+        }
+        let line: String = bits.iter().map(|b| b.to_string()).collect();
+        self.text.push_str(&format!("{y} {line}\n"));
+        Ok(())
+    }
+}
+
+/// The state `CCITTFaxDecoder` adds: `reversed` (`BlackIs1`, as its
+/// truth value) and the output `_buf`.
+#[derive(Clone, Debug, Default)]
+pub struct FaxOutput {
+    pub reversed: bool,
+    pub _buf: Vec<u8>,
+}
+
+impl CCITTG4ParserExt for FaxOutput {
+    const CLASS_NAME: &'static str = "CCITTFaxDecoder";
+
+    // pdfminer/ccitt.py:546 CCITTFaxDecoder.output_line
+    fn output_line(&mut self, _y: i64, bits: &[i8]) -> PyResult<()> {
+        let _frame = py_frame()?;
+        let mut arr = vec![0u8; bits.len().div_ceil(8)];
+        for (i, &b) in bits.iter().enumerate() {
+            // `bits = [1 - b for b in bits]` when reversed (an inlined
+            // comprehension: no frame)
+            let b = if self.reversed { 1 - i16::from(b) } else { i16::from(b) };
+            if b != 0 {
+                arr[i / 8] += [128, 64, 32, 16, 8, 4, 2, 1][i % 8];
+            }
+        }
+        self._buf.extend_from_slice(&arr);
+        Ok(())
+    }
+}
+
+/// `CCITTG4Parser` (with `BitParser`), its subclass given by `ext`.
+#[derive(Clone, Debug)]
+pub struct CCITTG4Parser<X> {
+    // BitParser
+    pub _pos: i64,
+    pub _state: State,
+    pub _accept: Accept,
+    // CCITTG4Parser
+    pub width: i64,
+    pub bytealign: bool,
+    pub _y: i64,
+    pub _curline: Vec<i8>,
+    pub _refline: Vec<i8>,
+    pub _curpos: i64,
+    pub _color: i64,
+    /// `None` until the first `h` mode code sets it (reading it before
+    /// raises `AttributeError`, as an unset attribute).
+    pub _n1: Option<i64>,
+    /// `None` until `_parse_horiz1` sets it.
+    pub _n2: Option<i64>,
+    pub ext: X,
+}
+
+/// `CCITTFaxDecoder`
+pub type CCITTFaxDecoder = CCITTG4Parser<FaxOutput>;
+
+impl CCITTG4Parser<PrintLines> {
+    // pdfminer/ccitt.py:337 CCITTG4Parser.__init__
+    /// `CCITTG4Parser(width, bytealign)`: `width` is any object (`[1] *
+    /// width` raises for a non-`int`), `bytealign` its truth value.
+    pub fn new(width: &PDFObject, bytealign: bool) -> PyResult<Self> {
+        let _call = class_call()?;
+        let _frame = py_frame()?;
+        CCITTG4Parser::init(width, bytealign, PrintLines::default())
+    }
+}
+
+impl CCITTFaxDecoder {
+    // pdfminer/ccitt.py:533 CCITTFaxDecoder.__init__
+    /// `CCITTFaxDecoder(width, bytealign, reversed)` (see
+    /// [`CCITTG4Parser::new`]).
+    pub fn new(width: &PDFObject, bytealign: bool, reversed: bool) -> PyResult<Self> {
+        let _call = class_call()?;
+        let _frame = py_frame()?;
+        let mut parser = {
+            // CCITTG4Parser.__init__(self, width, bytealign=bytealign)
+            let _frame = py_frame()?;
+            CCITTG4Parser::init(width, bytealign, FaxOutput::default())?
+        };
+        parser.ext.reversed = reversed;
+        parser.ext._buf = Vec::new();
+        Ok(parser)
+    }
+
+    // pdfminer/ccitt.py:543 CCITTFaxDecoder.close
+    pub fn close(&self) -> PyResult<Vec<u8>> {
+        let _frame = py_frame()?;
+        Ok(self.ext._buf.clone())
+    }
+}
+
+impl<X: CCITTG4ParserExt> CCITTG4Parser<X> {
+    /// The body of `CCITTG4Parser.__init__` (its caller holds its frame):
+    /// `BitParser.__init__`, then `reset()`, where `[1] * width` checks
+    /// `width`.
+    fn init(width: &PDFObject, bytealign: bool, ext: X) -> PyResult<Self> {
+        {
+            // pdfminer/ccitt.py:42 BitParser.__init__
+            let _frame = py_frame()?;
+        }
+        let mut p = CCITTG4Parser {
+            _pos: 0,
+            _state: State::root(&MODE),
+            _accept: Accept::ParseMode,
+            width: 0,
+            bytealign,
+            _y: 0,
+            _curline: Vec::new(),
+            _refline: Vec::new(),
+            // set by reset()
+            _curpos: 0,
+            _color: 1,
+            _n1: None,
+            _n2: None,
+            ext,
+        };
+        // self.reset(), whose `[1] * self.width` is where a bad width raises
+        let _frame = py_frame()?;
+        p.width = sequence_repeat_count(width).map_err(raised_by_c)?;
+        p.reset_body()?;
+        Ok(p)
+    }
+
+    // pdfminer/ccitt.py:59 BitParser.feedbytes
+    /// `BitParser.feedbytes(self, data)`: the base method, which lets
+    /// `ByteSkip` and `EOFB` out.
+    pub fn bitparser_feedbytes(&mut self, data: &[u8]) -> PyResult<()> {
+        let _frame = py_frame()?;
+        get_bytes()?;
+        for &byte in data {
+            get_bytes()?;
+            self.parse_byte(byte)?;
+        }
+        get_bytes()
+    }
+
+    // pdfminer/ccitt.py:64 BitParser._parse_bit
+    pub fn _parse_bit(&mut self, x: bool) -> PyResult<()> {
+        let _frame = py_frame()?;
+        let state = self._state;
+        let v = &state.tree.nodes[state.node as usize][usize::from(x)];
+        self._pos += 1;
+        if let Slot::Node(n) = v {
+            self._state = State { tree: state.tree, node: *n };
+        } else {
+            let v = match v {
+                Slot::Leaf(leaf) => Some(leaf),
+                _ => None,
+            };
+            let tree = match self._accept {
+                Accept::ParseMode => self._parse_mode(v)?,
+                Accept::ParseHoriz1 => self._parse_horiz1(v)?,
+                Accept::ParseHoriz2 => self._parse_horiz2(v)?,
+                Accept::ParseUncompressed => self._parse_uncompressed(v)?,
+            };
+            self._state = State::root(tree);
+        }
+        Ok(())
+    }
+
+    /// `for m in (128, 64, 32, 16, 8, 4, 2, 1): self._parse_bit(byte & m)`
+    fn parse_byte(&mut self, byte: u8) -> PyResult<()> {
+        for m in [128u8, 64, 32, 16, 8, 4, 2, 1] {
+            self._parse_bit(byte & m != 0)?;
+        }
+        Ok(())
+    }
+
+    // pdfminer/ccitt.py:343 CCITTG4Parser.feedbytes
+    pub fn feedbytes(&mut self, data: &[u8]) -> PyResult<()> {
+        let _frame = py_frame()?;
+        get_bytes()?;
+        for &byte in data {
+            get_bytes()?;
+            match self.parse_byte(byte) {
+                Ok(()) => {}
+                Err(e) if e.is_instance(ExcKind::ByteSkip) => {
+                    self._accept = Accept::ParseMode;
+                    self._state = State::root(&MODE);
+                }
+                Err(e) if e.is_instance(ExcKind::EOFB) => return Ok(()),
+                Err(e) => return Err(e),
+            }
+        }
+        get_bytes()
+    }
+
+    /// `self.<name>`, `AttributeError` while unset.
+    fn attribute(&self, value: Option<i64>, name: &str) -> PyResult<i64> {
+        value.ok_or_else(|| exc::AttributeError(format!("'{}' object has no attribute '{name}'", X::CLASS_NAME)))
+    }
+
+    /// `if self._color: return self.WHITE else: return self.BLACK`
+    fn color_tree(&self) -> &'static BitParserState {
+        if self._color != 0 {
+            &WHITE
+        } else {
+            &BLACK
+        }
+    }
+
+    // pdfminer/ccitt.py:354 CCITTG4Parser._parse_mode
+    pub fn _parse_mode(&mut self, mode: Option<&Leaf>) -> PyResult<&'static BitParserState> {
+        let _frame = py_frame()?;
+        match mode {
+            Some(Leaf::Str(s)) if s == "p" => {
+                self._do_pass()?;
+                self._flush_line()?;
+                Ok(&MODE)
+            }
+            Some(Leaf::Str(s)) if s == "h" => {
+                self._n1 = Some(0);
+                self._accept = Accept::ParseHoriz1;
+                Ok(self.color_tree())
+            }
+            Some(Leaf::Str(s)) if s == "u" => {
+                self._accept = Accept::ParseUncompressed;
+                Ok(&UNCOMPRESSED)
+            }
+            Some(Leaf::Str(s)) if s == "e" => Err(ccitt_exc(ExcKind::EOFB, "")),
+            Some(Leaf::Int(dx)) => {
+                self._do_vertical(*dx)?;
+                self._flush_line()?;
+                Ok(&MODE)
+            }
+            // raise self.InvalidData(mode): str(e) is str(mode)
+            Some(Leaf::Str(s)) => Err(ccitt_exc(ExcKind::InvalidData, s.to_string())),
+            None => Err(ccitt_exc(ExcKind::InvalidData, "None")),
+        }
+    }
+
+    /// `if n is None: raise self.InvalidData`, then `self.<name> += n`:
+    /// the new total and `n`. A `WHITE`/`BLACK` leaf is an int; a `str`
+    /// only comes from another tree, when `_accept` was changed by a direct
+    /// call of a `_parse_*` method.
+    fn accumulate(&self, total: Option<i64>, name: &str, n: Option<&Leaf>) -> PyResult<(i64, i64)> {
+        let Some(n) = n else {
+            // raise self.InvalidData (the class: no message)
+            return Err(ccitt_exc(ExcKind::InvalidData, ""));
+        };
+        let total = self.attribute(total, name)?;
+        match n {
+            Leaf::Int(n) => Ok((total + n, *n)),
+            Leaf::Str(_) => Err(exc::TypeError("unsupported operand type(s) for +=: 'int' and 'str'")),
+        }
+    }
+
+    // pdfminer/ccitt.py:378 CCITTG4Parser._parse_horiz1
+    pub fn _parse_horiz1(&mut self, n: Option<&Leaf>) -> PyResult<&'static BitParserState> {
+        let _frame = py_frame()?;
+        let (total, n) = self.accumulate(self._n1, "_n1", n)?;
+        self._n1 = Some(total);
+        if n < 64 {
+            self._n2 = Some(0);
+            self._color = 1 - self._color;
+            self._accept = Accept::ParseHoriz2;
+        }
+        Ok(self.color_tree())
+    }
+
+    // pdfminer/ccitt.py:391 CCITTG4Parser._parse_horiz2
+    pub fn _parse_horiz2(&mut self, n: Option<&Leaf>) -> PyResult<&'static BitParserState> {
+        let _frame = py_frame()?;
+        let (total, n) = self.accumulate(self._n2, "_n2", n)?;
+        self._n2 = Some(total);
+        if n < 64 {
+            self._color = 1 - self._color;
+            self._accept = Accept::ParseMode;
+            let (n1, n2) = (self.attribute(self._n1, "_n1")?, self.attribute(self._n2, "_n2")?);
+            self._do_horizontal(n1, n2)?;
+            self._flush_line()?;
+            Ok(&MODE)
+        } else {
+            Ok(self.color_tree())
+        }
+    }
+
+    // pdfminer/ccitt.py:406 CCITTG4Parser._parse_uncompressed
+    pub fn _parse_uncompressed(&mut self, bits: Option<&Leaf>) -> PyResult<&'static BitParserState> {
+        let _frame = py_frame()?;
+        let bits = match bits {
+            Some(Leaf::Str(s)) if !s.is_empty() => s,
+            // `if not bits: raise self.InvalidData`
+            None | Some(Leaf::Str(_) | Leaf::Int(0)) => return Err(ccitt_exc(ExcKind::InvalidData, "")),
+            // an int leaf of another tree (after a direct call of a
+            // `_parse_*` method changed `_accept`)
+            Some(Leaf::Int(_)) => return Err(exc::AttributeError("'int' object has no attribute 'startswith'")),
+        };
+        if let Some(rest) = bits.strip_prefix('T') {
+            self._accept = Accept::ParseMode;
+            let mut chars = rest.chars();
+            // int(bits[1])
+            let Some(c) = chars.next() else { return Err(exc::IndexError("string index out of range")) };
+            self._color = int_of_char(c)?;
+            self._do_uncompressed(chars.as_str())?;
+            Ok(&MODE)
+        } else {
+            self._do_uncompressed(bits)?;
+            Ok(&UNCOMPRESSED)
+        }
+    }
+
+    // pdfminer/ccitt.py:418 CCITTG4Parser._get_bits
+    pub fn _get_bits(&self) -> PyResult<String> {
+        let _frame = py_frame()?;
+        {
+            let _genexpr = py_frame()?;
+        }
+        // self._curline[: self._curpos]
+        let len = len_i64(&self._curline);
+        let end = if self._curpos < 0 { (self._curpos + len).max(0) } else { self._curpos.min(len) };
+        Ok(bits_text(&self._curline[..usize::try_from(end).expect("0 <= end <= len")]))
+    }
+
+    // pdfminer/ccitt.py:421 CCITTG4Parser._get_refline
+    pub fn _get_refline(&self, i: i64) -> PyResult<String> {
+        let _frame = py_frame()?;
+        {
+            let _genexpr = py_frame()?;
+        }
+        let r = &self._refline;
+        if i < 0 {
+            Ok(format!("[]{}", bits_text(r)))
+        } else if len_i64(r) <= i {
+            Ok(format!("{}[]", bits_text(r)))
+        } else {
+            let i = usize::try_from(i).expect("0 <= i < len");
+            Ok(format!("{}[{}]{}", bits_text(&r[..i]), r[i], bits_text(&r[i + 1..])))
+        }
+    }
+
+    // pdfminer/ccitt.py:435 CCITTG4Parser.reset
+    pub fn reset(&mut self) -> PyResult<()> {
+        let _frame = py_frame()?;
+        self.reset_body()
+    }
+
+    fn reset_body(&mut self) -> PyResult<()> {
+        self._y = 0;
+        array_of_ones(&mut self._curline, self.width)?;
+        self._reset_line()?;
+        self._accept = Accept::ParseMode;
+        self._state = State::root(&MODE);
+        Ok(())
+    }
+
+    // pdfminer/ccitt.py:445 CCITTG4Parser._reset_line
+    pub fn _reset_line(&mut self) -> PyResult<()> {
+        let _frame = py_frame()?;
+        // self._refline = self._curline; self._curline = array("b", [1] * width)
+        // (the old reference line is reused for the new line)
+        std::mem::swap(&mut self._refline, &mut self._curline);
+        array_of_ones(&mut self._curline, self.width)?;
+        self._curpos = -1;
+        self._color = 1;
+        Ok(())
+    }
+
+    // pdfminer/ccitt.py:451 CCITTG4Parser._flush_line
+    pub fn _flush_line(&mut self) -> PyResult<()> {
+        let _frame = py_frame()?;
+        if self.width <= self._curpos {
+            self.ext.output_line(self._y, &self._curline)?;
+            self._y += 1;
+            self._reset_line()?;
+            if self.bytealign {
+                return Err(ccitt_exc(ExcKind::ByteSkip, ""));
+            }
+        }
+        Ok(())
+    }
+
+    /// `self._curline[x] = color` (decoding only writes 0 and 1).
+    fn paint(&mut self, x: i64, color: i64) -> PyResult<()> {
+        array_set(&mut self._curline, x, color)
+    }
+
+    // pdfminer/ccitt.py:459 CCITTG4Parser._do_vertical
+    pub fn _do_vertical(&mut self, dx: i64) -> PyResult<()> {
+        let _frame = py_frame()?;
+        let color = self._color;
+        let r = &self._refline;
+        let mut x1 = self._curpos + 1;
+        loop {
+            if x1 == 0 {
+                if color == 1 && i64::from(array_get(r, x1)?) != color {
+                    break;
+                }
+            } else if x1 == len_i64(r)
+                || (i64::from(array_get(r, x1 - 1)?) == color && i64::from(array_get(r, x1)?) != color)
+            {
+                break;
+            }
+            x1 += 1;
+        }
+        x1 += dx;
+        let x0 = self._curpos.max(0);
+        let x1 = self.width.min(x1).max(0);
+        if x1 < x0 {
+            for x in x1..x0 {
+                self.paint(x, color)?;
+            }
+        } else if x0 < x1 {
+            for x in x0..x1 {
+                self.paint(x, color)?;
+            }
+        }
+        self._curpos = x1;
+        self._color = 1 - self._color;
+        Ok(())
+    }
+
+    // pdfminer/ccitt.py:483 CCITTG4Parser._do_pass
+    pub fn _do_pass(&mut self) -> PyResult<()> {
+        let _frame = py_frame()?;
+        let color = self._color;
+        let r = &self._refline;
+        let mut x1 = self._curpos + 1;
+        loop {
+            if x1 == 0 {
+                if color == 1 && i64::from(array_get(r, x1)?) != color {
+                    break;
+                }
+            } else if x1 == len_i64(r)
+                || (i64::from(array_get(r, x1 - 1)?) == color && i64::from(array_get(r, x1)?) != color)
+            {
+                break;
+            }
+            x1 += 1;
+        }
+        loop {
+            if x1 == 0 {
+                if color == 0 && i64::from(array_get(r, x1)?) == color {
+                    break;
+                }
+            } else if x1 == len_i64(r)
+                || (i64::from(array_get(r, x1 - 1)?) != color && i64::from(array_get(r, x1)?) == color)
+            {
+                break;
+            }
+            x1 += 1;
+        }
+        for x in self._curpos..x1 {
+            self.paint(x, color)?;
+        }
+        self._curpos = x1;
+        Ok(())
+    }
+
+    // pdfminer/ccitt.py:509 CCITTG4Parser._do_horizontal
+    pub fn _do_horizontal(&mut self, n1: i64, n2: i64) -> PyResult<()> {
+        let _frame = py_frame()?;
+        if self._curpos < 0 {
+            self._curpos = 0;
+        }
+        let mut x = self._curpos;
+        let color = self._color;
+        for _ in 0..n1 {
+            if len_i64(&self._curline) <= x {
+                break;
+            }
+            self.paint(x, color)?;
+            x += 1;
+        }
+        for _ in 0..n2 {
+            if len_i64(&self._curline) <= x {
+                break;
+            }
+            self.paint(x, 1 - color)?;
+            x += 1;
+        }
+        self._curpos = x;
+        Ok(())
+    }
+
+    // pdfminer/ccitt.py:525 CCITTG4Parser._do_uncompressed
+    pub fn _do_uncompressed(&mut self, bits: &str) -> PyResult<()> {
+        let _frame = py_frame()?;
+        for c in bits.chars() {
+            let v = int_of_char(c)?;
+            self.paint(self._curpos, v)?;
+            self._curpos += 1;
+            self._flush_line()?;
+        }
+        Ok(())
+    }
+}
+
+/// `"".join(str(b) for b in bits)`
+fn bits_text(bits: &[i8]) -> String {
+    bits.iter().map(|b| b.to_string()).collect()
+}
+
+/// `int(c)` for a one-character `str` (`'0'` or `'1'` of an `UNCOMPRESSED`
+/// code; any character in direct calls): a Unicode decimal digit, else
+/// `ValueError`.
+fn int_of_char(c: char) -> PyResult<i64> {
+    let mut buf = [0u8; 4];
+    let value = PyInt::parse_str(c.encode_utf8(&mut buf), 10)?;
+    Ok(value.as_i64().expect("a single digit"))
+}
+
+/// The value an `array('b')` item can take (`OverflowError` otherwise).
+fn signed_char(v: i64) -> PyResult<i8> {
+    i8::try_from(v).map_err(|_| {
+        exc::OverflowError(if v > 0 {
+            "signed char is greater than maximum"
+        } else {
+            "signed char is less than minimum"
+        })
+    })
 }
 
 // pdfminer/ccitt.py:556 ccittfaxdecode
+/// `ccittfaxdecode(data, params)` for a `dict` of parameters (the
+/// `DecodeParms` of the filter).
+pub fn ccittfaxdecode(data: &[u8], params: &PDFDict) -> PyResult<Vec<u8>> {
+    let _frame = py_frame()?;
+    decode(data, |key| Ok(params.get(key).unwrap_or(PDFObject::Null)))
+}
+
 /// `ccittfaxdecode(data, params)` for any object, as `PDFStream.decode`
-/// passes it (the resolved `DecodeParms` entry of the filter): a `dict`; a
-/// `PDFStream`, whose `get` reads its attributes; any other object raises
-/// `AttributeError` on `params.get("K")`. Stub: `NotPorted` for a `dict`
-/// or a stream.
+/// may pass it (the resolved `DecodeParms` entry of the filter): a `dict`;
+/// a `PDFStream`, whose `get` (a Python method) reads its attributes; any
+/// other object raises `AttributeError` on `params.get`.
 pub fn ccittfaxdecode_obj(data: &[u8], params: &PDFObject) -> PyResult<Vec<u8>> {
     match params {
         PDFObject::Dict(d) => ccittfaxdecode(data, d),
-        PDFObject::Stream(s) => ccittfaxdecode(data, &s.attrs),
+        PDFObject::Stream(s) => {
+            // pdfminer/ccitt.py:556 ccittfaxdecode
+            let _frame = py_frame()?;
+            decode(data, |key| {
+                // pdfminer/pdftypes.py:283 PDFStream.get
+                let _frame = py_frame()?;
+                Ok(s.attrs.get(key).unwrap_or(PDFObject::Null))
+            })
+        }
         other => {
             let _frame = py_frame()?;
-            Err(exc::AttributeError(format!("'{}' object has no attribute 'get'", other.type_name())))
+            Err(raised_by_c(exc::AttributeError(format!("'{}' object has no attribute 'get'", other.type_name()))))
         }
     }
+}
+
+/// The body of `ccittfaxdecode`, `get` being `params.get`.
+fn decode(data: &[u8], get: impl Fn(&str) -> PyResult<PDFObject>) -> PyResult<Vec<u8>> {
+    let k = get("K")?;
+    let k_is_minus_one = match &k {
+        // a compact int: the specialized comparison, without a C unit
+        PDFObject::Int(PyInt::Small(i)) if i.unsigned_abs() < 1 << 30 => *i == -1,
+        _ => {
+            let _unit = recursion::c_call(" in comparison")?;
+            match &k {
+                PDFObject::Float(f) => *f == -1.0,
+                _ => false,
+            }
+        }
+    };
+    if !k_is_minus_one {
+        // raise PDFValueError(K): calling the class takes a C unit. str(e)
+        // is str(K), which Python computes only when the exception is
+        // printed, by its reader: not at this depth, but at the top of a
+        // fresh stack.
+        drop(recursion::c_call(WHILE_CALLING)?);
+        let message = recursion::with_depth(recursion::Depth::default(), || k.py_str())?;
+        return Err(exc::PDFValueError(message));
+    }
+    let cols = cast(get("Columns")?)?;
+    let bytealign = cast(get("EncodedByteAlign")?)?;
+    let reversed = cast(get("BlackIs1")?)?;
+    let mut parser = CCITTFaxDecoder::new(&cols, bytealign.is_truthy(), reversed.is_truthy())?;
+    parser.feedbytes(data)?;
+    parser.close()
 }

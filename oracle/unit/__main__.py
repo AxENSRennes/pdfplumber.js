@@ -45,6 +45,8 @@ GENERATORS: dict[str, tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]] = {
     "zlib": (("meta.json",), ((),)),
     # generated cases, then every stream of the real corpus (minutes)
     "filters": (("meta.json", "corpus.json"), ((),)),
+    "ccitt": (("meta.json",), ((),)),
+    "ccitt_corpus": (("meta.json",), ((),)),
 }
 
 
