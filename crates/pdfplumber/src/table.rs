@@ -421,7 +421,7 @@ impl<'a> EdgeSets<'a> {
         }
     }
 
-    // pdfplumber/table.py:245 edges_to_set
+    // edges_to_set (nested in edge_connects)
     fn compute(&mut self, p: usize, axis: usize) -> PyResult<()> {
         if self.sets[p][axis].is_some() {
             return Ok(());
@@ -468,7 +468,7 @@ impl<'a> EdgeSets<'a> {
         Ok(false)
     }
 
-    // pdfplumber/table.py:244 edge_connects
+    // edge_connects (nested in intersections_to_cells)
     /// On positions in `intersections`.
     fn edge_connects(&mut self, p1: usize, p2: usize) -> PyResult<bool> {
         if self.points[p1].0 .0.py_eq(&self.points[p2].0 .0) && self.share(p1, p2, 0)? {
