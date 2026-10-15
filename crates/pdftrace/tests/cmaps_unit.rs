@@ -22,7 +22,10 @@
 //! encodingdb.rs: the guard `KeyError || ValueError` of `get_encoding` made
 //! `true`, since `name2unicode` raises nothing else (`PDFKeyError`, or the
 //! `ValueError` of `int()`/`chr()`; at most six hex digits never overflow
-//! the C int of `chr()`).
+//! the C int of `chr()`). After the review fixes (the `AttributeError`
+//! message, the provider default), the touched functions (`--re
+//! 'missing|provider|load_data|DefaultProvider'`, 23 mutants): 11 caught,
+//! 12 unviable.
 
 use std::fs;
 use std::rc::Rc;
