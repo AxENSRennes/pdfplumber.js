@@ -604,3 +604,22 @@ pub fn ok(r: Resp) -> Js {
 pub fn list(items: Vec<PyValue>) -> PyValue {
     PyValue::List(Rc::from(items))
 }
+
+/// Runs `f` on a new thread with a stack of `stack` bytes (fresh
+/// thread-local state: CMap caches, providers); under WebAssembly, which has
+/// no threads here, on the current one.
+pub fn on_thread<T: Send + 'static>(stack: usize, f: impl FnOnce() -> T + Send + 'static) -> T {
+    #[cfg(target_family = "wasm")]
+    {
+        let _ = stack;
+        f()
+    }
+    #[cfg(not(target_family = "wasm"))]
+    {
+        std::thread::Builder::new().stack_size(stack).spawn(f).unwrap().join().unwrap()
+    }
+}
+
+/// The result formats a test runs in turn, each on a fresh thread: both
+/// natively, one under WebAssembly (no fresh thread for the second).
+pub const FORMATS: &[&str] = if cfg!(target_family = "wasm") { &["binary"] } else { &["binary", "json"] };

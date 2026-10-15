@@ -154,11 +154,11 @@ fn call_with_cmaps(core: &mut Core, op: &str, args: PyValue, dir: &std::path::Pa
 fn predefined_cmaps_load_lazily_and_match_pdfminer() {
     let dir = cmap_dir();
     let names: Vec<String> = fs::read_to_string(dir.join("names.txt")).unwrap().lines().map(str::to_owned).collect();
-    for format in ["binary", "json"] {
+    for &format in FORMATS {
         // each format on its own thread: a fresh provider and CMap cache
         let dir = dir.clone();
         let names = names.clone();
-        std::thread::spawn(move || {
+        on_thread(64 << 20, move || {
             let names: Vec<PyValue> = names.iter().map(|n| PyValue::str(n)).collect();
             let mut core = Core::new();
             ok(call(&mut core, "set_format", 0, PyValue::str(format), None));
@@ -196,9 +196,7 @@ fn predefined_cmaps_load_lazily_and_match_pdfminer() {
                     ("message", s("Error -3 while decompressing data: incorrect header check"))
                 ])
             );
-        })
-        .join()
-        .unwrap();
+        });
     }
 }
 
@@ -336,13 +334,8 @@ fn replay_text(format: &'static str) -> usize {
 
 #[test]
 fn text_words_tables_over_objects_match_pdfplumber() {
-    for format in ["binary", "json"] {
-        let checked = std::thread::Builder::new()
-            .stack_size(256 << 20)
-            .spawn(move || replay_text(format))
-            .unwrap()
-            .join()
-            .unwrap();
+    for &format in FORMATS {
+        let checked = on_thread(256 << 20, move || replay_text(format));
         assert!(checked > 150, "{format}: {checked} operations");
     }
 }

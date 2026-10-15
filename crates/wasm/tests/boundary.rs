@@ -636,7 +636,7 @@ fn requests_report_their_errors() {
 /// Runs `f` on a thread with a large stack (the test decoders recurse, and
 /// `test_values` holds a list nested 100 000 levels deep).
 fn big_stack(f: impl FnOnce() + Send + 'static) {
-    std::thread::Builder::new().stack_size(1 << 30).spawn(f).unwrap().join().unwrap();
+    on_thread(1 << 30, f);
 }
 
 #[test]
@@ -668,12 +668,17 @@ fn documents_handles_formats_and_the_benchmark_body() {
     // a None handle is handle 0
     let req = arg_block(&list(vec![PyValue::str("echo"), PyValue::None, PyValue::from(5_i64), PyValue::from(0_i64)]));
     assert_eq!(ok(response(&core.call(&req, None))), Js::Num(5.0));
-    // formats: the same values in JSON
-    let tv = ok(call(&mut core, "test_values", 0, PyValue::None, None));
+    // formats: the same values in JSON (the test values hold a list nested
+    // 100 000 levels deep, which the recursive test decoders cannot read
+    // with the small stack of WebAssembly)
+    let deep_ok = !cfg!(target_family = "wasm");
+    let tv = deep_ok.then(|| ok(call(&mut core, "test_values", 0, PyValue::None, None)));
     assert_eq!(ok(call(&mut core, "set_format", 0, PyValue::str("json"), None)), Js::Null);
     let r = core.call(&request("test_values", 0, &PyValue::None, 0), None);
     assert_eq!((r[5], r[6]), (1, 1), "JSON with fixups");
-    assert_eq!(response(&r).value, tv);
+    if let Some(tv) = tv {
+        assert_eq!(response(&r).value, tv);
+    }
     let r = core.call(&request("echo", 0, &PyValue::from(1_i64), 0), None);
     assert_eq!((r[5], r[6]), (1, 0), "JSON without fixups");
     let r = core.call(&request("nope", 0, &PyValue::None, 0), None);
