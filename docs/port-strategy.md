@@ -157,3 +157,43 @@ Lecture :
   pdfplumber, puis le Wasm et l'API JS. L'organisation est décrite dans
   [`architecture.md`](architecture.md), la méthode de preuve dans
   [`verification.md`](verification.md).
+- **Vague 0** (fondations) : `pycompat` (nombres, `sum`, `pow` de glibc,
+  `repr`, `round`, récursion, Unicode), `psparser`, `pdftypes`,
+  `PDFContentParser`, `canon`/JSON typé, `pdftrace`, harnais Python (étapes,
+  cache, `verify`, générateurs unitaires à empreinte), `scripts/check.sh`
+  (natif et `wasm32-wasip1`), `scripts/heavy.sh`.
+- **Vague 1** (octobre 2026, fusionnée dans `rewrite/rust-core`) : les
+  modules sans document, chacun avec son générateur unitaire, son rejeu
+  Rust (natif et WASI) et sa passe de mutations (liste dans
+  `verification.md`) :
+  - `utils`, `casting`, `data_structures`, `pdfcolor`, `layout` (objets
+    `LT*` et analyse complète, ordre des `id()` injectable) et `ctm` de
+    pdfplumber ;
+  - `pycompat::zlib` (inflate de zlib 1.3 avec la sémantique de CPython),
+    filtres LZW, ASCII85/ASCIIHex, RunLength, prédicteurs,
+    `PDFStream.decode` ; `ccitt` (décodeur G4), branché dans `decode` : les
+    38 305 flux de l'ensemble `all` sont identiques, CCITT compris ;
+  - chiffrement : `arcfour`, `_saslprep` (NFKC d'Unicode 3.2.0 générée),
+    gestionnaires de sécurité standard (RC4, AES-128/256, révisions 2 à 6),
+    `unpad_aes` ;
+  - `glyphlist`, `latin_enc`, `fontmetrics` (générés), `encodingdb`,
+    `cmapdb` (CMaps prédéfinies hors du binaire, servies par un
+    `CMapProvider`) ;
+  - pdfplumber : modèle d'objets (`T_obj`, valeurs Python), `clustering`,
+    `geometry`, `utils/text.py` (mots, `TextMap`, `extract_text`, layout)
+    et `table.py` complets, testés sur des pages synthétiques et réelles ;
+    `pycompat::listsort` (timsort de CPython, utilisé aussi par le layout).
+- **Vagues suivantes**, dans l'ordre des dépendances :
+  1. `pdfparser`, `pdfdocument` (xref, repli, flux d'objets, mot de passe
+     via les gestionnaires déjà portés), `pdfpage` : étapes `objects`,
+     `streams`, `pages` ;
+  2. `pdffont` (sur `cmapdb`/`encodingdb`/`fontmetrics`) : étape `fonts` ;
+  3. `pdfinterp`, `pdfdevice`, `converter` (`PDFPageAggregator` vers
+     `layout`) : étapes `interp`, `layout` ;
+  4. pdfplumber `page`, `pdf`, `container`, `structure`, `convert` :
+     étapes `plumber_*`, en réutilisant `text`/`table` déjà portés ;
+  5. le Wasm et l'API JS (frontière à gros grain, fournisseur de CMaps par
+     `fetch`, `search` à la sémantique de `re`).
+  Les questions ouvertes laissées par la vague 1 sont notées dans les
+  en-têtes des modules et dans `architecture.md` (`search`, fournisseur de
+  CMaps, `atan2`).

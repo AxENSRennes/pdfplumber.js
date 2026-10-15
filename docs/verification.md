@@ -158,37 +158,35 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   (`wasm32-wasip1`, exécutés par le WASI de Node via
   `scripts/wasi-runner.mjs`, dans `scripts/check.sh`) : `usize` de 32 bits,
   pas de libm de l'hôte, arithmétique du navigateur.
-- Générateurs actuels : `canon.py` (`canon` et JSON typé, ci-dessus, plus
-  des valeurs imbriquées sur 2·10^5 à 10^6 niveaux), `pycompat.py`
-  (sémantique CPython, `pow` de la libm, `hash()` numérique, limites de
-  récursion), `exceptions.py` (classes d'exception de pdfminer et
-  pdfplumber), `pdftypes.py` (modèle d'objets, références, flux,
-  déchiffrement, `uint_value`, et objets imbriqués à la frontière des
-  limites de récursion : `repr`/`str` en unités C, `resolve_all`/
-  `decipher_all` en cadres), `psparser_base.py` (`PSStackParser` sur un
-  fichier : `nexttoken`, `nextline`, `revreadlines`, `seek`, `pop`),
-  `psparser.py` (flux de contenu des pages et Form XObjects de l'ensemble
-  `all`, et corpus adverse `--fuzz 4000` suivi de jobs fixes : chaque
-  fragment qui lève, chaque fragment posé sur une frontière de bloc, objets
-  imbriqués autour de la limite de `repr`/`str` et sur 10^6 niveaux ; pour
-  `PDFContentParser`, comparés job par job par empreinte de la sérialisation
-  canonique, chaque job rejoué depuis la profondeur de récursion où pdfminer
-  l'a exécuté), `zlib.py` (`zlib.decompress` et `zlib.decompressobj` de
-  CPython sur zlib 1.3 : flux de compresseurs réels, troncatures,
-  inversions de bits, flux deflate fabriqués aux tables invalides ou de
-  taille maximale (`ENOUGH_LENS`, `ENOUGH_DISTS`), en
-  entier, octet par octet, par morceaux, avec `max_length`), `filters.py`
-  (LZW, ASCII85, ASCIIHex, RunLength, prédicteurs TIFF/PNG,
-  `decompress_corrupted`, `PDFStream.get_data` sur des chaînes de filtres
-  générées, références indirectes comprises, puis chaque flux de
-  l'ensemble `all` : `corpus.bin` et
-  `corpus.json`),
-  `cmaps.py` (`glyphlist`, `latin_enc`, `fontmetrics`,
-  `name2unicode`, `get_encoding`, scripts d'appels sur chaque classe de
-  `cmapdb`, toutes les CMaps prédéfinies lues par le fournisseur des
-  fichiers compacts de `oracle/codegen/cmaps.py`, `CMapParser` sur un corpus
-  adverse `--fuzz 3000` et, avec `--corpus`, sur chaque flux CMap embarqué de
-  l'ensemble `all`).
+- Générateurs actuels (tous enregistrés dans `oracle/unit/__main__.py`),
+  avec le test Rust qui rejoue chacun (`crates/pdftrace/tests/`) :
+
+  | Générateur (`oracle/unit/`) | Modules Rust vérifiés | Rejeu | Contenu |
+  |---|---|---|---|
+  | `canon.py` | `pdftrace::{canon, typed_json}` | `canon_unit.rs` | `canon` et JSON typé (ci-dessus), valeurs imbriquées sur 2·10^5 à 10^6 niveaux |
+  | `pycompat.py` | `pycompat` | `pycompat_unit.rs` | sémantique CPython, `pow` de la libm, `hash()` numérique, limites de récursion |
+  | `exceptions.py` | `psexceptions`, `pdfexceptions`, `pycompat::err` | `exceptions_unit.rs` | classes d'exception de pdfminer et pdfplumber |
+  | `pdftypes.py` | `pdftypes` | `pdftypes_unit.rs` | modèle d'objets, références, flux, déchiffrement, `uint_value`, objets imbriqués à la frontière des limites de récursion (`repr`/`str` en unités C, `resolve_all`/`decipher_all` en cadres) |
+  | `psparser_base.py` | `psparser` | `psparser_base_unit.rs` | `PSStackParser` sur un fichier : `nexttoken`, `nextline`, `revreadlines`, `seek`, `pop` |
+  | `psparser.py` | `psparser`, `pdfparser` (`PDFContentParser`) | `psparser_unit.rs` | flux de contenu des pages et Form XObjects de l'ensemble `all` (`corpus.json`), corpus adverse `--fuzz 4000` (`fuzz.json`) suivi de jobs fixes (chaque fragment qui lève, chaque fragment posé sur une frontière de bloc, objets imbriqués autour de la limite de `repr`/`str` et sur 10^6 niveaux) ; comparés job par job par empreinte de la sérialisation canonique, chaque job rejoué depuis la profondeur où pdfminer l'a exécuté |
+  | `utils.py` | `utils`, `casting`, `data_structures`, `pdfcolor`, `pdfplumber::ctm` | `utils_unit.rs` | matrices et points (ints, floats, grands ints, infinis, NaN, zéros signés), `get_bound`, `drange`, `bbox2str`/`matrix2str`, `parse_rect`, `uniq`/`fsplit`/`pick`, `nunpack`, `decode_text`, nombres romains et alphabétiques, `safe_*` de `casting`, `Plane`, `NumberTree`, espaces de couleur, `CTM` |
+  | `layout.py` | `layout` | `layout_unit.rs` | pages brutes (réelles, par `PDFPageAggregatorWithMarkedContent`, et adverses) reconstruites puis analysées sous plusieurs `LAParams`, depuis la profondeur de Python et avec l'ordre des `id()` de Python ; objets `LT*` (`LTChar` vertical, `LTFigure` d'une Form XObject aux `/Matrix`/`/BBox` quelconques, attributs `mcid`/`tag`), lignes de texte, `list.sort` des clés du layout (NaN compris) |
+  | `zlib.py` | `pycompat::zlib` | `zlib_unit.rs` | `zlib.decompress` et `zlib.decompressobj` de CPython sur zlib 1.3 : flux de compresseurs réels, troncatures, inversions de bits, flux deflate fabriqués aux tables invalides ou de taille maximale (`ENOUGH_LENS`, `ENOUGH_DISTS`), en entier, octet par octet, par morceaux, avec `max_length`, à travers les blocs de sortie de CPython |
+  | `filters.py` | `lzw`, `ascii85`, `runlength`, prédicteurs de `utils`, `pdftypes` (`PDFStream.get_data`, `decompress_corrupted`), `ccitt` (par `decode`) | `filters_unit.rs` | LZW, ASCII85, ASCIIHex, RunLength, prédicteurs TIFF/PNG, `decompress_corrupted`, `PDFStream.get_data` sur des chaînes de filtres générées (références indirectes comprises), puis chaque flux de l'ensemble `all` (`corpus.bin`, `corpus.json` ; ~38 300 flux dont ~315 en `/CCITTFaxDecode`, aucun cas écarté) |
+  | `ccitt.py` | `ccitt` | `ccitt_unit.rs` | arbres de classe, `BitParser.add`, le parseur mené par ses méthodes internes (cas des tests upstream compris), `ccittfaxdecode` sur des flux G4 générés (encodeur T.6 de test) et adverses, cas profonds près des limites de cadres et d'unités C |
+  | `ccitt_corpus.py` | `ccitt` | `ccitt_unit.rs` (`corpus`) | chaque appel de `ccittfaxdecode` que pdfminer fait sur l'ensemble `all` (flux et images en ligne) ; les appels de plus de `CALL_TIMEOUT_S` s en Python sont écartés et listés dans `meta.json` |
+  | `crypto.py` | `arcfour`, `saslprep` (et sa NFKC 3.2.0), `utils::unpad_aes`, `pdfdocument::security` | `crypto_unit.rs` | RC4, `unpad_aes`, tables de `stringprep`, NFKC d'Unicode 3.2.0, `saslprep`, gestionnaires de sécurité générés (révisions 2 à 6, `/V` 0 à 6, `/CF`, `/StmF`/`/StrF`, mots de passe utilisateur et propriétaire), PDF chiffrés du corpus, cas profonds |
+  | `cmaps.py` | `glyphlist`, `latin_enc`, `fontmetrics`, `encodingdb`, `cmapdb` | `cmaps_unit.rs` | tables, `name2unicode`, `get_encoding`, scripts d'appels sur chaque classe de `cmapdb`, toutes les CMaps prédéfinies lues par le fournisseur des fichiers compacts de `oracle/codegen/cmaps.py`, `CMapParser` sur un corpus adverse `--fuzz 3000` (`synthetic.json`) et, avec `--corpus`, sur chaque flux CMap embarqué de l'ensemble `all` (`corpus.json`) |
+  | `text_tables.py` | `pdfplumber::{obj, utils::{clustering, geometry, generic, text}, table}`, `pycompat::listsort` | `text_tables_unit.rs` | tri de CPython (timsort complet), opérateurs Python du modèle d'objets, `cluster_*`, géométrie, motifs de `extract_text_lines`, fonctions de `table.py`, `TableSettings.resolve`, pages adverses (`--fuzz`) passées par les opérations de page (`_plumber_ops.py`), pages aux coordonnées NaN (`_nan_objects.py`, ci-dessous) |
+  | `text_tables_real.py` | les mêmes | `text_tables_unit.rs` (`pages_real`) | opérations de page sur les premières pages de l'ensemble `quick` et sur des documents riches en tables ; les pages dont un caractère est un surrogate isolé sont écartées et listées dans `meta.json` |
+
+  Les tables générées (`oracle/codegen/`) sont vérifiées par `--check` dans
+  `scripts/check.sh` : `libm_tables.py`, `saslprep_tables.py`,
+  `pdfminer_tables.py` (`glyphlist`, `latin_enc`, `fontmetrics`),
+  `ccitt_tables.py`. Les CMaps prédéfinies converties par
+  `oracle/codegen/cmaps.py` ne sont pas versionnées : elles vivent dans
+  `<cache>/cmap/<empreinte>/`, que le générateur `cmaps.py` remplit et
+  désigne au rejeu (`cmap_dir` de `meta.json`).
 - Un résultat Python qui dépend d'adresses mémoire (l'ordre d'un `set` de
   NaN : `hash(nan)` est l'adresse de l'objet) n'est jamais comparé tel quel.
   Le port fixe un ordre que CPython peut donner ; le générateur fabrique des
@@ -361,6 +359,21 @@ règles :
 - **Bornes dans les tests de rejeu** : un job ne peut pas produire plus
   d'objets que pdfminer (`psparser_unit`), ni plus de tokens ou de lignes que
   d'octets en entrée (`psparser_base_unit`).
+- **Autres gardes du profil `mutants`** (à exclure de la même façon) :
+  `OutputGuard` de `pycompat::zlib` (un appel d'inflate n'écrit pas plus que
+  `avail_out`, ni hors de proportion avec l'entrée : `-E OutputGuard`), le
+  rapport sortie/entrée des prédicteurs (`utils.rs`), `check_growth` de
+  `cmapdb.rs` (`-E check_growth`), les `debug_assert!` « progress guard »
+  des boucles de `utils/text.rs` et `table.rs`.
+
+Les tests à donner à `cargo mutants` pour un module sont ses rejeux
+(colonne « Rejeu » du tableau des générateurs) :
+`--test-package pdftrace --cargo-test-arg=--test=<rejeu>` (plusieurs
+`--test` au besoin, par exemple `utils_unit` et `layout_unit` pour
+`utils.rs`, `filters_unit` et `zlib_unit` pour `pycompat::zlib`), et pour
+les fichiers partagés tous les rejeux qui les exercent (`utils.rs` :
+`utils_unit`, `layout_unit`, `filters_unit`, `crypto_unit` ; `pdftypes.rs` :
+`pdftypes_unit`, `filters_unit`).
 
 ```sh
 systemd-run --user --scope --quiet -p MemoryMax=5G -p MemorySwapMax=0 -p OOMPolicy=continue \

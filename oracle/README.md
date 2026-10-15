@@ -33,6 +33,7 @@ overrides the cache directory (default `$PDFPLUMBER_ROOT/.cache`).
 | `cache.py` | trace cache under `.cache/oracle/` |
 | `verify.py` | CLI: build the cache, run `pdftrace`, compare |
 | `unit/<module>.py` | generators of unit cases replayed by `crates/pdftrace/tests/<module>_unit.rs` (`unit/_common.py`: output and `meta.json`) |
+| `codegen/` | generators of the Rust tables taken from upstream data (`libm`, `saslprep`, pdfminer tables, CCITT codes) and of the compact predefined CMaps |
 | `unit/__main__.py` | CLI: regenerate the unit data that is missing or stale |
 | `upstream_refs.py` | CLI: check every upstream `file:line Name` reference of `crates/` and `oracle/` against `upstream/` |
 | `generate_micro_pdfs.py` | deterministic generator of `corpus/micro` (+ its manifest) |
@@ -163,14 +164,41 @@ $PY -m oracle.unit                 # regenerate what is missing or stale (--chec
 $PY -m oracle.unit.canon           # one generator -> $PDFPLUMBER_CACHE/unit/canon/<fingerprint>/
 ```
 
-Generators: `canon` (the Rust `canon`/typed JSON), `pycompat` (CPython
-semantics), `exceptions` (pdfminer/pdfplumber exception classes), `pdftypes`
-(object model), `psparser_base` (`PSStackParser` on a file), `psparser`
-(`PDFContentParser` on the content streams of the `all` set, and with
-`--fuzz 4000` on an adversarial corpus), `zlib` (CPython's `zlib`
-decompression on zlib 1.3) and `filters` (the stream filters, predictors
-and `PDFStream.get_data`, on generated cases and every stream of the
-`all` set). Each writes typed JSON lines
+Generators (registered in `unit/__main__.py`; each one's Rust replay is
+`crates/pdftrace/tests/<replay>_unit.rs`):
+
+| Generator | Checks | Replay |
+|---|---|---|
+| `canon` | the Rust `canon`/typed JSON | `canon` |
+| `pycompat` | CPython semantics (`sum`, `pow`, `hash`, recursion limits...) | `pycompat` |
+| `exceptions` | pdfminer/pdfplumber exception classes | `exceptions` |
+| `pdftypes` | object model, references, streams, deep nesting | `pdftypes` |
+| `psparser_base` | `PSStackParser` on a file | `psparser_base` |
+| `psparser` | `PDFContentParser` on the content streams of the `all` set, and with `--fuzz 4000` on an adversarial corpus | `psparser` |
+| `utils` | pdfminer `utils`, `casting`, `data_structures`, `pdfcolor`; pdfplumber `ctm` | `utils` |
+| `layout` | `LT*` objects and the layout analysis under several `LAParams`, on real and adversarial raw pages (minutes) | `layout` |
+| `zlib` | CPython's `zlib` decompression on zlib 1.3 | `zlib` |
+| `filters` | the stream filters, predictors and `PDFStream.get_data`, on generated cases and every stream of the `all` set (minutes) | `filters` |
+| `ccitt` | `pdfminer/ccitt.py` (trees, parser methods, generated G4 streams, deep cases) | `ccitt` |
+| `ccitt_corpus` | every `ccittfaxdecode` call pdfminer makes on the `all` set (minutes) | `ccitt` (`corpus`) |
+| `crypto` | `arcfour`, `_saslprep` (UCD 3.2.0 NFKC), `unpad_aes`, the standard security handlers | `crypto` |
+| `cmaps` | `glyphlist`, `latin_enc`, `fontmetrics`, `encodingdb`, `cmapdb`, every predefined CMap; with `--corpus`, every embedded CMap of the `all` set (minutes) | `cmaps` |
+| `text_tables` | pdfplumber's object model, clustering, geometry, `utils/text.py`, `table.py`, and CPython's `list.sort` | `text_tables` |
+| `text_tables_real` | the same page operations on real pages (`quick` set and table-heavy samples, minutes) | `text_tables` (`pages_real`) |
+
+Helpers: `_common.py` (output, `meta.json`, recursion depth), `_plumber_ops.py`
+(the page operations of `text_tables*`), `_nan_objects.py` (NaN objects
+whose hashes fix their order in CPython's sets, see
+`docs/verification.md`).
+
+Generated Rust tables (`codegen/`, checked with `--check` by
+`scripts/check.sh`): `libm_tables.py`, `saslprep_tables.py`,
+`pdfminer_tables.py` (`glyphlist`, `latin_enc`, `fontmetrics`),
+`ccitt_tables.py`; `unicode_tables.py` is run by hand. `codegen/cmaps.py`
+converts pdfminer's predefined CMaps to the compact files the Rust
+`CMapDB` loads (not committed: `<cache>/cmap/<fingerprint>/`).
+
+Each writes typed JSON lines
 `{"in": [args...], "out": result}` (fixed seed) and a `meta.json` whose
 `sources` holds the SHA-256 of every `oracle/` module the generator loaded
 and `environment` the oracle environment (`environment.py`), in a directory
