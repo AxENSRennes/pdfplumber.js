@@ -183,6 +183,14 @@ Lecture :
     `geometry`, `utils/text.py` (mots, `TextMap`, `extract_text`, layout)
     et `table.py` complets, testés sur des pages synthétiques et réelles ;
     `pycompat::listsort` (timsort de CPython, utilisé aussi par le layout).
+- **Vague 2, `str` et couche texte** (branche `wave2/strings`) :
+  `pycompat::PyStr` (la `str` de Python, surrogates isolés compris, octets
+  `surrogatepass`) dans le modèle d'objets, `LTChar`/`LTAnno`, `TextMap` et
+  les tables ; `unicodedata.normalize` (Unicode 15.0) ; les arguments de
+  l'utilisateur de tout type (`extra_attrs`, `split_at_punctuation`, lignes
+  explicites, `text_settings`, `+`/`*` de séquences, `float(str)`) comme en
+  Python ; identité des NaN portée par leur charge utile ; `atan2` de glibc
+  dans `pycompat::libm` (même résultat en Wasm).
 - **Vagues suivantes**, dans l'ordre des dépendances :
   1. `pdfparser`, `pdfdocument` (xref, repli, flux d'objets, mot de passe
      via les gestionnaires déjà portés), `pdfpage` : étapes `objects`,
