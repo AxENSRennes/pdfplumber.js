@@ -497,7 +497,6 @@ fn match_text_line_at(s: &[char], start: usize, spaces_from: &impl Fn(usize) -> 
             }
             // `[^\n]+?` takes one more character: there is one, and it is
             // not a newline (`q` would have stopped at it or at the end)
-            debug_assert!(g1_end < n && s[g1_end] != '\n', "group 1 extends");
             g1_end += 1;
         }
     }

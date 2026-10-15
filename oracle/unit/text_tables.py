@@ -403,6 +403,26 @@ def fuzz_cases(n: int):
     yield from rounding_cases()
     yield from odd_text_cases()
     yield from huge_count_cases()
+    yield from nan_attr_cases()
+
+
+def nan_attr_cases():
+    """Chars whose ``size`` is NaN (a new NaN object each: no identity
+    shortcut), read as an extra attribute: each such char is its own
+    ``groupby`` group in word extraction and in ``dedupe_chars``."""
+    rng = random.Random(14)
+    for i in range(12):
+        chars = synth_chars(rng) or [synth_char(rng, 0, 0, 5, 10, "a", True, 0, "F1", 10.0, (0,))]
+        for c in chars:
+            if rng.random() < 0.5:
+                c["size"] = nan()
+        ops = []
+        for attrs in [("size",), ("fontname", "size")]:
+            ops.append(("words", {"extra_attrs": attrs}))
+            ops.append(("words", {"extra_attrs": attrs, "use_text_flow": True}))
+            ops.append(("text", {"extra_attrs": attrs, "layout": True}))
+        ops += [("dedupe", {}), ("dedupe", {"tolerance": 0}), ("dedupe", {"extra_attrs": ("size",)})]
+        yield page_case(FakePage(chars, [], (0, 0, 612, 792)), {"chars": chars, "edges": [], "bbox": (0, 0, 612, 792)}, ops)
 
 
 def huge_count_cases():
