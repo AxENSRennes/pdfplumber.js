@@ -528,6 +528,44 @@ def sort_cases():
         except Exception as e:
             out = exc_value(e)
         yield [xs], out
+    yield from gallop_sort_cases()
+
+
+def gallop_sort_cases():
+    """Two runs whose merge gallops for long stretches (big blocks of one
+    run fall between blocks of the other), so ``min_gallop`` drops to its
+    floor of 1, then interleaves in small blocks (one-pair mode) with NaNs
+    in both runs: when the merge gallops again, and so which pairs it
+    compares, decides where the NaNs land. The shorter run first or last
+    (``merge_lo`` or ``merge_hi``), each run ascending or descending."""
+    rng = random.Random(12)
+    nan = float("nan")
+    for i in range(1000):
+        n_big = rng.randint(18, 30)
+        sizes = [rng.choice([7, 8, 12, 20]) for _ in range(n_big)]
+        sizes += [rng.choice([1, 1, 2, 3, 8]) for _ in range(rng.randint(6, 60))]
+        a, b = [], []
+        small_start = [0, 0]
+        v = 0.0
+        for k, size in enumerate(sizes):
+            run = a if k % 2 == 0 else b
+            if k == n_big or k == n_big + 1:
+                small_start[k % 2] = len(run)
+            run.extend(v + j for j in range(size))
+            v += size
+        for run, lo in zip((a, b), small_start):
+            for _ in range(rng.randint(0, 4)):
+                run[rng.randrange(lo, len(run))] = nan
+        if rng.random() < 0.5:
+            a, b = b, a
+        xs = a + b
+        if rng.random() < 0.2:
+            xs = xs[::-1]
+        try:
+            out = sorted(range(len(xs)), key=xs.__getitem__)
+        except Exception as e:
+            out = exc_value(e)
+        yield [xs], out
 
 
 OP_VALUES = [
