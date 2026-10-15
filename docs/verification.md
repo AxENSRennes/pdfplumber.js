@@ -317,11 +317,13 @@ Une mutation peut faire boucler le code sans consommer son entrée, souvent en
 allouant : sur la machine partagée, un mutant a atteint 16,5 Go. D'où trois
 règles :
 
-- **Plafond mémoire** : chaque `cargo mutants`, génération de corpus adverse
-  ou passe sur le corpus complet tourne dans
-  `systemd-run --user --scope --quiet -p MemoryMax=5G -p MemorySwapMax=0 …`,
-  avec `-j 1 --timeout 20` pour `cargo mutants`, et jamais deux travaux lourds
-  à la fois. Les tests corrects restent sous 250 Mo.
+- **Plafond mémoire et créneaux** : chaque `cargo mutants`, génération de
+  corpus adverse ou passe sur un ensemble complet passe par
+  `scripts/heavy.sh <commande>`. Le script attend l'un des deux créneaux
+  partagés par tous les worktrees (`.cache/locks/`), puis lance la commande
+  dans `systemd-run --user --scope --quiet -p MemoryMax=5G -p MemorySwapMax=0`.
+  Pour `cargo mutants`, utiliser `-j 1 --timeout 20`. Les tests corrects
+  restent sous 250 Mo.
 - **Profil `mutants`** (`--profile mutants`) : `release` avec les
   `debug_assertions`, qui activent `psparser::ProgressGuard`. Entre deux
   `seek`, un parseur ne lit qu'en avant (position
