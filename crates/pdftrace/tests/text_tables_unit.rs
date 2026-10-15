@@ -865,4 +865,7 @@ fn debug_is_repr() {
     let o = Obj::from_pairs([("x0", PyValue::from(1.0)), ("k", v.clone())]);
     assert_eq!(format!("{o:?}"), PyValue::Dict(o.clone()).repr());
     assert_eq!(format!("{o:?}"), "{'x0': 1.0, 'k': (1, 0.5, 'a')}");
+    // the From conversions of the API
+    assert_eq!(PyValue::from("a").repr(), "'a'");
+    assert!(matches!(PyValue::from(o.clone()), PyValue::Dict(d) if d.ptr_eq(&o)));
 }
