@@ -45,9 +45,11 @@ step "upstream file:line references (python -m oracle.upstream_refs)"
 
 step "generated tables are up to date"
 "$PY" oracle/codegen/libm_tables.py --check
+"$PY" oracle/codegen/pdfminer_tables.py --check
 
 step "unit oracle data (python -m oracle.unit)"
 capped "$PY" -m oracle.unit
+"$PY" -m oracle.codegen.cmaps --check
 
 step "cargo test --release"
 capped cargo test --release --workspace
