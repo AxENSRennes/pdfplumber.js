@@ -17,6 +17,8 @@
 //! (`index`, the order of its lines). Containers are therefore
 //! `Rc<RefCell<..>>`, immutable objects (`LTChar`, `LTCurve`, `LTImage`)
 //! `Rc<..>`, and identity (`is`, `set`, `dict` keys) is the `Rc` pointer.
+//! The attributes pdfplumber sets on raw objects after their creation
+//! (`mcid`, `tag`) are kept in [`ExtraAttrs`], which takes `&self`.
 //!
 //! Coordinates are [`Num`]: they are floats in practice, but ints appear
 //! (`LTPage` starts at `(0, 0)`, an empty container's box is
@@ -269,12 +271,12 @@ pub trait LTPayload: Clone + 'static {
 
 /// The attributes set on a layout object after its creation, in the order
 /// they were first set, as they follow the class's own attributes in
-/// `__dict__`. pdfplumber's `PDFPageAggregatorWithMarkedContent`
+/// `__dict__`. pdfplumber's aggregator
 /// (pdfplumber/page.py:130 `PDFPageAggregatorWithMarkedContent.tag_cur_item`)
-/// sets `mcid`, then `tag`, on the
-/// last object of the current page or figure after each `render_char`,
-/// `render_image` and `paint_path`: the new object, or an older one (an
-/// `LTFigure`, or any object when `paint_path` added nothing), whose values
+/// sets `mcid`, then `tag`, on the last object of the current page or
+/// figure after each `render_char`, `render_image` and `paint_path`: the
+/// new object, or an older one (an `LTFigure`, or any object when
+/// `paint_path` added nothing), whose values
 /// are then replaced in place. Only raw objects (chars, curves, images,
 /// figures) are tagged: the analysis runs later. The names are never those
 /// of the class's own attributes.
