@@ -58,7 +58,7 @@ fn sorted2(a: PDFObject, b: PDFObject) -> (PDFObject, PDFObject) {
     }
 }
 
-// pdfplumber/page.py:162 _normalize_box
+// pdfplumber/page.py:161 _normalize_box
 /// Per PDF Reference 3.8.4: "Note: Although rectangles are conventionally
 /// specified by their lower-left and upperright corners, it is acceptable
 /// to specify any two diagonally opposite corners."
@@ -97,7 +97,7 @@ pub fn _normalize_box(box_raw: &PDFObject, rotation: &PDFObject) -> PyResult<BBo
     }
 }
 
-// pdfplumber/page.py:182 _invert_box
+// pdfplumber/page.py:181 _invert_box
 /// PDFs coordinate spaces refer to an origin in the bottom-left of the
 /// page; pdfplumber flips this vertically, so that the origin is in the
 /// top-left.
@@ -118,8 +118,7 @@ fn modulo_360(x: &PDFObject) -> PyResult<PDFObject> {
     }
 }
 
-/// The boxes of a pdfplumber `Page`, as pdfplumber/page.py:191
-/// `Page.__init__` sets them.
+/// The boxes of a pdfplumber `Page`, as `Page.__init__` sets them.
 pub struct PageBoxes {
     /// `self.rotation`: `_rotation % 360` (a number, or the bytes of a
     /// string `/Rotate`).
@@ -140,7 +139,7 @@ impl PageBoxes {
     /// The boxes of `Page(pdf, page_obj, page_number, initial_doctop)`.
     pub fn new(page_obj: &PDFPage, initial_doctop: Num) -> PyResult<PageBoxes> {
         let _frame = py_frame()?;
-        // pdfplumber/page.py:205 Page.__init__.get_attr
+        // `get_attr`, nested in pdfplumber/page.py:191 Page.__init__
         let get_attr = |key: &str, default: PDFObject| -> PyResult<PDFObject> {
             let _frame = py_frame()?;
             let value = resolve_all(&page_obj.attrs.get(key).unwrap_or(PDFObject::Null))?;

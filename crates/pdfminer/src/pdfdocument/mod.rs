@@ -696,7 +696,7 @@ fn list_index(objs: &[PDFObject], i: &PyVal) -> PyResult<Option<PDFObject>> {
     Ok(usize::try_from(i).ok().and_then(|i| objs.get(i)).cloned())
 }
 
-// pdfminer/pdfdocument.py:918 PDFDocument.lookup_name.lookup
+// `lookup`, nested in pdfminer/pdfdocument.py:910 PDFDocument.lookup_name
 fn lookup(d: &PDFDict, cat: &str, key: &PyVal) -> PyResult<PDFObject> {
     let _frame = py_frame()?;
     if let Some(limits) = d.get("Limits") {
@@ -772,7 +772,7 @@ pub struct Outlines {
 }
 
 impl Outlines {
-    // pdfminer/pdfdocument.py:878 PDFDocument.get_outlines.search
+    // `search`, nested in pdfminer/pdfdocument.py:874 PDFDocument.get_outlines
     fn step(&mut self) -> PyResult<Option<OutlineEntry>> {
         loop {
             // The generators of the `yield from` chain are resumed one

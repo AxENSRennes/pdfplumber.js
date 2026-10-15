@@ -4,10 +4,14 @@
 
 use std::io::{self, Write};
 
-use pdfminer::pdfdocument::{DocId, PDFDocument, XRefPos};
-use pdfminer::pdftypes::{ObjId, PDFObject};
+use std::rc::Rc;
 
-use super::common::{canon_id, fetch_order, open_document, terminated, Lines};
+use pdfminer::pdfdocument::{DocId, PDFDocument, XRefPos};
+use pdfminer::pdfparser::FileKind;
+use pdfminer::pdftypes::{ObjId, PDFObject};
+use pycompat::PyResult;
+
+use super::common::{canon_id, fetch_order, open_document, open_file, terminated, Lines};
 use super::{Stage, StageInput};
 use crate::canon::{canon, canon_exc, canon_obj};
 use crate::value::Value;
@@ -43,8 +47,22 @@ fn py_bool(b: bool) -> &'static str {
 }
 
 fn run(input: &StageInput<'_>, out: &mut dyn Write) -> io::Result<()> {
+    trace(input, out, open_document)
+}
+
+/// The traversal of the stage on a parser reading an `io.BytesIO` (what
+/// `oracle/unit/document.py` `objects_bytesio` writes).
+pub fn run_bytesio(input: &StageInput<'_>, out: &mut dyn Write) -> io::Result<()> {
+    trace(input, out, |input| open_file(input, FileKind::BytesIO))
+}
+
+fn trace(
+    input: &StageInput<'_>,
+    out: &mut dyn Write,
+    open: impl FnOnce(&StageInput<'_>) -> PyResult<Rc<PDFDocument>>,
+) -> io::Result<()> {
     terminated(out, |lines: &mut Lines| {
-        let doc = open_document(input)?;
+        let doc = open(input)?;
         let mut objids: Vec<ObjId> = Vec::new();
         for (i, xref) in doc.xrefs().iter().enumerate() {
             let i = i.to_string();

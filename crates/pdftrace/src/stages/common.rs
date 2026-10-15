@@ -55,7 +55,13 @@ pub fn terminated(out: &mut dyn Write, body: impl FnOnce(&mut Lines) -> PyResult
 /// manager's `__enter__` and its generator (two frames).
 pub fn open_document(input: &StageInput<'_>) -> PyResult<Rc<PDFDocument>> {
     let _frames = py_frames(2)?;
-    PDFDocument::open(Rc::from(input.pdf), FileKind::BufferedReader, input.password)
+    open_file(input, FileKind::BufferedReader)
+}
+
+/// `PDFDocument(PDFParser(fp), password=password or "")` on a file object
+/// of class `file` holding the PDF.
+pub fn open_file(input: &StageInput<'_>, file: FileKind) -> PyResult<Rc<PDFDocument>> {
+    PDFDocument::open(Rc::from(input.pdf), file, input.password)
 }
 
 /// `fetch_order(objids)` of `oracle/stages/objects.py`: the distinct ids

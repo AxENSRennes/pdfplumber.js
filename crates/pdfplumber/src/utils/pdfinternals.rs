@@ -51,7 +51,7 @@ fn doc_char(o: u32) -> char {
     char::from_u32(u32::from(PDF_DOC_ENCODING[o as usize])).expect("no surrogate in PDFDocEncoding")
 }
 
-// pdfplumber/utils/pdfinternals.py:48 resolve
+// pdfplumber/utils/pdfinternals.py:49 resolve
 pub fn resolve(x: &PDFObject) -> PyResult<PDFObject> {
     let _frame = py_frame()?;
     match x {
@@ -75,7 +75,7 @@ impl DictType {
     }
 }
 
-// pdfplumber/utils/pdfinternals.py:55 get_dict_type
+// pdfplumber/utils/pdfinternals.py:56 get_dict_type
 pub fn get_dict_type(d: &PDFObject) -> PyResult<DictType> {
     let _frame = py_frame()?;
     let PDFObject::Dict(d) = d else {

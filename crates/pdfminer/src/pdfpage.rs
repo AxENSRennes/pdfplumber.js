@@ -153,13 +153,13 @@ impl PDFPage {
         Ok(format!("<PDFPage: Resources={}, MediaBox=({mediabox})>", self.resources.repr()?))
     }
 
-    // pdfminer/pdfpage.py:90 PDFPage.create_pages
+    // pdfminer/pdfpage.py:91 PDFPage.create_pages
     /// The pages of `document`, lazily (see [`CreatePages`]).
     pub fn create_pages(document: &Rc<PDFDocument>) -> CreatePages {
         CreatePages { doc: document.clone(), state: CreateState::NotStarted, done: false }
     }
 
-    // pdfminer/pdfpage.py:152 PDFPage.get_pages
+    // pdfminer/pdfpage.py:153 PDFPage.get_pages
     /// The pages of the file whose content is `data` (a file object of
     /// class `file`, written `fp_repr` in messages), as `get_pages(fp,
     /// pagenos, maxpages, password, caching, check_extractable)`.
@@ -379,7 +379,7 @@ fn depth_first_search(
             return Ok(None);
         };
         if !top.started {
-            // pdfminer/pdfpage.py:92 PDFPage.create_pages.depth_first_search
+            // `depth_first_search`, nested in pdfminer/pdfpage.py:91 PDFPage.create_pages
             frames.push(py_frame()?);
             top.started = true;
             let (object_id, object_properties) = match &top.obj {
