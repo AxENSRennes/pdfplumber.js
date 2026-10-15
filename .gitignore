@@ -13,3 +13,5 @@ __pycache__/
 # Large external PDFs: downloaded from corpus/*/manifest.json (SHA-256 checked)
 corpus/external/*.pdf
 corpus/external-holdout/*.pdf
+# Claude Code worktrees and local state
+.claude/
