@@ -36,9 +36,9 @@
 //! members. A `str` holding a lone surrogate cannot be represented (`str`
 //! is a Rust `str`).
 
+use rustc_hash::FxHashMap as HashMap;
 use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
@@ -51,11 +51,15 @@ use pycompat::{exc, Num, PyErr, PyInt, PyResult};
 // -- keys ---------------------------------------------------------------------
 
 thread_local! {
-    static INTERNED: RefCell<HashMap<Box<str>, Rc<str>>> = RefCell::new(HashMap::new());
+    static INTERNED: RefCell<HashMap<Box<str>, Rc<str>>> = RefCell::new(HashMap::default());
+    static HOT_KEYS: [Rc<str>; HOT_N] = std::array::from_fn(|i| Rc::from(HOT[i].name()));
 }
 
 /// A shared copy of a dict key (keys repeat across thousands of objects).
 pub fn intern(key: &str) -> Rc<str> {
+    if let Some(h) = Hot::of(key) {
+        return hot_key(h);
+    }
     INTERNED.with(|m| {
         let mut m = m.borrow_mut();
         if let Some(k) = m.get(key) {
@@ -67,6 +71,11 @@ pub fn intern(key: &str) -> Rc<str> {
         }
         k
     })
+}
+
+/// The shared copy of a hot key.
+fn hot_key(h: Hot) -> Rc<str> {
+    HOT_KEYS.with(|keys| keys[h as usize].clone())
 }
 
 /// The keys with a fast index in [`Obj`].
@@ -90,6 +99,24 @@ pub enum Hot {
 }
 
 const HOT_N: usize = 14;
+
+/// Every [`Hot`] key, by index.
+const HOT: [Hot; HOT_N] = [
+    Hot::X0,
+    Hot::Top,
+    Hot::X1,
+    Hot::Bottom,
+    Hot::Doctop,
+    Hot::Width,
+    Hot::Height,
+    Hot::Text,
+    Hot::Upright,
+    Hot::Size,
+    Hot::Orientation,
+    Hot::ObjectType,
+    Hot::Y0,
+    Hot::Y1,
+];
 
 impl Hot {
     pub fn name(self) -> &'static str {
@@ -805,7 +832,8 @@ impl Obj {
     /// `dict(pairs)`: a repeated key keeps its first position and its last
     /// value.
     pub fn from_pairs<K: AsRef<str>>(pairs: impl IntoIterator<Item = (K, PyValue)>) -> Obj {
-        let mut o = Obj::new();
+        let pairs = pairs.into_iter();
+        let mut o = Obj(Rc::new(ObjData { items: Vec::with_capacity(pairs.size_hint().0), hot: [0; HOT_N] }));
         for (k, v) in pairs {
             o.set(k.as_ref(), v);
         }
@@ -874,14 +902,22 @@ impl Obj {
 
     /// `obj[key] = value` (copies a shared dict first).
     pub fn set(&mut self, key: &str, value: PyValue) {
-        if let Some(p) = self.position(key) {
+        let hot = Hot::of(key);
+        let position = match hot {
+            Some(h) => self.hot_position(h),
+            None => self.0.items.iter().position(|(k, _)| k.as_ref() == key),
+        };
+        if let Some(p) = position {
             Rc::make_mut(&mut self.0).items[p].1 = value;
             return;
         }
         let data = Rc::make_mut(&mut self.0);
-        data.items.push((intern(key), value));
-        if let Some(h) = Hot::of(key) {
-            data.hot[h as usize] = data.items.len() as u32;
+        match hot {
+            Some(h) => {
+                data.items.push((hot_key(h), value));
+                data.hot[h as usize] = data.items.len() as u32;
+            }
+            None => data.items.push((intern(key), value)),
         }
     }
 
