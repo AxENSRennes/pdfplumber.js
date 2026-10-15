@@ -12,21 +12,46 @@
       "types": "./dist/src/index.d.ts",
       "browser": "./dist/browser/index.js",
       "import": "./dist/src/index.js"
-    }
+    },
+    "./internal": {
+      "types": "./dist/src/internal.d.ts",
+      "browser": "./dist/browser/internal.js",
+      "import": "./dist/src/internal.js"
+    },
+    "./pdfplumber.wasm": "./dist/pdfplumber.wasm",
+    "./cmaps/*": "./dist/cmaps/*"
   },
   "files": [
     "dist/src",
     "dist/browser",
-    "docs/public-api.md"
+    "dist/pdfplumber.wasm",
+    "dist/cmaps",
+    "docs/public-api.md",
+    "docs/js-runtime.md"
+  ],
+  "sideEffects": [
+    "./dist/src/index.js",
+    "./dist/src/browser.js",
+    "./dist/browser/*.js"
   ],
   "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:wasm": "node scripts/build-wasm.mjs",
+    "build:cmaps": "node scripts/build-cmaps.mjs",
+    "build:js": "node scripts/build-js.mjs",
+    "test:js": "vitest run --config js/vitest.config.ts",
+    "test:browsers": "scripts/check-browsers.sh",
+    "typecheck": "tsc -p js/tsconfig.test.json",
+    "size": "node scripts/size.mjs",
+    "bench:encoding": "node js/bench/node.mjs",
+    "bench:encoding:browsers": "node js/bench/browsers.mjs",
     "corpus:download": "node scripts/download-corpus.mjs",
     "corpus:micro": "uv run python oracle/generate_micro_pdfs.py"
   },
-  "dependencies": {},
   "devDependencies": {
     "@playwright/test": "^1.60.0",
     "@types/node": "^22.15.3",
+    "binaryen": "123.0.0",
     "esbuild": "^0.25.12",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",

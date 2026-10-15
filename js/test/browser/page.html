@@ -1,0 +1,49 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>pdfplumber-js runtime tests</title>
+<script type="module">
+  // The shared runtime tests (js/test/shared/tests.mjs) in a browser, on the
+  // bundles of dist/browser/; js/test/browser/runtime.spec.ts calls
+  // window.runTest(name, { worker }) for each one.
+  import * as lib from "/dist/browser/internal.js";
+  import { tests } from "/js/test/shared/tests.mjs";
+
+  const lines = new Map();
+  const ctx = {
+    lib,
+    runtime: "browser",
+    async oracle(name) {
+      if (!lines.has(name)) {
+        const text = await (await fetch(`/oracle/${name}.jsonl`)).text();
+        lines.set(name, text.split("\n").filter(Boolean).map((l) => JSON.parse(l)));
+      }
+      return lines.get(name);
+    },
+    async readFile(rel) {
+      const r = await fetch(`/${rel}`);
+      if (!r.ok) throw new Error(`${rel}: HTTP ${r.status}`);
+      return new Uint8Array(await r.arrayBuffer());
+    },
+    fileInput: (rel) => `/${rel}`,
+    missingInput: () => "/corpus/does-not-exist.pdf",
+    async readCMap(name) {
+      const r = await fetch(`/dist/cmaps/${encodeURIComponent(name)}.pdfcmap.zlib`);
+      return new Uint8Array(await r.arrayBuffer());
+    },
+  };
+
+  window.testNames = tests.map((t) => ({ name: t.name, only: t.only ?? null, todo: t.todo ?? null }));
+  window.runTest = async (name, { worker = false } = {}) => {
+    const t = tests.find((x) => x.name === name);
+    lib.configure(worker ? { worker: true } : {});
+    try {
+      await t.run(ctx);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: `${e && e.name}: ${e && e.message}\n${e && e.stack}` };
+    } finally {
+      lib.configure({});
+    }
+  };
+  window.ready = true;
+</script>

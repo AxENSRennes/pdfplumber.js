@@ -38,16 +38,23 @@ for (const [name, type] of [
 ]) {
   if (!only.includes(name)) continue;
   process.stderr.write(`${name}...\n`);
-  const browser = await type.launch();
+  let browser;
   try {
+    // PDFPLUMBER_WEBKIT: the launcher of scripts/webkit-local-libs.sh
+    const executablePath = name === "webkit" ? process.env.PDFPLUMBER_WEBKIT : undefined;
+    browser = await type.launch(executablePath ? { executablePath } : {});
     const p = await browser.newPage();
     await p.goto(page);
     await p.waitForFunction(() => window.__result, null, { timeout: 30 * 60_000, polling: 1000 });
     const r = await p.evaluate(() => window.__result);
     results.push({ browser: `${name} ${browser.version()}`, ...r });
+  } catch (e) {
+    // a browser that cannot run here (WebKit without its system libraries)
+    results.push({ browser: name, error: String(e.message ?? e).split("\n")[0] });
   } finally {
-    await browser.close();
+    await browser?.close();
   }
+  process.stderr.write(`${JSON.stringify(results.at(-1)).slice(0, 300)}\n`);
 }
 
 if (only.includes("system-firefox") && existsSync(systemFirefox)) {

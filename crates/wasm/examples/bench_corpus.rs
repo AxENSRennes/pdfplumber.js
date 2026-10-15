@@ -30,9 +30,7 @@ fn main() {
     for line in BufReader::new(file).lines().take(max) {
         let json = typed_json::parse_json(&line.expect("a line")).expect("JSON");
         let input = typed_json::from_json(json.get("in").expect("in")).expect("typed");
-        let Value::List(args) = &input else {
-            panic!("\"in\" is not a list")
-        };
+        let Value::List(args) = &input else { panic!("\"in\" is not a list") };
         let record = pdftrace::plumber::from_value(&args[0]).expect("a record");
         let PyValue::Dict(record) = record else { panic!("a record is a dict") };
         let mut page = Obj::new();
@@ -62,7 +60,11 @@ fn main() {
             let what = if items.len() < 2 {
                 "short"
             } else if let Some(s) = pdfplumber_wasm::wire::shapes(items) {
-                if s.first.len() == 1 { "table" } else { "tables" }
+                if s.first.len() == 1 {
+                    "table"
+                } else {
+                    "tables"
+                }
             } else {
                 "mixed"
             };

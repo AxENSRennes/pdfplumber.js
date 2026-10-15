@@ -597,7 +597,8 @@ pub fn decode(block: &[u8]) -> PyResult<PyValue> {
             match stack.last_mut() {
                 None => {
                     // only the zero padding that aligns the string table may follow
-                    let rest = block.get(r.pos..body_end).ok_or_else(|| malformed("value overlaps the string table"))?;
+                    let rest =
+                        block.get(r.pos..body_end).ok_or_else(|| malformed("value overlaps the string table"))?;
                     if rest.len() >= 4 || rest.iter().any(|&b| b != 0) {
                         return Err(malformed("trailing bytes"));
                     }
