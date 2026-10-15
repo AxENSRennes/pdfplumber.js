@@ -442,16 +442,16 @@ pub fn text_line_matches(s: &[char], strip: bool) -> Vec<RegexMatch> {
     if !strip {
         let mut i = 0;
         while i < n {
+            let start = i;
             if s[i] == '\n' {
                 i += 1;
-                continue;
-            }
-            let start = i;
-            while i < n && s[i] != '\n' {
-                i += 1;
+            } else {
+                while i < n && s[i] != '\n' {
+                    i += 1;
+                }
+                out.push(RegexMatch { spans: vec![Some((start, i)), Some((start, i))] });
             }
             debug_assert!(i > start, "progress guard (debug assertions: the `mutants` profile)");
-            out.push(RegexMatch { spans: vec![Some((start, i)), Some((start, i))] });
         }
         return out;
     }

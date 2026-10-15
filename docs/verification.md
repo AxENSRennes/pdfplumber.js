@@ -321,9 +321,13 @@ règles :
   corpus adverse ou passe sur un ensemble complet passe par
   `scripts/heavy.sh <commande>`. Le script attend l'un des deux créneaux
   partagés par tous les worktrees (`.cache/locks/`), puis lance la commande
-  dans `systemd-run --user --scope --quiet -p MemoryMax=5G -p MemorySwapMax=0`.
-  Pour `cargo mutants`, utiliser `-j 1 --timeout 20`. Les tests corrects
-  restent sous 250 Mo.
+  dans `systemd-run --user --scope --quiet -p MemoryMax=5G -p MemorySwapMax=0
+  -p OOMPolicy=continue`. Pour `cargo mutants`, utiliser `-j 1 --timeout 20`.
+  Les tests corrects restent sous 250 Mo. `OOMPolicy=continue` : le noyau
+  tue le processus qui dépasse le plafond (le binaire de test d'un mutant,
+  donc un mutant détecté) et la commande continue ; avec la politique par
+  défaut (`stop`), systemd arrête tout le scope et `cargo mutants` s'arrête
+  sur « interrupted » au milieu de sa passe.
 - **Profil `mutants`** (`--profile mutants`) : `release` avec les
   `debug_assertions`, qui activent `psparser::ProgressGuard`. Entre deux
   `seek`, un parseur ne lit qu'en avant (position
@@ -337,7 +341,7 @@ règles :
   d'octets en entrée (`psparser_base_unit`).
 
 ```sh
-systemd-run --user --scope --quiet -p MemoryMax=5G -p MemorySwapMax=0 \
+systemd-run --user --scope --quiet -p MemoryMax=5G -p MemorySwapMax=0 -p OOMPolicy=continue \
   cargo mutants -f crates/pdfminer/src/psparser.rs -E "ProgressGuard|check_progress|read_position" \
   --test-package pdftrace --cargo-test-arg=--test=psparser_unit \
   --profile mutants -j 1 --timeout 20

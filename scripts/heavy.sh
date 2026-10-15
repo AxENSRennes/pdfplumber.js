@@ -7,6 +7,11 @@
 #   scripts/heavy.sh cargo mutants --profile mutants -j 1 --timeout 20 -f crates/...
 #   scripts/heavy.sh .venv/bin/python -m oracle.verify --stage objects --set all
 #
+# OOMPolicy=continue: the OOM killer kills the process that exhausted the cap
+# (a mutant's test binary: a failed test, so a caught mutant) and the scope
+# goes on; the default policy (stop) would terminate the whole scope, and
+# cargo mutants with it ("interrupted").
+#
 # Waits for a free slot. Slots are lock files under $PDFPLUMBER_ROOT/.cache/locks,
 # shared by every checkout and worktree of the repository.
 set -uo pipefail
@@ -28,7 +33,7 @@ while true; do
     exec {fd}>"$LOCKS/heavy.$i"
     if flock -n "$fd"; then
       [ "$waited" -eq 1 ] && echo "heavy.sh: got slot $i" >&2
-      systemd-run --user --scope --quiet -p MemoryMax="$MEM" -p MemorySwapMax=0 "$@"
+      systemd-run --user --scope --quiet -p MemoryMax="$MEM" -p MemorySwapMax=0 -p OOMPolicy=continue "$@"
       exit $?
     fi
     exec {fd}>&-
