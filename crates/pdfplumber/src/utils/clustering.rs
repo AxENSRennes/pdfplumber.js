@@ -7,8 +7,13 @@
 //! values that are not totally ordered (NaN, mixed types), Python's own
 //! result depends on hash values (`hash(nan)`, `hash(None)` are object
 //! identities) and varies between runs.
+//!
+//! `HashKey` holds `Rc`-shared values, which clippy takes for interior
+//! mutability; a key's hash only reads immutable parts (numbers, strings,
+//! tuples), so `mutable_key_type` is allowed.
+#![allow(clippy::mutable_key_type)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use pycompat::listsort::sort_by_key;
 use pycompat::{exc, PyResult};
@@ -50,16 +55,19 @@ fn sorted_values(xs: &mut Vec<PyValue>) -> PyResult<()> {
 /// The value -> cluster index map of [`make_cluster_dict`].
 pub type ClusterDict = HashMap<HashKey, usize>;
 
-// pdfplumber/utils/clustering.py:30 make_cluster_dict
-pub fn make_cluster_dict(values: impl IntoIterator<Item = PyResult<PyValue>>, tolerance: &PyValue) -> PyResult<ClusterDict> {
+// pdfplumber/utils/clustering.py:29 make_cluster_dict
+pub fn make_cluster_dict(
+    values: impl IntoIterator<Item = PyResult<PyValue>>,
+    tolerance: &PyValue,
+) -> PyResult<ClusterDict> {
     // list(set(values)), see the module documentation
-    let mut seen: HashMap<HashKey, ()> = HashMap::new();
+    let mut seen: HashSet<HashKey> = HashSet::new();
     let mut unique = Vec::new();
     for v in values {
         let key = HashKey::new(v?)?;
-        if !seen.contains_key(&key) {
+        if !seen.contains(&key) {
             unique.push(key.0.clone());
-            seen.insert(key, ());
+            seen.insert(key);
         }
     }
     let clusters = cluster_list(unique, tolerance)?;
@@ -86,7 +94,7 @@ fn cluster_id_lt(a: Option<usize>, b: Option<usize>) -> PyResult<bool> {
     }
 }
 
-// pdfplumber/utils/clustering.py:45 cluster_objects
+// pdfplumber/utils/clustering.py:42 cluster_objects
 pub fn cluster_objects<T: Clone>(
     xs: &[T],
     mut key_fn: impl FnMut(&T) -> PyResult<PyValue>,

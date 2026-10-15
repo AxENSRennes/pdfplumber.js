@@ -18,14 +18,12 @@ use std::io::{BufRead, BufReader};
 use std::rc::Rc;
 
 use pdfplumber::obj::{bbox_from_value, bbox_value, Bbox, Obj, PyValue};
-use pdfplumber::table::{
-    cells_to_tables, CellGroup, Table, TableFinder, TablePage, TableSettings,
-};
+use pdfplumber::table::{cells_to_tables, CellGroup, Table, TableFinder, TablePage, TableSettings};
 use pdfplumber::utils::clustering::{cluster_list, cluster_objects};
 use pdfplumber::utils::geometry::{self, Axis, SnapAttr};
 use pdfplumber::utils::text::{
-    chars_to_textmap, dedupe_chars, extract_text_kwargs, extract_text_simple, extract_words_kwargs,
-    text_line_matches, Kwargs, RegexMatch, TextMap,
+    chars_to_textmap, dedupe_chars, extract_text_kwargs, extract_text_simple, extract_words_kwargs, text_line_matches,
+    Kwargs, RegexMatch, TextMap,
 };
 use pdftrace::canon::{canon, sha256_hex};
 use pdftrace::plumber::{from_value, obj_from_value, to_value};
@@ -245,9 +243,9 @@ fn geometry_cases() {
         let got = match name.as_str() {
             "objects_to_bbox" => result(geometry::objects_to_bbox(&objs(&args[1])), |b| bbox_v(&b)),
             "objects_to_rect" => result(geometry::objects_to_rect(&objs(&args[1])), |o| to_value(&PyValue::Dict(o))),
-            "get_bbox_overlap" => {
-                result(geometry::get_bbox_overlap(&bbox(&args[1]), &bbox(&args[2])), |b| b.map_or(Value::None, |b| bbox_v(&b)))
-            }
+            "get_bbox_overlap" => result(geometry::get_bbox_overlap(&bbox(&args[1]), &bbox(&args[2])), |b| {
+                b.map_or(Value::None, |b| bbox_v(&b))
+            }),
             "calculate_area" => result(geometry::calculate_area(&bbox(&args[1])), |v| to_value(&v)),
             "clip_obj" => opt_obj(geometry::clip_obj(&obj(&args[1]), &bbox(&args[2]))),
             "intersects_bbox" => objs_v(geometry::intersects_bbox(&objs(&args[1]), &bbox(&args[2]))),
@@ -259,9 +257,11 @@ fn geometry_cases() {
                 result(geometry::move_object(&obj(&args[1]), axis, &py(&args[3])), |o| to_value(&PyValue::Dict(o)))
             }
             "snap_objects" => objs_v(geometry::snap_objects(&objs(&args[1]), snap_attr(&args[2]), &py(&args[3]))),
-            "resize_object" => result(geometry::resize_object(&obj(&args[1]), snap_attr(&args[2]), &py(&args[3])), |o| {
-                to_value(&PyValue::Dict(o))
-            }),
+            "resize_object" => {
+                result(geometry::resize_object(&obj(&args[1]), snap_attr(&args[2]), &py(&args[3])), |o| {
+                    to_value(&PyValue::Dict(o))
+                })
+            }
             "curve_to_edges" => objs_v(geometry::curve_to_edges(&obj(&args[1]))),
             "rect_to_edges" => objs_v(geometry::rect_to_edges(&obj(&args[1]))),
             "line_to_edge" => result(geometry::line_to_edge(&obj(&args[1])), |o| to_value(&PyValue::Dict(o))),
@@ -364,7 +364,7 @@ impl TablePage for CasePage {
     }
 }
 
-/// `tuplify_list_kwargs` (pdfplumber/page.py:103)
+/// pdfplumber/page.py:103 tuplify_list_kwargs
 fn tuplify_list_kwargs(kwargs: &Kwargs) -> Kwargs {
     Obj::from_pairs(kwargs.items().iter().map(|(k, v)| {
         let v = match v {
@@ -558,9 +558,11 @@ fn run_op(page: &CasePage, op: &[Value]) -> Value {
         }
         "extract_table" => {
             // pdfplumber/page.py:488 Page.extract_table
-            let r = TableSettings::resolve(settings_arg(&op[1]).as_ref()).and_then(|tset| match page.find_table(&tset)? {
-                None => Ok(None),
-                Some(t) => Ok(Some(t.extract(page, &tset.text_settings())?)),
+            let r = TableSettings::resolve(settings_arg(&op[1]).as_ref()).and_then(|tset| {
+                match page.find_table(&tset)? {
+                    None => Ok(None),
+                    Some(t) => Ok(Some(t.extract(page, &tset.text_settings())?)),
+                }
             });
             result(r, |t| t.map_or(Value::None, table_text))
         }
@@ -568,8 +570,8 @@ fn run_op(page: &CasePage, op: &[Value]) -> Value {
     }
 }
 
-fn replay_pages(name: &'static str, min_pages: usize) {
-    let data = data();
+fn replay_pages(module: &str, name: &'static str, min_pages: usize) {
+    let data = UnitData::open(module);
     let mut c = Checker::new(name);
     let pages = for_each_case(&data, name, |i, args, out| {
         let record = obj(&args[0]);
@@ -604,12 +606,12 @@ fn replay_pages(name: &'static str, min_pages: usize) {
 
 #[test]
 fn pages_fuzz() {
-    replay_pages("pages_fuzz", 300);
+    replay_pages("text_tables", "pages_fuzz", 1000);
 }
 
 #[test]
 fn pages_real() {
-    replay_pages("pages_real", 100);
+    replay_pages("text_tables_real", "pages_real", 300);
 }
 
 /// `cells_to_tables` and `Table` on a hand-made grid share the code paths

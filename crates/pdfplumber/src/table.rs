@@ -11,8 +11,13 @@
 //! `intersections_to_cells` and `cells_to_tables` find equal points and
 //! shared edges through hash maps (Python `==`/`hash`) instead of scanning
 //! lists.
+//!
+//! `HashKey` holds `Rc`-shared values, which clippy takes for interior
+//! mutability; a key's hash only reads immutable parts (numbers, strings,
+//! tuples), so `mutable_key_type` is allowed.
+#![allow(clippy::mutable_key_type)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use pycompat::listsort::sort_by_key;
 use pycompat::{exc, PyErr, PyResult};
@@ -42,8 +47,7 @@ pub trait TablePage {
     fn edges(&self) -> PyResult<Vec<Obj>>;
     /// `page.bbox`
     fn bbox(&self) -> PyResult<Bbox>;
-    /// `page.extract_words(**kwargs)` (pdfplumber/page.py:535
-    /// Page.extract_words)
+    /// `page.extract_words(**kwargs)` (pdfplumber/page.py:535 Page.extract_words)
     fn extract_words(&self, kwargs: &Kwargs) -> PyResult<Vec<Obj>> {
         extract_words_kwargs(&self.chars()?, kwargs)
     }
@@ -390,7 +394,12 @@ pub fn intersections_to_cells(intersections: &Intersections) -> PyResult<Vec<Bbo
         let mut ids = Vec::with_capacity(edges.len());
         for e in edges {
             let b = obj_to_bbox(e)?;
-            let key = [HashKey::new(b[0].clone())?, HashKey::new(b[1].clone())?, HashKey::new(b[2].clone())?, HashKey::new(b[3].clone())?];
+            let key = [
+                HashKey::new(b[0].clone())?,
+                HashKey::new(b[1].clone())?,
+                HashKey::new(b[2].clone())?,
+                HashKey::new(b[3].clone())?,
+            ];
             let next = bbox_ids.len() as u32;
             ids.push(*bbox_ids.entry(key).or_insert(next));
         }
@@ -608,13 +617,11 @@ impl Table {
         sort_by_key(&mut sorted, |c| Ok((c[antiaxis].clone(), c[axis].clone())), pair_lt)?;
 
         // Sort get all x0s/tops: sorted(set(...))
-        let mut seen: HashMap<HashKey, ()> = HashMap::new();
+        let mut seen: HashSet<HashKey> = HashSet::new();
         let mut xs = Vec::new();
         for c in &self.cells {
-            let k = HashKey::new(c[axis].clone())?;
-            if !seen.contains_key(&k) {
+            if seen.insert(HashKey::new(c[axis].clone())?) {
                 xs.push(c[axis].clone());
-                seen.insert(k, ());
             }
         }
         pycompat::listsort::sort_by_lt(&mut xs, |a, b| a.lt(b))?;
@@ -727,7 +734,7 @@ pub const NON_NEGATIVE_SETTINGS: [&str; 13] = [
 ];
 
 /// pdfplumber/table.py:486 TableSettings. A field that upstream defaults to
-/// `UNSET` (pdfplumber/table.py:482) is `None` here until `__post_init__`
+/// UNSET (pdfplumber/table.py:482 UNSET) is `None` here until `__post_init__`
 /// resolves it.
 #[derive(Clone, Debug)]
 pub struct TableSettings {
@@ -852,7 +859,9 @@ impl TableSettings {
             }
         }
 
-        for (orientation, strategy) in [("horizontal", &self.horizontal_strategy), ("vertical", &self.vertical_strategy)] {
+        for (orientation, strategy) in
+            [("horizontal", &self.horizontal_strategy), ("vertical", &self.vertical_strategy)]
+        {
             if !TABLE_STRATEGIES.iter().any(|s| strategy.py_eq(&PyValue::str(s))) {
                 return Err(exc::ValueError(format!(
                     "{orientation}_strategy must be one of{{{}}}",

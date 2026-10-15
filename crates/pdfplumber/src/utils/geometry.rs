@@ -39,7 +39,12 @@ pub fn objects_to_bbox_refs<'a>(objects: impl IntoIterator<Item = &'a Obj>) -> P
 // pdfplumber/utils/geometry.py:26 bbox_getter (itemgetter("x0", "top", "x1", "bottom"))
 // + :29 obj_to_bbox
 pub fn obj_to_bbox(obj: &Obj) -> PyResult<Bbox> {
-    Ok([obj.hot(Hot::X0)?.clone(), obj.hot(Hot::Top)?.clone(), obj.hot(Hot::X1)?.clone(), obj.hot(Hot::Bottom)?.clone()])
+    Ok([
+        obj.hot(Hot::X0)?.clone(),
+        obj.hot(Hot::Top)?.clone(),
+        obj.hot(Hot::X1)?.clone(),
+        obj.hot(Hot::Bottom)?.clone(),
+    ])
 }
 
 // pdfplumber/utils/geometry.py:37 bbox_to_rect
@@ -59,7 +64,12 @@ pub fn merge_bboxes(bboxes: &[Bbox]) -> PyResult<Bbox> {
         return Err(exc::ValueError("not enough values to unpack (expected 4, got 0)"));
     }
     let col = |i: usize| bboxes.iter().map(move |b| &b[i]);
-    Ok([crate::obj::py_min(col(0))?, crate::obj::py_min(col(1))?, crate::obj::py_max(col(2))?, crate::obj::py_max(col(3))?])
+    Ok([
+        crate::obj::py_min(col(0))?,
+        crate::obj::py_min(col(1))?,
+        crate::obj::py_max(col(2))?,
+        crate::obj::py_max(col(3))?,
+    ])
 }
 
 // pdfplumber/utils/geometry.py:54 get_bbox_overlap
@@ -287,7 +297,11 @@ pub fn resize_object(obj: &Obj, key: SnapAttr, value: &PyValue) -> PyResult<Obj>
 fn point_item(p: &PyValue, i: usize) -> PyResult<&PyValue> {
     match p.as_seq() {
         Some(items) => items.get(i).ok_or_else(|| {
-            exc::IndexError(if matches!(p, PyValue::Tuple(_)) { "tuple index out of range" } else { "list index out of range" })
+            exc::IndexError(if matches!(p, PyValue::Tuple(_)) {
+                "tuple index out of range"
+            } else {
+                "list index out of range"
+            })
         }),
         None => Err(exc::TypeError(format!("'{}' object is not subscriptable", p.type_name()))),
     }

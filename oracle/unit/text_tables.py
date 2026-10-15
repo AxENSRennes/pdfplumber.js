@@ -22,344 +22,32 @@ Writes typed JSON lines (docs/verification.md) to
   matches them natively).
 - ``settings``: ``TableSettings.resolve(dict)``: resolved fields, or the
   validation error.
-- ``pages_fuzz`` (adversarial) and ``pages_real`` (real PDFs): a page
-  record ``{"chars": page.chars, "edges": page.edges, "bbox": page.bbox}``
-  and a list of operations; the output is, per operation, the ``canon`` of
-  its result or exception (``oracle/canon.py``), or ``"sha256:<hex>:<len>"``
-  of it when longer than ``FULL_CANON_LIMIT``. Operations (``run_op``):
-  ``text`` (``page.extract_text(**kw)``), ``utext``
-  (``utils.extract_text(chars, **kw)``), ``simple``
-  (``extract_text_simple``), ``words`` (``extract_words``, ``return_chars``
-  included), ``lines`` (``page.extract_text_lines``), ``search``
-  (``page.search``: the matches are computed here, over
-  ``page.get_textmap(**kw).as_string``, and given to Rust as spans),
-  ``dedupe`` (``utils.dedupe_chars``), ``tables`` (``TableFinder``: edges,
-  intersections, cells, tables with rows and columns), ``extract_tables``
-  and ``extract_table``. Real pages: the first ``--max-pages`` pages of
-  every PDF of the ``quick`` set, and all pages (up to ``SAMPLE_PAGES``) of
-  ``SAMPLE_DOCS``, table- and text-heavy documents. Adversarial pages
-  (``--fuzz N``, seed 1): chars and edges on exact tolerance boundaries,
-  ints vs floats, rotated (``upright`` false) chars, ligatures, blank and
-  empty texts, duplicates, degenerate tables, explicit lines, invalid
-  options. Synthetic pages run on ``FakePage``, a ``Page`` whose objects
-  and edges are given.
+- ``pages_fuzz`` (``--fuzz N`` adversarial pages, seed 1): page cases
+  (``_plumber_ops.py``) on synthetic pages: chars and edges on exact
+  tolerance boundaries, ints vs floats, rotated (``upright`` false) chars,
+  ligatures, blank and empty texts, duplicates, degenerate tables, explicit
+  lines, invalid options. The real-PDF cases are written by
+  ``text_tables_real.py``.
 
-``ValueError`` messages of ``validate_directions`` print a ``set`` of
-strings, whose order changes with ``PYTHONHASHSEED``: they are normalized to
-the order of ``POSITION_KEYS`` (``VALID_DIRS_REPR``), which the port prints.
-
-Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.text_tables [--fuzz 1500] [--max-pages 2]
-       ... -m oracle.unit.text_tables --dump pages_real:LINE:OP   (the full canon of one operation)
+Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.text_tables [--fuzz 1500]
+       ... -m oracle.unit.text_tables --dump pages_fuzz:LINE:OP   (the full canon of one operation)
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
-import math
-import multiprocessing
 import random
 import re
-import signal
-import string
 import sys
-from functools import lru_cache
-from operator import itemgetter
 
-import pdfplumber
-from pdfplumber import utils
-from pdfplumber.page import Page, tuplify_list_kwargs
-from pdfplumber.table import TableFinder, TableSettings
+from pdfplumber.table import TableSettings
 from pdfplumber.utils import clustering, geometry
-from pdfplumber.utils import text as ptext
 
-from ..canon import ExcValue, canon, exception_name
-from ..corpus import corpus_root, load_set
+from ..canon import canon
 from ._common import require_oracle_python, unit_dir, write_cases, write_meta
+from ._plumber_ops import FakePage, exc_value, guarded, page_case, run_op
 
 MODULE = "text_tables"
-FULL_CANON_LIMIT = 4096
-FILE_TIMEOUT_S = 600
-SAMPLE_PAGES = 12
-SAMPLE_DOCS = [
-    # table-heavy
-    "upstream/pdfplumber-python/tests/pdfs/nics-background-checks-2015-11.pdf",
-    "upstream/pdfplumber-python/tests/pdfs/150109DSP-Milw-505-90D.pdf",
-    "upstream/pdfplumber-python/tests/pdfs/senate-expenditures.pdf",
-    "upstream/pdfplumber-python/tests/pdfs/WARN-Report-for-7-1-2015-to-03-25-2016.pdf",
-    "upstream/pdfplumber-python/tests/pdfs/pdffill-demo.pdf",
-    "upstream/pdfplumber-python/tests/pdfs/table-curves-example.pdf",
-    "upstream/pdfplumber-python/tests/pdfs/issue-140-example.pdf",
-    "upstream/pdfplumber-python/tests/pdfs/cupertino_usd_4-6-16.pdf",
-    "upstream/pdfplumber-python/tests/pdfs/chelsea_pdta.pdf",
-    "upstream/pdfplumber-python/tests/pdfs/2023-06-20-PV.pdf",
-    "upstream/pdfplumber-python/tests/pdfs/issue-466-example.pdf",
-    "upstream/pdfplumber-python/tests/pdfs/nics-background-checks-2015-11-rotated.pdf",
-    # text-heavy
-    "upstream/pdfplumber-python/tests/pdfs/federal-register-2020-17221.pdf",
-    "upstream/pdfplumber-python/tests/pdfs/scotus-transcript-p1.pdf",
-    "upstream/pdfplumber-python/tests/pdfs/issue-33-lorem-ipsum.pdf",
-    "upstream/pdfplumber-python/tests/pdfs/issue-71-duplicate-chars.pdf",
-    "upstream/pdfplumber-python/tests/pdfs/issue-1114-dedupe-chars.pdf",
-    "upstream/pdfplumber-python/tests/pdfs/extra-attrs-example.pdf",
-    "upstream/pdfplumber-python/tests/pdfs/line-char-render-example.pdf",
-    "upstream/pdfplumber-python/tests/pdfs/issue-1147-example.pdf",
-    "corpus/external/arxiv-publaynet-1908.07836.pdf",
-    "corpus/external/irs-f1040.pdf",
-    "corpus/external/federal-register-2024-01-02.pdf",
-]
-
-#: str(valid_dirs) of validate_directions, as the port prints it
-VALID_DIRS_REPR = "{'ttb', 'btt', 'ltr', 'rtl'}"
-_PROCESS_DIRS_REPR = str(set(ptext.POSITION_KEYS.keys()))
-
-
-def exc_value(e: BaseException) -> ExcValue:
-    message = str(e).replace(_PROCESS_DIRS_REPR, VALID_DIRS_REPR)
-    return ExcValue(exception_name(e), message)
-
-
-def guarded(fn, *args, **kwargs):
-    try:
-        return fn(*args, **kwargs)
-    except Exception as e:
-        return exc_value(e)
-
-
-def canon_out(value) -> str:
-    text = canon(value)
-    if len(text) > FULL_CANON_LIMIT:
-        return f"sha256:{hashlib.sha256(text.encode('ascii')).hexdigest()}:{len(text)}"
-    return text
-
-
-# -- pages and operations ---------------------------------------------------------
-
-
-class FakePage(Page):
-    """A Page whose chars, edges and bbox are given (synthetic pages)."""
-
-    def __init__(self, chars, edges, bbox):  # noqa: D107 (no super().__init__: no PDF)
-        self.pdf = None
-        self.root_page = self
-        self.page_number = 1
-        self.initial_doctop = 0
-        self.rotation = 0
-        self.bbox = bbox
-        self.mediabox = self.cropbox = bbox
-        self._objects = {"char": chars}
-        self._edges = edges
-        self.get_textmap = lru_cache()(self._get_textmap)
-
-
-def describe_finder(finder: TableFinder):
-    bbox = geometry.obj_to_bbox
-    return {
-        "edges": finder.edges,
-        "intersections": [(pt, [bbox(e) for e in d["v"]], [bbox(e) for e in d["h"]]) for pt, d in finder.intersections.items()],
-        "cells": finder.cells,
-        "tables": [
-            {
-                "bbox": t.bbox,
-                "cells": t.cells,
-                "rows": [(r.cells, r.bbox) for r in t.rows],
-                "columns": [(c.cells, c.bbox) for c in t.columns],
-            }
-            for t in finder.tables
-        ],
-    }
-
-
-def search_spans(page, op):
-    """The matches of a search op, as spans (None if the textmap raises)."""
-    _, kwargs, pattern, regex, case = op[:5]
-    try:
-        tm = page.get_textmap(**tuplify_list_kwargs(kwargs))
-    except Exception:
-        return None
-    compiled = re.compile(pattern if regex else re.escape(pattern), re.I if case is False else 0)
-    return [
-        [(m.start(g), m.end(g)) if m.start(g) >= 0 else None for g in range(compiled.groups + 1)]
-        for m in re.finditer(compiled, tm.as_string)
-    ]
-
-
-def run_op(page, op):
-    name = op[0]
-    if name == "text":
-        return page.extract_text(**op[1])
-    if name == "utext":
-        return utils.extract_text(page.chars, **op[1])
-    if name == "simple":
-        return utils.extract_text_simple(page.chars, **op[1])
-    if name == "words":
-        return utils.extract_words(page.chars, **op[1])
-    if name == "lines":
-        return page.extract_text_lines(strip=op[1], return_chars=op[2], **op[3])
-    if name == "search":
-        _, kwargs, pattern, regex, case, main_group, return_groups, return_chars = op
-        return page.search(
-            pattern,
-            regex=regex,
-            case=case,
-            main_group=main_group,
-            return_chars=return_chars,
-            return_groups=return_groups,
-            **kwargs,
-        )
-    if name == "dedupe":
-        return utils.dedupe_chars(page.chars, **op[1])
-    if name == "tables":
-        return describe_finder(TableFinder(page, TableSettings.resolve(op[1])))
-    if name == "extract_tables":
-        return page.extract_tables(op[1])
-    if name == "extract_table":
-        return page.extract_table(op[1])
-    raise ValueError(f"unknown op {name}")
-
-
-def rust_op(page, op):
-    """The op as Rust replays it: a search carries its spans instead of the
-    pattern."""
-    if op[0] == "search":
-        _, kwargs, pattern, regex, case, main_group, return_groups, return_chars = op
-        return ["search", kwargs, main_group, return_groups, return_chars, search_spans(page, op)]
-    return list(op)
-
-
-def page_case(page, record, ops):
-    """(args, out) of one page: the record, the ops as Rust replays them,
-    and the canon of each result."""
-    outs = []
-    rops = []
-    for op in ops:
-        rops.append(rust_op(page, op))
-        outs.append(canon_out(guarded(run_op, page, op)))
-    return [record, rops], outs
-
-
-def has_surrogate(objs) -> bool:
-    for o in objs:
-        for v in o.values():
-            if isinstance(v, str) and any(0xD800 <= ord(c) <= 0xDFFF for c in v):
-                return True
-    return False
-
-
-# Operations on every real page.
-REAL_OPS = [
-    ("text", {}),
-    ("text", {"layout": True}),
-    ("text", {"layout": True, "x_density": 5, "y_density": 10.5}),
-    ("text", {"x_tolerance": 1.5, "y_tolerance": 1}),
-    ("text", {"x_tolerance_ratio": 0.15, "keep_blank_chars": True}),
-    ("text", {"use_text_flow": True}),
-    ("text", {"line_dir_render": "btt", "char_dir_render": "rtl"}),
-    ("text", {"line_dir": "ltr", "char_dir": "ttb", "layout": True}),
-    ("utext", {}),
-    ("utext", {"layout": True, "x_shift": 3, "y_shift": -2}),
-    ("simple", {}),
-    ("simple", {"x_tolerance": 1, "y_tolerance": 0}),
-    ("words", {}),
-    ("words", {"return_chars": True, "extra_attrs": ("fontname", "size")}),
-    ("words", {"split_at_punctuation": True, "keep_blank_chars": True}),
-    ("words", {"horizontal_ltr": False, "vertical_ttb": False, "expand_ligatures": False}),
-    ("words", {"x_tolerance_ratio": 0.3, "y_tolerance_ratio": 0.5, "use_text_flow": True}),
-    ("lines", True, True, {}),
-    ("lines", False, False, {"layout": True}),
-    ("search", {}, r"\w+", True, True, 0, True, False),
-    ("search", {"layout": True}, r"(\d+)[.,](\d+)", True, True, 1, True, True),
-    ("search", {}, "THE", False, False, 0, False, False),
-    ("dedupe", {}),
-    ("dedupe", {"tolerance": 2, "extra_attrs": None}),
-    ("tables", {}),
-    ("tables", {"vertical_strategy": "lines_strict", "horizontal_strategy": "lines_strict"}),
-    ("tables", {"vertical_strategy": "text", "horizontal_strategy": "text"}),
-    ("tables", {"vertical_strategy": "text", "horizontal_strategy": "lines", "snap_tolerance": 1, "join_x_tolerance": 5}),
-    ("tables", {"intersection_tolerance": 5, "edge_min_length": 10, "text_x_tolerance": 2, "min_words_vertical": 2}),
-    ("extract_tables", {}),
-    ("extract_tables", {"vertical_strategy": "text", "horizontal_strategy": "text", "text_layout": True}),
-    ("extract_tables", {"text_x_tolerance": 1, "text_keep_blank_chars": True, "snap_y_tolerance": 0}),
-    ("extract_table", {}),
-    ("extract_table", {"vertical_strategy": "text", "text_use_text_flow": True}),
-]
-
-
-class Timeout(Exception):
-    pass
-
-
-def on_alarm(signum, frame):
-    raise Timeout()
-
-
-def page_record(page):
-    return {"chars": page.chars, "edges": page.edges, "bbox": page.bbox}
-
-
-def explicit_ops(page):
-    """Explicit-lines ops built from the page's own objects and bbox."""
-    x0, top, x1, bottom = page.bbox
-    w, h = x1 - x0, bottom - top
-    v_lines = [x0 + w * k / 4 for k in range(5)]
-    h_lines = [top + h * k / 6 for k in range(7)]
-    objs = (page.objects.get("rect", []) + page.objects.get("line", []) + page.objects.get("curve", []))[:6]
-    return [
-        ("tables", {"vertical_strategy": "explicit", "horizontal_strategy": "explicit", "explicit_vertical_lines": v_lines, "explicit_horizontal_lines": h_lines}),
-        ("extract_tables", {"vertical_strategy": "explicit", "explicit_vertical_lines": v_lines + objs, "horizontal_strategy": "lines", "explicit_horizontal_lines": objs}),
-    ]
-
-
-def process_file(args):
-    path, rel, password, max_pages = args
-    signal.signal(signal.SIGALRM, on_alarm)
-    signal.alarm(FILE_TIMEOUT_S)
-    out, skipped = [], []
-    try:
-        with pdfplumber.open(path, password=password or "") as pdf:
-            for pageno, page in enumerate(pdf.pages, start=1):
-                if pageno > max_pages:
-                    break
-                try:
-                    record = page_record(page)
-                except Exception as e:  # unreadable page: not a text/table case
-                    skipped.append(f"{rel}#{pageno}: {type(e).__name__}")
-                    continue
-                if has_surrogate(record["chars"]) or has_surrogate(record["edges"]):
-                    skipped.append(f"{rel}#{pageno}: lone surrogate")
-                    continue
-                out.append(page_case(page, record, REAL_OPS + explicit_ops(page)))
-                page.close()
-        status = None
-    except Timeout:
-        status = "timeout"
-    except Exception as e:
-        status = type(e).__name__
-    finally:
-        signal.alarm(0)
-    return rel, status, out, skipped
-
-
-def real_cases(max_pages: int, workers: int, meta: dict):
-    root = corpus_root()
-    jobs = [(str(f.path), f.rel, f.password, max_pages) for f in load_set("quick")]
-    seen = {str(f.path) for f in load_set("quick")}
-    for rel in SAMPLE_DOCS:
-        p = root / rel
-        if p.is_file() and str(p) not in seen:
-            jobs.append((str(p), rel, None, SAMPLE_PAGES))
-        elif p.is_file():
-            jobs = [(j[0], j[1], j[2], SAMPLE_PAGES) if j[0] == str(p) else j for j in jobs]
-    statuses, skipped = {}, []
-    with multiprocessing.Pool(workers, maxtasksperchild=8) as pool:
-        for rel, status, cases, sk in pool.imap(process_file, jobs):
-            if status:
-                statuses[rel] = status
-            skipped.extend(sk)
-            yield from cases
-    meta["real_files"] = len(jobs)
-    meta["real_file_errors"] = statuses
-    meta["real_skipped_pages"] = skipped
 
 
 # -- synthetic pages ------------------------------------------------------------------
@@ -513,6 +201,7 @@ def edge(rng, x0, top, x1, bottom, orientation):
 
 
 DIRS = ["ttb", "btt", "ltr", "rtl"]
+VALID_PAIRS = [("ttb", "ltr"), ("ttb", "rtl"), ("btt", "ltr"), ("btt", "rtl"), ("ltr", "ttb"), ("rtl", "btt"), ("ltr", "btt"), ("rtl", "ttb")]
 
 
 def rand_text_kwargs(rng, layout_ok=True):
@@ -532,13 +221,15 @@ def rand_text_kwargs(rng, layout_ok=True):
     maybe(0.15, "horizontal_ltr", [False, True])
     maybe(0.15, "vertical_ttb", [False, True])
     if pick() < 0.25:
-        ld, cd = rng.choice([("ttb", "ltr"), ("ttb", "rtl"), ("btt", "ltr"), ("btt", "rtl"), ("ltr", "ttb"), ("rtl", "btt"), ("ltr", "btt"), ("rtl", "ttb")])
+        ld, cd = rng.choice(VALID_PAIRS)
         kw["line_dir"], kw["char_dir"] = ld, cd
     if pick() < 0.03:
         kw["line_dir"] = rng.choice(["ltr", "foo", None, "ttb"])
         kw["char_dir"] = rng.choice(["ltr", "rtl", "x"])
-    maybe(0.1, "line_dir_rotated", DIRS + [None])
-    maybe(0.1, "char_dir_rotated", DIRS + [None])
+    if pick() < 0.12:
+        kw["line_dir_rotated"], kw["char_dir_rotated"] = rng.choice(VALID_PAIRS + [(None, None)])
+    elif pick() < 0.03:
+        kw[rng.choice(["line_dir_rotated", "char_dir_rotated"])] = rng.choice(DIRS + [None])
     maybe(0.15, "extra_attrs", [("fontname",), ("size", "fontname"), (), ("stroking_color",), ("upright",), ("missing",)])
     maybe(0.15, "split_at_punctuation", [True, False, ".,", "-", "", "ab"])
     maybe(0.15, "expand_ligatures", [False, True])
@@ -554,8 +245,10 @@ def rand_text_kwargs(rng, layout_ok=True):
         maybe(0.1, "layout_height", [0, 50, 200])
         maybe(0.1, "layout_bbox", [(0, 0, 200, 300), (10, 5, 100.5, 80), (0.0, 0.0, 612.0, 792.0)])
         maybe(0.08, "presorted", [True, False])
-    maybe(0.1, "line_dir_render", DIRS + [None])
-    maybe(0.1, "char_dir_render", DIRS + [None])
+    if pick() < 0.12:
+        kw["line_dir_render"], kw["char_dir_render"] = rng.choice(VALID_PAIRS + [(None, None)])
+    elif pick() < 0.02:
+        kw[rng.choice(["line_dir_render", "char_dir_render"])] = rng.choice(DIRS + [None])
     if pick() < 0.01:
         kw["x_density"] = 0
     return kw
@@ -651,6 +344,9 @@ def synth_page_case(rng):
             ops.append(("simple", kw))
         elif r < 0.44:
             kw = rand_text_kwargs(rng, layout_ok=False)
+            if rng.random() < 0.9:
+                kw.pop("line_dir_render", None)
+                kw.pop("char_dir_render", None)
             if rng.random() < 0.4:
                 kw["return_chars"] = rng.choice([True, False])
             ops.append(("words", kw))
@@ -658,7 +354,7 @@ def synth_page_case(rng):
             ops.append(("lines", rng.choice([True, False]), rng.choice([True, False]), rand_text_kwargs(rng)))
         elif r < 0.62:
             pattern, regex, case = rng.choice(PATTERNS)
-            main_group = rng.choice([0, 0, 0, 1])
+            main_group = rng.choice([0, 0, 1]) if "(" in pattern or rng.random() < 0.1 else 0
             ops.append(("search", rand_text_kwargs(rng), pattern, regex, case, main_group, rng.choice([True, False]), rng.choice([True, False])))
         elif r < 0.70:
             kw = {}
@@ -931,9 +627,6 @@ def dump(spec: str) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(prog="python -m oracle.unit.text_tables", description=__doc__.split("\n\n")[0])
     ap.add_argument("--fuzz", type=int, default=1500, help="number of adversarial pages (default 1500)")
-    ap.add_argument("--max-pages", type=int, default=2, help="pages per PDF of the quick set (default 2)")
-    ap.add_argument("-j", "--workers", type=int, default=3)
-    ap.add_argument("--no-real", action="store_true", help="skip the real corpus (faster iteration; meta not written)")
     ap.add_argument("--dump", metavar="NAME:LINE:OP")
     args = ap.parse_args()
     require_oracle_python()
@@ -948,14 +641,8 @@ def main() -> int:
     counts["textlines"] = write_cases(MODULE, "textlines", textline_cases())
     counts["settings"] = write_cases(MODULE, "settings", settings_cases())
     counts["pages_fuzz"] = write_cases(MODULE, "pages_fuzz", fuzz_cases(args.fuzz))
+    write_meta(MODULE, counts=counts, fuzz=args.fuzz)
     print(counts, flush=True)
-    if args.no_real:
-        write_meta(MODULE, counts=counts, fuzz=args.fuzz, real=False)
-        return 0
-    meta: dict = {}
-    counts["pages_real"] = write_cases(MODULE, "pages_real", real_cases(args.max_pages, args.workers, meta))
-    write_meta(MODULE, counts=counts, fuzz=args.fuzz, max_pages=args.max_pages, **meta)
-    print(counts, meta.get("real_file_errors"), len(meta.get("real_skipped_pages", [])), flush=True)
     return 0
 
 

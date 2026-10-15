@@ -10,7 +10,7 @@
 //! computed by the caller over [`TextMap::as_string`] (the JavaScript API
 //! runs a JS `RegExp`). To reproduce `TextMap.search(pattern, regex, case,
 //! ...)` exactly, compute the matches as upstream does
-//! (`pdfplumber/utils/text.py:172`): `compiled = re.compile(pattern if regex
+//! (pdfplumber/utils/text.py:172 TextMap.search): `compiled = re.compile(pattern if regex
 //! else re.escape(pattern), re.I if case is False else 0)`, then for each
 //! `m` of `re.finditer(compiled, textmap.as_string)` pass
 //! `[m.span(g) if m.start(g) >= 0 else None for g in range(compiled.groups +
@@ -21,6 +21,11 @@
 //!
 //! Upstream's `logger.warning` calls (deprecated `vertical_ttb`,
 //! `horizontal_ltr`) have no effect on results and are not reproduced.
+//!
+//! `HashKey` holds `Rc`-shared values, which clippy takes for interior
+//! mutability; a key's hash only reads immutable parts, so
+//! `mutable_key_type` is allowed.
+#![allow(clippy::mutable_key_type)]
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -169,7 +174,11 @@ fn bbox_origin(dir: T_dir, bbox: &PyValue) -> PyResult<PyValue> {
     };
     match bbox.as_seq() {
         Some(items) => items.get(i).cloned().ok_or_else(|| {
-            exc::IndexError(if matches!(bbox, PyValue::Tuple(_)) { "tuple index out of range" } else { "list index out of range" })
+            exc::IndexError(if matches!(bbox, PyValue::Tuple(_)) {
+                "tuple index out of range"
+            } else {
+                "list index out of range"
+            })
         }),
         None => Err(exc::TypeError(format!("'{}' object is not subscriptable", bbox.type_name()))),
     }
@@ -255,7 +264,11 @@ pub struct TextMap {
 
 impl TextMap {
     // pdfplumber/utils/text.py:101 TextMap.__init__
-    pub fn new(tuples: Vec<(char, Option<Obj>)>, line_dir_render: &PyValue, char_dir_render: &PyValue) -> PyResult<TextMap> {
+    pub fn new(
+        tuples: Vec<(char, Option<Obj>)>,
+        line_dir_render: &PyValue,
+        char_dir_render: &PyValue,
+    ) -> PyResult<TextMap> {
         let (ld, cd) = validate_directions(line_dir_render, char_dir_render, "_render")?;
         let mut tm = TextMap { tuples, line_dir_render: ld, char_dir_render: cd, as_string: String::new() };
         tm.as_string = tm.to_string();
@@ -623,14 +636,17 @@ impl WordMap {
         let mut textmap: Vec<(char, Option<Obj>)> = Vec::new();
 
         if self.tuples.is_empty() {
-            return TextMap::new(textmap, or_value(&o.line_dir_render, &o.line_dir), or_value(&o.char_dir_render, &o.char_dir));
+            return TextMap::new(
+                textmap,
+                or_value(&o.line_dir_render, &o.line_dir),
+                or_value(&o.char_dir_render, &o.char_dir),
+            );
         }
 
         let expand = o.expand_ligatures;
         let mut layout_width_chars = o.layout_width_chars.clone();
         let mut layout_height_chars = o.layout_height_chars.clone();
-        let blank_line: usize;
-        if o.layout {
+        let blank_line: usize = if o.layout {
             if layout_width_chars.truthy() {
                 if o.layout_width.truthy() {
                     return Err(exc::ValueError("`layout_width` and `layout_width_chars` cannot both be set."));
@@ -645,11 +661,12 @@ impl WordMap {
             } else {
                 layout_height_chars = round_div(&o.layout_height, &o.y_density)?;
             }
-            blank_line = seq_repeat_count(&layout_width_chars)?;
+            seq_repeat_count(&layout_width_chars)?
         } else {
-            blank_line = 0;
-        }
-        let push_blank_line = |tm: &mut Vec<(char, Option<Obj>)>| tm.extend(std::iter::repeat_n((' ', None), blank_line));
+            0
+        };
+        let push_blank_line =
+            |tm: &mut Vec<(char, Option<Obj>)>| tm.extend(std::iter::repeat_n((' ', None), blank_line));
 
         let mut num_newlines = PyInt::ZERO;
 
@@ -661,7 +678,11 @@ impl WordMap {
         let keep_order = o.presorted || o.use_text_flow;
         let mut words_sorted_line_dir: Vec<usize> = (0..self.tuples.len()).collect();
         if !keep_order {
-            sort_by_key(&mut words_sorted_line_dir, |&i| line_cluster_key(line_dir, &self.tuples[i].0), |a, b| a.lt(b))?;
+            sort_by_key(
+                &mut words_sorted_line_dir,
+                |&i| line_cluster_key(line_dir, &self.tuples[i].0),
+                |a, b| a.lt(b),
+            )?;
         }
 
         let tuples_by_line = cluster_objects(
@@ -1344,8 +1365,12 @@ pub fn extract_text(
         let y_tolerance = kwargs.get("y_tolerance").cloned().unwrap_or(PyValue::from(DEFAULT_Y_TOLERANCE));
 
         let vertical = ["ttb", "btt"].iter().any(|d| line_dir_render.py_eq(&PyValue::str(d)));
-        let lines =
-            cluster_objects(&words, |w| line_cluster_key(line_dir, w), if vertical { &y_tolerance } else { &x_tolerance }, false)?;
+        let lines = cluster_objects(
+            &words,
+            |w| line_cluster_key(line_dir, w),
+            if vertical { &y_tolerance } else { &x_tolerance },
+            false,
+        )?;
 
         let mut text = String::new();
         for (i, line) in lines.iter().enumerate() {
@@ -1380,10 +1405,7 @@ pub fn collate_line(line_chars: &[Obj], tolerance: &PyValue) -> PyResult<String>
         match char.hot(Hot::Text)? {
             PyValue::Str(s) => coll.push_str(s),
             other => {
-                return Err(exc::TypeError(format!(
-                    "can only concatenate str (not \"{}\") to str",
-                    other.type_name()
-                )))
+                return Err(exc::TypeError(format!("can only concatenate str (not \"{}\") to str", other.type_name())))
             }
         }
     }

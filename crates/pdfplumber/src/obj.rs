@@ -1,4 +1,4 @@
-//! The pdfplumber object model: `T_obj` (`pdfplumber/_typing.py:7`), a
+//! The pdfplumber object model: `T_obj` (pdfplumber/_typing.py:7 T_obj), a
 //! `Dict[str, Any]`, and the dynamic values it holds.
 //!
 //! pdfplumber represents every page object (`char`, `rect`, `line`,
@@ -686,9 +686,7 @@ impl HashKey {
 
 fn check_hashable(v: &PyValue) -> PyResult<()> {
     match v {
-        PyValue::List(_) | PyValue::Dict(_) => {
-            Err(exc::TypeError(format!("unhashable type: '{}'", v.type_name())))
-        }
+        PyValue::List(_) | PyValue::Dict(_) => Err(exc::TypeError(format!("unhashable type: '{}'", v.type_name()))),
         PyValue::Pdf(PDFObject::List(_) | PDFObject::Dict(_)) => {
             Err(exc::TypeError(format!("unhashable type: '{}'", v.type_name())))
         }
@@ -920,13 +918,12 @@ impl Obj {
             // whose identity shortcut makes a dict equal to itself.
             return true;
         }
-        self.len() == other.len()
-            && self.0.items.iter().all(|(k, v)| other.get(k).is_some_and(|w| v.py_eq(w)))
+        self.len() == other.len() && self.0.items.iter().all(|(k, v)| other.get(k).is_some_and(|w| v.py_eq(w)))
     }
 }
 
 /// A bounding box as pdfplumber passes it around: `(x0, top, x1, bottom)`
-/// (`T_bbox`, `pdfplumber/_typing.py:5`), of any values.
+/// (pdfplumber/_typing.py:6 T_bbox), of any values.
 pub type Bbox = [PyValue; 4];
 
 /// The `tuple` of a bbox.
