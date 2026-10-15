@@ -173,7 +173,12 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   imbriqués autour de la limite de `repr`/`str` et sur 10^6 niveaux ; pour
   `PDFContentParser`, comparés job par job par empreinte de la sérialisation
   canonique, chaque job rejoué depuis la profondeur de récursion où pdfminer
-  l'a exécuté).
+  l'a exécuté), `cmaps.py` (`glyphlist`, `latin_enc`, `fontmetrics`,
+  `name2unicode`, `get_encoding`, scripts d'appels sur chaque classe de
+  `cmapdb`, toutes les CMaps prédéfinies lues par le fournisseur des
+  fichiers compacts de `oracle/codegen/cmaps.py`, `CMapParser` sur un corpus
+  adverse `--fuzz 3000` et, avec `--corpus`, sur chaque flux CMap embarqué de
+  l'ensemble `all`).
 
 ```sh
 export PDFPLUMBER_ROOT=/chemin/du/dépôt/principal   # .venv, corpus/, .cache/
