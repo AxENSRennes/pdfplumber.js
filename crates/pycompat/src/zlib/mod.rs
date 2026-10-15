@@ -63,9 +63,10 @@ const BUFFER_BLOCK_SIZE: [usize; 17] = [
 ];
 
 // cpython-3.12.3/Modules/zlibmodule.c:200 zlib_error
-/// The `zlib.error` raised for the return code `err` of a zlib call.
-fn zlib_error(zst: &ZStream, err: i32, msg: &str) -> PyErr {
-    let zmsg = zst.msg.or(match err {
+/// The `zlib.error` raised for the return code `err` of a zlib call;
+/// `zst_msg` is the stream's `msg` (`None` for `NULL`).
+fn zlib_error(zst_msg: Option<&str>, err: i32, msg: &str) -> PyErr {
+    let zmsg = zst_msg.or(match err {
         Z_BUF_ERROR => Some("incomplete or truncated stream"),
         Z_STREAM_ERROR => Some("inconsistent stream state"),
         Z_DATA_ERROR => Some("invalid input data"),
@@ -155,11 +156,7 @@ pub fn decompress_with(data: &[u8], wbits: i32, bufsize: isize) -> PyResult<Vec<
         Ok(Some(zst)) => zst,
         Ok(None) => return Err(gzip_not_ported()),
         // inflateInit2 sets msg to NULL before failing
-        Err(err) => {
-            return Err(exc::ZlibError(format!(
-                "Error {err} while preparing to decompress data: inconsistent stream state"
-            )))
-        }
+        Err(err) => return Err(zlib_error(None, err, "while preparing to decompress data")),
     };
     zst.avail_out = first as u32;
     let mut output = Vec::new();
@@ -175,7 +172,7 @@ pub fn decompress_with(data: &[u8], wbits: i32, bufsize: isize) -> PyResult<Vec<
             err = inflate(&mut zst, data, &mut output, flush);
             match err {
                 Z_OK | Z_BUF_ERROR | Z_STREAM_END => {}
-                _ => return Err(zlib_error(&zst, err, "while decompressing data")),
+                _ => return Err(zlib_error(zst.msg, err, "while decompressing data")),
             }
             if zst.avail_out != 0 {
                 break;
@@ -186,7 +183,7 @@ pub fn decompress_with(data: &[u8], wbits: i32, bufsize: isize) -> PyResult<Vec<
         }
     }
     if err != Z_STREAM_END {
-        return Err(zlib_error(&zst, err, "while decompressing data"));
+        return Err(zlib_error(zst.msg, err, "while decompressing data"));
     }
     Ok(output)
 }
@@ -283,7 +280,7 @@ impl Decompress {
         if err == Z_STREAM_END {
             self.eof = true;
         } else if err != Z_OK && err != Z_BUF_ERROR {
-            return Err(zlib_error(&self.zst, err, "while decompressing data"));
+            return Err(zlib_error(self.zst.msg, err, "while decompressing data"));
         }
         Ok(output)
     }

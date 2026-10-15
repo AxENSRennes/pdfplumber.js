@@ -592,7 +592,8 @@ def far_block_streams(rng, first, n):
 def gen_decompressobj(rng):
     # the output blocks of one decompress() call (32 KiB first)
     for stream in far_block_streams(rng, 32 << 10, 5):
-        yield run_decompressobj(stream, 0, [[[len(stream), 0, 1]], [[len(stream), 40000, 1], [0, 40000, 3]]])
+        yield run_decompressobj(stream, 0, [[[len(stream), 0, 1]], [[len(stream), 40000, 1], [0, 40000, 3]],
+                                            [[len(stream), 50000, 1], [0, 50000, 3]]])
     for stream, wbits in real_streams(rng):
         if len(stream) > 20000 and rng.random() < 0.8:
             continue
