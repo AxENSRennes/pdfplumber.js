@@ -41,7 +41,7 @@ import random
 import re
 import sys
 
-from pdfminer.pdftypes import PDFObjRef
+from pdfminer.pdftypes import PDFObjRef, PDFStream
 from pdfminer.psparser import KWD, LIT
 from pdfplumber import table
 from pdfplumber.table import TableSettings
@@ -486,7 +486,7 @@ OP_VALUES = [
     float(2**70), 2**63, float(2**63), -(2**63), float(-(2**63)), (1, [2]),
     "", "a", "ab", "b", b"x", (), (1,), (1, 2), (1.0, 2.5), (1, None), [1], [1, 2], [], {}, {"a": 1}, {"a": 1, "b": (2,)},
     # pdfminer objects found in pdfplumber dicts (pattern color names, ...)
-    LIT("F1"), KWD(b"BT"), PDFObjRef(None, 7),
+    LIT("F1"), KWD(b"BT"), PDFObjRef(None, 7), PDFStream({"Length": 1}, b"x"),
 ]
 
 
@@ -548,8 +548,9 @@ def ops_cases():
                 yield [op, a, b, a is b], guarded(run, op, a, b)
     for op in ["neg", "abs", "repr", "bool", "unpack4"]:
         for a in OP_VALUES:
-            # unpacking iterates: strings, bytes and dicts are outside the model
-            if op == "unpack4" and isinstance(a, (str, bytes, dict)):
+            # unpacking iterates: strings, bytes, dicts (and streams, through
+            # __getitem__) are outside the model
+            if op == "unpack4" and isinstance(a, (str, bytes, dict, PDFStream)):
                 continue
             yield [op, a, None, False], guarded(run, op, a, None)
     for items in [(1, 2, 3, 4), [1.0, 2, 3, 4.5], (1, 2, 3), (1, 2, 3, 4, 5), [None] * 4, ()]:
