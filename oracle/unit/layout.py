@@ -8,7 +8,9 @@ crates/pdftrace/tests/layout_unit.rs.
 Layout analysis cases (``real``, ``adversarial``)
 -------------------------------------------------
 A case is a raw page, as pdfminer's ``PDFPageAggregator`` builds it without
-``laparams`` (the objects the analysis starts from), and its analysis under
+``laparams`` (the objects the analysis starts from; for the real pages,
+pdfplumber's ``PDFPageAggregatorWithMarkedContent``, which also sets
+``mcid`` and ``tag`` on them), and its analysis under
 several ``LAParams``. Input: ``[name, page, runs]`` where ``page`` is the raw
 ``LTPage`` dumped by ``dump_raw`` (every object as ``Named(class, __dict__)``,
 in ``__dict__`` order; ``graphicstate`` is left out (``None``), the color
@@ -46,8 +48,10 @@ exception.
   ``line_margin``), overlapping and duplicated chars, vertical text, blank
   and zero-size chars, grids of equal boxes (ties in the heap), NaN, infinite
   and huge coordinates, chars outside the page, figures (nested, with
-  chars), curves and images among chars, many boxes, and chains of groups
-  whose depth reaches Python's recursion limit.
+  chars), curves and images among chars, many boxes, chains of groups
+  whose depth reaches Python's recursion limit, and objects (figures
+  included) given ``mcid``/``tag`` attributes as pdfplumber's
+  ``tag_cur_item`` does, once or again, of every kind of value.
 
 Object cases
 ------------
@@ -58,8 +62,13 @@ Object cases
   dict keys) with float and int font sizes (``TypeError``/``OverflowError``
   of the arithmetic, sequence repetition).
 - ``objects``: the constructors of ``LTCurve``, ``LTLine``, ``LTRect``,
-  ``LTImage``, ``LTFigure``, ``LTPage``, ``LAParams`` (validation), and the
-  ``LTComponent`` distance methods on random boxes.
+  ``LTImage``, ``LTFigure``, ``LTPage``, ``LAParams`` (validation), the
+  ``LTComponent`` distance methods on random boxes, and the figure of a Form
+  XObject from its unchecked ``/Matrix`` and ``/BBox`` items (any PDF
+  object): ``mult_matrix(matrix, ctm)`` (numbers, ``[type, len]`` of a
+  sequence, or the exception) and ``LTFigure(name, bbox, that)``; and
+  ``list.sort`` on the keys the layout sorts by, with NaN keys in lists
+  shorter than 64 (``list_sort``, ``list_sort_tuple``: the sorted indices).
 - ``textline``: ``LTTextLineHorizontal``/``LTTextLineVertical`` built by
   ``add`` on random chars and word margins: the line, ``get_text()``,
   ``is_empty()``.
@@ -76,7 +85,6 @@ import random
 import signal
 import sys
 
-from pdfminer.converter import PDFPageAggregator
 from pdfminer.layout import (
     LAParams,
     LTAnno,
@@ -103,6 +111,8 @@ from pdfminer.pdfinterp import PDFPageInterpreter, PDFResourceManager
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdftypes import PDFObjRef, PDFStream
 from pdfminer.psparser import KWD, LIT
+from pdfminer.utils import mult_matrix
+from pdfplumber.page import PDFPageAggregatorWithMarkedContent
 
 from ..canon import Named, canon
 from ..corpus import load_set
@@ -306,7 +316,9 @@ def process_file(args):
     try:
         with open_document(path, password) as doc:
             rsrcmgr = PDFResourceManager()
-            device = PDFPageAggregator(rsrcmgr, laparams=None)
+            # pdfplumber's aggregator: pdfminer's, plus the mcid and tag
+            # attributes it sets on the objects
+            device = PDFPageAggregatorWithMarkedContent(rsrcmgr, laparams=None)
             interpreter = PDFPageInterpreter(rsrcmgr, device)
             for pageno, page in enumerate(PDFPage.create_pages(doc), start=1):
                 if pageno > max_pages:
@@ -508,6 +520,45 @@ def adversarial_pages(rng):
         yield f"random {k}", page_of(objs + curve_objs(rng))
     yield "empty", page_of([])
     yield "curves only", page_of(curve_objs(rng) + curve_objs(rng))
+    # objects tagged after their creation, as pdfplumber's aggregator does
+    for k in range(30):
+        fig = LTFigure("Fm1", (0, 0, 300, 300), (1, 0, 0, 1, 50.0, 60.0))
+        for o in word(60, 100, "fig") + curve_objs(rng):
+            fig.add(o)
+        inner = LTFigure("Fm2", (0, 0, 10, 10), (2.0, 0, 0, 2.0, 100.0, 200.0))
+        inner.add(LTImage("Im1", PDFStream({"Width": 4, "Height": 2}, b""), (inner.x0, inner.y0, inner.x1, inner.y1)))
+        fig.add(inner)
+        objs = word(10, 700, "tagged text") + word(10, 650, "more") + [fig] + curve_objs(rng)
+        rng.shuffle(objs)
+        tag_objects(rng, objs, rng.randint(1, 25))
+        yield f"tagged {k}", page_of(objs)
+
+
+#: Values pdfplumber's aggregator gives ``mcid`` (the ``MCID`` of the
+#: marked-content properties: any object) and ``tag`` (a ``str``), or None.
+ATTR_VALUES = [None, 0, 1, 7, -3, 2**70, True, 1.5, math.nan, "P", "Span", "", "café", b"x", LIT("Artifact"),
+               [1, 2], {"MCID": 3}]
+
+
+def tag_objects(rng, objs, n):
+    """``n`` rounds of pdfplumber's ``tag_cur_item`` (``obj.mcid = ...``, then
+    ``obj.tag = ...``) on objects of ``objs`` and of their figures, the same
+    object possibly again; some rounds set one attribute, or ``tag`` first."""
+    flat = []
+
+    def walk(os):
+        for o in os:
+            flat.append(o)
+            if isinstance(o, LTFigure):
+                walk(o._objs)
+
+    walk(objs)
+    for _ in range(n):
+        obj = rng.choice(flat)
+        r = rng.random()
+        names = ["mcid", "tag"] if r < 0.8 else (["tag"] if r < 0.9 else ["tag", "mcid"])
+        for name in names:
+            setattr(obj, name, rng.choice(ATTR_VALUES))
 
 
 def chain_page(n):
@@ -607,6 +658,80 @@ DISP_ITEMS = [None, True, False, 0, 880, -1000, 1000, 0.5, -0.0, math.nan, math.
               PDFObjRef(None, 3)]
 
 
+#: Items of an unchecked /Matrix or /BBox. The ints that can repeat a
+#: sequence are small, or beyond CPython's size checks (OverflowError,
+#: MemoryError before any allocation; a bytes of length 1 is never repeated
+#: 2**62 times): no repetition Python would try to allocate.
+RAW_NUMS = [0, 1, -1, 2, 3, 7, 1000, -3, 2**62, 2**63, -2**63, 10**30, 0.0, -0.0, 0.5, 1.5, -2.25, 72.0, 1e308,
+            math.inf, -math.inf, math.nan, True, False]
+RAW_SEQS = [b"", b"ab", b"xyz", [], [1], [1, 2], [LIT("a"), 2.5]]
+RAW_OTHERS = RAW_SEQS + [None, {}, {"a": 1}, LIT("x"), KWD(b"q"), PDFStream({}, b""), PDFObjRef(None, 3)]
+#: CTMs: the page's (ints for the rotations, floats after a cm), and others.
+CTMS = [(1, 0, 0, 1, 0, 0), (1.0, 0.0, 0.0, 1.0, 0.0, 0.0), (0, -1, 1, 0, -0.0, 612.0), (-1, 0, 0, -1, 612.0, 792.0),
+        (2, 0, 0, 3, 5, 7), (0.5, 0.25, -0.25, 0.5, 10.5, 20.0), (1, 0, 0, 1, -36.0, -18.5), (0, 1, -1, 0, 792, 0)]
+INT_CTMS = [m for m in CTMS if all(isinstance(x, int) for x in m[:4])]
+
+
+def operands(m):
+    """A matrix computed from unchecked items: numbers, and ``[type, len]``
+    for a sequence."""
+    return [x if isinstance(x, (int, float)) else [type(x).__name__, len(x)] for x in m]
+
+
+def figure_obj(m1, m0, bbox):
+    # PDFLayoutAnalyzer.begin_figure
+    return dump_raw(LTFigure("Fm0", bbox, mult_matrix(m1, m0)))
+
+
+def gen_figure_obj(rng):
+    def item(p):
+        return rng.choice(RAW_NUMS) if rng.random() < p else rng.choice(RAW_OTHERS)
+
+    for _ in range(3000):
+        m1 = [item(0.85) for _ in range(rng.choice([6] * 10 + [0, 4, 5, 7]))]
+        bbox = [item(0.85) for _ in range(rng.choice([4] * 10 + [0, 3, 5]))]
+        if rng.random() < 0.3:
+            m0 = tuple(rand_num(rng) for _ in range(6))
+        else:
+            m0 = rng.choice(CTMS)
+        yield ["mult_matrix_obj", m1, m0], call(lambda: operands(mult_matrix(m1, m0)))
+        yield ["LTFigure_obj", m1, m0, bbox], call(figure_obj, m1, m0, bbox)
+    # sequences that survive mult_matrix (repeated by the int CTM, added to
+    # their own kind), then meet the box
+    for _ in range(1000):
+        kind = rng.choice([bytes, list])
+        seqs = [s for s in RAW_SEQS if isinstance(s, kind)]
+        m1 = [rng.choice(seqs) if rng.random() < 0.8 else item(1) for _ in range(4)] + [item(1), item(1)]
+        m0 = rng.choice(INT_CTMS)
+        bbox = [rng.choice([0, 1, 2, 5, -1, 2**62, 2**63, 0.5, True, b"ab", [1]]) for _ in range(4)]
+        yield ["mult_matrix_obj", m1, m0], call(lambda: operands(mult_matrix(m1, m0)))
+        yield ["LTFigure_obj", m1, m0, bbox], call(figure_obj, m1, m0, bbox)
+
+
+SORT_VALS = [math.nan, math.inf, -math.inf, 0.0, -0.0, 0, 1, -1, 1.5, 2, 2.0, 3, 1e300, 2**53, 2**53 + 1, 2**70]
+
+
+def gen_list_sort(rng):
+    """``list.sort(key=...)`` as the layout calls it: keys are new objects
+    (``-x``, ``(kind, -a, -b)``), NaN among them only in lists shorter than
+    64 (the exact count_run + binarysort path), totally ordered keys in
+    longer ones (the stable sort). Output: the sorted indices."""
+    for _ in range(1500):
+        n = rng.choice([2, 3, 4, 5, 8, 16, 31, 32, 33, 62, 63, rng.randint(2, 63), rng.randint(64, 200)])
+        pool = SORT_VALS if n < 64 else SORT_VALS[1:]
+        vals = [rng.choice(pool) for _ in range(n)]
+        order = list(range(n))
+        order.sort(key=lambda i: -vals[i])
+        yield ["list_sort", vals], order
+    for _ in range(800):
+        n = rng.choice([2, 3, 5, 10, 63, rng.randint(2, 63), rng.randint(64, 150)])
+        pool = SORT_VALS if n < 64 else SORT_VALS[1:]
+        rows = [[rng.choice([0, 1]), rng.choice(pool), rng.choice(pool)] for _ in range(n)]
+        order = list(range(n))
+        order.sort(key=lambda i: (rows[i][0], -rows[i][1], -rows[i][2]))
+        yield ["list_sort_tuple", rows], order
+
+
 def gen_objects(rng):
     for _ in range(1000):
         pts = [(rand_num(rng), rand_num(rng)) for _ in range(rng.randint(0, 4))]
@@ -637,6 +762,28 @@ def gen_objects(rng):
     for _ in range(300):
         pts = [(rand_num(rng), rand_num(rng)) for _ in range(rng.randint(0, 4))]
         yield ["get_pts", pts], call(LTCurve(1, pts).get_pts)
+    # the figure of a Form XObject from its unchecked /Matrix and /BBox
+    # (pdfinterp.do_Do -> PDFLayoutAnalyzer.begin_figure)
+    yield from gen_figure_obj(rng)
+    yield from gen_list_sort(rng)
+    # attributes set after creation (pdfplumber's tag_cur_item): a new one
+    # comes last in __dict__, one set again keeps its place
+    def fresh():
+        fig = LTFigure("Fm0", (0, 0, 10, 10), (1, 0, 0, 1, 5.0, 5.0))
+        fig.add(char_at(6.0, 6.0))
+        return rng.choice([lambda: char_at(1.0, 2.0), lambda: LTCurve(1, [(0, 0), (1, 2)]),
+                           lambda: LTLine(1, (0, 0), (1, 1)), lambda: LTRect(1, (0, 0, 1, 1)),
+                           lambda: LTImage("I", PDFStream({"W": 1}, b""), (0, 0, 1, 1)), lambda: fig])()
+
+    for _ in range(400):
+        obj = fresh()
+        raw = dump_raw(obj)
+        ops = []
+        for _ in range(rng.randint(1, 6)):
+            name, value = rng.choice(["mcid", "tag"]), rng.choice(ATTR_VALUES)
+            setattr(obj, name, value)
+            ops.append([name, value])
+        yield ["setattr", raw, ops], [dump_raw(obj), list(obj.__dict__)]
     # the __dict__ keys of every class, in the order pdfplumber reads them
     stream = PDFStream({}, b"")
     samples = [char_at(1.0, 2.0), LTCurve(1, [(0, 0)]), LTLine(1, (0, 0), (1, 1)), LTRect(1, (0, 0, 1, 1)),

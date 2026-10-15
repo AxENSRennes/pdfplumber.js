@@ -69,8 +69,8 @@ use crate::casting::IterItem;
 use crate::pdfcolor::PDFColorSpace;
 use crate::pdftypes::{PDFList, PDFObject, PDFStream};
 use crate::utils::{
-    apply_matrix_rect, format_fixed, fsplit, get_bound, inf, neg_inf, py_max2, py_min2, uniq, Matrix, Plane, PlaneItem,
-    Point, Rect,
+    apply_matrix_rect, format_fixed, fsplit, get_bound, inf, neg_inf, py_max2, py_min2, uniq, unpack, Matrix,
+    ObjMatrix, Operand, Plane, PlaneItem, Point, Rect,
 };
 
 // ---------------------------------------------------------------------------
@@ -103,16 +103,23 @@ fn leaf_frame() -> PyResult<()> {
 }
 
 /// `list.sort(key=...)` with the keys already computed and Python's `<` on
-/// them (`lt`). CPython's timsort sorts a list shorter than 64 by finding
-/// the leading run (reversed when strictly descending) and inserting the
-/// rest with a binary insertion sort; that is reproduced exactly, so the
-/// result is CPython's even when `lt` is not a total order (NaN keys, which
-/// only a group's two children can have). Longer lists are sorted by a
-/// stable sort, CPython's result whenever `lt` is a strict weak order,
-/// which holds for every longer list the layout sorts (box lines by `-y1`,
-/// boxes by index or by their coordinates: never NaN, see
-/// `LTExpandableContainer.add`).
-fn list_sort<T, K>(items: &mut Vec<T>, mut keys: Vec<K>, lt: impl Fn(&K, &K) -> bool) {
+/// them (`lt`). CPython 3.12's timsort sorts a list shorter than 64 by
+/// finding the leading run (`count_run`: reversed when strictly descending)
+/// and inserting the rest with a binary insertion sort (`binarysort`); that
+/// is reproduced exactly, so the result is CPython's even when `lt` is not a
+/// total order (NaN keys). Longer lists are sorted by a stable sort:
+/// CPython's result whenever `lt` is a strict weak order, but not
+/// otherwise (a NaN key; Rust's sort may even panic on such an order), and
+/// timsort's merges are not ported.
+///
+/// In the layout, only the two children of a group can have NaN keys;
+/// the lists of 64 or more are box lines by `-y1`, boxes by their index or
+/// by their coordinates, never NaN (an expandable container's bounds come
+/// from `min`/`max` against `INF`, which a NaN never replaces, see
+/// `LTExpandableContainer.add`), and Python compares ints and floats
+/// exactly, so these keys are totally ordered. Public for the differential
+/// test against Python's `list.sort` (`objects` cases `list_sort`).
+pub fn list_sort<T, K>(items: &mut Vec<T>, mut keys: Vec<K>, lt: impl Fn(&K, &K) -> bool) {
     let n = items.len();
     if n < 2 {
         return;
@@ -161,10 +168,12 @@ fn list_sort<T, K>(items: &mut Vec<T>, mut keys: Vec<K>, lt: impl Fn(&K, &K) -> 
     items.extend(order.into_iter().map(|i| slots[i].take().expect("each index once")));
 }
 
-/// Python's `<` on two tuples of numbers (the first differing pair decides;
-/// `==` and `<` are Python's, so a NaN never equals anything and is never
-/// less).
-fn tuple_lt(a: &[Num], b: &[Num]) -> bool {
+/// Python's `<` on two tuples of numbers of the same length (the first
+/// differing pair decides; `==` and `<` are Python's, so a NaN never equals
+/// anything and is never less). Python's `==` first checks identity: the
+/// layout's keys are new float objects (`-obj.x1`), so a NaN is never the
+/// same object in two keys.
+pub fn tuple_lt(a: &[Num], b: &[Num]) -> bool {
     for (x, y) in a.iter().zip(b) {
         if !x.py_eq(y) {
             return x.py_lt(y);
@@ -251,6 +260,53 @@ pub trait LTPayload: Clone + 'static {
     /// `LTCurve.stroking_color`, `LTCurve.non_stroking_color`: the
     /// interpreter's `Color`.
     type Color: Clone;
+    /// The value of an attribute set on an object after its creation
+    /// ([`ExtraAttrs`]): pdfplumber's `mcid` (the `MCID` of the
+    /// marked-content properties, any PDF object, or `None`) and `tag` (a
+    /// `str` or `None`).
+    type Attr: Clone;
+}
+
+/// The attributes set on a layout object after its creation, in the order
+/// they were first set, as they follow the class's own attributes in
+/// `__dict__`. pdfplumber's `PDFPageAggregatorWithMarkedContent`
+/// (pdfplumber/page.py:130 `PDFPageAggregatorWithMarkedContent.tag_cur_item`)
+/// sets `mcid`, then `tag`, on the
+/// last object of the current page or figure after each `render_char`,
+/// `render_image` and `paint_path`: the new object, or an older one (an
+/// `LTFigure`, or any object when `paint_path` added nothing), whose values
+/// are then replaced in place. Only raw objects (chars, curves, images,
+/// figures) are tagged: the analysis runs later. The names are never those
+/// of the class's own attributes.
+pub struct ExtraAttrs<V>(RefCell<Vec<(&'static str, V)>>);
+
+impl<V> Default for ExtraAttrs<V> {
+    fn default() -> ExtraAttrs<V> {
+        ExtraAttrs(RefCell::new(Vec::new()))
+    }
+}
+
+impl<V: Clone> Clone for ExtraAttrs<V> {
+    fn clone(&self) -> ExtraAttrs<V> {
+        ExtraAttrs(RefCell::new(self.0.borrow().clone()))
+    }
+}
+
+impl<V: Clone> ExtraAttrs<V> {
+    /// `setattr(obj, name, value)`: an attribute already set keeps its
+    /// place in `__dict__`, a new one comes last.
+    pub fn set(&self, name: &'static str, value: V) {
+        let mut attrs = self.0.borrow_mut();
+        match attrs.iter_mut().find(|(k, _)| *k == name) {
+            Some((_, v)) => *v = value,
+            None => attrs.push((name, value)),
+        }
+    }
+
+    /// The names and values, in `__dict__` order.
+    pub fn items(&self) -> Vec<(&'static str, V)> {
+        self.0.borrow().clone()
+    }
 }
 
 /// The `PDFFont` methods `LTChar.__init__` calls.
@@ -481,6 +537,8 @@ pub struct LTCurve<P: LTPayload> {
     pub original_path: Option<Vec<OriginalPathSegment>>,
     /// `(dash, phase)`, the raw operands of `d`.
     pub dashing_style: Option<(PDFObject, PDFObject)>,
+    /// Attributes set later (`mcid`, `tag`), after the others in `__dict__`.
+    pub attrs: ExtraAttrs<P::Attr>,
 }
 
 impl<P: LTPayload> LTCurve<P> {
@@ -529,6 +587,7 @@ impl<P: LTPayload> LTCurve<P> {
             non_stroking_color,
             original_path,
             dashing_style,
+            attrs: ExtraAttrs::default(),
         })
     }
 
@@ -610,7 +669,7 @@ impl<P: LTPayload> LTCurve<P> {
 
 /// pdfminer/layout.py:308 `LTImage`: an image object.
 #[derive(Clone)]
-pub struct LTImage {
+pub struct LTImage<P: LTPayload> {
     pub comp: LTComponent,
     pub name: String,
     pub stream: Rc<PDFStream>,
@@ -619,9 +678,11 @@ pub struct LTImage {
     pub bits: PDFObject,
     /// Always a list: the stream's list, or a new list around its value.
     pub colorspace: PDFObject,
+    /// Attributes set later (`mcid`, `tag`), after the others in `__dict__`.
+    pub attrs: ExtraAttrs<P::Attr>,
 }
 
-impl LTImage {
+impl<P: LTPayload> LTImage<P> {
     /// `__dict__` keys, in order.
     pub const DICT_KEYS: [&'static str; 13] = [
         "x0",
@@ -640,7 +701,7 @@ impl LTImage {
     ];
 
     // pdfminer/layout.py:314 LTImage.__init__
-    pub fn new(name: String, stream: Rc<PDFStream>, bbox: Rect) -> PyResult<LTImage> {
+    pub fn new(name: String, stream: Rc<PDFStream>, bbox: Rect) -> PyResult<LTImage<P>> {
         let comp = LTComponent::new(bbox)?;
         let srcsize =
             (stream.get_any(&["W", "Width"], PDFObject::Null), stream.get_any(&["H", "Height"], PDFObject::Null));
@@ -650,7 +711,7 @@ impl LTImage {
         if !matches!(colorspace, PDFObject::List(_)) {
             colorspace = PDFObject::List(PDFList::new(vec![colorspace]));
         }
-        Ok(LTImage { comp, name, stream, srcsize, imagemask, bits, colorspace })
+        Ok(LTImage { comp, name, stream, srcsize, imagemask, bits, colorspace, attrs: ExtraAttrs::default() })
     }
 }
 
@@ -688,6 +749,8 @@ pub struct LTChar<P: LTPayload> {
     pub upright: bool,
     pub comp: LTComponent,
     pub size: Num,
+    /// Attributes set later (`mcid`, `tag`), after the others in `__dict__`.
+    pub attrs: ExtraAttrs<P::Attr>,
 }
 
 impl<P: LTPayload> LTChar<P> {
@@ -767,7 +830,18 @@ impl<P: LTPayload> LTChar<P> {
         }
         let comp = LTComponent::new([x0, y0, x1, y1])?;
         let size = if font.is_vertical() { comp.width.clone() } else { comp.height.clone() };
-        Ok(LTChar { _text: text, matrix, fontname, ncs, graphicstate, adv, upright, comp, size })
+        Ok(LTChar {
+            _text: text,
+            matrix,
+            fontname,
+            ncs,
+            graphicstate,
+            adv,
+            upright,
+            comp,
+            size,
+            attrs: ExtraAttrs::default(),
+        })
     }
 
     // pdfminer/layout.py:404 LTChar.get_text
@@ -1251,7 +1325,7 @@ impl<P: LTPayload> LTTextGroup<P> {
 pub enum LTItem<P: LTPayload> {
     Char(Rc<LTChar<P>>),
     Curve(Rc<LTCurve<P>>),
-    Image(Rc<LTImage>),
+    Image(Rc<LTImage<P>>),
     Figure(Rc<RefCell<LTFigure<P>>>),
     TextLine(LineRef<P>),
     TextBox(BoxRef<P>),
@@ -1283,21 +1357,38 @@ impl<P: LTPayload> LTItem<P> {
         }
     }
 
-    /// The keys of the object's `__dict__`, in order.
-    pub fn dict_keys(&self) -> &'static [&'static str] {
-        match self {
-            LTItem::Char(_) => &LTChar::<P>::DICT_KEYS,
-            LTItem::Curve(_) => &LTCurve::<P>::DICT_KEYS,
-            LTItem::Image(_) => &LTImage::DICT_KEYS,
-            LTItem::Figure(_) => &LTFigure::<P>::DICT_KEYS,
+    /// The keys of the object's `__dict__`, in order: the class's
+    /// attributes, then those set later ([`ExtraAttrs`]).
+    pub fn dict_keys(&self) -> Vec<&'static str> {
+        let (keys, extra): (&[&str], _) = match self {
+            LTItem::Char(c) => (&LTChar::<P>::DICT_KEYS, c.attrs.items()),
+            LTItem::Curve(c) => (&LTCurve::<P>::DICT_KEYS, c.attrs.items()),
+            LTItem::Image(i) => (&LTImage::<P>::DICT_KEYS, i.attrs.items()),
+            LTItem::Figure(f) => (&LTFigure::<P>::DICT_KEYS, f.borrow().attrs.items()),
             LTItem::TextLine(l) => {
                 if l.borrow().is_horizontal() {
-                    &LTTextLine::<P>::DICT_KEYS_HORIZONTAL
+                    (&LTTextLine::<P>::DICT_KEYS_HORIZONTAL, Vec::new())
                 } else {
-                    &LTTextLine::<P>::DICT_KEYS_VERTICAL
+                    (&LTTextLine::<P>::DICT_KEYS_VERTICAL, Vec::new())
                 }
             }
-            LTItem::TextBox(_) => &LTTextBox::<P>::DICT_KEYS,
+            LTItem::TextBox(_) => (&LTTextBox::<P>::DICT_KEYS, Vec::new()),
+        };
+        keys.iter().copied().chain(extra.into_iter().map(|(k, _)| k)).collect()
+    }
+
+    /// `setattr(obj, name, value)` for an attribute that is not one of the
+    /// class's (pdfplumber's `cur_obj.mcid = ...`, `cur_obj.tag = ...`): on
+    /// the raw objects of a page or a figure, the only ones pdfplumber tags.
+    pub fn set_attr(&self, name: &'static str, value: P::Attr) {
+        match self {
+            LTItem::Char(c) => c.attrs.set(name, value),
+            LTItem::Curve(c) => c.attrs.set(name, value),
+            LTItem::Image(i) => i.attrs.set(name, value),
+            LTItem::Figure(f) => f.borrow().attrs.set(name, value),
+            LTItem::TextLine(_) | LTItem::TextBox(_) => {
+                unreachable!("pdfplumber tags the objects of a page before its analysis")
+            }
         }
     }
 
@@ -1439,7 +1530,16 @@ fn heap_siftup<P: LTPayload>(heap: &mut [HeapEntry<P>], mut pos: usize) {
     heap_siftdown(heap, startpos, pos)
 }
 
-/// `heapq.heapify`
+/// `heapq.heapify`: `_siftup` from each parent, the last one first. For more
+/// than 2500 entries CPython's `heapify` visits the parents in another order
+/// (`cache_friendly_heapify`, a subtree as soon as its children's subtrees
+/// are heaps), with the same result: `_siftup(i)` only moves entries within
+/// the subtree of `i`, whose children's subtrees are already heaps in both
+/// orders, so each subtree ends in the same state.
+///
+/// Sifting up from a leaf (`i >= len / 2`) does nothing (`limit = len / 2`,
+/// then `_siftdown` from its own position), which makes a larger bound
+/// (`len * 2`) an equivalent mutant.
 fn heapify<P: LTPayload>(heap: &mut [HeapEntry<P>]) {
     for i in (0..heap.len() / 2).rev() {
         heap_siftup(heap, i);
@@ -1759,6 +1859,8 @@ pub struct LTFigure<P: LTPayload> {
     pub name: String,
     pub matrix: Matrix,
     pub layout: LTLayoutContainer<P>,
+    /// Attributes set later (`mcid`, `tag`), after the others in `__dict__`.
+    pub attrs: ExtraAttrs<P::Attr>,
 }
 
 impl<P: LTPayload> LTFigure<P> {
@@ -1768,11 +1870,30 @@ impl<P: LTPayload> LTFigure<P> {
 
     // pdfminer/layout.py:953 LTFigure.__init__
     /// `bbox` is `(x, y, w, h)`, the form's box, mapped through `matrix`.
+    /// For numbers; the figure of a Form XObject is made by
+    /// [`Self::new_obj`].
     pub fn new(name: String, bbox: [Num; 4], matrix: Matrix) -> PyResult<LTFigure<P>> {
         let [x, y, w, h] = bbox;
         let rect = [x.clone(), y.clone(), x.add(&w)?, y.add(&h)?];
         let bbox = apply_matrix_rect(&matrix, &rect)?;
-        Ok(LTFigure { name, matrix, layout: LTLayoutContainer::new(bbox)? })
+        Ok(LTFigure { name, matrix, layout: LTLayoutContainer::new(bbox)?, attrs: ExtraAttrs::default() })
+    }
+
+    // pdfminer/layout.py:953 LTFigure.__init__
+    /// The figure of a Form XObject, as `PDFLayoutAnalyzer.begin_figure`
+    /// makes it from what `pdfinterp.do_Do` hands over unchecked:
+    /// `LTFigure(name, list_value(xobj["BBox"]), mult_matrix(matrix, ctm))`,
+    /// `matrix` being [`crate::utils::mult_matrix_obj`]'s. Python's
+    /// `ValueError` for a box of another length than 4, and the `TypeError`,
+    /// `OverflowError` or `MemoryError` of the arithmetic on items that are
+    /// not numbers, are raised where Python raises them. When it succeeds,
+    /// the matrix and the box are numbers (see [`ObjMatrix`]).
+    pub fn new_obj(name: String, bbox: &[PDFObject], matrix: &ObjMatrix) -> PyResult<LTFigure<P>> {
+        let [x, y, w, h] = unpack::<_, 4>(bbox)?.map(|v| Operand::from_obj(&v));
+        let rect = [x.clone(), y.clone(), x.add(&w)?, y.add(&h)?];
+        let bbox = matrix.apply_rect(&rect)?;
+        let matrix = matrix.to_matrix().expect("apply_matrix_pt raises on a matrix item that is not a number");
+        Ok(LTFigure { name, matrix, layout: LTLayoutContainer::new(bbox)?, attrs: ExtraAttrs::default() })
     }
 
     // pdfminer/layout.py:968 LTFigure.analyze

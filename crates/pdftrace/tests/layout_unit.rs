@@ -14,13 +14,13 @@ use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
 use pdfminer::layout::{
-    CharDisp, CreationOrder, CurveKind, IdSource, LAParams, LTAnno, LTChar, LTCharFont, LTComponent, LTCurve, LTFigure,
-    LTImage, LTItem, LTLayoutContainer, LTPage, LTPayload, LTTextBox, LTTextGroup, LTTextLine, TextGroupElement,
-    TextLineElement, TextLineKind,
+    list_sort, tuple_lt, CharDisp, CreationOrder, CurveKind, ExtraAttrs, IdSource, LAParams, LTAnno, LTChar,
+    LTCharFont, LTComponent, LTCurve, LTFigure, LTImage, LTItem, LTLayoutContainer, LTPage, LTPayload, LTTextBox,
+    LTTextGroup, LTTextLine, TextGroupElement, TextLineElement, TextLineKind,
 };
 use pdfminer::pdfcolor::PDFColorSpace;
 use pdfminer::pdftypes::{PDFObject, PDFResolver, PDFStream};
-use pdfminer::utils::PlaneItem;
+use pdfminer::utils::{mult_matrix_obj, Operand, PlaneItem, SeqKind};
 use pdftrace::canon::{canon, canon_exc};
 use pdftrace::unit::UnitData;
 use pdftrace::value::{PyStr, Value};
@@ -36,6 +36,7 @@ impl LTPayload for TP {
     type FontName = Value;
     type GraphicState = ();
     type Color = Value;
+    type Attr = Value;
 }
 
 // ---------------------------------------------------------------------------
@@ -46,6 +47,32 @@ fn fields(v: &Value) -> (&str, &[(Value, Value)]) {
         Value::Named { name, fields } => (name, fields),
         other => panic!("not a named object: {other:?}"),
     }
+}
+
+/// An attribute pdfplumber sets on layout objects.
+fn attr_name(k: &str) -> &'static str {
+    match k {
+        "mcid" => "mcid",
+        "tag" => "tag",
+        other => panic!("unexpected attribute {other}"),
+    }
+}
+
+/// The dumped attributes that are not the class's (`keys`), in order.
+fn extra_attrs(f: &[(Value, Value)], keys: &[&str]) -> ExtraAttrs<Value> {
+    let attrs = ExtraAttrs::default();
+    for (k, v) in f {
+        let k = str_arg(k);
+        if !keys.contains(&k) {
+            attrs.set(attr_name(k), v.clone());
+        }
+    }
+    attrs
+}
+
+/// The dump of the attributes set later.
+fn attr_fields(attrs: &ExtraAttrs<Value>) -> Vec<(&'static str, Value)> {
+    attrs.items()
 }
 
 fn field<'a>(f: &'a [(Value, Value)], key: &str) -> &'a Value {
@@ -113,6 +140,7 @@ impl Builder {
             upright: matches!(field(f, "upright"), Value::Bool(true)),
             comp: component(f),
             size: num(field(f, "size")),
+            attrs: extra_attrs(f, &LTChar::<TP>::DICT_KEYS),
         }
     }
 
@@ -140,10 +168,11 @@ impl Builder {
             non_stroking_color: opt(field(f, "non_stroking_color")),
             original_path: path_segments(field(f, "original_path")),
             dashing_style: dash,
+            attrs: extra_attrs(f, &LTCurve::<TP>::DICT_KEYS),
         }
     }
 
-    fn image(&self, f: &[(Value, Value)]) -> LTImage {
+    fn image(&self, f: &[(Value, Value)]) -> LTImage<TP> {
         let PDFObject::Stream(stream) = build(field(f, "stream"), &self.weak) else { panic!("a stream") };
         let srcsize = items(field(f, "srcsize"));
         LTImage {
@@ -154,6 +183,7 @@ impl Builder {
             imagemask: build(field(f, "imagemask"), &self.weak),
             bits: build(field(f, "bits"), &self.weak),
             colorspace: build(field(f, "colorspace"), &self.weak),
+            attrs: extra_attrs(f, &LTImage::<TP>::DICT_KEYS),
         }
     }
 
@@ -180,6 +210,7 @@ impl Builder {
                     name: text(field(f, "name")),
                     matrix: nums(field(f, "matrix")),
                     layout: LTLayoutContainer { comp: component(f), _objs: Vec::new(), groups: None },
+                    attrs: extra_attrs(f, &LTFigure::<TP>::DICT_KEYS),
                 }));
                 self.order.push(ptr(&fig));
                 let objs: Vec<LTItem<TP>> = items(field(f, "_objs")).iter().map(|c| self.item(c)).collect();
@@ -244,6 +275,7 @@ fn raw_char(c: &LTChar<TP>) -> Value {
     ];
     f.extend(comp_fields(&c.comp));
     f.push(("size", num_value(&c.size)));
+    f.extend(attr_fields(&c.attrs));
     named("LTChar", f)
 }
 
@@ -282,10 +314,11 @@ fn raw_curve(c: &LTCurve<TP>) -> Value {
             Some((a, b)) => Value::Tuple(vec![obj_value(a), obj_value(b)]),
         },
     ));
+    f.extend(attr_fields(&c.attrs));
     named(c.class_name(), f)
 }
 
-fn raw_image(i: &LTImage) -> Value {
+fn raw_image(i: &LTImage<TP>) -> Value {
     let mut f = comp_fields(&i.comp);
     f.push(("name", Value::str(i.name.clone())));
     f.push(("stream", obj_value(&PDFObject::Stream(i.stream.clone()))));
@@ -293,6 +326,7 @@ fn raw_image(i: &LTImage) -> Value {
     f.push(("imagemask", obj_value(&i.imagemask)));
     f.push(("bits", obj_value(&i.bits)));
     f.push(("colorspace", obj_value(&i.colorspace)));
+    f.extend(attr_fields(&i.attrs));
     named("LTImage", f)
 }
 
@@ -307,6 +341,7 @@ fn raw_item(item: &LTItem<TP>) -> Value {
             f.extend(comp_fields(&fig.layout.comp));
             f.push(("_objs", Value::List(fig.layout._objs.iter().map(raw_item).collect())));
             f.push(("groups", Value::None));
+            f.extend(attr_fields(&fig.attrs));
             named("LTFigure", f)
         }
         _ => panic!("not a raw object"),
@@ -373,6 +408,7 @@ impl TreeDumper<'_> {
                 let fig = fig.borrow();
                 let mut f = vec![("name", Value::str(fig.name.clone())), ("matrix", tuple(&fig.matrix))];
                 f.extend(self.container(&fig.layout));
+                f.extend(attr_fields(&fig.attrs));
                 named("LTFigure", f)
             }
             LTItem::TextLine(l) => self.line(&l.borrow()),
@@ -674,6 +710,19 @@ fn bool_value(b: bool) -> Value {
     Value::Bool(b)
 }
 
+/// A matrix item computed from unchecked objects: a number, or
+/// `[type, len]` of a sequence (the generator's `operands`).
+fn operand_value(o: &Operand) -> Value {
+    match o {
+        Operand::Num(n) => num_value(n),
+        Operand::Seq(kind, len) => Value::List(vec![
+            Value::str(if *kind == SeqKind::Bytes { "bytes" } else { "list" }),
+            Value::Int(PyInt::Small(i64::try_from(*len).expect("at most PY_SSIZE_T_MAX"))),
+        ]),
+        other => panic!("not an arithmetic result: {other:?}"),
+    }
+}
+
 #[test]
 fn objects() {
     let (_doc, weak) = doc();
@@ -727,8 +776,50 @@ fn objects() {
         "LTImage" => {
             let PDFObject::Dict(attrs) = build(&a[1], &weak) else { panic!() };
             let stream = Rc::new(PDFStream::new(attrs, Rc::from(&b""[..]), None));
-            let i = LTImage::new("Im0".to_owned(), stream, nums(&a[2]));
+            let i = LTImage::<TP>::new("Im0".to_owned(), stream, nums(&a[2]));
             result(i, |i| raw_image(&i))
+        }
+        "mult_matrix_obj" => {
+            let m1: Vec<PDFObject> = items(&a[1]).iter().map(|x| build(x, &weak)).collect();
+            result(mult_matrix_obj(&m1, &nums(&a[2])), |m| {
+                let mut out: Vec<Value> = m.abcd.iter().map(operand_value).collect();
+                out.extend([num_value(&m.e), num_value(&m.f)]);
+                Value::List(out)
+            })
+        }
+        "LTFigure_obj" => {
+            let m1: Vec<PDFObject> = items(&a[1]).iter().map(|x| build(x, &weak)).collect();
+            let bbox: Vec<PDFObject> = items(&a[3]).iter().map(|x| build(x, &weak)).collect();
+            let f =
+                mult_matrix_obj(&m1, &nums(&a[2])).and_then(|m| LTFigure::<TP>::new_obj("Fm0".to_owned(), &bbox, &m));
+            result(f, |f| raw_item(&LTItem::Figure(Rc::new(RefCell::new(f)))))
+        }
+        "list_sort" => {
+            let keys: Vec<Num> = items(&a[1]).iter().map(|v| num(v).neg()).collect();
+            let mut order: Vec<i64> = (0..keys.len() as i64).collect();
+            list_sort(&mut order, keys, |x, y| x.py_lt(y));
+            Value::List(order.into_iter().map(|i| Value::Int(PyInt::Small(i))).collect())
+        }
+        "list_sort_tuple" => {
+            let keys: Vec<[Num; 3]> = items(&a[1])
+                .iter()
+                .map(|row| {
+                    let [kind, x, y] = nums(row);
+                    [kind, x.neg(), y.neg()]
+                })
+                .collect();
+            let mut order: Vec<i64> = (0..keys.len() as i64).collect();
+            list_sort(&mut order, keys, |x, y| tuple_lt(x, y));
+            Value::List(order.into_iter().map(|i| Value::Int(PyInt::Small(i))).collect())
+        }
+        "setattr" => {
+            let mut b = Builder { weak: weak.clone(), order: Vec::new() };
+            let item = b.item(&a[1]);
+            for op in items(&a[2]) {
+                let op = items(op);
+                item.set_attr(attr_name(str_arg(&op[0])), op[1].clone());
+            }
+            Value::List(vec![raw_item(&item), Value::List(item.dict_keys().into_iter().map(Value::str).collect())])
         }
         "LAParams" => {
             let bf = if matches!(a[1], Value::None) { None } else { Some(num(&a[1])) };
@@ -746,7 +837,7 @@ fn objects() {
             let keys: &[&str] = match str_arg(&a[1]) {
                 "LTChar" => &LTChar::<TP>::DICT_KEYS,
                 "LTCurve" | "LTLine" | "LTRect" => &LTCurve::<TP>::DICT_KEYS,
-                "LTImage" => &LTImage::DICT_KEYS,
+                "LTImage" => &LTImage::<TP>::DICT_KEYS,
                 "LTFigure" => &LTFigure::<TP>::DICT_KEYS,
                 "LTPage" => &LTPage::<TP>::DICT_KEYS,
                 "LTAnno" => &LTAnno::DICT_KEYS,

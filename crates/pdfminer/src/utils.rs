@@ -233,6 +233,282 @@ pub fn mult_matrix(m1: &Matrix, m0: &Matrix) -> PyResult<Matrix> {
     ])
 }
 
+// ---------------------------------------------------------------------------
+// Matrices of unchecked PDF objects
+
+/// The kind of a sequence [`Operand`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SeqKind {
+    Bytes,
+    List,
+}
+
+/// A value of the matrix arithmetic upstream runs on PDF objects it never
+/// checked: `pdfinterp.do_Do` passes `list_value(xobj["BBox"])` and
+/// `list_value(xobj.get("Matrix", MATRIX_IDENTITY))` as they are to
+/// `PDFLayoutAnalyzer.begin_figure`, which computes
+/// `LTFigure(name, bbox, mult_matrix(matrix, self.ctm))`
+/// (pdfminer/converter.py:89 `PDFLayoutAnalyzer.begin_figure`). Python's
+/// operators apply: a `bool` is an
+/// `int` (but named `bool` in messages), a `bytes` or a `list` is
+/// repeated by an int and concatenated to its own type, anything else
+/// raises the `TypeError` of an unsupported operand.
+///
+/// A sequence keeps its type and length only: its contents could matter to
+/// a comparison (`min`/`max` of `apply_matrix_rect`), which these paths
+/// never reach with a sequence ([`ObjMatrix`]). The length is what
+/// CPython's explicit size checks see (`OverflowError` for a count beyond
+/// `Py_ssize_t` or repeated bytes too long, `MemoryError` for a list
+/// beyond `PY_SSIZE_T_MAX` pointers); a repetition that passes them is
+/// never built here. Python builds it, and raises `MemoryError` if the
+/// machine cannot allocate it, which depends on the machine: the port
+/// behaves as Python with enough memory.
+#[derive(Clone, Debug)]
+pub enum Operand {
+    /// An `int` or a `float`.
+    Num(Num),
+    /// A `bool`.
+    Bool(bool),
+    /// A `bytes` or a `list`, and its length.
+    Seq(SeqKind, u64),
+    /// Any other object, by its type name (`NoneType`, `PSLiteral`,
+    /// `dict`...).
+    Other(&'static str),
+}
+
+/// `PY_SSIZE_T_MAX`
+const PY_SSIZE_T_MAX: u64 = i64::MAX as u64;
+
+/// `PyBytesObject_SIZE` (64-bit): the header of a bytes object and its
+/// trailing NUL.
+const PY_BYTES_OBJECT_SIZE: u64 = 33;
+
+impl From<Num> for Operand {
+    fn from(n: Num) -> Operand {
+        Operand::Num(n)
+    }
+}
+
+impl Operand {
+    /// The operand of a PDF object.
+    pub fn from_obj(o: &PDFObject) -> Operand {
+        match o {
+            PDFObject::Bool(b) => Operand::Bool(*b),
+            PDFObject::Int(i) => Operand::Num(Num::Int(i.clone())),
+            PDFObject::Float(f) => Operand::Num(Num::Float(*f)),
+            PDFObject::Bytes(b) => Operand::Seq(SeqKind::Bytes, b.len() as u64),
+            PDFObject::List(l) => Operand::Seq(SeqKind::List, l.len() as u64),
+            other => Operand::Other(other.type_name()),
+        }
+    }
+
+    /// `type(x).__name__`
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Operand::Num(Num::Int(_)) => "int",
+            Operand::Num(Num::Float(_)) => "float",
+            Operand::Bool(_) => "bool",
+            Operand::Seq(SeqKind::Bytes, _) => "bytes",
+            Operand::Seq(SeqKind::List, _) => "list",
+            Operand::Other(name) => name,
+        }
+    }
+
+    /// The number of an `int`, a `float` or a `bool` (its int).
+    pub fn as_num(&self) -> Option<Num> {
+        match self {
+            Operand::Num(n) => Some(n.clone()),
+            Operand::Bool(b) => Some(Num::Int(PyInt::Small(i64::from(*b)))),
+            _ => None,
+        }
+    }
+
+    /// `x * y` (`PyNumber_Multiply`): numbers multiply; otherwise the left
+    /// operand if it is a sequence, else the right one, is repeated by the
+    /// other (`sequence_repeat`), which must be an int.
+    pub fn mul(&self, other: &Operand) -> PyResult<Operand> {
+        if let (Some(x), Some(y)) = (self.as_num(), other.as_num()) {
+            return x.mul(&y).map(Operand::Num);
+        }
+        let (kind, len, count) = match (self, other) {
+            (Operand::Seq(kind, len), count) | (count, Operand::Seq(kind, len)) => (*kind, *len, count),
+            _ => {
+                return Err(exc::TypeError(format!(
+                    "unsupported operand type(s) for *: '{}' and '{}'",
+                    self.type_name(),
+                    other.type_name()
+                )))
+            }
+        };
+        let count = match count {
+            Operand::Num(Num::Int(i)) => i.clone(),
+            Operand::Bool(b) => PyInt::Small(i64::from(*b)),
+            other => {
+                return Err(exc::TypeError(format!(
+                    "can't multiply sequence by non-int of type '{}'",
+                    other.type_name()
+                )))
+            }
+        };
+        // PyNumber_AsSsize_t(count, PyExc_OverflowError); a negative count
+        // repeats nothing
+        let Some(count) = count.as_i64() else {
+            return Err(exc::OverflowError("cannot fit 'int' into an index-sized integer"));
+        };
+        let count = count.max(0) as u64;
+        match kind {
+            // bytes_repeat
+            SeqKind::Bytes => {
+                if count > 0 && len > PY_SSIZE_T_MAX / count {
+                    return Err(exc::OverflowError("repeated bytes are too long"));
+                }
+                Ok(Operand::Seq(kind, len * count))
+            }
+            // list_repeat, then list_new_prealloc (PyMem_New of the pointers)
+            SeqKind::List => {
+                if len == 0 || count == 0 {
+                    return Ok(Operand::Seq(kind, 0));
+                }
+                if len > PY_SSIZE_T_MAX / count || len * count > PY_SSIZE_T_MAX / 8 {
+                    return Err(exc::MemoryError(""));
+                }
+                Ok(Operand::Seq(kind, len * count))
+            }
+        }
+    }
+
+    /// `x + y` (`PyNumber_Add`): numbers add; otherwise the left operand's
+    /// concatenation, if it is a sequence.
+    pub fn add(&self, other: &Operand) -> PyResult<Operand> {
+        if let (Some(x), Some(y)) = (self.as_num(), other.as_num()) {
+            return x.add(&y).map(Operand::Num);
+        }
+        match (self, other) {
+            // bytes_concat: an empty operand gives the other one back,
+            // then PyBytes_FromStringAndSize of the total size
+            (Operand::Seq(SeqKind::Bytes, a), Operand::Seq(SeqKind::Bytes, b)) => {
+                if *a > 0 && *b > 0 {
+                    if *a > PY_SSIZE_T_MAX - *b {
+                        return Err(exc::MemoryError(""));
+                    }
+                    if a + b > PY_SSIZE_T_MAX - PY_BYTES_OBJECT_SIZE {
+                        return Err(exc::OverflowError("byte string is too large"));
+                    }
+                }
+                Ok(Operand::Seq(SeqKind::Bytes, a + b))
+            }
+            (Operand::Seq(SeqKind::Bytes, _), _) => {
+                Err(exc::TypeError(format!("can't concat {} to bytes", other.type_name())))
+            }
+            // list_concat, then list_new_prealloc of the total size (which
+            // cannot overflow: both lists exist)
+            (Operand::Seq(SeqKind::List, a), Operand::Seq(SeqKind::List, b)) => {
+                if a + b > PY_SSIZE_T_MAX / 8 {
+                    return Err(exc::MemoryError(""));
+                }
+                Ok(Operand::Seq(SeqKind::List, a + b))
+            }
+            (Operand::Seq(SeqKind::List, _), _) => {
+                Err(exc::TypeError(format!("can only concatenate list (not \"{}\") to list", other.type_name())))
+            }
+            _ => Err(exc::TypeError(format!(
+                "unsupported operand type(s) for +: '{}' and '{}'",
+                self.type_name(),
+                other.type_name()
+            ))),
+        }
+    }
+
+    /// `x + y` where `y` is a number: a number, or the `TypeError` of `+`.
+    fn add_num(&self, y: &Num) -> PyResult<Num> {
+        match self.add(&Operand::Num(y.clone()))? {
+            Operand::Num(n) => Ok(n),
+            other => unreachable!("{other:?}: anything but a number plus a number raises"),
+        }
+    }
+}
+
+/// `(a, b, ...) = seq` of a sequence that must have `N` items: Python's
+/// `ValueError` otherwise.
+pub fn unpack<T: Clone, const N: usize>(seq: &[T]) -> PyResult<[T; N]> {
+    match <&[T; N]>::try_from(seq) {
+        Ok(items) => Ok(items.clone()),
+        Err(_) if seq.len() < N => {
+            Err(exc::ValueError(format!("not enough values to unpack (expected {N}, got {})", seq.len())))
+        }
+        Err(_) => Err(exc::ValueError(format!("too many values to unpack (expected {N})"))),
+    }
+}
+
+/// The result of `mult_matrix(m1, m0)` for an unchecked `m1` and a CTM
+/// `m0`: `a, b, c, d` are whatever the arithmetic gave (a `bytes` times an
+/// int and plus a `bytes` stays a `bytes`), `e, f` are numbers, since they
+/// add the CTM's translation, a number, last (`x + e0` raises unless `x` is
+/// a number). So `apply_matrix_pt` of such a matrix gives numbers or
+/// raises: each coordinate ends with `+ e` or `+ f`.
+///
+/// Every item of `m1` is multiplied by a number of the CTM, which gives a
+/// sequence or raises unless the item is a number: so when
+/// `LTFigure::new_obj` succeeds, every item of `m1` was a number, and the
+/// interpreter's own `mult_matrix(matrix, self.ctm)` (pdfminer/pdfinterp.py
+/// `do_Do`, after `begin_figure`) is a [`Matrix`] ([`Self::to_matrix`]).
+#[derive(Clone, Debug)]
+pub struct ObjMatrix {
+    pub abcd: [Operand; 4],
+    pub e: Num,
+    pub f: Num,
+}
+
+impl ObjMatrix {
+    /// The matrix, if `a, b, c, d` are numbers.
+    pub fn to_matrix(&self) -> Option<Matrix> {
+        let [a, b, c, d] = &self.abcd;
+        Some([a.as_num()?, b.as_num()?, c.as_num()?, d.as_num()?, self.e.clone(), self.f.clone()])
+    }
+
+    // pdfminer/utils.py:295 apply_matrix_pt
+    /// `apply_matrix_pt(self, (x, y))`: numbers, or Python's exception.
+    pub fn apply_pt(&self, x: &Operand, y: &Operand) -> PyResult<Point> {
+        let [a, b, c, d] = &self.abcd;
+        let px = a.mul(x)?.add(&c.mul(y)?)?.add_num(&self.e)?;
+        let py = b.mul(x)?.add(&d.mul(y)?)?.add_num(&self.f)?;
+        Ok([px, py])
+    }
+
+    // pdfminer/utils.py:302 apply_matrix_rect
+    /// `apply_matrix_rect(self, rect)`.
+    pub fn apply_rect(&self, rect: &[Operand; 4]) -> PyResult<Rect> {
+        let [x0, y0, x1, y1] = rect;
+        let [left1, bottom1] = self.apply_pt(x0, y0)?;
+        let [right1, bottom2] = self.apply_pt(x1, y0)?;
+        let [right2, top1] = self.apply_pt(x1, y1)?;
+        let [left2, top2] = self.apply_pt(x0, y1)?;
+        Ok([
+            py_min_of(&[&left1, &left2, &right1, &right2]),
+            py_min_of(&[&bottom1, &bottom2, &top1, &top2]),
+            py_max_of(&[&left1, &left2, &right1, &right2]),
+            py_max_of(&[&bottom1, &bottom2, &top1, &top2]),
+        ])
+    }
+}
+
+// pdfminer/utils.py:270 mult_matrix
+/// `mult_matrix(m1, m0)` where `m1` is the unchecked sequence of PDF objects
+/// `list_value(xobj.get("Matrix", MATRIX_IDENTITY))` and `m0` the CTM, with
+/// Python's unpacking and operators ([`Operand`]).
+pub fn mult_matrix_obj(m1: &[PDFObject], m0: &Matrix) -> PyResult<ObjMatrix> {
+    let [a1, b1, c1, d1, e1, f1] = unpack::<_, 6>(m1)?.map(|x| Operand::from_obj(&x));
+    let [a0, b0, c0, d0, e0, f0] = m0;
+    let [a0, b0, c0, d0] = [a0, b0, c0, d0].map(|x| Operand::Num(x.clone()));
+    let a = a0.mul(&a1)?.add(&c0.mul(&b1)?)?;
+    let b = b0.mul(&a1)?.add(&d0.mul(&b1)?)?;
+    let c = a0.mul(&c1)?.add(&c0.mul(&d1)?)?;
+    let d = b0.mul(&c1)?.add(&d0.mul(&d1)?)?;
+    let e = a0.mul(&e1)?.add(&c0.mul(&f1)?)?.add_num(e0)?;
+    let f = b0.mul(&e1)?.add(&d0.mul(&f1)?)?.add_num(f0)?;
+    Ok(ObjMatrix { abcd: [a, b, c, d], e, f })
+}
+
 // pdfminer/utils.py:284 translate_matrix
 /// Translates a matrix by `(x, y)` inside the projection: its origin moves
 /// to that point of its own coordinate system.
