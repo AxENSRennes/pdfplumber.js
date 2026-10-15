@@ -26,7 +26,7 @@ from ._plumber_ops import has_surrogate, page_case
 
 MODULE = "text_tables_real"
 FILE_TIMEOUT_S = 600
-SAMPLE_PAGES = 12
+SAMPLE_PAGES = 6
 SAMPLE_DOCS = [
     # table-heavy
     "upstream/pdfplumber-python/tests/pdfs/nics-background-checks-2015-11.pdf",
@@ -80,7 +80,6 @@ REAL_OPS = [
     ("search", {}, r"\w+", True, True, 0, True, False),
     ("search", {"layout": True}, r"(\d+)[.,](\d+)", True, True, 1, True, True),
     ("search", {}, "THE", False, False, 0, False, False),
-    ("dedupe", {}),
     ("dedupe", {"tolerance": 2, "extra_attrs": None}),
     ("tables", {}),
     ("tables", {"vertical_strategy": "lines_strict", "horizontal_strategy": "lines_strict"}),

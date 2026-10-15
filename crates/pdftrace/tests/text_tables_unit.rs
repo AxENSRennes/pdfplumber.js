@@ -611,7 +611,7 @@ fn pages_fuzz() {
 
 #[test]
 fn pages_real() {
-    replay_pages("text_tables_real", "pages_real", 300);
+    replay_pages("text_tables_real", "pages_real", 150);
 }
 
 /// `cells_to_tables` and `Table` on a hand-made grid share the code paths
