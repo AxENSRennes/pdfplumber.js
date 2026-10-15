@@ -7,17 +7,24 @@
 //! JS options object maps to it) next to typed constructors.
 //!
 //! Search: [`TextMap::search`] takes the matches of a regular expression
-//! computed by the caller over [`TextMap::as_string`] (the JavaScript API
-//! runs a JS `RegExp`). To reproduce `TextMap.search(pattern, regex, case,
-//! ...)` exactly, compute the matches as upstream does
-//! (pdfplumber/utils/text.py:172 TextMap.search): `compiled = re.compile(pattern if regex
-//! else re.escape(pattern), re.I if case is False else 0)`, then for each
-//! `m` of `re.finditer(compiled, textmap.as_string)` pass
-//! `[m.span(g) if m.start(g) >= 0 else None for g in range(compiled.groups +
-//! 1)]` as a [`RegexMatch`] (spans are indices of code points, i.e. of the
-//! Python `str`). Filtering (empty and whitespace-only matches) and the
-//! result dicts are computed here. The two fixed patterns of
-//! `extract_text_lines` are matched natively ([`text_line_matches`]).
+//! computed by the caller over [`TextMap::as_string`]. To reproduce
+//! `TextMap.search(pattern, regex, case, ...)` exactly, the matches must be
+//! those of Python's `re` (pdfplumber/utils/text.py:172 TextMap.search):
+//! `compiled = re.compile(pattern if regex else re.escape(pattern), re.I if
+//! case is False else 0)`, then for each `m` of `re.finditer(compiled,
+//! textmap.as_string)`, `[m.span(g) if m.start(g) >= 0 else None for g in
+//! range(compiled.groups + 1)]` as a [`RegexMatch`] (spans are indices of
+//! code points, i.e. of the Python `str`). Filtering (empty and
+//! whitespace-only matches) and the result dicts are computed here. The two
+//! fixed patterns of `extract_text_lines` are matched natively
+//! ([`text_line_matches`]). A JavaScript `RegExp` does not give these
+//! matches: `finditer` retries a non-empty match where an empty one was
+//! found (`x*|abc` on `abc`), `\w`, `\d`, `\s` and `\b` are Unicode-aware,
+//! the syntax differs (`(?P<name>...)`, inline flags, `$` before a final
+//! newline), and JS indices count UTF-16 units. A matcher with Python's
+//! semantics for the browser is an open item of the JavaScript API
+//! (`docs/architecture.md`, "Frontière JavaScript"); the replay feeds the
+//! spans Python computed.
 //!
 //! Upstream's `logger.warning` calls (deprecated `vertical_ttb`,
 //! `horizontal_ltr`) have no effect on results and are not reproduced.
