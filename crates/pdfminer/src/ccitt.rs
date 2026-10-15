@@ -58,8 +58,8 @@
 //! `[1] * width` raises `MemoryError` in CPython when the list cannot be
 //! allocated (always from 2^60 columns, `PyMem_New`'s size check; below
 //! that, when `malloc` fails). The port allocates the `array('b')` only
-//! (one byte per column) and raises `MemoryError` from 2^60 columns or when
-//! the allocation fails ([`ones`]); between the two, where CPython's
+//! (one byte per column) and raises `MemoryError` when the allocation fails
+//! (always from 2^60 columns too); between the two, where CPython's
 //! outcome depends on the machine, they may differ.
 
 use std::borrow::Cow;
@@ -293,25 +293,14 @@ pub fn sequence_repeat_count(n: &PDFObject) -> PyResult<i64> {
     }
 }
 
-/// `array.array("b", [1] * n)`: `n` ones, none for `n <= 0`. `MemoryError`
-/// where CPython's `PyMem_New` refuses the list (more than
-/// `PY_SSIZE_T_MAX / 8` items) or when the memory cannot be had.
-pub fn ones(n: i64) -> PyResult<Vec<i8>> {
-    let mut v = Vec::new();
-    fill_ones(&mut v, n)?;
-    Ok(v)
-}
-
-/// Makes `v` hold `n` ones (see [`ones`]), reusing its memory.
+/// Makes `v` hold `array.array("b", [1] * n)`: `n` ones, none for `n <= 0`,
+/// reusing its memory. `MemoryError` when the memory cannot be had, as
+/// CPython's (from 2^60 items, more than `PY_SSIZE_T_MAX / 8`, `PyMem_New`
+/// refuses the list at once; no machine has that much memory, so
+/// `try_reserve` fails there too).
 fn fill_ones(v: &mut Vec<i8>, n: i64) -> PyResult<()> {
     v.clear();
-    if n <= 0 {
-        return Ok(());
-    }
-    if n > i64::MAX / 8 {
-        return Err(exc::MemoryError(""));
-    }
-    let n = usize::try_from(n).map_err(|_| exc::MemoryError(""))?;
+    let n = usize::try_from(n.max(0)).map_err(|_| exc::MemoryError(""))?;
     v.try_reserve_exact(n).map_err(|_| exc::MemoryError(""))?;
     v.resize(n, 1);
     Ok(())
@@ -461,7 +450,8 @@ impl<X: CCITTG4ParserExt> CCITTG4Parser<X> {
             _y: 0,
             _curline: Vec::new(),
             _refline: Vec::new(),
-            _curpos: -1,
+            // set by reset()
+            _curpos: 0,
             _color: 1,
             _n1: None,
             _n2: None,
