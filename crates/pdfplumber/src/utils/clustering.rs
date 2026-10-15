@@ -46,10 +46,11 @@ use crate::obj::{HashKey, PyValue};
 
 /// How `key_fn` makes its result, which decides whether a NaN key is
 /// found again (see the module documentation).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum KeyKind {
     /// The value stored in the item (`itemgetter("top")`,
     /// `lambda x: x["top"]`): the same object at every call.
+    #[default]
     Stored,
     /// A value computed at each call (`lambda x: -x["bottom"]`,
     /// `get_center`): a new object every time.

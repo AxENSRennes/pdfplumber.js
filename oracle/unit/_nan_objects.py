@@ -32,6 +32,10 @@ order, for any value of the hash bits not chosen.
   ``float`` and ``bool`` values (``str`` and ``None`` hash by seed and
   address), and lists them last in their order of first occurrence under
   each of ``VARIANTS`` (other values of the hash bits above the 16 chosen).
+  A NaN of a computed key (``-x["bottom"]``: ``key_fn`` gives a new object
+  at each call) is never found again whatever its place: such a set is
+  kept when its other values are all equal (their cluster indices are then
+  compared with each other and with ``None`` along the same path).
   The replay with the real hashes must give the very list the call
   receives, and that list must satisfy the same order; anything else is an
   error of this module.
@@ -203,11 +207,23 @@ class SetOrderCheck:
             raise RuntimeError("make_cluster_dict called from outside cluster_objects")
         self.sets += 1
         listed = list(frame.f_locals["xs"])
-        local = caller.f_locals
-        values = [local["key_fn"](x) for x in local["xs"]]
+        key_fn, xs = caller.f_locals["key_fn"], caller.f_locals["xs"]
+        values = [key_fn(x) for x in xs]
         if not any(_is_nan(v) for v in values):
             return
         self.nan_sets += 1
+        if any(_is_nan(v) and key_fn(x) is not v for x, v in zip(xs, values)):
+            # a computed key (a new object at each call): its NaNs are never
+            # found again (cluster None), and their places in the set only
+            # decide the cluster indices of the other values, which are
+            # compared with each other and with None. When those values are
+            # all equal, the result does not depend on the places.
+            others = [v for v in values if not _is_nan(v)]
+            if any(type(v) not in (int, float, bool) for v in others) or len(set(others)) > 1:
+                self.ok = False
+            elif any(key_fn(x) is v for x, v in zip(xs, values) if _is_nan(v)):
+                self.ok = False  # stored and computed NaNs in one set
+            return
         nans = []
         for v in values:
             if _is_nan(v):

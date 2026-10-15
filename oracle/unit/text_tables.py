@@ -416,6 +416,44 @@ def fuzz_cases(n: int, nan_sets: dict):
     yield from nan_attr_cases()
     yield from odd_explicit_cases()
     yield from nan_coord_cases(n // 2, nan_sets)
+    yield from nan_line_dir_cases(nan_sets)
+
+
+def nan_line_dir_cases(nan_sets: dict):
+    """One line of chars (or one column) with NaN coordinates, read in every
+    line and char direction: ``btt`` and ``rtl`` cluster by ``-x["bottom"]``
+    and ``-x["x1"]``, new objects whose NaNs are not found again (cluster
+    ``None``: ``TypeError`` when the clusters are sorted), ``ttb`` and
+    ``ltr`` by the stored ``x["top"]`` and ``x["x0"]``."""
+    rng = random.Random(18)
+    for i in range(80):
+        vertical = rng.random() < 0.5
+        n = rng.randint(1, 6)
+        chars = []
+        for k in range(n):
+            if vertical:
+                c = synth_char(rng, 50, 10 + 12 * k, 6, 10, rng.choice(TEXTS[:20]), rng.random() < 0.7, 0, "F1", 10.0, (0,))
+            else:
+                c = synth_char(rng, 10 + 6 * k, 50, 6, 10, rng.choice(TEXTS[:20]), rng.random() < 0.7, 0, "F1", 10.0, (0,))
+            chars.append(c)
+        pool = NanPool()
+        m = min(n, rng.randint(1, 3))
+        for rank, k in enumerate(sorted(rng.sample(range(n), m))):
+            for a in rng.choice([("bottom",), ("x1",), ("top", "bottom", "doctop"), ("x0", "x1"), COORDS]):
+                chars[k][a] = pool.take(rank, m, COORDS.index(a))
+        ops = []
+        for ld, cd in VALID_PAIRS:
+            kw = {"line_dir": ld, "char_dir": cd, "line_dir_rotated": ld, "char_dir_rotated": cd}
+            ops += [
+                ("words", kw),
+                ("text", kw),
+                ("text", {**kw, "use_text_flow": True}),
+                ("text", {**kw, "layout": True}),
+                ("utext", kw),
+                ("wordmap", kw, {"presorted": rng.choice([True, False])}),
+            ]
+        bbox = (0, 0, 612, 792)
+        yield page_case(FakePage(chars, [], bbox), {"chars": chars, "edges": [], "bbox": bbox}, ops, nan_sets)
 
 
 def odd_explicit_cases():
