@@ -1337,6 +1337,9 @@ pub fn extract_text_kwargs(chars: &[Obj], kwargs: &Kwargs) -> PyResult<String> {
 
 // pdfplumber/utils/text.py:705 chars_to_textmap
 pub fn chars_to_textmap(chars: &[Obj], kwargs: &Kwargs) -> PyResult<TextMap> {
+    if kwargs.contains("chars") {
+        return Err(exc::TypeError("chars_to_textmap() got multiple values for argument 'chars'"));
+    }
     let mut kwargs = kwargs.clone();
     let layout_bbox = match kwargs.get("layout_bbox") {
         Some(b) if b.truthy() => b.clone(),

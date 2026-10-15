@@ -254,6 +254,8 @@ def rand_text_kwargs(rng, layout_ok=True):
         kw[rng.choice(["line_dir_render", "char_dir_render"])] = rng.choice(DIRS + [None])
     if pick() < 0.01:
         kw["x_density"] = 0
+    if pick() < 0.005:
+        kw["chars"] = []  # binds to the named parameter: TypeError
     return kw
 
 
@@ -332,6 +334,9 @@ def rand_table_settings(rng, page_bbox, chars, edges):
 def synth_page_case(rng):
     bbox = rng.choice([(0, 0, 612, 792), (0, 0, 200.5, 300), (10, 20, 300, 400), (0.0, 0.0, 595.0, 842.0)])
     chars = synth_chars(rng)
+    if chars and rng.random() < 0.03:
+        # a char whose text is not a str (unhashable or not)
+        rng.choice(chars)["text"] = rng.choice([["x"], ("x",), 5])
     edges = synth_edges(rng, bbox) if rng.random() < 0.8 else []
     page = FakePage(chars, edges, bbox)
     ops = []
