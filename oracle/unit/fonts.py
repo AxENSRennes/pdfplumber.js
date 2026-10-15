@@ -1234,30 +1234,48 @@ def font_spec_cases(rng):
 # -- recursion depth --------------------------------------------------------------
 
 
-def nested(extra: int, f, *args):
-    """``at_depth(f, *args)`` under ``extra`` more Python frames."""
+def _nested(extra: int, f, *args):
     if extra == 0:
-        return at_depth(f, *args)
-    return nested(extra - 1, f, *args)
+        try:
+            return f(*args)
+        except Exception as e:  # the exception is the expected result
+            return e
+    return _nested(extra - 1, f, *args)
+
+
+def nested(extra: int, f, *args):
+    """``(depth, f(*args))`` with ``f`` called under ``extra`` more Python
+    frames; ``depth`` is that of the frame calling ``f`` (as ``at_depth``
+    gives it), computed rather than measured there, so that the harness
+    takes no frame below the call."""
+    base = depth_here()
+    out = _nested(extra, f, *args)
+    return {"py": base["py"] + extra + 1, "c_left": base["c_left"]}, out
 
 
 def is_recursion(out) -> bool:
     return isinstance(out, RecursionError)
 
 
-def threshold(run) -> int | None:
-    """The largest number of extra frames under which ``run(extra)`` does not
-    raise ``RecursionError`` (``None`` if it raises without extra frames)."""
+def threshold(run):
+    """``(run(e), run(e + 1))`` where ``e`` is the largest number of extra
+    frames under which ``run(extra)`` does not raise ``RecursionError``,
+    run from this frame (``None`` if it raises without extra frames, or
+    never)."""
     if is_recursion(run(0)[1]):
         return None
-    lo, hi = 0, 1000
+    top = sys.getrecursionlimit() - depth_here()["py"] - 3
+    lo, hi = 0, top
     while lo < hi:
         mid = (lo + hi + 1) // 2
         if is_recursion(run(mid)[1]):
             hi = mid - 1
         else:
             lo = mid
-    return lo
+    if lo >= top:
+        return None
+    # run again from this frame: the depth of the caller decides
+    return run(lo), run(lo + 1)
 
 
 def built_font(spec_j, table_j, errors_j):
@@ -1317,7 +1335,9 @@ def query_call(font, op, arg):
 
 
 def depth_cases(rng):
-    for spec, doc in depth_specs(rng):
+    for k, (spec, doc) in enumerate(depth_specs(rng)):
+        if k % 20 == 0:
+            print(f"depth: font {k}", file=sys.stderr, flush=True)
         table, errors = dump_doc(doc)
         spec_j, table_j, errors_j = roundtrip(spec, table, errors)
         clear_logger_caches()
@@ -1330,9 +1350,10 @@ def depth_cases(rng):
             depth, out = nested(extra, PDFResourceManager().get_font, None, spec2)
             return depth, out if isinstance(out, Exception) else font_attrs(out)
 
-        e = threshold(build)
-        if e is not None:
-            (d0, out0), (d1, out1) = build(e), build(e + 1)
+        found = threshold(build)
+        if found is not None:
+            (d0, out0), (d1, out1) = found
+            assert is_recursion(out1) and not is_recursion(out0), ("get_font", out0, out1)
             yield [spec, table, errors, "get_font", None, d0, d1], [canon_or_hash(out0), canon_or_hash(out1)]
         if isinstance(font, Exception):
             continue
@@ -1345,10 +1366,11 @@ def depth_cases(rng):
                 clear_logger_caches()
                 return nested(extra, query_call, font, op, arg)
 
-            e = threshold(query)
-            if e is None:
+            found = threshold(query)
+            if found is None:
                 continue
-            (d0, out0), (d1, out1) = query(e), query(e + 1)
+            (d0, out0), (d1, out1) = found
+            assert is_recursion(out1) and not is_recursion(out0), (op, out0, out1)
             yield [spec, table, errors, op, arg, d0, d1], [canon_or_hash(out0), canon_or_hash(out1)]
 
 
@@ -1622,11 +1644,10 @@ def process_file(args):
 
 
 def program_case(kind, data):
-    if kind == "type1":
-        return type1_case(data)
-    if kind == "truetype":
-        return tt_case(data)
-    return cff_case(data)
+    """``[kind, data, depth]`` and the outcome of the case of that kind."""
+    run = {"type1": type1_case, "truetype": tt_case, "cff": cff_case}[kind]
+    args, out = run(data)
+    return [kind, *args], out
 
 
 def corpus_sets(jobs):

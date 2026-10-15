@@ -338,7 +338,7 @@ pub fn get_widths2(seq: &PDFList) -> PyResult<Widths2> {
                 // enumerate(choplist(3, v)): the generator is resumed from C
                 // once per triple, and once more to finish
                 let items = v.to_vec();
-                let triples = items.chunks_exact(3);
+                let triples = items.as_chunks::<3>().0.iter();
                 for (i, t) in triples.enumerate() {
                     drop(frames::c_called()?);
                     widths.insert(plus(&char1, i)?, (t[0].clone(), (t[1].clone(), t[2].clone())));
@@ -740,7 +740,7 @@ impl Base {
     }
 }
 
-// pdfminer/pdffont.py:983 PDFFont._parse_bbox
+// pdfminer/pdffont.py:984 PDFFont._parse_bbox
 /// Parse FontBBox from the fonts descriptor: four floats, else
 /// `(0.0, 0.0, 0.0, 0.0)`.
 fn parse_bbox(descriptor: &Descriptor) -> PyResult<[f64; 4]> {

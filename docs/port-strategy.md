@@ -183,6 +183,12 @@ Lecture :
     `geometry`, `utils/text.py` (mots, `TextMap`, `extract_text`, layout)
     et `table.py` complets, testés sur des pages synthétiques et réelles ;
     `pycompat::listsort` (timsort de CPython, utilisé aussi par le layout).
+- **Vague 2, polices** (branche `wave2/fonts`) : `pdffont` complet
+  (`pdffont/` : classes de police, `get_widths`/`get_widths2`,
+  `Type1FontHeaderParser`, `getdict`/`CFFFont`, `TrueTypeFont`, et la
+  création de police de `PDFResourceManager.get_font`), vérifié par
+  `oracle/unit/fonts.py` (cas générés, seuils de profondeur, polices et
+  programmes embarqués du corpus réel) rejoué par `fonts_unit.rs`.
 - **Vagues suivantes**, dans l'ordre des dépendances :
   1. `pdfparser`, `pdfdocument` (xref, repli, flux d'objets, mot de passe
      via les gestionnaires déjà portés), `pdfpage` : étapes `objects`,

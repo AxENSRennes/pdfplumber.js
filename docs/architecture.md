@@ -167,9 +167,26 @@ Décisions prises avant le port de `pdfparser.py` et `pdfdocument.py` :
   cœur ; un chargement paresseux côté navigateur se fait avant l'analyse
   (le cœur signale le nom manquant et l'analyse est relancée).
 - `Type1FontHeaderParser` met dans `results` des paires `(cid, nom)` dont
-  `cid` est un `int` Python quelconque : le parseur générique reçoit un type
-  de résultat associé (`PSStackParserExt::Result`) plutôt qu'un encodage dans
-  `PDFObject`.
+  `cid` est un `int` Python quelconque : le port garde ces paires dans l'état
+  du parseur (`Type1Header::pairs`, dans le même ordre) et pose une entrée
+  témoin dans `results` (seul `do_keyword` en ajoute, `flush` ne fait rien,
+  le parseur ne repositionne qu'à sa création), sans changer `psparser`.
+- `pdffont::get_font` est la partie de `PDFResourceManager.get_font` qui
+  crée la police (aiguillage sur `/Subtype`, polices `Type0`) et prend le
+  cadre de `get_font` ; le cache par `objid` reste à `PDFResourceManager`
+  (`pdfinterp`), qui l'appelle.
+- Profondeur dans `pdffont` : chaque fonction portée prend son cadre, et
+  `pdffont::frames` prend ceux des appels vers des modules qui ne comptent
+  pas encore les leurs (accesseurs de `pdftypes` et `resolve1`,
+  `literal_name`, `casting`, `get_unichr`/`decode` de `cmapdb`,
+  `EncodingDB.get_encoding`/`name2unicode`, `PDFStream.get_data` jusqu'aux
+  filtres) et des appels de journalisation (`log_frames` : deux cadres,
+  trois au premier appel d'un niveau sur un logger depuis
+  `clear_logger_cache`, l'équivalent de `logging.disable`). Quand un de ces
+  modules comptera ses cadres, l'aide correspondante disparaît. Non
+  modélisés (documentés dans `pdffont/mod.rs`) : les cadres de `psparser`
+  (parseurs d'en-tête Type 1 et de CMap), ceux des filtres autres que Flate
+  et du premier chargement d'une CMap prédéfinie (`gzip`, `json`).
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 

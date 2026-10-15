@@ -284,7 +284,7 @@ impl CFFFont {
                     Vec::new()
                 }
             };
-            for (gid, sid) in data.chunks_exact(2).enumerate() {
+            for (gid, sid) in data.as_chunks::<2>().0.iter().enumerate() {
                 let gid = gid as i64 + 1;
                 let sidname = font.getstr(unpack_be(sid, 2))?;
                 font.name2gid.insert(sidname.clone(), gid);

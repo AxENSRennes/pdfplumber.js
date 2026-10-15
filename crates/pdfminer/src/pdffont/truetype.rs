@@ -43,7 +43,7 @@ fn log_debug() -> PyResult<()> {
 /// `struct.unpack(">{n}H", fp.read(2 * n))` (or `h`).
 fn unpack_u16s(fp: &mut BytesIO, n: u64, signed: bool) -> PyResult<Vec<i64>> {
     let data = read_n_u64(fp, 2 * n)?;
-    Ok(data.chunks_exact(2).map(|c| if signed { unpack_be_i16(c) } else { unpack_be(c, 2) }).collect())
+    Ok(data.as_chunks::<2>().0.iter().map(|c| if signed { unpack_be_i16(c) } else { unpack_be(c, 2) }).collect())
 }
 
 impl TrueTypeFont {

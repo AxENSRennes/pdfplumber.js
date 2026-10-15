@@ -311,7 +311,10 @@ fn umap_report(m: Option<&UnicodeMap>) -> Value {
         m.class_name(),
         vec![
             ("attrs", attrs(m)),
-            ("items", Value::List(m.cid2unichr.iter().map(|(k, v)| tuple(vec![Value::Int(k.clone()), unichr(v)])).collect())),
+            (
+                "items",
+                Value::List(m.cid2unichr.iter().map(|(k, v)| tuple(vec![Value::Int(k.clone()), unichr(v)])).collect()),
+            ),
         ],
     )
 }
@@ -395,8 +398,10 @@ fn font_attrs(font: &PDFFont) -> Value {
             fields.push(("cidcoding", Value::str(c.cidcoding.clone())));
             fields.push(("cmap", cmap_report(&*c.cmap)));
             fields.push(("vertical", Value::Bool(c.vertical)));
-            let disps =
-                c.disps.iter().map(|(k, (vx, vy))| tuple(vec![numkey(k), tuple(vec![Value::from(vx), Value::from(vy)])]));
+            let disps = c
+                .disps
+                .iter()
+                .map(|(k, (vx, vy))| tuple(vec![numkey(k), tuple(vec![Value::from(vx), Value::from(vy)])]));
             fields.push(("disps", Value::List(disps.collect())));
             fields.push((
                 "default_disp",
@@ -504,7 +509,10 @@ fn widths() {
             _ => get_widths2(&seq).map(|w| {
                 w.iter()
                     .map(|(k, (w, (vx, vy)))| {
-                        tuple(vec![numkey(k), tuple(vec![Value::from(w), tuple(vec![Value::from(vx), Value::from(vy)])])])
+                        tuple(vec![
+                            numkey(k),
+                            tuple(vec![Value::from(w), tuple(vec![Value::from(vx), Value::from(vy)])]),
+                        ])
                     })
                     .collect()
             }),
@@ -521,7 +529,9 @@ fn getdict_cases() {
         vec![res(out, |d| {
             Value::List(
                 d.iter()
-                    .map(|(k, v)| tuple(vec![Value::Int(PyInt::Small(i64::from(*k))), Value::List(v.iter().map(num).collect())]))
+                    .map(|(k, v)| {
+                        tuple(vec![Value::Int(PyInt::Small(i64::from(*k))), Value::List(v.iter().map(num).collect())])
+                    })
                     .collect(),
             )
         })]
@@ -536,7 +546,9 @@ fn sidname(n: &SidName) -> Value {
 }
 
 fn int_pairs<'a>(m: impl IntoIterator<Item = (&'a i64, &'a i64)>) -> Value {
-    Value::List(m.into_iter().map(|(k, v)| tuple(vec![Value::Int(PyInt::Small(*k)), Value::Int(PyInt::Small(*v))])).collect())
+    Value::List(
+        m.into_iter().map(|(k, v)| tuple(vec![Value::Int(PyInt::Small(*k)), Value::Int(PyInt::Small(*v))])).collect(),
+    )
 }
 
 /// `cff_report(font)` of the generator.
@@ -556,15 +568,15 @@ fn cff_report(mut font: CFFFont) -> Value {
     let top_dict = Value::List(
         font.top_dict
             .iter()
-            .map(|(k, v)| tuple(vec![Value::Int(PyInt::Small(i64::from(*k))), Value::List(v.iter().map(num).collect())]))
+            .map(|(k, v)| {
+                tuple(vec![Value::Int(PyInt::Small(i64::from(*k))), Value::List(v.iter().map(num).collect())])
+            })
             .collect(),
     );
-    let name2gid = Value::List(
-        font.name2gid.iter().map(|(k, v)| tuple(vec![sidname(k), Value::Int(PyInt::Small(*v))])).collect(),
-    );
-    let gid2name = Value::List(
-        font.gid2name.iter().map(|(k, v)| tuple(vec![Value::Int(PyInt::Small(*k)), sidname(v)])).collect(),
-    );
+    let name2gid =
+        Value::List(font.name2gid.iter().map(|(k, v)| tuple(vec![sidname(k), Value::Int(PyInt::Small(*v))])).collect());
+    let gid2name =
+        Value::List(font.gid2name.iter().map(|(k, v)| tuple(vec![Value::Int(PyInt::Small(*k)), sidname(v)])).collect());
     let (code2gid, gid2code) = (int_pairs(&font.code2gid), int_pairs(&font.gid2code));
     let indexes: Vec<_> = [&font.name_index, &font.dict_index, &font.string_index, &font.subr_index, &font.charstring]
         .into_iter()
@@ -577,7 +589,9 @@ fn cff_report(mut font: CFFFont) -> Value {
             .iter()
             .map(|ix| {
                 res(
-                    in_frame(|| in_frame(|| (0..ix.len()).map(|i| ix.get(&mut font.fp, i)).collect::<PyResult<Vec<_>>>())),
+                    in_frame(|| {
+                        in_frame(|| (0..ix.len()).map(|i| ix.get(&mut font.fp, i)).collect::<PyResult<Vec<_>>>())
+                    }),
                     |items| Value::List(items.into_iter().map(Value::Bytes).collect()),
                 )
             })
@@ -681,6 +695,25 @@ fn fonts() {
     let data = open();
     check_marker(&data, "generated");
     replay_canon(&data, "fonts", 3000, run_font);
+}
+
+#[test]
+fn corpus_fonts() {
+    let data = open();
+    check_marker(&data, "corpus");
+    replay_canon(&data, "corpus_fonts", 1000, run_font);
+}
+
+#[test]
+fn corpus_programs() {
+    let data = open();
+    check_marker(&data, "corpus");
+    replay_canon(&data, "corpus_programs", 500, |a| match text(&a[0]) {
+        "type1" => type1_case(&a[1..]),
+        "truetype" => tt_case(&a[1..]),
+        "cff" => cff_case(&a[1..]),
+        other => panic!("unknown program kind {other}"),
+    });
 }
 
 /// One query of the set `depth` (`query_call` of the generator, a
