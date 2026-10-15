@@ -697,13 +697,16 @@ fn providers() {
         }
     }
     CMapDB::set_provider(None);
-    let err = CMapDB::get_cmap("H").err().expect("no provider: not found");
+    // (load_data: get_cmap may have "H" in its cache, from another test of this thread)
+    let err = CMapDB::load_data("H").err().expect("no provider: not found");
     assert_eq!((err.kind.name(), err.message.as_str()), ("CMapNotFound", "H"));
     CMapDB::set_provider(Some(Rc::new(Fixed(b"PMCM".to_vec()))));
     let err = CMapDB::get_cmap("Corrupt").err().expect("corrupt data");
     assert_eq!(err.message, "corrupt compact CMap \"Corrupt\": truncated data");
     // a directory provider serves only the names it lists
-    let dir = std::env::temp_dir().join(format!("cmaps-unit-provider-{}", std::process::id()));
+    // under the cache (WASI has no temp_dir nor process id): a unique name
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let dir = cache_dir().join("tmp").join(format!("cmaps-unit-provider-{stamp}"));
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("names.txt"), "A\n").unwrap();
     fs::write(dir.join("A.pdfcmap"), b"a").unwrap();
