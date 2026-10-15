@@ -326,6 +326,9 @@ fn ccitt_exc(kind: ExcKind, message: impl Into<String>) -> PyErr {
 
 /// What a subclass of `CCITTG4Parser` overrides: `output_line`.
 pub trait CCITTG4ParserExt {
+    /// `type(self).__name__`
+    const CLASS_NAME: &'static str;
+
     /// `self.output_line(y, bits)`, a Python method (it takes its frame).
     fn output_line(&mut self, y: i64, bits: &[i8]) -> PyResult<()>;
 }
@@ -338,6 +341,8 @@ pub struct PrintLines {
 }
 
 impl CCITTG4ParserExt for PrintLines {
+    const CLASS_NAME: &'static str = "CCITTG4Parser";
+
     // pdfminer/ccitt.py:442 CCITTG4Parser.output_line
     fn output_line(&mut self, y: i64, bits: &[i8]) -> PyResult<()> {
         let _frame = py_frame()?;
@@ -360,6 +365,8 @@ pub struct FaxOutput {
 }
 
 impl CCITTG4ParserExt for FaxOutput {
+    const CLASS_NAME: &'static str = "CCITTFaxDecoder";
+
     // pdfminer/ccitt.py:546 CCITTFaxDecoder.output_line
     fn output_line(&mut self, _y: i64, bits: &[i8]) -> PyResult<()> {
         let _frame = py_frame()?;
@@ -392,8 +399,11 @@ pub struct CCITTG4Parser<X> {
     pub _refline: Vec<i8>,
     pub _curpos: i64,
     pub _color: i64,
-    pub _n1: i64,
-    pub _n2: i64,
+    /// `None` until the first `h` mode code sets it (reading it before
+    /// raises `AttributeError`, as an unset attribute).
+    pub _n1: Option<i64>,
+    /// `None` until `_parse_horiz1` sets it.
+    pub _n2: Option<i64>,
     pub ext: X,
 }
 
@@ -453,8 +463,8 @@ impl<X: CCITTG4ParserExt> CCITTG4Parser<X> {
             _refline: Vec::new(),
             _curpos: -1,
             _color: 1,
-            _n1: 0,
-            _n2: 0,
+            _n1: None,
+            _n2: None,
             ext,
         };
         // self.reset(), whose `[1] * self.width` is where a bad width raises
@@ -528,6 +538,11 @@ impl<X: CCITTG4ParserExt> CCITTG4Parser<X> {
         get_bytes()
     }
 
+    /// `self.<name>`, `AttributeError` while unset.
+    fn attribute(&self, value: Option<i64>, name: &str) -> PyResult<i64> {
+        value.ok_or_else(|| exc::AttributeError(format!("'{}' object has no attribute '{name}'", X::CLASS_NAME)))
+    }
+
     /// `if self._color: return self.WHITE else: return self.BLACK`
     fn color_tree(&self) -> &'static BitParserState {
         if self._color != 0 {
@@ -547,7 +562,7 @@ impl<X: CCITTG4ParserExt> CCITTG4Parser<X> {
                 Ok(&MODE)
             }
             Some(Leaf::Str(s)) if s == "h" => {
-                self._n1 = 0;
+                self._n1 = Some(0);
                 self._accept = Accept::ParseHoriz1;
                 Ok(self.color_tree())
             }
@@ -567,23 +582,29 @@ impl<X: CCITTG4ParserExt> CCITTG4Parser<X> {
         }
     }
 
-    /// The run length of a `WHITE`/`BLACK` leaf (both trees hold ints only).
-    fn run_length(n: Option<&Leaf>) -> PyResult<i64> {
-        match n {
+    /// `if n is None: raise self.InvalidData`, then `self.<name> += n`:
+    /// the new total and `n`. A `WHITE`/`BLACK` leaf is an int; a `str`
+    /// only comes from another tree, when `_accept` was changed by a direct
+    /// call of a `_parse_*` method.
+    fn accumulate(&self, total: Option<i64>, name: &str, n: Option<&Leaf>) -> PyResult<(i64, i64)> {
+        let Some(n) = n else {
             // raise self.InvalidData (the class: no message)
-            None => Err(ccitt_exc(ExcKind::InvalidData, "")),
-            Some(Leaf::Int(n)) => Ok(*n),
-            Some(Leaf::Str(_)) => unreachable!("the WHITE and BLACK trees hold ints"),
+            return Err(ccitt_exc(ExcKind::InvalidData, ""));
+        };
+        let total = self.attribute(total, name)?;
+        match n {
+            Leaf::Int(n) => Ok((total + n, *n)),
+            Leaf::Str(_) => Err(exc::TypeError("unsupported operand type(s) for +=: 'int' and 'str'")),
         }
     }
 
     // pdfminer/ccitt.py:378 CCITTG4Parser._parse_horiz1
     pub fn _parse_horiz1(&mut self, n: Option<&Leaf>) -> PyResult<&'static BitParserState> {
         let _frame = py_frame()?;
-        let n = Self::run_length(n)?;
-        self._n1 += n;
+        let (total, n) = self.accumulate(self._n1, "_n1", n)?;
+        self._n1 = Some(total);
         if n < 64 {
-            self._n2 = 0;
+            self._n2 = Some(0);
             self._color = 1 - self._color;
             self._accept = Accept::ParseHoriz2;
         }
@@ -593,12 +614,13 @@ impl<X: CCITTG4ParserExt> CCITTG4Parser<X> {
     // pdfminer/ccitt.py:391 CCITTG4Parser._parse_horiz2
     pub fn _parse_horiz2(&mut self, n: Option<&Leaf>) -> PyResult<&'static BitParserState> {
         let _frame = py_frame()?;
-        let n = Self::run_length(n)?;
-        self._n2 += n;
+        let (total, n) = self.accumulate(self._n2, "_n2", n)?;
+        self._n2 = Some(total);
         if n < 64 {
             self._color = 1 - self._color;
             self._accept = Accept::ParseMode;
-            self._do_horizontal(self._n1, self._n2)?;
+            let (n1, n2) = (self.attribute(self._n1, "_n1")?, self.attribute(self._n2, "_n2")?);
+            self._do_horizontal(n1, n2)?;
             self._flush_line()?;
             Ok(&MODE)
         } else {
@@ -612,8 +634,10 @@ impl<X: CCITTG4ParserExt> CCITTG4Parser<X> {
         let bits = match bits {
             Some(Leaf::Str(s)) if !s.is_empty() => s,
             // `if not bits: raise self.InvalidData`
-            None | Some(Leaf::Str(_)) => return Err(ccitt_exc(ExcKind::InvalidData, "")),
-            Some(Leaf::Int(_)) => unreachable!("the UNCOMPRESSED tree holds strs"),
+            None | Some(Leaf::Str(_) | Leaf::Int(0)) => return Err(ccitt_exc(ExcKind::InvalidData, "")),
+            // an int leaf of another tree (after a direct call of a
+            // `_parse_*` method changed `_accept`)
+            Some(Leaf::Int(_)) => return Err(exc::AttributeError("'int' object has no attribute 'startswith'")),
         };
         if let Some(rest) = bits.strip_prefix('T') {
             self._accept = Accept::ParseMode;
@@ -697,9 +721,10 @@ impl<X: CCITTG4ParserExt> CCITTG4Parser<X> {
         Ok(())
     }
 
-    /// `self._curline[x] = self._color` (colors are 0 or 1).
+    /// `self._curline[x] = color`, for a color that `array('b')` takes (a
+    /// signed char: decoding only writes 0 and 1).
     fn paint(&mut self, x: i64, color: i64) -> PyResult<()> {
-        array_set(&mut self._curline, x, i8::try_from(color).expect("a color is 0 or 1"))
+        array_set(&mut self._curline, x, signed_char(color)?)
     }
 
     // pdfminer/ccitt.py:459 CCITTG4Parser._do_vertical
@@ -818,15 +843,23 @@ fn bits_text(bits: &[i8]) -> String {
     bits.iter().map(|b| b.to_string()).collect()
 }
 
-/// `int(c)` for a character of an `UNCOMPRESSED` code (`'0'` or `'1'`);
-/// `None` is `bits[1]` past the end of the code.
+/// `int(c)` for a character of an `UNCOMPRESSED` code (`'0'` or `'1'`, an
+/// ASCII digit or letter in direct calls); `None` is `bits[1]` past the end
+/// of the code.
 fn py_int_digit(c: Option<char>) -> PyResult<i64> {
     match c {
-        Some('0') => Ok(0),
-        Some('1') => Ok(1),
-        Some(c) => Err(exc::ValueError(format!("invalid literal for int() with base 10: '{c}'"))),
+        Some(c) if c.is_ascii_digit() => Ok(i64::from(u32::from(c) - u32::from('0'))),
+        Some(c) if c.is_ascii_alphabetic() => Err(exc::ValueError(format!("invalid literal for int() with base 10: '{c}'"))),
+        Some(c) => unreachable!("int({c:?}): the codes are made of digits"),
         None => Err(exc::IndexError("string index out of range")),
     }
+}
+
+/// The value an `array('b')` item can take (`OverflowError` otherwise).
+fn signed_char(v: i64) -> PyResult<i8> {
+    i8::try_from(v).map_err(|_| {
+        exc::OverflowError(if v > 0 { "signed char is greater than maximum" } else { "signed char is less than minimum" })
+    })
 }
 
 // pdfminer/ccitt.py:556 ccittfaxdecode
