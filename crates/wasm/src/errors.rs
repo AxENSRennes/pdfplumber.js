@@ -71,21 +71,20 @@ pub fn write_error<W: Writer>(w: &mut W, err: &PyErr) {
 mod tests {
     use super::*;
 
+    /// The MRO of every class is compared with CPython's by
+    /// `tests/js_runtime_unit.rs`; here, its structure: the class first,
+    /// each class once, every base after the classes derived from it.
     #[test]
-    fn mro_follows_c3() {
-        let names = |k| mro(k).into_iter().map(qualified_name).collect::<Vec<_>>();
-        assert_eq!(
-            names(ExcKind::PDFTypeError),
-            [
-                "pdfminer.pdfexceptions.PDFTypeError",
-                "pdfminer.pdfexceptions.PDFException",
-                "pdfminer.psexceptions.PSException",
-                "builtins.TypeError",
-                "builtins.Exception",
-                "builtins.BaseException",
-            ]
-        );
-        assert_eq!(names(ExcKind::NotPorted), ["pycompat.NotPorted"]);
-        assert_eq!(qualified_name(ExcKind::CMapDB_CMapNotFound), "pdfminer.cmapdb.CMapDB.CMapNotFound");
+    fn mro_is_a_linearization() {
+        for &k in ExcKind::ALL {
+            let m = mro(k);
+            assert_eq!(m[0], k);
+            for (i, c) in m.iter().enumerate() {
+                assert!(!m[i + 1..].contains(c), "{k:?}: {c:?} twice");
+                for b in c.bases() {
+                    assert!(m[i + 1..].contains(b), "{k:?}: {b:?} before {c:?}");
+                }
+            }
+        }
     }
 }
