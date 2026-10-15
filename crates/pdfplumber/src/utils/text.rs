@@ -95,6 +95,15 @@ fn seq_repeat_count(n: &PyValue) -> PyResult<usize> {
     }
 }
 
+/// `range(n)` with a dynamic `n`: its length.
+fn range_count(n: &PyValue) -> PyResult<usize> {
+    match n {
+        PyValue::Int(i) => repeat_count(i),
+        PyValue::Bool(b) => Ok(usize::from(*b)),
+        other => Err(exc::TypeError(format!("'{}' object cannot be interpreted as an integer", other.type_name()))),
+    }
+}
+
 /// `round(x)` of a number (`int` result).
 fn py_round_value(x: &PyValue) -> PyResult<PyInt> {
     match x.as_num() {
@@ -765,7 +774,7 @@ impl WordMap {
         // Append blank lines at end of text
         if o.layout {
             let num_newlines_append = layout_height_chars.sub(&PyValue::Int(num_newlines.add(&PyInt::Small(1))))?;
-            for i in 0..seq_repeat_count(&num_newlines_append)? {
+            for i in 0..range_count(&num_newlines_append)? {
                 if i > 0 {
                     push_blank_line(&mut textmap);
                 }
