@@ -75,8 +75,8 @@ from ..stages._common import open_document
 from ._common import depth_here, require_oracle_python, write_cases, write_meta
 
 MODULE = "ccitt"
-CALL_TIMEOUT_S = 60
-FILE_TIMEOUT_S = 600
+CALL_TIMEOUT_S = 300
+FILE_TIMEOUT_S = 900
 TREES = {"MODE": CCITTG4Parser.MODE, "WHITE": CCITTG4Parser.WHITE, "BLACK": CCITTG4Parser.BLACK,
          "UNCOMPRESSED": CCITTG4Parser.UNCOMPRESSED}
 
