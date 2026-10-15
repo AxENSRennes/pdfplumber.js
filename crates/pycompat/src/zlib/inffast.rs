@@ -4,7 +4,7 @@
 //! fewer checks; the unused whole bytes of the bit accumulator are given
 //! back to the input on return.
 
-use super::inflate::{Mode, ZStream};
+use super::inflate::{Mode, OutputGuard, ZStream};
 
 /// Where a match is copied from: the sliding window or the output.
 #[derive(Clone, Copy)]
@@ -27,6 +27,7 @@ pub(super) fn inflate_fast(strm: &mut ZStream, input: &[u8], output: &mut Vec<u8
     let last = inp + (strm.avail_in as usize - 5); // have enough input while in < last
     let beg = output.len() - (start - strm.avail_out) as usize; // inflate()'s initial strm->next_out
     let end = output.len() + (strm.avail_out as usize - 257); // while out < end, enough space available
+    let guard = OutputGuard::new(output.len(), strm.avail_out);
     let wsize = state.wsize as usize; // window size or zero if not using window
     let whave = state.whave as usize; // valid bytes in the window
     let wnext = state.wnext as usize; // window write index
@@ -61,6 +62,7 @@ pub(super) fn inflate_fast(strm: &mut ZStream, input: &[u8], output: &mut Vec<u8
             let mut op = u32::from(here.op);
             if op == 0 {
                 // literal
+                guard.check(output.len(), 1);
                 output.push(here.val as u8);
             } else if op & 16 != 0 {
                 // length base
@@ -115,7 +117,7 @@ pub(super) fn inflate_fast(strm: &mut ZStream, input: &[u8], output: &mut Vec<u8
                                 if op < len {
                                     // some from window
                                     len -= op;
-                                    copy(output, &state.window, &mut from, op);
+                                    copy(output, &state.window, &mut from, op, guard);
                                     from = From::Output(output.len() - dist as usize);
                                     // rest from output
                                 }
@@ -126,13 +128,13 @@ pub(super) fn inflate_fast(strm: &mut ZStream, input: &[u8], output: &mut Vec<u8
                                 if op < len {
                                     // some from end of window
                                     len -= op;
-                                    copy(output, &state.window, &mut from, op);
+                                    copy(output, &state.window, &mut from, op, guard);
                                     from = From::Window(0);
                                     if (wnext as u32) < len {
                                         // some from start of window
                                         op = wnext as u32;
                                         len -= op;
-                                        copy(output, &state.window, &mut from, op);
+                                        copy(output, &state.window, &mut from, op, guard);
                                         from = From::Output(output.len() - dist as usize);
                                         // rest from output
                                     }
@@ -143,7 +145,7 @@ pub(super) fn inflate_fast(strm: &mut ZStream, input: &[u8], output: &mut Vec<u8
                                 if op < len {
                                     // some from window
                                     len -= op;
-                                    copy(output, &state.window, &mut from, op);
+                                    copy(output, &state.window, &mut from, op, guard);
                                     from = From::Output(output.len() - dist as usize);
                                     // rest from output
                                 }
@@ -152,7 +154,7 @@ pub(super) fn inflate_fast(strm: &mut ZStream, input: &[u8], output: &mut Vec<u8
                             // copy direct from output
                             from = From::Output(output.len() - dist as usize);
                         }
-                        copy(output, &state.window, &mut from, len);
+                        copy(output, &state.window, &mut from, len, guard);
                         break;
                     } else if op & 64 == 0 {
                         // 2nd level distance code
@@ -202,8 +204,9 @@ pub(super) fn inflate_fast(strm: &mut ZStream, input: &[u8], output: &mut Vec<u8
 /// copy the same bytes): appends `n` bytes read at `from`, a match that
 /// overlaps the output being written repeats it.
 #[inline]
-fn copy(output: &mut Vec<u8>, window: &[u8], from: &mut From, n: u32) {
+fn copy(output: &mut Vec<u8>, window: &[u8], from: &mut From, n: u32, guard: OutputGuard) {
     let n = n as usize;
+    guard.check(output.len(), n);
     match from {
         From::Window(i) => {
             output.extend_from_slice(&window[*i..*i + n]);

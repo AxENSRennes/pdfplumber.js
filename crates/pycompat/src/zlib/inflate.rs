@@ -148,6 +148,27 @@ fn fixed_tables() -> Fixed {
     Fixed { lenfix, distfix }
 }
 
+/// A safety net for mutation testing, active with debug assertions only
+/// (and excluded from the mutants, `-E OutputGuard`): one inflate() call
+/// writes at most the `avail_out` bytes it was given, so a broken copy that
+/// would write gigabytes panics at once instead of exhausting the memory.
+#[derive(Clone, Copy)]
+pub(super) struct OutputGuard {
+    limit: usize,
+}
+
+impl OutputGuard {
+    pub(super) fn new(len: usize, avail_out: u32) -> OutputGuard {
+        OutputGuard { limit: len + avail_out as usize }
+    }
+
+    /// `n` more bytes are about to be written after `len`.
+    #[inline]
+    pub(super) fn check(self, len: usize, n: usize) {
+        debug_assert!(len + n <= self.limit, "inflate writes past avail_out");
+    }
+}
+
 // zlib-1.3/inflate.h:82 inflate_state
 /// State maintained between inflate() calls.
 pub struct InflateState {
@@ -364,6 +385,7 @@ pub fn inflate(strm: &mut ZStream, input: &[u8], output: &mut Vec<u8>, flush: Fl
     let mut bits = strm.state.bits; // bits in bit buffer
     let in0 = have; // save starting available input
     let mut out = left; // save starting available output
+    let guard = OutputGuard::new(output.len(), left);
     let mut ret = Z_OK;
 
     // Get a byte of input into the bit accumulator, or return from inflate()
@@ -518,6 +540,7 @@ pub fn inflate(strm: &mut ZStream, input: &[u8], output: &mut Vec<u8>, flush: Fl
                     if copy == 0 {
                         break 'leave;
                     }
+                    guard.check(output.len(), copy as usize);
                     output.extend_from_slice(&input[next..next + copy as usize]);
                     have -= copy;
                     next += copy as usize;
@@ -784,11 +807,13 @@ pub fn inflate(strm: &mut ZStream, input: &[u8], output: &mut Vec<u8>, flush: Fl
                         state.wnext - copy
                     } as usize;
                     copy = copy.min(state.length).min(left);
+                    guard.check(output.len(), copy as usize);
                     output.extend_from_slice(&state.window[from..from + copy as usize]);
                 } else {
                     // copy from output
                     copy = state.length.min(left);
                     let from = output.len() - state.offset as usize;
+                    guard.check(output.len(), copy as usize);
                     for k in 0..copy as usize {
                         let b = output[from + k];
                         output.push(b);
@@ -804,6 +829,7 @@ pub fn inflate(strm: &mut ZStream, input: &[u8], output: &mut Vec<u8>, flush: Fl
                 if left == 0 {
                     break 'leave;
                 }
+                guard.check(output.len(), 1);
                 output.push(state.length as u8);
                 left -= 1;
                 state.mode = Mode::LEN;

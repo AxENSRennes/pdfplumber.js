@@ -88,6 +88,15 @@ fn list_index_error_at(i: i64, bpp: &PyInt) -> PyErr {
 /// them (see above) and goes on.
 const ADDRESS_SPACE: i64 = 1 << 47;
 
+/// A safety net for mutation testing, active with debug assertions only
+/// (and excluded from the mutants, `-E size_guard`): a predictor never
+/// outputs more bytes than it reads, so a broken row loop that would fill
+/// the memory panics at once.
+#[inline]
+fn size_guard(output: usize, data: usize) {
+    debug_assert!(output <= data, "a predictor writes more than it reads");
+}
+
 /// The `ValueError` of `range(start, stop, 0)`.
 fn range_step_zero() -> PyErr {
     exc::ValueError("range() arg 3 must not be zero")
@@ -160,6 +169,7 @@ pub fn apply_tiff_predictor(
             raw.push(new_value as u8);
         }
         buf.extend_from_slice(&raw);
+        size_guard(buf.len(), data.len());
         scanline_i += nbytes;
     }
     Ok(buf)
@@ -269,6 +279,7 @@ pub fn apply_png_predictor(
             _ => return Err(exc::PDFValueError(format!("Unsupported predictor value: {filter_type}"))),
         }
         buf.extend_from_slice(&raw);
+        size_guard(buf.len(), data.len());
         line_above = raw;
         scanline_i += step;
     }
