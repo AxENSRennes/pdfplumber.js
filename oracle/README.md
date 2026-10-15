@@ -165,9 +165,12 @@ $PY -m oracle.unit.canon           # one generator -> $PDFPLUMBER_CACHE/unit/can
 
 Generators: `canon` (the Rust `canon`/typed JSON), `pycompat` (CPython
 semantics), `exceptions` (pdfminer/pdfplumber exception classes), `pdftypes`
-(object model), `psparser_base` (`PSStackParser` on a file) and `psparser`
+(object model), `psparser_base` (`PSStackParser` on a file), `psparser`
 (`PDFContentParser` on the content streams of the `all` set, and with
-`--fuzz 4000` on an adversarial corpus). Each writes typed JSON lines
+`--fuzz 4000` on an adversarial corpus), `zlib` (CPython's `zlib`
+decompression on zlib 1.3) and `filters` (the stream filters, predictors
+and `PDFStream.get_data`, on generated cases and every stream of the
+`all` set). Each writes typed JSON lines
 `{"in": [args...], "out": result}` (fixed seed) and a `meta.json` whose
 `sources` holds the SHA-256 of every `oracle/` module the generator loaded
 and `environment` the oracle environment (`environment.py`), in a directory

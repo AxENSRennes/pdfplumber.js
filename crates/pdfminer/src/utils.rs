@@ -28,9 +28,12 @@ pub fn choplist<T>(n: usize, seq: &[T]) -> std::slice::ChunksExact<'_, T> {
 // end (an index past the data), so the numbers are clamped to the data
 // length first; that changes no result.
 //
-// Not reproduced: a huge positive `/Columns` makes `list(b"\x00" * columns)`
-// allocate gigabytes in Python (and fail with `MemoryError` past the
-// machine's memory); the port only materializes the part that can be read.
+// A large positive `/Columns` makes `list(b"\x00" * columns)` allocate that
+// many bytes (and 8 times more for the list) in Python, which fails with
+// `MemoryError` past the machine's memory. The port only materializes the
+// part that can be read; it raises `MemoryError` where every machine does
+// (at least the 2**47 bytes of the x86-64 user address space,
+// `ADDRESS_SPACE`), not below, where the outcome depends on the machine.
 
 /// `x` as a Python `int` or `bool` (`int_value`'s result): its value, and
 /// `str(x)` for messages.
