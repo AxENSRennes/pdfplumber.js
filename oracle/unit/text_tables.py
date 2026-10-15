@@ -436,6 +436,7 @@ def sort_cases():
 
 OP_VALUES = [
     None, True, False, 0, 1, -1, 3, 2**70, 0.0, -0.0, 1.0, 1.5, -2.5, 3.0, float("inf"), float("nan"),
+    float(2**70), 2**63, float(2**63), -(2**63), float(-(2**63)), (1, [2]),
     "", "a", "ab", "b", b"x", (), (1,), (1, 2), (1.0, 2.5), (1, None), [1], [1, 2], [], {}, {"a": 1}, {"a": 1, "b": (2,)},
     # pdfminer objects found in pdfplumber dicts (pattern color names, ...)
     LIT("F1"), KWD(b"BT"), PDFObjRef(None, 7),
@@ -479,6 +480,9 @@ def ops_cases():
         if op == "dictget":
             # a dict keyed by a, looked up with b (hash() and == of keys)
             return {a: "found"}.get(b)
+        if op == "unpack4":
+            x0, top, x1, bottom = a
+            return (x0, top, x1, bottom)
         raise ValueError(op)
 
     seq = (str, bytes, tuple, list)
@@ -495,9 +499,57 @@ def ops_cases():
                     continue
                 # a is b: the Rust replay passes the same value (identity of PDF objects)
                 yield [op, a, b, a is b], guarded(run, op, a, b)
-    for op in ["neg", "abs", "repr", "bool"]:
+    for op in ["neg", "abs", "repr", "bool", "unpack4"]:
         for a in OP_VALUES:
+            # unpacking iterates: strings, bytes and dicts are outside the model
+            if op == "unpack4" and isinstance(a, (str, bytes, dict)):
+                continue
             yield [op, a, None, False], guarded(run, op, a, None)
+    for items in [(1, 2, 3, 4), [1.0, 2, 3, 4.5], (1, 2, 3), (1, 2, 3, 4, 5), [None] * 4, ()]:
+        yield ["unpack4", items, None, False], guarded(run, "unpack4", items, None)
+
+
+DICT_KEYS = ["x0", "top", "x1", "bottom", "doctop", "width", "height", "text", "upright", "size",
+             "orientation", "object_type", "y0", "y1", "fontname", "k", "chars"]
+
+
+def dict_cases():
+    """Sequences of dict operations (the Obj model): assignment of a new or
+    existing key, del (KeyError when absent), get, in, keys, ==, copy."""
+    rng = random.Random(7)
+    for i in range(1500):
+        d = {}
+        other = {}
+        steps, results = [], []
+        for _ in range(rng.randint(1, 30)):
+            op = rng.choice(["set", "set", "set", "del", "get", "in", "keys", "eq", "copyset"])
+            k = rng.choice(DICT_KEYS)
+            v = rng.choice([0, 1, 1.0, 2.5, "a", None, (1,)])
+            try:
+                if op == "set":
+                    d[k] = v
+                    r = None
+                elif op == "del":
+                    del d[k]
+                    r = None
+                elif op == "get":
+                    r = d.get(k)
+                elif op == "in":
+                    r = k in d
+                elif op == "keys":
+                    r = list(d.keys())
+                elif op == "eq":
+                    r = d == other
+                    other = dict(d)  # compared with the next eq
+                else:  # copyset: a copy changed does not change the original
+                    c = dict(d)
+                    c[k] = v
+                    r = (list(c.items()), list(d.items()))
+            except Exception as e:
+                r = exc_value(e)
+            steps.append((op, k, v))
+            results.append(r)
+        yield [steps], results
 
 
 def cluster_cases():
@@ -673,6 +725,7 @@ def main() -> int:
     counts["geometry"] = write_cases(MODULE, "geometry", geometry_cases())
     counts["textlines"] = write_cases(MODULE, "textlines", textline_cases())
     counts["settings"] = write_cases(MODULE, "settings", settings_cases())
+    counts["dicts"] = write_cases(MODULE, "dicts", dict_cases())
     counts["pages_fuzz"] = write_cases(MODULE, "pages_fuzz", fuzz_cases(args.fuzz))
     write_meta(MODULE, counts=counts, fuzz=args.fuzz)
     print(counts, flush=True)

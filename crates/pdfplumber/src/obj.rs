@@ -293,6 +293,30 @@ impl PyValue {
         }
     }
 
+    /// A PDF object that is a Python scalar, `list` or `dict` (pdfminer's
+    /// objects are Python values), as that Python value; `None` for every
+    /// other value. Operators see a PDF object through it.
+    fn as_python(&self) -> Option<PyValue> {
+        let PyValue::Pdf(o) = self else { return None };
+        Some(match o {
+            PDFObject::List(l) => PyValue::List(l.to_vec().into_iter().map(PyValue::from_pdf).collect()),
+            PDFObject::Dict(d) => {
+                PyValue::Dict(Obj::from_pairs(d.items().into_iter().map(|(k, v)| (k, PyValue::from_pdf(v)))))
+            }
+            PDFObject::Literal(_) | PDFObject::Keyword(_) | PDFObject::Stream(_) | PDFObject::Ref(_) => return None,
+            scalar => PyValue::from_pdf(scalar.clone()),
+        })
+    }
+
+    /// The two operands of an operator, PDF objects seen as Python values
+    /// (`None` when neither changes).
+    fn as_python2(&self, other: &PyValue) -> Option<(PyValue, PyValue)> {
+        match (self.as_python(), other.as_python()) {
+            (None, None) => None,
+            (a, b) => Some((a.unwrap_or_else(|| self.clone()), b.unwrap_or_else(|| other.clone()))),
+        }
+    }
+
     /// `type(v).__name__`
     pub fn type_name(&self) -> &'static str {
         match self {
@@ -306,17 +330,11 @@ impl PyValue {
             PyValue::List(_) => "list",
             PyValue::Dict(_) => "dict",
             PyValue::Pdf(o) => match o {
-                PDFObject::Null => "NoneType",
-                PDFObject::Bool(_) => "bool",
-                PDFObject::Int(_) => "int",
-                PDFObject::Float(_) => "float",
-                PDFObject::Bytes(_) => "bytes",
                 PDFObject::Literal(_) => "PSLiteral",
                 PDFObject::Keyword(_) => "PSKeyword",
-                PDFObject::List(_) => "list",
-                PDFObject::Dict(_) => "dict",
                 PDFObject::Stream(_) => "PDFStream",
                 PDFObject::Ref(_) => "PDFObjRef",
+                _ => self.as_python().expect("a Python value").type_name(),
             },
         }
     }
@@ -332,16 +350,8 @@ impl PyValue {
             PyValue::Bytes(b) => !b.is_empty(),
             PyValue::Tuple(t) | PyValue::List(t) => !t.is_empty(),
             PyValue::Dict(d) => !d.is_empty(),
-            PyValue::Pdf(o) => match o {
-                PDFObject::Null => false,
-                PDFObject::Bool(b) => *b,
-                PDFObject::Int(i) => !i.is_zero(),
-                PDFObject::Float(x) => *x != 0.0,
-                PDFObject::Bytes(b) => !b.is_empty(),
-                PDFObject::List(l) => !l.to_vec().is_empty(),
-                PDFObject::Dict(d) => !d.items().is_empty(),
-                _ => true,
-            },
+            // names, keywords, streams and references are always true
+            PyValue::Pdf(_) => self.as_python().is_none_or(|v| v.truthy()),
         }
     }
 
@@ -352,6 +362,7 @@ impl PyValue {
             PyValue::Float(x) => Some(Num::Float(*x)),
             PyValue::Int(i) => Some(Num::Int(i.clone())),
             PyValue::Bool(b) => Some(Num::Int(PyInt::Small(i64::from(*b)))),
+            PyValue::Pdf(_) => self.as_python()?.as_num(),
             _ => None,
         }
     }
@@ -450,6 +461,9 @@ impl PyValue {
         if let (PyValue::Float(a), PyValue::Float(b)) = (self, other) {
             return a == b;
         }
+        if let Some((a, b)) = self.as_python2(other) {
+            return a.py_eq(&b);
+        }
         if let (Some(a), Some(b)) = (self.as_num(), other.as_num()) {
             return a.py_eq(&b);
         }
@@ -476,6 +490,9 @@ impl PyValue {
                 CmpOp::Gt => a > b,
                 CmpOp::Ge => a >= b,
             });
+        }
+        if let Some((a, b)) = self.as_python2(other) {
+            return a.compare(&b, op);
         }
         if let (Some(a), Some(b)) = (self.as_num(), other.as_num()) {
             return Ok(a.py_cmp(&b).is_some_and(|o| op.holds(o)));
@@ -552,6 +569,9 @@ impl PyValue {
     /// operation that Python would perform (`str + str`, `str * int`) is
     /// outside the model.
     fn num_operands(&self, op: &str, other: &PyValue) -> PyResult<(Num, Num)> {
+        if let Some((a, b)) = self.as_python2(other) {
+            return a.num_operands(op, &b);
+        }
         match (self.as_num(), other.as_num()) {
             (Some(a), Some(b)) => Ok((a, b)),
             _ => {
@@ -638,6 +658,9 @@ impl PyValue {
     /// `float(a)` for a number; other types are outside the model
     /// (`float("1.5")` parses).
     pub fn to_float(&self) -> PyResult<PyValue> {
+        if let Some(p) = self.as_python() {
+            return p.to_float();
+        }
         match self {
             PyValue::Float(x) => Ok(PyValue::Float(*x)),
             PyValue::Int(i) => Ok(PyValue::Float(i.to_f64()?)),
@@ -712,11 +735,11 @@ impl HashKey {
 }
 
 fn check_hashable(v: &PyValue) -> PyResult<()> {
+    if let Some(p) = v.as_python() {
+        return check_hashable(&p);
+    }
     match v {
         PyValue::List(_) | PyValue::Dict(_) => Err(exc::TypeError(format!("unhashable type: '{}'", v.type_name()))),
-        PyValue::Pdf(PDFObject::List(_) | PDFObject::Dict(_)) => {
-            Err(exc::TypeError(format!("unhashable type: '{}'", v.type_name())))
-        }
         PyValue::Tuple(t) => t.iter().try_for_each(check_hashable),
         _ => Ok(()),
     }
@@ -759,6 +782,9 @@ fn hash_num<H: Hasher>(v: &PyValue, state: &mut H) -> bool {
 }
 
 fn hash_value<H: Hasher>(v: &PyValue, state: &mut H) {
+    if let Some(p) = v.as_python() {
+        return hash_value(&p, state);
+    }
     if hash_num(v, state) {
         return;
     }
@@ -970,6 +996,9 @@ pub fn bbox_value(b: &Bbox) -> PyValue {
 /// `x0, top, x1, bottom = value`: a bbox from a `tuple`/`list` of four
 /// items (`ValueError` for another length, `TypeError` for a non-sequence).
 pub fn bbox_from_value(v: &PyValue) -> PyResult<Bbox> {
+    if let Some(p) = v.as_python() {
+        return bbox_from_value(&p);
+    }
     let Some(items) = v.as_seq() else {
         return Err(exc::TypeError(format!("cannot unpack non-iterable {} object", v.type_name())));
     };

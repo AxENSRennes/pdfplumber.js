@@ -156,6 +156,36 @@ fn sort_cases() {
 
 // -- operators --------------------------------------------------------------------
 
+/// One operator of the generator's `ops_cases` on two values.
+fn run_value_op(op: &str, a: &PyValue, b: &PyValue) -> Value {
+    let v = |r: PyResult<PyValue>| result(r, |v| to_value(&v));
+    match op {
+        "add" => v(a.add(b)),
+        "sub" => v(a.sub(b)),
+        "mul" => v(a.mul(b)),
+        "truediv" => v(a.truediv(b)),
+        "lt" => v(a.lt(b).map(PyValue::Bool)),
+        "le" => v(a.le(b).map(PyValue::Bool)),
+        "gt" => v(a.gt(b).map(PyValue::Bool)),
+        "ge" => v(a.ge(b).map(PyValue::Bool)),
+        "eq" => v(Ok(PyValue::Bool(a.py_eq(b)))),
+        "neg" => v(a.neg()),
+        "abs" => v(a.abs()),
+        "repr" => v(Ok(PyValue::from(a.repr()))),
+        "bool" => v(Ok(PyValue::Bool(a.truthy()))),
+        "min" => v(pdfplumber::obj::py_min([a, b])),
+        "max" => v(pdfplumber::obj::py_max([a, b])),
+        "sum" => v(pdfplumber::obj::py_sum([a, b])),
+        "dictget" => v((|| {
+            let mut d = std::collections::HashMap::new();
+            d.insert(pdfplumber::obj::HashKey::new(a.clone())?, PyValue::str("found"));
+            Ok(d.get(&pdfplumber::obj::HashKey::new(b.clone())?).cloned().unwrap_or(PyValue::None))
+        })()),
+        "unpack4" => v(pdfplumber::obj::bbox_from_value(a).map(|b| pdfplumber::obj::bbox_value(&b))),
+        other => panic!("unknown op {other}"),
+    }
+}
+
 #[test]
 fn ops_cases() {
     let data = data();
@@ -163,47 +193,68 @@ fn ops_cases() {
     for_each_case(&data, "ops", |i, args, out| {
         let op = args[0].as_str().expect("op").to_owned();
         let a = py(&args[1]);
-        let b = if matches!(args[3], Value::Bool(true)) { a.clone() } else { py(&args[2]) };
-        let v = |r: PyResult<PyValue>| result(r, |v| to_value(&v));
-        let got = match op.as_str() {
-            "add" => v(a.add(&b)),
-            "sub" => v(a.sub(&b)),
-            "mul" => v(a.mul(&b)),
-            "truediv" => v(a.truediv(&b)),
-            "lt" => v(a.lt(&b).map(PyValue::Bool)),
-            "le" => v(a.le(&b).map(PyValue::Bool)),
-            "gt" => v(a.gt(&b).map(PyValue::Bool)),
-            "ge" => v(a.ge(&b).map(PyValue::Bool)),
-            "eq" => v(Ok(PyValue::Bool(a.py_eq(&b)))),
-            "neg" => v(a.neg()),
-            "abs" => v(a.abs()),
-            "repr" => v(Ok(PyValue::from(a.repr()))),
-            "bool" => {
-                // the same value as a PDF object (a PDF list or dict is a
-                // Python list or dict) has the same truth value
-                if let Ok(o) = pdftrace::plumber::pdf_object(&args[1]) {
-                    let as_pdf = PyValue::Pdf(o);
-                    c.check(
-                        || format!("case {i}: bool of {as_pdf:?} as a PDF object"),
-                        &to_value(&PyValue::Bool(as_pdf.truthy())),
-                        &out,
-                    );
-                }
-                v(Ok(PyValue::Bool(a.truthy())))
-            }
-            "min" => v(pdfplumber::obj::py_min([&a, &b])),
-            "max" => v(pdfplumber::obj::py_max([&a, &b])),
-            "sum" => v(pdfplumber::obj::py_sum([&a, &b])),
-            "dictget" => v((|| {
-                let mut d = std::collections::HashMap::new();
-                d.insert(pdfplumber::obj::HashKey::new(a.clone())?, PyValue::str("found"));
-                Ok(d.get(&pdfplumber::obj::HashKey::new(b.clone())?).cloned().unwrap_or(PyValue::None))
-            })()),
-            other => panic!("unknown op {other}"),
-        };
-        c.check(|| format!("case {i}: {op} {a:?} {b:?}"), &got, &out);
+        let identical = matches!(args[3], Value::Bool(true));
+        let b = if identical { a.clone() } else { py(&args[2]) };
+        c.check(|| format!("case {i}: {op} {a:?} {b:?}"), &run_value_op(&op, &a, &b), &out);
+        // The same values as PDF objects (pdfminer's objects are Python
+        // values: a PDF list is a list): same results. Not for repr (a PDF
+        // object has its own), nor for a value compared with itself (a
+        // reference has an identity).
+        if op == "repr" || identical {
+            return;
+        }
+        let pdf = |x: &Value| pdftrace::plumber::pdf_object(x).ok().map(PyValue::Pdf);
+        if let Some(pa) = pdf(&args[1]) {
+            c.check(|| format!("case {i}: {op} {pa:?} {b:?} (PDF object)"), &run_value_op(&op, &pa, &b), &out);
+        }
+        if let Some(pb) = pdf(&args[2]) {
+            c.check(|| format!("case {i}: {op} {a:?} {pb:?} (PDF object)"), &run_value_op(&op, &a, &pb), &out);
+        }
     });
     c.finish(5000);
+}
+
+// -- dicts ------------------------------------------------------------------------
+
+#[test]
+fn dict_cases() {
+    let data = data();
+    let mut c = Checker::new("dicts");
+    for_each_case(&data, "dicts", |i, args, out| {
+        let Value::List(steps) = &args[0] else { panic!("steps") };
+        let mut d = Obj::new();
+        let mut other = Obj::new();
+        let mut results = Vec::new();
+        for step in steps {
+            let Value::Tuple(step) = step else { panic!("step") };
+            let (op, k, v) = (step[0].as_str().expect("op"), step[1].as_str().expect("key"), py(&step[2]));
+            let items =
+                |o: &Obj| PyValue::list(o.items().iter().map(|(k, v)| PyValue::tuple([PyValue::str(k), v.clone()])));
+            let r: PyResult<PyValue> = match op {
+                "set" => {
+                    d.set(k, v);
+                    Ok(PyValue::None)
+                }
+                "del" => d.remove(k).map(|_| PyValue::None),
+                "get" => Ok(d.get(k).cloned().unwrap_or(PyValue::None)),
+                "in" => Ok(PyValue::Bool(d.contains(k))),
+                "keys" => Ok(PyValue::list(d.keys().map(PyValue::str))),
+                "eq" => Ok(PyValue::Bool(d.py_eq(&other))),
+                "copyset" => {
+                    let mut copy = d.clone();
+                    copy.set(k, v);
+                    Ok(PyValue::tuple([items(&copy), items(&d)]))
+                }
+                other => panic!("unknown dict op {other}"),
+            };
+            results.push(result(r, |v| to_value(&v)));
+            if op == "eq" {
+                other = d.clone();
+            }
+        }
+        c.check(|| format!("case {i}"), &Value::List(results), &out);
+    });
+    c.finish(1000);
 }
 
 // -- clustering -------------------------------------------------------------------
