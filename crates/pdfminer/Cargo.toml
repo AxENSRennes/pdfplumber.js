@@ -11,6 +11,7 @@ rust-version.workspace = true
 pycompat.workspace = true
 indexmap.workspace = true
 rustc-hash.workspace = true
+num-bigint.workspace = true
 
 [lints]
 workspace = true

@@ -123,6 +123,7 @@ name = "pdfminer"
 version = "0.0.0"
 dependencies = [
  "indexmap",
+ "num-bigint",
  "pycompat",
  "rustc-hash",
 ]
