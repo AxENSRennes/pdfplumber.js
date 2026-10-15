@@ -167,6 +167,15 @@ impl OutputGuard {
     pub(super) fn check(self, len: usize, n: usize) {
         debug_assert!(len + n <= self.limit, "inflate writes past avail_out");
     }
+
+    /// The output of a call of the `zlib` module is at most 1032 times its
+    /// input (deflate's largest ratio: a 258-byte match in two bits), plus
+    /// what pending bits and a window can add; more is a broken decoder
+    /// that would fill the memory across calls.
+    #[inline]
+    pub(super) fn check_ratio(output: usize, input: usize) {
+        debug_assert!(output <= 1100 * (input + 8) + 65536, "inflate output out of proportion");
+    }
 }
 
 // zlib-1.3/inflate.h:82 inflate_state

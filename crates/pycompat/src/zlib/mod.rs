@@ -170,6 +170,7 @@ pub fn decompress_with(data: &[u8], wbits: i32, bufsize: isize) -> PyResult<Vec<
                 zst.avail_out = buffer.grow() as u32;
             }
             err = inflate(&mut zst, data, &mut output, flush);
+            inflate::OutputGuard::check_ratio(output.len(), data.len());
             match err {
                 Z_OK | Z_BUF_ERROR | Z_STREAM_END => {}
                 _ => return Err(zlib_error(zst.msg, err, "while decompressing data")),
@@ -262,6 +263,7 @@ impl Decompress {
                     self.zst.avail_out = buffer.grow() as u32;
                 }
                 err = inflate(&mut self.zst, data, &mut output, Flush::SyncFlush);
+                inflate::OutputGuard::check_ratio(output.len(), data.len());
                 match err {
                     Z_OK | Z_BUF_ERROR | Z_STREAM_END => {}
                     // (a Z_NEED_DICT with a zdict would set it here)
