@@ -158,7 +158,8 @@ fn ops_cases() {
     let mut c = Checker::new("ops");
     for_each_case(&data, "ops", |i, args, out| {
         let op = args[0].as_str().expect("op").to_owned();
-        let (a, b) = (py(&args[1]), py(&args[2]));
+        let a = py(&args[1]);
+        let b = if matches!(args[3], Value::Bool(true)) { a.clone() } else { py(&args[2]) };
         let v = |r: PyResult<PyValue>| result(r, |v| to_value(&v));
         let got = match op.as_str() {
             "add" => v(a.add(&b)),
@@ -623,7 +624,7 @@ fn replay_pages(module: &str, name: &'static str, min_pages: usize) {
 
 #[test]
 fn pages_fuzz() {
-    replay_pages("text_tables", "pages_fuzz", 1000);
+    replay_pages("text_tables", "pages_fuzz", 800);
 }
 
 #[test]

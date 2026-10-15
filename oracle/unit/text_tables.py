@@ -29,7 +29,7 @@ Writes typed JSON lines (docs/verification.md) to
   lines, invalid options. The real-PDF cases are written by
   ``text_tables_real.py``.
 
-Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.text_tables [--fuzz 1500]
+Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.text_tables [--fuzz 800]
        ... -m oracle.unit.text_tables --dump pages_fuzz:LINE:OP   (the full canon of one operation)
 """
 
@@ -40,6 +40,8 @@ import random
 import re
 import sys
 
+from pdfminer.pdftypes import PDFObjRef
+from pdfminer.psparser import KWD, LIT
 from pdfplumber.table import TableSettings
 from pdfplumber.utils import clustering, geometry
 from pdfplumber.utils import text as ptext
@@ -333,7 +335,7 @@ def synth_page_case(rng):
     edges = synth_edges(rng, bbox) if rng.random() < 0.8 else []
     page = FakePage(chars, edges, bbox)
     ops = []
-    for _ in range(rng.randint(6, 14)):
+    for _ in range(rng.randint(12, 26)):
         r = rng.random()
         if rng.random() < 0.08:
             kw = rand_text_kwargs(rng)
@@ -430,6 +432,8 @@ def sort_cases():
 OP_VALUES = [
     None, True, False, 0, 1, -1, 3, 2**70, 0.0, -0.0, 1.0, 1.5, -2.5, 3.0, float("inf"), float("nan"),
     "", "a", "ab", "b", b"x", (), (1,), (1, 2), (1.0, 2.5), (1, None), [1], [1, 2], {}, {"a": 1},
+    # pdfminer objects found in pdfplumber dicts (pattern color names, ...)
+    LIT("F1"), KWD(b"BT"), PDFObjRef(None, 7),
 ]
 
 
@@ -478,10 +482,11 @@ def ops_cases():
                     continue
                 if op == "mul" and (isinstance(a, seq) or isinstance(b, seq)) and (type(a) in (int, bool) or type(b) in (int, bool)):
                     continue
-                yield [op, a, b], guarded(run, op, a, b)
+                # a is b: the Rust replay passes the same value (identity of PDF objects)
+                yield [op, a, b, a is b], guarded(run, op, a, b)
     for op in ["neg", "abs", "repr", "bool"]:
         for a in OP_VALUES:
-            yield [op, a, None], guarded(run, op, a, None)
+            yield [op, a, None, False], guarded(run, op, a, None)
 
 
 def cluster_cases():
@@ -638,7 +643,7 @@ def dump(spec: str) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(prog="python -m oracle.unit.text_tables", description=__doc__.split("\n\n")[0])
-    ap.add_argument("--fuzz", type=int, default=1500, help="number of adversarial pages (default 1500)")
+    ap.add_argument("--fuzz", type=int, default=800, help="number of adversarial pages (default 800)")
     ap.add_argument("--dump", metavar="NAME:LINE:OP")
     args = ap.parse_args()
     require_oracle_python()
