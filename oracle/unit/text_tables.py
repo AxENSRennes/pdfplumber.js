@@ -20,6 +20,8 @@ Writes typed JSON lines (docs/verification.md) to
 - ``textlines``: the spans ``re.finditer`` gives for the two patterns of
   ``TextMap.extract_text_lines`` over generated strings (the Rust port
   matches them natively).
+- ``tables``: functions of ``table.py`` called directly
+  (``edges_to_intersections`` on unordered coordinates...).
 - ``settings``: ``TableSettings.resolve(dict)``: resolved fields, or the
   validation error.
 - ``pages_fuzz`` (``--fuzz N`` adversarial pages, seed 1): page cases
@@ -504,6 +506,8 @@ OP_VALUES = [
     None, True, False, 0, 1, -1, 3, 2**70, 0.0, -0.0, 1.0, 1.5, -2.5, 3.0, float("inf"), float("nan"),
     float(2**70), 2**63, float(2**63), -(2**63), float(-(2**63)), (1, [2]),
     "", "a", "ab", "b", b"x", (), (1,), (1, 2), (1.0, 2.5), (1, None), [1], [1, 2], [], {}, {"a": 1}, {"a": 1, "b": (2,)},
+    # a dict is equal to itself even with a NaN value (dict_equal's identity shortcut)
+    {"a": float("nan")},
     # pdfminer objects found in pdfplumber dicts (pattern color names, ...)
     LIT("F1"), KWD(b"BT"), PDFObjRef(None, 7), PDFStream({"Length": 1}, b"x"),
 ]
@@ -735,6 +739,71 @@ def geometry_cases():
         yield ["snap_edges", *args], guarded(table.snap_edges, *args)
 
 
+def nan():
+    """A new NaN object: no two coordinates share one, so no Python result
+    depends on the identity shortcut of ``==`` (which the port does not
+    model, see obj.rs)."""
+    return float("nan")
+
+
+def window_edge(x0, top, x1, bottom, orientation):
+    return {"x0": x0, "top": top, "x1": x1, "bottom": bottom, "orientation": orientation}
+
+
+def window_cases(rng):
+    """``edges_to_intersections`` on edges whose coordinates are not all
+    ordered numbers: NaN tops among the h edges (anywhere in their sorted
+    order), ``str``/``None`` tops or bottoms of v edges, mixed int and float
+    tops (the type in a ``TypeError`` message tells which pair raised), big
+    ints, infinities, bools; tolerances of the same kinds. The port's search
+    window must give the predicate's results and first exception."""
+    tops = [0, 5, 10, 10.0, 12.5, 20, 20.5, 30, 2**70, float("inf"), -float("inf"), True, -0.0]
+    tols = [0, 1, 3, 2.5, 0.0, True, 2**70, float("inf")]
+    for i in range(1500):
+        kind = rng.random()
+        n_h = rng.randint(0, 9)
+        h_edges = []
+        ints_only = kind < 0.25
+        for _ in range(n_h):
+            if rng.random() < 0.3:
+                t = nan()
+            elif ints_only:
+                t = rng.choice([0, 5, 10, 20, 30, 2**70, True])
+            else:
+                t = rng.choice(tops)
+            x0 = rng.choice([0, 10, 20.5, 40])
+            h_edges.append(window_edge(x0, t, x0 + rng.choice([10, 30, 60.5]), t, "h"))
+        v_edges = []
+        for k in range(rng.randint(1, 4)):
+            vt = rng.choice([0, 5, 10.5, -float("inf"), 2**70]) if not ints_only else rng.choice([0, 5, 10])
+            vb = vt + rng.choice([0, 10, 25.5, 100])
+            r = rng.random()
+            if r < 0.15:
+                vt = rng.choice(["a", None, nan()])
+            elif r < 0.3:
+                vb = rng.choice(["a", None, nan()])
+            # distinct x0s: the v sort never compares tops
+            v_edges.append(window_edge(10 * k + rng.choice([0, 5, 2.5]), vt, 0, vb, "v"))
+        ytol = rng.choice([0, 1, 3, 2.5, True]) if ints_only else rng.choice(tols)
+        if rng.random() < 0.1:
+            ytol = rng.choice([nan(), None, "a"])
+        xtol = rng.choice(tols)
+        edges = v_edges + h_edges
+        rng.shuffle(edges)
+        yield ["edges_to_intersections", edges, xtol, ytol], guarded(intersections_value, edges, xtol, ytol)
+
+
+def intersections_value(edges, xtol, ytol):
+    return [(pt, d["v"], d["h"]) for pt, d in table.edges_to_intersections(edges, xtol, ytol).items()]
+
+
+def table_cases():
+    """The functions of ``table.py`` called directly, on inputs a page
+    would rarely give."""
+    rng = random.Random(10)
+    yield from window_cases(rng)
+
+
 def textline_cases():
     rng = random.Random(5)
     alphabet = [" ", " ", " ", "\n", "a", "b", "\t", "\r", " ", "x"]
@@ -799,6 +868,7 @@ def main() -> int:
     counts["ops"] = write_cases(MODULE, "ops", ops_cases())
     counts["cluster"] = write_cases(MODULE, "cluster", cluster_cases())
     counts["geometry"] = write_cases(MODULE, "geometry", geometry_cases())
+    counts["tables"] = write_cases(MODULE, "tables", table_cases())
     counts["textlines"] = write_cases(MODULE, "textlines", textline_cases())
     counts["settings"] = write_cases(MODULE, "settings", settings_cases())
     counts["dicts"] = write_cases(MODULE, "dicts", dict_cases())

@@ -294,14 +294,6 @@ impl Intersections {
     pub fn find(&self, p: &Point) -> PyResult<Option<usize>> {
         Ok(self.index.get(&point_key(p)?).copied())
     }
-
-    pub fn len(&self) -> usize {
-        self.points.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.points.is_empty()
-    }
 }
 
 /// A number whose additions, subtractions and comparisons with other such

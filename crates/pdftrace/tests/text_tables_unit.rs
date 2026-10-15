@@ -22,7 +22,9 @@ use std::io::{BufRead, BufReader};
 use std::rc::Rc;
 
 use pdfplumber::obj::{bbox_from_value, bbox_value, Bbox, Obj, PyValue};
-use pdfplumber::table::{cells_to_tables, CellGroup, Table, TableFinder, TablePage, TableSettings};
+use pdfplumber::table::{
+    self, cells_to_tables, CellGroup, Intersections, Table, TableFinder, TablePage, TableSettings,
+};
 use pdfplumber::utils::clustering::{cluster_list, cluster_objects};
 use pdfplumber::utils::geometry::{self, Axis, SnapAttr};
 use pdfplumber::utils::text::{
@@ -354,6 +356,42 @@ fn geometry_cases() {
         c.check(|| format!("case {i}: {name}"), &got, &out);
     });
     c.finish(3000);
+}
+
+// -- table.py functions -----------------------------------------------------------
+
+fn intersections_v(i: &Intersections) -> Value {
+    Value::List(
+        i.points
+            .iter()
+            .map(|((x, y), v, h)| {
+                Value::Tuple(vec![
+                    Value::Tuple(vec![to_value(x), to_value(y)]),
+                    list_of_objs(v.clone()),
+                    list_of_objs(h.clone()),
+                ])
+            })
+            .collect(),
+    )
+}
+
+#[test]
+fn table_cases() {
+    let data = data();
+    let mut c = Checker::new("tables");
+    for_each_case(&data, "tables", |i, args, out| {
+        let name = args[0].as_str().expect("fn").to_owned();
+        let got = match name.as_str() {
+            "edges_to_intersections" => {
+                result(table::edges_to_intersections(&objs(&args[1]), &py(&args[2]), &py(&args[3])), |i| {
+                    intersections_v(&i)
+                })
+            }
+            other => panic!("{other}"),
+        };
+        c.check(|| format!("case {i}: {name}"), &got, &out);
+    });
+    c.finish(1500);
 }
 
 // -- text lines -------------------------------------------------------------------
@@ -733,4 +771,27 @@ fn table_helpers_smoke() {
     let t = Table::new(tables[0].clone());
     assert_eq!(t.rows().unwrap().len(), 1);
     assert!(exc::ValueError("x").message == "x");
+}
+
+/// Sequence concatenation and repetition (`"ab" + "c"`, `"ab" * 2`,
+/// `2 * (1,)`) are outside the object model: the port refuses them with
+/// `NotPorted` instead of computing something else (not a Python behavior,
+/// so not in the oracle cases, which skip them). A non-int factor is
+/// Python's `TypeError`.
+#[test]
+fn sequence_operations_are_not_ported() {
+    let s = PyValue::str("ab");
+    let t = PyValue::tuple([PyValue::from(1i64)]);
+    let two = PyValue::from(2i64);
+    let not_ported = |r: PyResult<PyValue>| r.is_err_and(|e| e.kind == pycompat::ExcKind::NotPorted);
+    assert!(not_ported(s.add(&s)));
+    assert!(not_ported(t.add(&t)));
+    assert!(not_ported(s.mul(&two)));
+    assert!(not_ported(two.mul(&s)));
+    assert!(not_ported(PyValue::Bool(true).mul(&t)));
+    assert!(not_ported(t.mul(&PyValue::Bool(false))));
+    let e = s.mul(&PyValue::from(2.0)).unwrap_err();
+    assert_eq!(e.message, "can't multiply sequence by non-int of type 'float'");
+    let e = PyValue::from(2.0).mul(&t).unwrap_err();
+    assert_eq!(e.message, "can't multiply sequence by non-int of type 'float'");
 }
