@@ -324,7 +324,9 @@ impl TextMap {
     }
 
     // pdfplumber/utils/text.py:145 TextMap.match_to_dict
-    pub fn match_to_dict(
+    /// For a match whose `main_group` took part, with spans within `string`
+    /// (`search` checks both).
+    fn match_to_dict(
         &self,
         string: &[char],
         m: &RegexMatch,
@@ -332,19 +334,11 @@ impl TextMap {
         return_groups: bool,
         return_chars: bool,
     ) -> PyResult<Obj> {
-        let (start, end) = match m.spans.get(main_group) {
-            Some(Some(span)) => *span,
-            Some(None) => (usize::MAX, usize::MAX), // m.start(g) == -1: tuples[-1:-1] is empty
-            None => return Err(exc::IndexError("no such group")),
-        };
+        let (start, end) = m.spans[main_group].expect("a group that took part");
         // self.tuples[m.start(g):m.end(g)], clamped like a Python slice
         let n = self.tuples.len();
-        let subset: &[(char, Option<Obj>)] = if start == usize::MAX {
-            &[]
-        } else {
-            let a = start.min(n);
-            &self.tuples[a..end.min(n).max(a)]
-        };
+        let a = start.min(n);
+        let subset = &self.tuples[a..end.min(n).max(a)];
         let chars: Vec<Obj> = subset.iter().filter_map(|(_, c)| c.clone()).collect();
         let [x0, top, x1, bottom] = objects_to_bbox_refs(chars.iter())?;
         let mut result = Obj::from_pairs([
@@ -374,6 +368,12 @@ impl TextMap {
         main_group: usize,
     ) -> PyResult<Vec<Obj>> {
         let string: Vec<char> = self.as_string.chars().collect();
+        // Matches come from the caller: a span outside the string cannot
+        // come from a regular expression run over it.
+        let valid = |s: &Option<(usize, usize)>| s.is_none_or(|(a, b)| a <= b && b <= string.len());
+        if !matches.iter().all(|m| m.spans.iter().all(valid)) {
+            return Err(exc::ValueError("match span outside TextMap.as_string"));
+        }
         let mut out = Vec::new();
         for m in matches {
             // filter(lambda m: bool(m.group(main_group).strip()), gen)

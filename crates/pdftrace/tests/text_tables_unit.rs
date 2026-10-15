@@ -632,6 +632,23 @@ fn pages_real() {
     replay_pages("text_tables_real", "pages_real", 150);
 }
 
+/// Spans come from the caller's regular expression engine: a span that
+/// cannot come from a match over `as_string` is refused (not a Python
+/// behavior: Python computes the spans itself).
+#[test]
+fn search_refuses_spans_outside_the_string() {
+    let tm = TextMap::new(vec![('a', None), ('b', None)], &PyValue::str("ttb"), &PyValue::str("ltr")).unwrap();
+    for span in [(0, 3), (2, 1), (3, 3)] {
+        let m = RegexMatch { spans: vec![Some(span)] };
+        let e = tm.search(&[m], true, true, 0).unwrap_err();
+        assert_eq!(e.message, "match span outside TextMap.as_string", "{span:?}");
+    }
+    for span in [(0, 0), (2, 2), (1, 1)] {
+        let m = RegexMatch { spans: vec![Some(span)] };
+        assert!(tm.search(&[m], true, true, 0).unwrap().is_empty(), "{span:?}");
+    }
+}
+
 /// `cells_to_tables` and `Table` on a hand-made grid share the code paths
 /// the page cases exercise; this only checks the plumbing of the helpers.
 #[test]
