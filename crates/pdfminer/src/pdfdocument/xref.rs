@@ -86,12 +86,9 @@ impl PDFBaseXRef {
                 // the offsets never change once the xref is loaded
                 Box::new(x.offsets.keys().cloned().collect::<Vec<_>>().into_iter().map(Ok))
             }
-            PDFBaseXRef::Stream(_) => Box::new(XRefStreamIds {
-                xref: StreamRef::Owned(self.clone()),
-                range: 0,
-                current: None,
-                done: false,
-            }),
+            PDFBaseXRef::Stream(_) => {
+                Box::new(XRefStreamIds { xref: StreamRef::Owned(self.clone()), range: 0, current: None, done: false })
+            }
         }
     }
 
@@ -289,8 +286,7 @@ impl PDFXRef {
             };
             let objid = PyInt::parse_bytes(objid_s, 10)?;
             let genno = PyInt::parse_bytes(genno_s, 10)?;
-            self.offsets
-                .insert(ObjId::int(objid.clone()), XRefPos { strmid: None, index: PyInt::Small(pos), genno });
+            self.offsets.insert(ObjId::int(objid.clone()), XRefPos { strmid: None, index: PyInt::Small(pos), genno });
             // expand ObjStm.
             parser.seek(pos)?;
             let (_, obj) = parser.nextobject()?;
@@ -324,7 +320,8 @@ impl PDFXRef {
             while index < n {
                 let i = index.as_i64().expect("index < len(objs) // 2") as usize;
                 let objid1 = ObjId::new(objs[i * 2].clone())?;
-                self.offsets.insert(objid1, XRefPos { strmid: Some(objid.clone()), index: index.clone(), genno: PyInt::ZERO });
+                self.offsets
+                    .insert(objid1, XRefPos { strmid: Some(objid.clone()), index: index.clone(), genno: PyInt::ZERO });
                 index = index.add(&PyInt::Small(1));
             }
         }

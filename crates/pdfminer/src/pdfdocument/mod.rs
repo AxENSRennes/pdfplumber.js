@@ -59,7 +59,7 @@ pub use xref::{pdfobj_cue, ObjIds, PDFBaseXRef, PDFXRef, PDFXRefStream, XRefPos}
 use crate::data_structures::NumberTree;
 use crate::pdfparser::{FileKind, PDFParser, PDFStreamParser};
 use crate::pdftypes::{
-    decipher_all, dict_value, int_value, list_value, stream_value, str_value, DecipherCallable, ObjId, PDFDict,
+    decipher_all, dict_value, int_value, list_value, str_value, stream_value, DecipherCallable, ObjId, PDFDict,
     PDFList, PDFObject, PDFResolver, PDFStream,
 };
 use crate::psparser::{literal_name, PSLiteral, LIT};
@@ -536,9 +536,8 @@ impl PDFDocument {
             Ok(obj) => Ok(obj),
             Err(e) if e.is_instance(ExcKind::KeyError) => {
                 // PDF-1.1 or prior
-                let not_found = || -> PyResult<PyErr> {
-                    Ok(PyErr::new(ExcKind::PDFDestinationNotFound, pyval_str(name)?))
-                };
+                let not_found =
+                    || -> PyResult<PyErr> { Ok(PyErr::new(ExcKind::PDFDestinationNotFound, pyval_str(name)?)) };
                 let catalog = self.catalog();
                 let Some(dests) = catalog.get("Dests") else {
                     return Err(not_found()?);
@@ -677,10 +676,7 @@ fn n_times_2_plus(n: &PDFObject, index: &PyInt) -> PyResult<PyVal> {
         // a sequence repeated: then sequence + int raises
         PDFObject::Bytes(_) | PDFObject::List(_) => PyVal::Obj(n.clone()),
         other => {
-            return Err(exc::TypeError(format!(
-                "unsupported operand type(s) for *: '{}' and 'int'",
-                other.type_name()
-            )))
+            return Err(exc::TypeError(format!("unsupported operand type(s) for *: '{}' and 'int'", other.type_name())))
         }
     };
     doubled.add(&index)
@@ -897,7 +893,14 @@ enum LabelsState {
     NotStarted,
     /// In range `next - 1` of `ranges`: the current value and its end
     /// (`None`: `itertools.count`).
-    Running { ranges: Vec<(PDFObject, PDFObject)>, next: usize, value: PyInt, end: Option<PyInt>, style: PDFObject, prefix: String },
+    Running {
+        ranges: Vec<(PDFObject, PDFObject)>,
+        next: usize,
+        value: PyInt,
+        end: Option<PyInt>,
+        style: PDFObject,
+        prefix: String,
+    },
     Done,
 }
 

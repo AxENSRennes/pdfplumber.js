@@ -111,13 +111,20 @@ impl PyVal {
         if let (Some(a), Some(b)) = (self.num(), other.num()) {
             return Ok(num_val(a.add(&b)?));
         }
-        let unsupported =
-            || exc::TypeError(format!("unsupported operand type(s) for +: '{}' and '{}'", self.type_name(), other.type_name()));
+        let unsupported = || {
+            exc::TypeError(format!(
+                "unsupported operand type(s) for +: '{}' and '{}'",
+                self.type_name(),
+                other.type_name()
+            ))
+        };
         match (self, other) {
             (PyVal::Obj(PDFObject::Bytes(a)), PyVal::Obj(PDFObject::Bytes(b))) => {
                 Ok(PyVal::Obj(PDFObject::Bytes([&a[..], &b[..]].concat().into())))
             }
-            (PyVal::Obj(PDFObject::Bytes(_)), b) => Err(exc::TypeError(format!("can't concat {} to bytes", b.type_name()))),
+            (PyVal::Obj(PDFObject::Bytes(_)), b) => {
+                Err(exc::TypeError(format!("can't concat {} to bytes", b.type_name())))
+            }
             (PyVal::Obj(PDFObject::List(a)), PyVal::Obj(PDFObject::List(b))) => {
                 let mut items = a.to_vec();
                 items.extend(b.to_vec());

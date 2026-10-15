@@ -82,7 +82,20 @@ impl PDFPage {
         let rotate = rotate.add(&PyInt::Small(360)).modulo(&PyInt::Small(360))?;
         let annots = attrs.get("Annots").unwrap_or(PDFObject::Null);
         let beads = attrs.get("B").unwrap_or(PDFObject::Null);
-        Ok(PDFPage { doc, pageid, attrs, label, lastmod, resources, mediabox, cropbox, contents, rotate, annots, beads })
+        Ok(PDFPage {
+            doc,
+            pageid,
+            attrs,
+            label,
+            lastmod,
+            resources,
+            mediabox,
+            cropbox,
+            contents,
+            rotate,
+            annots,
+            beads,
+        })
     }
 
     // pdfminer/pdfpage.py:189 PDFPage._parse_mediabox
@@ -191,13 +204,13 @@ fn parse_box(value: &PDFObject) -> PyResult<Rect4> {
     let items: Box<dyn Iterator<Item = PyResult<IterItem>>> = match resolve1_none(value)? {
         PDFObject::List(l) => Box::new(l.to_vec().into_iter().map(|v| Ok(IterItem::Obj(resolve1_none(&v)?)))),
         PDFObject::Dict(d) => Box::new(d.keys().into_iter().map(|k| Ok(IterItem::Str(k)))),
-        PDFObject::Bytes(b) => Box::new(
-            b.to_vec().into_iter().map(|c| Ok(IterItem::Obj(PDFObject::Int(PyInt::Small(i64::from(c)))))),
-        ),
+        PDFObject::Bytes(b) => {
+            Box::new(b.to_vec().into_iter().map(|c| Ok(IterItem::Obj(PDFObject::Int(PyInt::Small(i64::from(c)))))))
+        }
         // the sequence protocol: stream[0] raises PDFKeyError
-        stream @ PDFObject::Stream(_) => Box::new(std::iter::once(Err(stream.py_getitem_index0().err().expect(
-            "a stream has no attribute 0",
-        )))),
+        stream @ PDFObject::Stream(_) => {
+            Box::new(std::iter::once(Err(stream.py_getitem_index0().err().expect("a stream has no attribute 0"))))
+        }
         other => return Err(exc::TypeError(format!("'{}' object is not iterable", other.type_name()))),
     };
     parse_rect(items)
@@ -222,9 +235,18 @@ enum CreateState {
     NotStarted,
     /// Walking the page tree: the stack of `depth_first_search` generators
     /// (the `yield from` chain), `visited`, whether a page was yielded.
-    Tree { labels: Labels, stack: Vec<Search>, visited: HashSet<ObjId>, pages: bool },
+    Tree {
+        labels: Labels,
+        stack: Vec<Search>,
+        visited: HashSet<ObjId>,
+        pages: bool,
+    },
     /// The fallback over the xrefs: the xref being read and its ids.
-    Xrefs { labels: Labels, xref: usize, ids: Option<ObjIds<'static>> },
+    Xrefs {
+        labels: Labels,
+        xref: usize,
+        ids: Option<ObjIds<'static>>,
+    },
     Done,
 }
 

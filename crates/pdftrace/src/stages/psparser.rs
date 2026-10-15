@@ -93,18 +93,19 @@ fn form_jobs(lines: &mut Lines, page: &PDFPage) {
     let literal_form = PDFObject::Literal(LIT("Form"));
     let mut visited: HashSet<ObjId> = HashSet::new();
     let mut pending: Vec<(Vec<String>, PDFObject)> = Vec::new();
-    let push_children = |lines: &mut Lines, pending: &mut Vec<(Vec<String>, PDFObject)>, resources: &PDFObject, path: &[String]| {
-        match xobject_entries(resources) {
-            Ok(entries) => {
-                for (name, value) in entries.into_iter().rev() {
-                    let mut child = path.to_vec();
-                    child.push(name);
-                    pending.push((child, value));
+    let push_children =
+        |lines: &mut Lines, pending: &mut Vec<(Vec<String>, PDFObject)>, resources: &PDFObject, path: &[String]| {
+            match xobject_entries(resources) {
+                Ok(entries) => {
+                    for (name, value) in entries.into_iter().rev() {
+                        let mut child = path.to_vec();
+                        child.push(name);
+                        pending.push((child, value));
+                    }
                 }
+                Err(e) => lines.line("xobjects", &[&path_value(path), &canon_exc(&e)]),
             }
-            Err(e) => lines.line("xobjects", &[&path_value(path), &canon_exc(&e)]),
-        }
-    };
+        };
     push_children(lines, &mut pending, &page.resources, &[]);
     while let Some((path, value)) = pending.pop() {
         let checked = (|| -> PyResult<_> {
