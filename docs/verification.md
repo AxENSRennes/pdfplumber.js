@@ -179,6 +179,7 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   | `cmaps.py` | `glyphlist`, `latin_enc`, `fontmetrics`, `encodingdb`, `cmapdb` | `cmaps_unit.rs` | tables, `name2unicode`, `get_encoding`, scripts d'appels sur chaque classe de `cmapdb`, toutes les CMaps prédéfinies lues par le fournisseur des fichiers compacts de `oracle/codegen/cmaps.py`, `CMapParser` sur un corpus adverse `--fuzz 3000` (`synthetic.json`) et, avec `--corpus`, sur chaque flux CMap embarqué de l'ensemble `all` (`corpus.json`) |
   | `text_tables.py` | `pdfplumber::{obj, utils::{clustering, geometry, generic, text}, table}`, `pycompat::listsort` | `text_tables_unit.rs` | tri de CPython (timsort complet), opérateurs Python du modèle d'objets, `cluster_*`, géométrie, motifs de `extract_text_lines`, fonctions de `table.py`, `TableSettings.resolve`, pages adverses (`--fuzz`) passées par les opérations de page (`_plumber_ops.py`), pages aux coordonnées NaN (`_nan_objects.py`, ci-dessous) |
   | `text_tables_real.py` | les mêmes | `text_tables_unit.rs` (`pages_real`) | opérations de page sur les premières pages de l'ensemble `quick` et sur des documents riches en tables ; les pages dont un caractère est un surrogate isolé sont écartées et listées dans `meta.json` |
+  | `document.py` | `pdfparser`, `pdfdocument` (xrefs, `getobj`, flux d'objets, mot de passe, plans, libellés, noms), `pdfpage`, `pdfplumber::page` (boîtes), `pdfinternals.resolve_all`, `pycompat::bytes_format` | `document_unit.rs` | traces des étapes `objects`, `streams`, `pages`, `psparser` sur `adv-objects` et `adv-pages` (régénérés d'abord), `micro` et les petits fichiers de `quick` ; `objects` sur un `io.BytesIO` (erreurs de `seek`/`read` d'un `BytesIO`) ; `api` (`get_outlines`, `get_page_labels`, `lookup_name`, `get_dest`, `PDFPage.get_pages`) ; `bytes % int` (formats générés) ; `PDFXRefFallback.PDFOBJ_CUE` sur chaque caractère Latin-1 |
 
   Les tables générées (`oracle/codegen/`) sont vérifiées par `--check` dans
   `scripts/check.sh` : `libm_tables.py`, `saslprep_tables.py`,
@@ -325,6 +326,33 @@ mal typés. Pour chaque étape, `oracle/adversarial/<étape>.py` génère des PD
 qui interrogeaient Python, sont une bonne source d'idées
 (`git show legacy-pdfjs:test/lowlevel/`).
 
+Générateurs actuels (chacun s'exécute comme module, `python -m
+oracle.adversarial.objects` ; `oracle/unit/document.py` les relance avant
+d'écrire ses cas) :
+
+- `oracle/adversarial/objects.py` → `adv-objects` (276 PDF) : tables xref
+  cassées ou absentes (repli `PDFXRefFallback` et son motif d'en-tête),
+  offsets faux, `startxref` invalide, flux xref aux `/W`, `/Index`,
+  prédicteurs et champs atypiques (flottants, noms, chaînes, négatifs),
+  flux d'objets aux `/N`, `/First`, index et références imbriquées
+  anormaux (ids flottants, booléens, noms, références dans le repli),
+  chaînes et boucles `/Prev`/`/XRefStm`, mises à jour incrémentales,
+  trailer ou `/Root` absents, déchets avant `%PDF` et après `%%EOF`, fins
+  de ligne `\r` seules et `\r\n`, `/Length` indirects, négatifs, énormes,
+  dans un tableau non fermé ou égaux au flux lui-même (`RecursionError`),
+  en-têtes d'objets discordants, frontières de blocs de 4 096 octets, et
+  chaque chiffrement standard (RC4 40/56/128, AES-128, filtres Identity et
+  V2, AES-256 révisions 5 et 6) avec le mot de passe utilisateur,
+  propriétaire, faux ou vide (mots de passe dans `manifest.json`).
+- `oracle/adversarial/pages.py` → `adv-pages` : héritage (`/Resources`,
+  `/MediaBox`, `/CropBox`, `/Rotate`, depuis les nœuds et le catalogue),
+  boucles et partages dans l'arbre, `/Kids` absents ou atypiques (entiers,
+  dicts, flux, noms), repli sans `/Pages`, arbres profonds jusqu'à la
+  limite de récursion, toutes sortes de `/Rotate` (dont `bytes % 360`), de
+  boîtes et de `/Contents`, cycles de références (`MalformedPDFException`
+  de pdfplumber), libellés de pages de tous les styles, plans, arbres de
+  noms et destinations.
+
 ## Mutations
 
 `cargo mutants` (crate `cargo-mutants`) mute le code Rust d'un module
@@ -373,7 +401,9 @@ Les tests à donner à `cargo mutants` pour un module sont ses rejeux
 `utils.rs`, `filters_unit` et `zlib_unit` pour `pycompat::zlib`), et pour
 les fichiers partagés tous les rejeux qui les exercent (`utils.rs` :
 `utils_unit`, `layout_unit`, `filters_unit`, `crypto_unit` ; `pdftypes.rs` :
-`pdftypes_unit`, `filters_unit`).
+`pdftypes_unit`, `filters_unit`, `document_unit` ; `pdfparser.rs`,
+`pdfdocument/*.rs`, `pdfpage.rs`, `pdfplumber/src/page.rs`,
+`utils/pdfinternals.rs`, `pycompat/src/bytes_format.rs` : `document_unit`).
 
 ```sh
 systemd-run --user --scope --quiet -p MemoryMax=5G -p MemorySwapMax=0 -p OOMPolicy=continue \

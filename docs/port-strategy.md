@@ -183,6 +183,15 @@ Lecture :
     `geometry`, `utils/text.py` (mots, `TextMap`, `extract_text`, layout)
     et `table.py` complets, testés sur des pages synthétiques et réelles ;
     `pycompat::listsort` (timsort de CPython, utilisé aussi par le layout).
+- **Vague 2, document** (branche `wave2/document`) : `pdfparser`
+  (`PDFParser`, `PDFStreamParser`), `pdfdocument` (xrefs table/flux/repli,
+  `getobj` et flux d'objets, mot de passe, plans, libellés, noms,
+  destinations), `pdfpage` (`create_pages` paresseux, héritage, repli),
+  `pdftypes::ObjId`, `pycompat::bytes_format`, et de pdfplumber les boîtes
+  de `Page.__init__` (`page.rs` partiel) et `pdfinternals.resolve_all` ;
+  étapes `objects`, `streams`, `pages`, `psparser` côté Rust, à parité sur
+  `all` et sur les corpus adverses `adv-objects`/`adv-pages` ; rejeu
+  `document_unit`.
 - **Vagues suivantes**, dans l'ordre des dépendances :
   1. `pdfparser`, `pdfdocument` (xref, repli, flux d'objets, mot de passe
      via les gestionnaires déjà portés), `pdfpage` : étapes `objects`,

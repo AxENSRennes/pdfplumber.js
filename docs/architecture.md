@@ -135,18 +135,33 @@ Décisions prises avant le port de `pdfparser.py` et `pdfdocument.py` :
 
 - `PDFParser.do_keyword(KEYWORD_STREAM)` lit `int_value(dic["Length"])`
   quand `fallback` est faux (tout PDF dont la table xref est valide, et tout
-  PDF chiffré) ; avec un `/Length` indirect, la résolution passe par
-  `PDFDocument.getobj` → `_getobj_parse`, qui réutilise **le même**
-  parseur (`self._parser.seek(pos)`, dont le `reset()` vide le contexte et la
-  pile du `nextobject` extérieur) pendant que celui-ci est dans
-  `do_keyword`. Le document garde donc son parseur dans un
-  `RefCell<Option<PDFParser>>` : un `getobj` venu de l'extérieur le prend,
-  et la résolution faite depuis `do_keyword` reçoit le parseur en cours
-  (`&mut PDFParser`, contexte explicite : `getobj_in(objid, Some(parser))`,
-  `int_value_in`), sans emprunt du `RefCell`, de sorte que le `seek` et le
-  `reset` imbriqués agissent sur le même état, comme en Python. Un cas
-  adverse de l'étape `objects` le vérifie : un `/Length` indirect dont le
+  PDF chiffré), et `dict_value(dic)` dans tous les cas ; une référence y
+  passe par `PDFDocument.getobj` → `_getobj_parse`, qui réutilise **le
+  même** parseur (`self._parser.seek(pos)`, dont le `reset()` vide le
+  contexte et la pile du `nextobject` extérieur) pendant que celui-ci est
+  dans `do_keyword`. Implémentation (vague 2) : le document garde son
+  parseur dans un emplacement (`RefCell<Option<Box<PDFParser>>>`) ; toute
+  opération qui lit le fichier l'en sort (`PDFDocument::with_parser`), et
+  toute résolution lancée pendant que le parseur tourne (`do_keyword`, le
+  `dict_value` d'un trailer, le `get_data` d'un flux d'xref ou d'un flux
+  d'objets lu pendant `__init__`, `int_value` de `/Prev`) le **prête** au
+  document (`pdfparser::lend`) : l'état du parseur est échangé avec un
+  substitut et remis dans l'emplacement le temps de la résolution, où un
+  `getobj` imbriqué le trouve, puis repris, avec ce que l'imbrication y a
+  laissé, comme en Python. Les résolutions passent ainsi par l'interface
+  ordinaire (`PDFObjRef.resolve`, `PDFResolver`), sans contexte explicite
+  à propager dans `pdftypes`. Un cas adverse de l'étape `objects`
+  (`length-indirect-in-array`) le vérifie : un `/Length` indirect dont le
   dictionnaire du flux est dans un tableau non fermé.
+- Le fichier : `PDFParser` fait `self.fp.seek(pos)` et `self.fp.read(n)`
+  sur des valeurs du fichier (`/Length`, `/Prev`, offsets) ; les erreurs
+  d'un `io.BufferedReader` (`open(path, "rb")`, ce que lit pdfplumber et
+  l'oracle) et d'un `io.BytesIO` diffèrent pour une position ou une
+  longueur négative ou énorme : `pdfparser::FileKind` choisit lesquelles
+  (l'API JS lit des octets ; l'oracle des étapes, un fichier). Non
+  modélisé : le `MemoryError` d'un `BufferedReader.read(n)` qui alloue `n`
+  octets au-delà de la mémoire de la machine, et l'`OSError` d'un `seek`
+  au-delà de la taille maximale de fichier du système de fichiers.
 - `PDFDocument.__init__` résout déjà des références (`Encrypt`, `ID`,
   `Info`, `Root` du trailer) : le document est créé dans un `Rc` dont l'état
   est intérieur (`RefCell`/`Cell`) avant que sa logique d'`__init__` ne
@@ -161,7 +176,11 @@ Décisions prises avant le port de `pdfparser.py` et `pdfdocument.py` :
   littéraux et mots-clés par identité ; `bytes` par valeur ; une liste ou un
   dict lève `TypeError("unhashable type: 'list'")`). `PDFObjRef.objid` reste un
   `PyInt` : pdfminer ne crée de référence qu'à travers `safe_int`
-  (`pdfparser.py`), toujours un `int`.
+  (`pdfparser.py`), toujours un `int`. Implémenté par
+  `pdftypes::ObjId` (l'objet d'origine et l'égalité/le hachage de Python) ;
+  `PDFStream::objid()` rend un `ObjId`. Seul écart connu : le déchiffrement
+  d'un objet dont l'id n'est pas un entier (un document chiffré réparé par
+  `PDFXRefFallback`) n'est pas porté (`NotPorted`).
 - `CMapParser.do_keyword` appelle `CMapDB.get_cmap` (`usecmap`) de façon
   synchrone : le fournisseur de CMaps prédéfinies est synchrone pour le
   cœur ; un chargement paresseux côté navigateur se fait avant l'analyse
