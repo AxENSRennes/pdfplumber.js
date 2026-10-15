@@ -192,7 +192,10 @@ pub fn parse_rect(o: impl IntoIterator<Item = PyResult<PDFObject>>) -> PyResult<
             match it.next() {
                 Some(x) => items.push(x?),
                 None => {
-                    return Err(exc::ValueError(format!("not enough values to unpack (expected 4, got {})", items.len())))
+                    return Err(exc::ValueError(format!(
+                        "not enough values to unpack (expected 4, got {})",
+                        items.len()
+                    )))
                 }
             }
         }
@@ -576,7 +579,7 @@ pub const PDF_DOC_ENCODING: [u16; 256] = [
 /// surrogate and a trailing odd byte are dropped).
 pub fn decode_text(s: &[u8]) -> String {
     if let Some(body) = s.strip_prefix(b"\xfe\xff") {
-        let units = body.chunks_exact(2).map(|p| u16::from_be_bytes([p[0], p[1]]));
+        let units = body.as_chunks::<2>().0.iter().map(|p| u16::from_be_bytes(*p));
         char::decode_utf16(units).filter_map(Result::ok).collect()
     } else {
         s.iter()

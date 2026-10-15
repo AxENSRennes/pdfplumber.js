@@ -12,6 +12,7 @@ use pycompat::PyResult;
 
 use crate::pdftypes::{dict_value, int_value_obj, list_value, PDFDict, PDFList, PDFObject};
 use crate::settings;
+use crate::utils::choplist;
 
 /// pdfminer/data_structures.py:11 `NumberTree`: a PDF number tree (section
 /// 3.8.6 of the PDF Reference).
@@ -58,7 +59,7 @@ impl NumberTree {
             // is resumed once per pair and once more to finish, each time in
             // a frame of its own.
             let nums = nums.to_vec();
-            let mut pairs = nums.chunks_exact(2);
+            let mut pairs = choplist(2, &nums);
             loop {
                 drop(py_frame()?);
                 let Some(pair) = pairs.next() else { break };
@@ -81,7 +82,7 @@ impl NumberTree {
     pub fn values(&self) -> PyResult<Vec<(PDFObject, PDFObject)>> {
         let _frame = py_frame()?;
         let mut values = self.parse()?;
-        debug_assert!(!settings::STRICT);
+        const { assert!(!settings::STRICT) };
         let mut keys = Vec::with_capacity(values.len());
         for (k, _) in &values {
             let _entry = eval_entry()?;

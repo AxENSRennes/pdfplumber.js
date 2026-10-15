@@ -167,7 +167,9 @@ pub fn matches(a: &Value, b: &Value) -> bool {
             x.len() == y.len() && x.iter().zip(y).all(|(p, q)| matches(&p.0, &q.0) && matches(&p.1, &q.1))
         }
         (Value::Named { name: n1, fields: f1 }, Value::Named { name: n2, fields: f2 }) => {
-            n1 == n2 && f1.len() == f2.len() && f1.iter().zip(f2).all(|(p, q)| matches(&p.0, &q.0) && matches(&p.1, &q.1))
+            n1 == n2
+                && f1.len() == f2.len()
+                && f1.iter().zip(f2).all(|(p, q)| matches(&p.0, &q.0) && matches(&p.1, &q.1))
         }
         _ => a.same(b),
     }

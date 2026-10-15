@@ -14,10 +14,11 @@ use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
 use pdfminer::layout::{
-    CharDisp, CurveKind, IdSource, LAParams, LTCharFont, LTChar, LTComponent, LTCurve, LTFigure, LTImage, LTItem,
+    CharDisp, CurveKind, IdSource, LAParams, LTChar, LTCharFont, LTComponent, LTCurve, LTFigure, LTImage, LTItem,
     LTLayoutContainer, LTPage, LTPayload, LTTextBox, LTTextLine, TextGroupElement, TextLineElement, TextLineKind,
 };
 use pdfminer::pdfcolor::PDFColorSpace;
+use pdfminer::utils::PlaneItem;
 use pdfminer::pdftypes::{PDFObject, PDFResolver, PDFStream};
 use pdftrace::canon::{canon, canon_exc};
 use pdftrace::unit::UnitData;
@@ -426,6 +427,9 @@ impl TreeDumper<'_> {
 struct RecordedIds<'a> {
     ranks: HashMap<(i64, i64), u64>,
     index: &'a HashMap<usize, i64>,
+    /// The ids already given, by object (the contents of a box or group
+    /// never change once it is made).
+    given: HashMap<usize, u64>,
 }
 
 impl RecordedIds<'_> {
@@ -460,8 +464,13 @@ impl RecordedIds<'_> {
 
 impl IdSource<TP> for RecordedIds<'_> {
     fn id(&mut self, obj: &TextGroupElement<TP>) -> u64 {
+        if let Some(id) = self.given.get(&obj.plane_id()) {
+            return *id;
+        }
         let key = self.key(obj);
-        *self.ranks.get(&key).unwrap_or_else(|| panic!("no Python id for the box or group {key:?}"))
+        let id = *self.ranks.get(&key).unwrap_or_else(|| panic!("no Python id for the box or group {key:?}"));
+        self.given.insert(obj.plane_id(), id);
+        id
     }
 }
 
@@ -542,7 +551,7 @@ fn replay_layout(name: &str) {
                     ((int_arg(&r[0]), int_arg(&r[1])), int_arg(&r[2]) as u64)
                 })
                 .collect();
-            let mut ids = RecordedIds { ranks, index: &index };
+            let mut ids = RecordedIds { ranks, index: &index, given: HashMap::new() };
             let out = recursion::with_depth(depth(&run[1]), || page.analyze_with_ids(&lp, &mut ids));
             let actual = match out {
                 Ok(()) => canon(&TreeDumper { index: &index }.page(&page)),
@@ -604,9 +613,12 @@ fn gray() -> Rc<PDFColorSpace> {
 fn ltchar() {
     replay("layout", "ltchar", |a| {
         let f = items(&a[1]);
-        let font = TestFont { fontname: f[0].clone(), vertical: matches!(f[1], Value::Bool(true)), descent: num(&f[2]) };
+        let font =
+            TestFont { fontname: f[0].clone(), vertical: matches!(f[1], Value::Bool(true)), descent: num(&f[2]) };
         let textdisp = match &a[7] {
-            Value::Tuple(t) => CharDisp::Vertical(if matches!(t[0], Value::None) { None } else { Some(num(&t[0])) }, num(&t[1])),
+            Value::Tuple(t) => {
+                CharDisp::Vertical(if matches!(t[0], Value::None) { None } else { Some(num(&t[0])) }, num(&t[1]))
+            }
             v => CharDisp::Scalar(num(v)),
         };
         let c = LTChar::<TP>::new(
@@ -653,7 +665,18 @@ fn objects() {
         }
         "LTLine" => {
             let pts = items(&a[2]);
-            let c = LTCurve::<TP>::new_line(num(&a[1]), nums(&pts[0]), nums(&pts[1]), false, false, false, None, None, None, None);
+            let c = LTCurve::<TP>::new_line(
+                num(&a[1]),
+                nums(&pts[0]),
+                nums(&pts[1]),
+                false,
+                false,
+                false,
+                None,
+                None,
+                None,
+                None,
+            );
             result(c, |c| raw_curve(&c))
         }
         "LTRect" => {
@@ -676,7 +699,8 @@ fn objects() {
         }
         "LAParams" => {
             let bf = if matches!(a[1], Value::None) { None } else { Some(num(&a[1])) };
-            let lp = LAParams::new(Num::Float(0.5), Num::Float(2.0), Num::Float(0.5), Num::Float(0.1), bf, false, false);
+            let lp =
+                LAParams::new(Num::Float(0.5), Num::Float(2.0), Num::Float(0.5), Num::Float(0.1), bf, false, false);
             // the value given back as it was given (a bool stays a bool)
             result(lp, |_| a[1].clone())
         }

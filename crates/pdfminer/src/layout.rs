@@ -68,8 +68,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::pdfcolor::PDFColorSpace;
 use crate::pdftypes::{PDFList, PDFObject, PDFStream};
 use crate::utils::{
-    apply_matrix_rect, format_fixed, fsplit, get_bound, inf, neg_inf, py_max2, py_min2, uniq, Matrix,
-    PathSegment, Plane, PlaneItem, Point, Rect,
+    apply_matrix_rect, format_fixed, fsplit, get_bound, inf, neg_inf, py_max2, py_min2, uniq, Matrix, PathSegment,
+    Plane, PlaneItem, Point, Rect,
 };
 
 // ---------------------------------------------------------------------------
@@ -561,13 +561,27 @@ pub struct LTImage {
 
 impl LTImage {
     /// `__dict__` keys, in order.
-    pub const DICT_KEYS: [&'static str; 13] =
-        ["x0", "y0", "x1", "y1", "width", "height", "bbox", "name", "stream", "srcsize", "imagemask", "bits", "colorspace"];
+    pub const DICT_KEYS: [&'static str; 13] = [
+        "x0",
+        "y0",
+        "x1",
+        "y1",
+        "width",
+        "height",
+        "bbox",
+        "name",
+        "stream",
+        "srcsize",
+        "imagemask",
+        "bits",
+        "colorspace",
+    ];
 
     // pdfminer/layout.py:314 LTImage.__init__
     pub fn new(name: String, stream: Rc<PDFStream>, bbox: Rect) -> PyResult<LTImage> {
         let comp = LTComponent::new(bbox)?;
-        let srcsize = (stream.get_any(&["W", "Width"], PDFObject::Null), stream.get_any(&["H", "Height"], PDFObject::Null));
+        let srcsize =
+            (stream.get_any(&["W", "Width"], PDFObject::Null), stream.get_any(&["H", "Height"], PDFObject::Null));
         let imagemask = stream.get_any(&["IM", "ImageMask"], PDFObject::Null);
         let bits = stream.get_any(&["BPC", "BitsPerComponent"], PDFObject::Int(PyInt::Small(1)));
         let mut colorspace = stream.get_any(&["CS", "ColorSpace"], PDFObject::Null);
@@ -1142,10 +1156,7 @@ impl<P: LTPayload> LTTextGroup<P> {
             let o = obj.comp();
             keys.push(if self.tbrl {
                 // -(1 + boxes_flow) * (obj.x0 + obj.x1) - (1 - boxes_flow) * obj.y1
-                one.add(boxes_flow)?
-                    .neg()
-                    .mul(&o.x0.add(&o.x1)?)?
-                    .sub(&one.sub(boxes_flow)?.mul(&o.y1)?)?
+                one.add(boxes_flow)?.neg().mul(&o.x0.add(&o.x1)?)?.sub(&one.sub(boxes_flow)?.mul(&o.y1)?)?
             } else {
                 // (1 - boxes_flow) * obj.x0 - (1 + boxes_flow) * (obj.y0 + obj.y1)
                 one.sub(boxes_flow)?.mul(&o.x0)?.sub(&one.add(boxes_flow)?.mul(&o.y0.add(&o.y1)?)?)?
@@ -1389,10 +1400,7 @@ fn dist(obj1: &LTComponent, obj2: &LTComponent) -> PyResult<Num> {
     let y0 = py_min2(&obj1.y0, &obj2.y0);
     let x1 = py_max2(&obj1.x1, &obj2.x1);
     let y1 = py_max2(&obj1.y1, &obj2.y1);
-    x1.sub(&x0)?
-        .mul(&y1.sub(&y0)?)?
-        .sub(&obj1.width.mul(&obj1.height)?)?
-        .sub(&obj2.width.mul(&obj2.height)?)
+    x1.sub(&x0)?.mul(&y1.sub(&y0)?)?.sub(&obj1.width.mul(&obj1.height)?)?.sub(&obj2.width.mul(&obj2.height)?)
 }
 
 impl<P: LTPayload> LTLayoutContainer<P> {

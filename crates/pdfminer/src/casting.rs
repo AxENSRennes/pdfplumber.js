@@ -120,7 +120,9 @@ pub fn safe_rect_list(value: &PDFObject) -> PyResult<Option<[f64; 4]>> {
     let values: Vec<Item> = match value {
         PDFObject::List(l) => l.borrow().iter().take(4).cloned().map(Item::Obj).collect(),
         PDFObject::Dict(d) => d.keys().into_iter().take(4).map(Item::Str).collect(),
-        PDFObject::Bytes(b) => b.iter().take(4).map(|&c| Item::Obj(PDFObject::Int(PyInt::Small(i64::from(c))))).collect(),
+        PDFObject::Bytes(b) => {
+            b.iter().take(4).map(|&c| Item::Obj(PDFObject::Int(PyInt::Small(i64::from(c))))).collect()
+        }
         PDFObject::Stream(_) => {
             value.py_getitem_index0()?;
             unreachable!("a stream has no attribute 0")
