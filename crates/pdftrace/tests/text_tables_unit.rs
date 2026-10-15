@@ -152,6 +152,14 @@ fn sort_cases() {
             Value::List(perm.into_iter().map(|k| Value::Int(pycompat::PyInt::Small(k as i64))).collect())
         });
         c.check(|| format!("case {i}"), &got, &out);
+        // The same sort through sort_by_key (keys computed first, then the
+        // items moved by the permutation).
+        let mut items: Vec<usize> = (0..xs.len()).collect();
+        let r = pycompat::listsort::sort_by_key(&mut items, |&k| Ok(xs[k].clone()), |a, b| a.lt(b));
+        let got = result(r, |()| {
+            Value::List(items.into_iter().map(|k| Value::Int(pycompat::PyInt::Small(k as i64))).collect())
+        });
+        c.check(|| format!("case {i} (sort_by_key)"), &got, &out);
     });
     c.finish(1000);
 }

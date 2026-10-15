@@ -529,6 +529,47 @@ def sort_cases():
             out = exc_value(e)
         yield [xs], out
     yield from gallop_sort_cases()
+    yield from run_sort_cases()
+
+
+def run_sort_cases():
+    """Natural runs of very different lengths (ascending or descending,
+    shorter and longer than ``minrun``), with NaNs inside: the powersort
+    policy (``found_new_run``) and ``merge_force_collapse`` decide which
+    runs merge in which order, which shows when the order is not total."""
+    rng = random.Random(13)
+    nan = float("nan")
+    for i in range(600):
+        xs = []
+        target = rng.choice([70, 200, 600, 1500, 3000])
+        while len(xs) < target:
+            n = rng.choice([1, 2, 5, 20, 33, 64, 100, 300, 900])
+            base = rng.random() * 1000
+            run = [base + k * rng.choice([0.5, 1, 3]) for k in range(n)]
+            if rng.random() < 0.35:
+                run.reverse()
+            xs.extend(run)
+        for _ in range(rng.randint(0, 8)):
+            xs[rng.randrange(len(xs))] = nan
+        try:
+            out = sorted(range(len(xs)), key=xs.__getitem__)
+        except Exception as e:
+            out = exc_value(e)
+        yield [xs], out
+    # runs of equal lengths: ties in merge_force_collapse's choice
+    for i in range(400):
+        length = rng.choice([40, 64, 65, 100, 128, 250])
+        xs = []
+        for k in range(rng.randint(3, 12)):
+            base = rng.random() * 100
+            xs.extend(base + j for j in range(length))
+        for _ in range(rng.randint(1, 8)):
+            xs[rng.randrange(len(xs))] = nan
+        try:
+            out = sorted(range(len(xs)), key=xs.__getitem__)
+        except Exception as e:
+            out = exc_value(e)
+        yield [xs], out
 
 
 def gallop_sort_cases():
