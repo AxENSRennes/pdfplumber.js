@@ -17,3 +17,4 @@ workspace = true
 
 [dev-dependencies]
 indexmap.workspace = true
+pdfplumber.workspace = true
