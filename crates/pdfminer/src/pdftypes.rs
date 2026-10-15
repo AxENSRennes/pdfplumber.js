@@ -322,9 +322,11 @@ impl PDFObject {
         }
     }
 
-    /// `repr(x)`: raises `RecursionError` where CPython runs out of C
-    /// recursion units (see the module documentation), and `ValueError` for
-    /// an int of more than 4 300 digits.
+    /// `repr(x)` as `PyObject_Repr` (the `!r` of an f-string): raises
+    /// `RecursionError` where CPython runs out of C recursion units (see the
+    /// module documentation), and `ValueError` for an int of more than
+    /// 4 300 digits. A call of the builtin `repr(x)` takes one more unit,
+    /// the caller's (`pycompat::recursion`).
     pub fn repr(&self) -> PyResult<String> {
         Renderer::render(Item::Obj(self.clone()), Conv::Repr)
     }

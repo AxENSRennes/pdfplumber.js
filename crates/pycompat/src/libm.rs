@@ -337,14 +337,48 @@ mod tests {
     fn inputs(n: usize) -> Vec<(f64, f64)> {
         let mut rng = Rng(20261014);
         let mut out = Vec::with_capacity(n);
+        let sign = |rng: &mut Rng| if rng.next() & 1 == 0 { 1.0 } else { -1.0 };
         for i in 0..n {
-            let (x, y) = match i % 6 {
+            let (x, y) = match i % 12 {
                 0 => (f64::from_bits(rng.next()), f64::from_bits(rng.next())),
                 1 => (rng.unit() * 1e4, rng.unit() * 20.0 - 10.0),
                 2 => ((rng.next() % 400) as f64 + 2.0, -((rng.next() % 6) as f64) - 1.0),
                 3 => (rng.unit() * 2.0, (rng.unit() - 0.5) * 2000.0),
                 4 => (1.0 + (rng.unit() - 0.5) * 1e-6, (rng.unit() - 0.5) * 1e9),
-                _ => (f64::from_bits(rng.next() & 0x000f_ffff_ffff_ffff), rng.unit() * 2.0 - 0.5),
+                5 => (f64::from_bits(rng.next() & 0x000f_ffff_ffff_ffff), rng.unit() * 2.0 - 0.5),
+                // |y| < 2**-65: 1 + y*log(x), on both sides of 1
+                6 => (rng.unit() * 4.0, sign(&mut rng) * rng.unit() * 2f64.powi(-65 - (rng.next() % 20) as i32)),
+                // |y| >= 2**63: overflow or underflow, bases on both sides of 1
+                7 => {
+                    (rng.unit() * 2.0, sign(&mut rng) * 2f64.powi(63 + (rng.next() % 900) as i32) * (1.0 + rng.unit()))
+                }
+                // negative bases to integral powers (odd: negative results), and
+                // results in the subnormal range, of both signs
+                8 => (-(rng.unit() * 0.9 + 0.05), ((rng.next() % 1200) as f64) + 900.0),
+                9 => (-(rng.unit() * 100.0), ((rng.next() % 81) as f64) - 40.0),
+                // exp(x + xtail) with |x| < 2**-54: bases next to 1, small powers
+                10 => (
+                    1.0 + sign(&mut rng) * f64::EPSILON * (1 + rng.next() % 4) as f64,
+                    sign(&mut rng) * rng.unit() * 0.4,
+                ),
+                // zero, infinite, nan (signaling ones included) and subnormal operands
+                _ => {
+                    const ODD: [u64; 6] = [
+                        0x7ff0_0000_0000_0001, // signaling NaN
+                        0xfff4_0000_0000_0000, // negative signaling NaN
+                        0x7ff8_0000_0000_0000, // quiet NaN
+                        0x7ff0_0000_0000_0000, // inf
+                        0x0000_0000_0000_0003, // subnormal
+                        0x8000_0000_0000_0000, // -0.0
+                    ];
+                    let special = f64::from_bits(ODD[(rng.next() % 6) as usize]);
+                    let other = [1.0, -1.0, 0.0, 3.0, -3.0, 0.5, 2.0, -0.5][(rng.next() % 8) as usize];
+                    if rng.next() & 1 == 0 {
+                        (special, other)
+                    } else {
+                        (other, special)
+                    }
+                }
             };
             out.push((x, y));
         }

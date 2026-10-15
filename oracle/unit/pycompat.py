@@ -268,8 +268,14 @@ def pow_operands(rng):
         return x, 744.4 / -math.log(x) * rng.uniform(0.95, 1.01)
     if r < 0.85:  # subnormal bases
         return rng.random() * 2.0**-1022, rng.uniform(-0.5, 1.5)
-    if r < 0.95:  # integral exponents of negative bases
-        return -rng.uniform(0, 100), float(rng.randint(-40, 40))
+    if r < 0.9:  # integral exponents of negative bases, results down to the subnormals
+        return -rng.uniform(0.05, 100), float(rng.randint(-40, 1100))
+    if r < 0.93:  # |b| < 2**-65: 1 + b*log(a)
+        return rng.uniform(0, 4), rng.choice([1, -1]) * rng.random() * 2.0 ** -rng.randint(65, 90)
+    if r < 0.96:  # |b| >= 2**63: overflow or underflow
+        return rng.uniform(0, 2), rng.choice([1, -1]) * 2.0 ** rng.randint(63, 1000)
+    if r < 0.98:  # bases next to 1, small powers: exp of less than 2**-54
+        return 1 + rng.choice([1, -1]) * 2.0**-52 * rng.randint(1, 4), rng.uniform(-0.4, 0.4)
     return abs(rand_float(rng)), rand_float(rng)
 
 
