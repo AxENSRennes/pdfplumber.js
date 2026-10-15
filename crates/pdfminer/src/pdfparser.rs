@@ -40,6 +40,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::LazyLock;
 
 use pycompat::io::{BytesIO, Pos};
+use pycompat::recursion::{py_frame, py_frames};
 use pycompat::{exc, ExcKind, PyInt, PyResult};
 
 use crate::casting::safe_int;
@@ -204,12 +205,19 @@ impl PSStackParser<PDFParserExt> {
             // pop(1) returned []: the unpacking failed
             return Err(exc::PDFSyntaxError("Invalid stream dictionary: []"));
         };
-        let dic = lend(self, |_| dict_value(&dic))?;
+        // dict_value and the resolve1 it calls: a frame each
+        let dic = lend(self, |_| {
+            let _frames = py_frames(2)?;
+            dict_value(&dic)
+        })?;
         let mut objlen = PyInt::ZERO;
         if !self.ext.fallback {
             // try: objlen = int_value(dic["Length"]) except KeyError: (STRICT)
             if let Some(length) = dic.get("Length") {
-                objlen = match lend(self, |_| int_value_obj(&length))? {
+                objlen = match lend(self, |_| {
+                    let _frames = py_frames(2)?;
+                    int_value_obj(&length)
+                })? {
                     PDFObject::Int(i) => i,
                     PDFObject::Bool(b) => PyInt::Small(i64::from(b)),
                     _ => unreachable!("int_value returns an int or a bool"),
@@ -301,6 +309,7 @@ impl PSStackParserExt for PDFParserExt {
     // pdfminer/pdfparser.py:55 PDFParser.do_keyword
     /// Handles PDF-related keywords.
     fn do_keyword(p: &mut PDFParser, pos: Pos, token: PSKeyword) -> PyResult<()> {
+        let _frame = py_frame()?;
         let k = p.ext.keywords;
         if token == k.xref || token == k.startxref {
             let objs = p.pop(1);
@@ -361,6 +370,7 @@ impl PSStackParserExt for PDFStreamParserExt {
 
     // pdfminer/pdfparser.py:155 PDFStreamParser.do_keyword
     fn do_keyword(p: &mut PDFStreamParser, pos: Pos, token: PSKeyword) -> PyResult<()> {
+        let _frame = py_frame()?;
         let k = p.ext.keywords;
         if token == k.r {
             // reference to indirect object
