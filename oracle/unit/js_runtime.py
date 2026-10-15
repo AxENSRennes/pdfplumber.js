@@ -14,6 +14,12 @@ typed JSON:
   for ``list(CMapDB.get_cmap(name).decode(code))`` on random codes, and
   ``{"in": ["unichr", collection, vertical, [cids]], "out": [str or
   ["KeyError", str(e)]]}`` for ``CMapDB.get_unicode_map(...).get_unichr``;
+- ``documents.jsonl``: CJK documents whose fonts use predefined CMaps:
+  ``{"in": [path, page_number], "out": {"text": page.extract_text(),
+  "cmaps": [...], "umaps": [...]}}``, the names of the CMaps and unicode
+  maps pdfminer loaded for the page (from empty ``CMapDB`` caches): what
+  the lazy loading of ``dist/cmaps/`` must fetch (replayed once the page
+  layer lands);
 - ``text.jsonl``: pages of real PDFs (``chars``, ``edges``, ``bbox`` of
   pdfplumber) and the results of the pdfplumber functions the boundary
   exposes before the page layer: ``utils.extract_text``,
@@ -78,6 +84,11 @@ SEARCHES = [
 TEXTMAP_KWARGS = [{}, {"layout": True}]
 TABLE_SETTINGS = [None, {"vertical_strategy": "text", "horizontal_strategy": "text"}, {"snap_tolerance": 1}]
 
+DOCUMENTS = [
+    ("upstream/pdfjs/test/pdfs/noembed-sjis.pdf", 1),
+    ("upstream/pdfplumber-python/tests/pdfs/pr-136-example.pdf", 1),
+]
+
 CMAP_NAMES = ["UniJIS-UCS2-H", "UniJIS-UCS2-V", "90ms-RKSJ-H", "GBK-EUC-H", "UniGB-UCS2-H", "B5pc-H", "UniCNS-UCS2-H", "KSC-EUC-H", "UniKS-UCS2-H", "EUC-V"]
 COLLECTIONS = ["Adobe-Japan1", "Adobe-GB1", "Adobe-CNS1", "Adobe-Korea1"]
 
@@ -97,6 +108,17 @@ def exception_cases():
         found[f"{cls.__module__}.{cls.__qualname__}"] = cls
     for qualified, cls in sorted(found.items()):
         yield [qualified], [f"{c.__module__}.{c.__qualname__}" for c in cls.__mro__]
+
+
+def document_cases():
+    root = corpus_root()
+    for rel, number in DOCUMENTS:
+        CMapDB._cmap_cache.clear()
+        CMapDB._umap_cache.clear()
+        with pdfplumber.open(root / rel) as pdf:
+            text = pdf.pages[number - 1].extract_text()
+        out = {"text": text, "cmaps": sorted(CMapDB._cmap_cache), "umaps": sorted(CMapDB._umap_cache)}
+        yield [rel, number], out
 
 
 def cmap_cases():
@@ -191,9 +213,10 @@ def text_cases():
 def main():
     require_oracle_python()
     n_exc = write_cases(MODULE, "exceptions", exception_cases())
+    n_doc = write_cases(MODULE, "documents", document_cases())
     n_cmap = write_cases(MODULE, "cmaps", cmap_cases())
     n_text = write_cases(MODULE, "text", text_cases())
-    write_meta(MODULE, cases={"exceptions": n_exc, "cmaps": n_cmap, "text": n_text})
+    write_meta(MODULE, cases={"exceptions": n_exc, "documents": n_doc, "cmaps": n_cmap, "text": n_text})
     print(f"{MODULE}: {n_exc} exception classes, {n_cmap} CMap cases, {n_text} pages")
 
 

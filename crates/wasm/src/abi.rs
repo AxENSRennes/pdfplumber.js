@@ -85,3 +85,20 @@ pub extern "C" fn pp_result_free() {
 pub extern "C" fn pp_buffers() -> usize {
     BUFFERS.with(|b| b.borrow().len())
 }
+
+/// A buffer of `pp_alloc` filled with `bytes` (what JavaScript does through
+/// the memory), for native callers and tests.
+pub fn put(bytes: &[u8]) -> usize {
+    let ptr = pp_alloc(bytes.len());
+    BUFFERS.with(|b| {
+        if let Some(buf) = b.borrow_mut().get_mut(&ptr) {
+            buf.copy_from_slice(bytes);
+        }
+    });
+    ptr
+}
+
+/// A copy of the last response (what JavaScript reads through the memory).
+pub fn last_response() -> Vec<u8> {
+    RESULT.with(|r| r.borrow().clone())
+}

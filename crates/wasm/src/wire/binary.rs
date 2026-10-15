@@ -499,6 +499,10 @@ impl Reader<'_> {
         let blob = String::from_utf8(blob).map_err(|_| malformed("string table is not UTF-8"))?;
         self.pos = self.pos.next_multiple_of(4);
         let n_plain = count.checked_sub(n_special).ok_or_else(|| malformed("string counts"))?;
+        // every string has a 4-byte offset: the counts cannot exceed the block
+        if n_plain > (self.b.len() - self.pos) / 4 {
+            return Err(malformed("string counts"));
+        }
         let mut plain = Vec::with_capacity(n_plain);
         let units: Vec<u16> = blob.encode_utf16().collect();
         let mut start = 0usize;
@@ -599,7 +603,8 @@ pub fn decode(block: &[u8]) -> PyResult<PyValue> {
                     // only the zero padding that aligns the string table may follow
                     let rest =
                         block.get(r.pos..body_end).ok_or_else(|| malformed("value overlaps the string table"))?;
-                    if rest.len() >= 4 || rest.iter().any(|&b| b != 0) {
+                    let padding = if table_offset == 0 { 0 } else { 3 };
+                    if rest.len() > padding || rest.iter().any(|&b| b != 0) {
                         return Err(malformed("trailing bytes"));
                     }
                     return Ok(value);

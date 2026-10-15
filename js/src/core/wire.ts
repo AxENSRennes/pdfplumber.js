@@ -157,7 +157,8 @@ class Reader {
     this.pos += blobLen;
     this.align(4);
     const nPlain = count - nSpecial;
-    if (nPlain < 0) throw new WireError("string counts");
+    // every string has a 4-byte offset or entry: the counts cannot exceed the block
+    if (nPlain < 0 || count * 4 > this.u8.length - this.pos) throw new WireError("string counts");
     const endsAt = this.pos;
     this.pos += nPlain * 4;
     const strings: string[] = new Array(count);

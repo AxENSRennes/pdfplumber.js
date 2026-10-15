@@ -7,8 +7,7 @@
 // Needs `node scripts/build.mjs` (dist/) and the corpus of
 // crates/wasm/examples/bench_corpus.rs.
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, firefox, webkit } from "playwright";
@@ -59,7 +58,10 @@ for (const [name, type] of [
 
 if (only.includes("system-firefox") && existsSync(systemFirefox)) {
   process.stderr.write(`system firefox (${systemFirefox})...\n`);
-  const profile = mkdtempSync(join(tmpdir(), "pp-ff-"));
+  // a fresh profile under the cache (a sandboxed /tmp may be another one for Firefox)
+  const cacheDir = join(process.env.PDFPLUMBER_ROOT ?? ROOT, ".cache/bench");
+  mkdirSync(cacheDir, { recursive: true });
+  const profile = mkdtempSync(join(cacheDir, "firefox-profile-"));
   const version = await new Promise((ok) => {
     const v = spawn(systemFirefox, ["--version"]);
     let s = "";
