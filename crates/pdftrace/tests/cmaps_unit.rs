@@ -591,3 +591,105 @@ fn parse_real_corpus() {
     check_marker(&data, "corpus");
     replay_canon(&data, "corpus", 1000, parse_job);
 }
+
+// -- the compact format of the predefined CMaps (the port's own format, not pdfminer's) ----------
+
+/// A compact file: the header, then the given attributes.
+fn compact(attrs: &[&[u8]]) -> Vec<u8> {
+    let mut out = b"PMCM\x01".to_vec();
+    out.push(u8::try_from(attrs.len()).unwrap());
+    for a in attrs {
+        out.extend_from_slice(a);
+    }
+    out
+}
+
+#[test]
+fn compact_format() {
+    use pdfminer::cmapdb::CMapModule;
+    // IS_VERTICAL, then CODE2CID {1: 7, 2: 8, 3: 9, 0x41: {0x42: 300}}, then the two unicode maps
+    let vertical: &[u8] = b"\x0bIS_VERTICALB\x01";
+    let code2cid: &[u8] = b"\x08CODE2CIDC\x02\x06\x01\x07\x01\x41\x01\x02\x42\xac\x02";
+    let h: &[u8] = b"\x0cCID2UNICHR_HU\x02\x04\x05\x41\x01\x07\x02\xc3\xa9";
+    let v: &[u8] = b"\x0cCID2UNICHR_VU\x00";
+    let m = CMapModule::parse("X", &compact(&[vertical, code2cid, h, v])).expect("a valid file");
+    assert_eq!(m.is_vertical, Some(true));
+    let c2c = m.code2cid.as_ref().expect("CODE2CID");
+    let cid = |k: u32| match c2c.get(&k) {
+        Some(Code2CidValue::Cid(c)) => c.clone(),
+        other => panic!("{other:?}"),
+    };
+    assert_eq!((cid(1), cid(2), cid(3)), (PyInt::Small(7), PyInt::Small(8), PyInt::Small(9)));
+    assert_eq!(c2c.len(), 4);
+    let Some(Code2CidValue::Map(sub)) = c2c.get(&0x41) else { panic!("a nested dict") };
+    assert_eq!(sub.get(&0x42), Some(&Code2CidValue::Cid(PyInt::Small(300))));
+    let h = m.cid2unichr_h.as_ref().expect("H");
+    let get = |k: i64| h.get(&PyInt::Small(k)).cloned();
+    assert_eq!((get(5), get(6), get(7), h.len()), (Some("A".into()), Some("B".into()), Some("\u{e9}".into()), 3));
+    assert!(m.cid2unichr_v.as_ref().expect("V").is_empty());
+    let cmap = CMap::new_py("X", &m).expect("a CMap");
+    assert!(cmap.is_vertical());
+    assert_eq!(cmap.decode_cids(b"\x01\x41\x42\x03\x41"), [7, 300, 9].map(PyInt::Small));
+    let err = UnicodeMap::new_py("X", &CMapModule::parse("X", &compact(&[vertical])).unwrap(), false).unwrap_err();
+    assert_eq!(err.message, "type object 'X' has no attribute 'CID2UNICHR_H'");
+
+    // malformed files
+    let bad: &[(&[u8], &str)] = &[
+        (b"PMCX\x01\x00", "not a version 1 compact CMap"),
+        (b"PMCM\x02\x00", "not a version 1 compact CMap"),
+        (b"PMC", "truncated data"),
+        (b"PMCM\x01\x00\x00", "trailing bytes"),
+        (b"PMCM\x01\x01\x0bIS_VERTICALC\x00", "unexpected attribute IS_VERTICAL (tag 67)"),
+        (b"PMCM\x01\x01\x02X\xffB\x00", "invalid UTF-8"),
+        (b"PMCM\x01\x01\x08CODE2CIDC\x01\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x01", "varint too long"),
+        (b"PMCM\x01\x01\x08CODE2CIDC\x01\x01\x80\x80\x80\x80\x10\x00", "key out of range"),
+        (b"PMCM\x01\x01\x08CODE2CIDC\x01\x04\xff\xff\xff\xff\x0f\x00", "key out of range"),
+        (b"PMCM\x01\x01\x08CODE2CIDC\x01\x04\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01", "value out of range"),
+        (b"PMCM\x01\x01\x0cCID2UNICHR_HU\x01\x04\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x41", "value out of range"),
+        (b"PMCM\x01\x01\x0cCID2UNICHR_HU\x01\x02\x00\x80\xb0\x03", "not a character"),
+        (b"PMCM\x01\x01\x0cCID2UNICHR_HU\x01\x04\x00\xff\xff\x43", "not a character"),
+        (b"PMCM\x01\x01\x0cCID2UNICHR_HU\x01\x04\x00\xff\xff\xff\xff\x0f", "not a character"),
+        (b"PMCM\x01\x01\x0cCID2UNICHR_HU\x01\x04\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01", "not a character"),
+        (b"PMCM\x01\x01\x0cCID2UNICHR_HU\x01\x01\x00\x02\xc3", "truncated data"),
+    ];
+    for (data, msg) in bad {
+        assert_eq!(CMapModule::parse("X", data).unwrap_err(), *msg, "{data:?}");
+    }
+    let nested = |levels: usize| {
+        let mut data = b"PMCM\x01\x01\x08CODE2CIDC".to_vec();
+        for _ in 0..levels {
+            data.extend_from_slice(b"\x01\x01\x00");
+        }
+        data.push(0);
+        data
+    };
+    assert!(CMapModule::parse("X", &nested(64)).is_ok());
+    assert_eq!(CMapModule::parse("X", &nested(65)).unwrap_err(), "tree too deep");
+}
+
+#[test]
+fn providers() {
+    use pdfminer::cmapdb::CMapProvider;
+    struct Fixed(Vec<u8>);
+    impl CMapProvider for Fixed {
+        fn load(&self, name: &str) -> Option<Vec<u8>> {
+            (name == "Corrupt").then(|| self.0.clone())
+        }
+    }
+    CMapDB::set_provider(None);
+    let err = CMapDB::get_cmap("H").err().expect("no provider: not found");
+    assert_eq!((err.kind.name(), err.message.as_str()), ("CMapNotFound", "H"));
+    CMapDB::set_provider(Some(Rc::new(Fixed(b"PMCM".to_vec()))));
+    let err = CMapDB::get_cmap("Corrupt").err().expect("corrupt data");
+    assert_eq!(err.message, "corrupt compact CMap \"Corrupt\": truncated data");
+    // a directory provider serves only the names it lists
+    let dir = std::env::temp_dir().join(format!("cmaps-unit-provider-{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("names.txt"), "A\n").unwrap();
+    fs::write(dir.join("A.pdfcmap"), b"a").unwrap();
+    fs::write(dir.join("B.pdfcmap"), b"b").unwrap();
+    let provider = DirCMapProvider::new(&dir).unwrap();
+    assert_eq!((provider.load("A"), provider.load("B")), (Some(b"a".to_vec()), None));
+    assert!(DirCMapProvider::new(dir.join("missing")).is_err());
+    fs::remove_dir_all(&dir).unwrap();
+}

@@ -772,10 +772,6 @@ impl Reader<'_> {
         Err("varint too long".into())
     }
 
-    fn u32(&mut self) -> Result<u32, String> {
-        u32::try_from(self.varint()?).map_err(|_| "value out of range".to_string())
-    }
-
     fn text(&mut self) -> Result<String, String> {
         let n = usize::try_from(self.varint()?).map_err(|_| "length out of range")?;
         String::from_utf8(self.take(n)?.to_vec()).map_err(|_| "invalid UTF-8".to_string())
@@ -788,16 +784,18 @@ impl Reader<'_> {
         let mut d = Code2Cid::default();
         for _ in 0..self.varint()? {
             let h = self.varint()?;
-            let key = self.u32()?;
+            let key = self.varint()?;
             if h == 1 {
+                let k = u32::try_from(key).map_err(|_| "key out of range")?;
                 let sub = self.node(depth + 1)?;
-                d.insert(key, Code2CidValue::Map(sub));
+                d.insert(k, Code2CidValue::Map(sub));
                 continue;
             }
             let cid = self.varint()?;
             for j in 0..h / 2 {
-                let k = key.checked_add(u32::try_from(j).map_err(|_| "run too long")?).ok_or("key out of range")?;
-                d.insert(k, Code2CidValue::Cid(PyInt::from(cid + j)));
+                let k = key.checked_add(j).and_then(|k| u32::try_from(k).ok()).ok_or("key out of range")?;
+                let v = cid.checked_add(j).ok_or("value out of range")?;
+                d.insert(k, Code2CidValue::Cid(PyInt::from(v)));
             }
         }
         Ok(d)
@@ -813,11 +811,15 @@ impl Reader<'_> {
                 d.insert(PyInt::from(cid), Unichr::from(text));
                 continue;
             }
-            let cp = self.u32()?;
+            let cp = self.varint()?;
             for j in 0..h / 2 {
-                let c = cp.checked_add(u32::try_from(j).map_err(|_| "run too long")?).ok_or("out of range")?;
-                let ch = char::from_u32(c).ok_or("not a character")?;
-                d.insert(PyInt::from(cid + j), Unichr::Text(ch.to_string().into()));
+                let k = cid.checked_add(j).ok_or("value out of range")?;
+                let ch = cp
+                    .checked_add(j)
+                    .and_then(|c| u32::try_from(c).ok())
+                    .and_then(char::from_u32)
+                    .ok_or("not a character")?;
+                d.insert(PyInt::from(k), Unichr::Text(ch.to_string().into()));
             }
         }
         Ok(d)
