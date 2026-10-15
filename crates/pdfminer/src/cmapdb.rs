@@ -124,6 +124,15 @@ impl Unichr {
             Unichr::Surrogate(c) => format!("'\\u{c:04x}'"),
         }
     }
+
+    /// The Python `str` (a lone surrogate included), as text objects hold
+    /// it (`LTChar._text`).
+    pub fn to_pystr(&self) -> pycompat::PyStr {
+        match self {
+            Unichr::Text(s) => pycompat::PyStr::new(s),
+            Unichr::Surrogate(c) => pycompat::PyStr::from_code_point(*c),
+        }
+    }
 }
 
 impl From<String> for Unichr {

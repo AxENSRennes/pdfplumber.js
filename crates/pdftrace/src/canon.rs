@@ -53,7 +53,13 @@ pub fn canon_obj(obj: &PDFObject) -> String {
 /// The line of a raised exception: `!Class("message")`.
 pub fn canon_exc(e: &PyErr) -> String {
     let mut out = String::new();
-    write_exc(&mut out, &e.kind.trace_name(), ExcMessage::Text(&e.message));
+    match &e.surrogate_message {
+        None => write_exc(&mut out, &e.kind.trace_name(), ExcMessage::Text(&e.message)),
+        Some(_) => {
+            let message: Vec<u32> = e.py_message().code_points().collect();
+            write_exc(&mut out, &e.kind.trace_name(), ExcMessage::CodePoints(&message))
+        }
+    }
     out
 }
 

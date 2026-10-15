@@ -137,6 +137,11 @@ def run_op(page, op):
         return page.extract_tables(op[1])
     if name == "extract_table":
         return page.extract_table(op[1])
+    if name == "tables_new":
+        # TableSettings(**kwargs) given to the finder (no resolve)
+        return describe_finder(TableFinder(page, TableSettings(**op[1])))
+    if name == "extract_tables_new":
+        return page.extract_tables(TableSettings(**op[1]))
     if name == "wordmap":
         # WordMap.to_textmap called directly (presorted may be false)
         wordmap = ptext.WordExtractor(**op[1]).extract_wordmap(page.chars)
@@ -181,12 +186,5 @@ def page_case(page, record, ops, nan_sets=None):
             outs.append(out)
     return [record, rops], outs
 
-
-def has_surrogate(objs) -> bool:
-    for o in objs:
-        for v in o.values():
-            if isinstance(v, str) and any(0xD800 <= ord(c) <= 0xDFFF for c in v):
-                return True
-    return False
 
 

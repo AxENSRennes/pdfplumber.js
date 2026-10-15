@@ -21,9 +21,10 @@
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 
 use pycompat::listsort::sort_by_key;
-use pycompat::{exc, PyErr, PyResult};
+use pycompat::pystr::PyStrBuilder;
+use pycompat::{exc, ExcKind, PyErr, PyResult, PyStr};
 
-use crate::obj::{bbox_value, Bbox, HashKey, Hot, Obj, PyValue};
+use crate::obj::{bbox_value, py_contains, py_iter, Bbox, HashKey, Hot, Obj, PyValue};
 use crate::utils::clustering::{cluster_objects, KeyKind};
 use crate::utils::geometry::{
     bbox_to_rect, filter_edges, get_bbox_overlap, obj_to_bbox, obj_to_edges, objects_to_bbox, objects_to_rect,
@@ -714,7 +715,7 @@ impl Table {
 
     // pdfplumber/table.py:421 Table.extract
     /// The text of each cell (`None` where a row has no cell).
-    pub fn extract(&self, page: &dyn TablePage, kwargs: &Kwargs) -> PyResult<Vec<Vec<Option<String>>>> {
+    pub fn extract(&self, page: &dyn TablePage, kwargs: &Kwargs) -> PyResult<Vec<Vec<Option<PyStr>>>> {
         let chars = page.chars()?;
         let mut kwargs = kwargs.clone();
         let mut table_arr = Vec::new();
@@ -765,7 +766,7 @@ impl Table {
                             }
                             Some(extract_text_kwargs(&cell_chars, &kwargs)?)
                         } else {
-                            Some(String::new())
+                            Some(PyStr::empty())
                         }
                     }
                 };
@@ -874,7 +875,7 @@ impl TableSettings {
         let mut s = TableSettings::field_defaults();
         for (k, v) in kwargs.items() {
             let v = v.clone();
-            match k.as_ref() {
+            match k.as_str().unwrap_or("") {
                 "vertical_strategy" => s.vertical_strategy = v,
                 "horizontal_strategy" => s.horizontal_strategy = v,
                 "explicit_vertical_lines" => s.explicit_vertical_lines = v,
@@ -893,10 +894,12 @@ impl TableSettings {
                 "intersection_x_tolerance" => s.intersection_x_tolerance = Some(v),
                 "intersection_y_tolerance" => s.intersection_y_tolerance = Some(v),
                 "text_settings" => s.text_settings = v,
-                other => {
-                    return Err(exc::TypeError(format!(
-                        "TableSettings.__init__() got an unexpected keyword argument '{other}'"
-                    )))
+                _ => {
+                    let mut m = PyStrBuilder::new();
+                    m.push_rust_str("TableSettings.__init__() got an unexpected keyword argument '");
+                    m.push_str(k);
+                    m.push_rust_str("'");
+                    return Err(PyErr::with_message(ExcKind::TypeError, &m.finish()));
                 }
             }
         }
@@ -947,24 +950,46 @@ impl TableSettings {
             }
         }
 
-        let mut ts = match &self.text_settings {
-            PyValue::None => Obj::new(),
-            PyValue::Dict(d) => d.clone(),
-            _ => return Err(PyErr::not_ported("text_settings that is not a dict")),
-        };
+        if self.text_settings.is_none() {
+            self.text_settings = PyValue::Dict(Obj::new());
+        }
 
-        // This next section is for backwards compatibility
+        // This next section is for backwards compatibility. A value that is
+        // not a dict (only `TableSettings(text_settings=...)` gives one:
+        // `resolve` makes a dict of the `text_` settings) goes through the
+        // same Python operations.
+        let ts = &mut self.text_settings;
         for attr in ["x_tolerance", "y_tolerance"] {
-            if !ts.contains(attr) {
-                let v = ts.get("tolerance").cloned().unwrap_or(PyValue::from(3i64));
-                ts.set(attr, v);
+            if !py_contains(ts, &PyValue::str(attr))? {
+                match ts {
+                    PyValue::Dict(d) => {
+                        let v = d.get("tolerance").cloned().unwrap_or(PyValue::from(3i64));
+                        d.set(attr, v);
+                    }
+                    other => {
+                        return Err(exc::AttributeError(format!(
+                            "'{}' object has no attribute 'get'",
+                            other.type_name()
+                        )))
+                    }
+                }
             }
         }
-        if ts.contains("tolerance") {
-            ts.remove("tolerance")?;
+        if py_contains(ts, &PyValue::str("tolerance"))? {
+            match ts {
+                PyValue::Dict(d) => {
+                    d.remove("tolerance")?;
+                }
+                PyValue::List(_) => return Err(exc::TypeError("list indices must be integers or slices, not str")),
+                other => {
+                    return Err(exc::TypeError(format!(
+                        "'{}' object does not support item deletion",
+                        other.type_name()
+                    )))
+                }
+            }
         }
         // End of that section
-        self.text_settings = PyValue::Dict(ts);
 
         let fallback = |v: &mut Option<PyValue>, f: &PyValue| {
             if v.is_none() {
@@ -990,8 +1015,9 @@ impl TableSettings {
         let mut core_settings = Obj::new();
         let mut text_settings = Obj::new();
         for (k, v) in settings.items() {
+            // k[:5] == "text_"
             match k.strip_prefix("text_") {
-                Some(rest) => text_settings.set(rest, v.clone()),
+                Some(rest) => text_settings.set(&rest, v.clone()),
                 None => core_settings.set(k, v.clone()),
             }
         }
@@ -999,11 +1025,25 @@ impl TableSettings {
         TableSettings::new(&core_settings)
     }
 
-    /// The resolved `text_settings` dict.
+    /// The resolved `text_settings` dict (empty when it is not a dict).
     pub fn text_settings(&self) -> Obj {
         match &self.text_settings {
             PyValue::Dict(d) => d.clone(),
             _ => Obj::new(),
+        }
+    }
+
+    /// `f(**(self.text_settings or {}))`: the keyword arguments of a call
+    /// to `func` (its module and qualified name,
+    /// `"pdfplumber.page.Page.extract_words"`), a `TypeError` when
+    /// `text_settings` is a true value that is not a mapping.
+    pub fn text_settings_kwargs(&self, func: &str) -> PyResult<Obj> {
+        match &self.text_settings {
+            PyValue::Dict(d) => Ok(d.clone()),
+            v if !v.truthy() => Ok(Obj::new()),
+            other => {
+                Err(exc::TypeError(format!("{func}() argument after ** must be a mapping, not {}", other.type_name())))
+            }
         }
     }
 }
@@ -1022,21 +1062,22 @@ pub struct TableFinder {
 fn py_len(v: &PyValue) -> PyResult<usize> {
     match v {
         PyValue::Tuple(t) | PyValue::List(t) => Ok(t.len()),
-        PyValue::Str(s) => Ok(s.chars().count()),
+        PyValue::Str(s) => Ok(s.len()),
         PyValue::Bytes(b) => Ok(b.len()),
         PyValue::Dict(d) => Ok(d.len()),
         other => Err(exc::TypeError(format!("object of type '{}' has no len()", other.type_name()))),
     }
 }
 
-/// `for desc in (lines or [])`
+/// `for desc in (lines or [])`: any iterable (a `str` gives its
+/// characters, `bytes` its ints, a `dict` its keys).
 fn explicit_items(v: &PyValue) -> PyResult<Vec<PyValue>> {
     if !v.truthy() {
         return Ok(Vec::new());
     }
-    match v {
-        PyValue::Tuple(t) | PyValue::List(t) => Ok(t.to_vec()),
-        other => Err(PyErr::not_ported(&format!("iterating explicit lines of type {}", other.type_name()))),
+    match py_iter(v) {
+        Some(items) => items,
+        None => Err(exc::TypeError(format!("'{}' object is not iterable", v.type_name()))),
     }
 }
 
@@ -1072,7 +1113,7 @@ impl TableFinder {
         let h_strat = settings.horizontal_strategy.as_str().unwrap_or("");
 
         let words = if v_strat == "text" || h_strat == "text" {
-            page.extract_words(&settings.text_settings())?
+            page.extract_words(&settings.text_settings_kwargs("pdfplumber.page.Page.extract_words")?)?
         } else {
             Vec::new()
         };

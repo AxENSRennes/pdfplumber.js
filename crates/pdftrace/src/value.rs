@@ -260,7 +260,7 @@ impl Value {
 
 impl From<&PyErr> for Value {
     fn from(e: &PyErr) -> Value {
-        Value::Exception { class: e.kind.trace_name(), message: PyStr::Text(e.message.clone()) }
+        Value::Exception { class: e.kind.trace_name(), message: PyStr::from(&e.py_message()) }
     }
 }
 

@@ -1077,7 +1077,8 @@ mod atan2_tests {
         };
         assert!(same(atan_table(1.0, 0.0), hpi_minus_table(1.0, 0.0)));
         assert!(same(hpi_plus_table(1.0, 0.0), pi_minus_table(1.0, 0.0)));
-        let pairs: [(fn(f64, f64) -> f64, fn(f64, f64) -> f64); 4] = [
+        type Eval = fn(f64, f64) -> f64;
+        let pairs: [(Eval, Eval); 4] = [
             (atan_small, atan_table),
             (hpi_minus_small, hpi_minus_table),
             (hpi_plus_small, hpi_plus_table),

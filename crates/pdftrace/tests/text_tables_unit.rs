@@ -19,7 +19,6 @@
 
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::rc::Rc;
 
 use pdfplumber::obj::{bbox_from_value, bbox_value, Bbox, Obj, PyValue};
 use pdfplumber::table::{
@@ -192,6 +191,12 @@ fn run_value_op(op: &str, a: &PyValue, b: &PyValue) -> Value {
             Ok(d.get(&pdfplumber::obj::HashKey::new(b.clone())?).cloned().unwrap_or(PyValue::None))
         })()),
         "unpack4" => v(pdfplumber::obj::bbox_from_value(a).map(|b| pdfplumber::obj::bbox_value(&b))),
+        "float" => v(a.to_float()),
+        "in" => v(pdfplumber::obj::py_contains(b, a).map(PyValue::Bool)),
+        "iter" => v(match pdfplumber::obj::py_iter(a) {
+            Some(items) => items.map(PyValue::list),
+            None => Err(exc::TypeError(format!("'{}' object is not iterable", a.type_name()))),
+        }),
         other => panic!("unknown op {other}"),
     }
 }
@@ -238,8 +243,9 @@ fn dict_cases() {
         for step in steps {
             let Value::Tuple(step) = step else { panic!("step") };
             let (op, k, v) = (step[0].as_str().expect("op"), step[1].as_str().expect("key"), py(&step[2]));
-            let items =
-                |o: &Obj| PyValue::list(o.items().iter().map(|(k, v)| PyValue::tuple([PyValue::str(k), v.clone()])));
+            let items = |o: &Obj| {
+                PyValue::list(o.items().iter().map(|(k, v)| PyValue::tuple([PyValue::Str(k.clone()), v.clone()])))
+            };
             let r: PyResult<PyValue> = match op {
                 "set" => {
                     d.set(k, v);
@@ -248,7 +254,7 @@ fn dict_cases() {
                 "del" => d.remove(k).map(|_| PyValue::None),
                 "get" => Ok(d.get(k).cloned().unwrap_or(PyValue::None)),
                 "in" => Ok(PyValue::Bool(d.contains(k))),
-                "keys" => Ok(PyValue::list(d.keys().map(PyValue::str))),
+                "keys" => Ok(PyValue::list(d.keys().cloned().map(PyValue::Str))),
                 "eq" => Ok(PyValue::Bool(d.py_eq(&other))),
                 "copyset" => {
                     let mut copy = d.clone();
@@ -442,7 +448,8 @@ fn textline_cases() {
     let data = data();
     let mut c = Checker::new("textlines");
     for_each_case(&data, "textlines", |i, args, out| {
-        let s: Vec<char> = args[0].as_str().expect("a str").chars().collect();
+        let Value::Str(s) = &args[0] else { panic!("a str") };
+        let s: Vec<u32> = pycompat::PyStr::from(s).code_points().collect();
         let strip = matches!(args[1], Value::Bool(true));
         let got = Value::List(text_line_matches(&s, strip).iter().map(spans_value).collect());
         c.check(|| format!("case {i}: {:?} strip={strip}", args[0]), &got, &out);
@@ -486,6 +493,11 @@ fn settings_cases() {
     let data = data();
     let mut c = Checker::new("settings");
     for_each_case(&data, "settings", |i, args, out| {
+        if args[0].as_str() == Some("new") {
+            let got = result(TableSettings::new(&obj(&args[1])), |s| settings_value(&s));
+            c.check(|| format!("case {i}: new {:?}", args[1]), &got, &out);
+            return;
+        }
         let settings = match &args[0] {
             Value::None => None,
             v => Some(obj(v)),
@@ -533,6 +545,10 @@ impl CasePage {
     /// with `tuplify_list_kwargs`)
     fn get_textmap(&self, kwargs: &Kwargs) -> PyResult<TextMap> {
         let kwargs = tuplify_list_kwargs(kwargs);
+        // get_textmap is an lru_cache: its key hashes every value
+        for (_, v) in kwargs.items() {
+            pdfplumber::obj::check_hashable(v)?;
+        }
         let mut full = Obj::from_pairs([("layout_bbox", bbox_value(&self.bbox))]);
         if !kwargs.contains("layout_width_chars") {
             full.set("layout_width", self.bbox[2].sub(&self.bbox[0])?);
@@ -574,10 +590,10 @@ impl CasePage {
     }
 }
 
-fn table_text(rows: Vec<Vec<Option<String>>>) -> Value {
+fn table_text(rows: Vec<Vec<Option<pycompat::PyStr>>>) -> Value {
     Value::List(
         rows.into_iter()
-            .map(|r| Value::List(r.into_iter().map(|c| c.map_or(Value::None, Value::str)).collect()))
+            .map(|r| Value::List(r.into_iter().map(|c| c.map_or(Value::None, |s| Value::py_str(&s))).collect()))
             .collect(),
     )
 }
@@ -633,7 +649,7 @@ fn settings_arg(v: &Value) -> Option<Obj> {
 /// One operation of `run_op` (generator), as a value.
 fn run_op(page: &CasePage, op: &[Value]) -> Value {
     let name = op[0].as_str().expect("op name");
-    let text = |r: PyResult<String>| result(r, Value::str);
+    let text = |r: PyResult<pycompat::PyStr>| result(r, |s| Value::py_str(&s));
     match name {
         "text" => text(page.get_textmap(&kw(&op[1])).map(|tm| tm.as_string)),
         "utext" => text(extract_text_kwargs(&page.chars, &kw(&op[1]))),
@@ -686,12 +702,9 @@ fn run_op(page: &CasePage, op: &[Value]) -> Value {
         "dedupe" => {
             let k = kw(&op[1]);
             let tolerance = k.get("tolerance").cloned().unwrap_or(PyValue::from(1i64));
-            let extra: Vec<Rc<str>> = match k.get("extra_attrs") {
-                None => vec![Rc::from("fontname"), Rc::from("size")],
-                Some(v) => v
-                    .as_seq()
-                    .map(|items| items.iter().map(|x| Rc::from(x.as_str().expect("a str"))).collect())
-                    .unwrap_or_default(),
+            let extra = match k.get("extra_attrs") {
+                None => PyValue::tuple([PyValue::str("fontname"), PyValue::str("size")]),
+                Some(v) => v.clone(),
             };
             result(dedupe_chars(&page.chars, &tolerance, &extra), list_of_objs)
         }
@@ -701,11 +714,23 @@ fn run_op(page: &CasePage, op: &[Value]) -> Value {
                 .and_then(|f| describe_finder(&f));
             result(r, |v| v)
         }
-        "extract_tables" => {
-            // pdfplumber/page.py:481 Page.extract_tables
-            let r = TableSettings::resolve(settings_arg(&op[1]).as_ref()).and_then(|tset| {
+        "tables_new" => {
+            let r = TableSettings::new(&kw(&op[1]))
+                .and_then(|s| TableFinder::new(page, s))
+                .and_then(|f| describe_finder(&f));
+            result(r, |v| v)
+        }
+        "extract_tables" | "extract_tables_new" => {
+            // pdfplumber/page.py:481 Page.extract_tables (a TableSettings
+            // resolves to itself)
+            let tset = match name {
+                "extract_tables" => TableSettings::resolve(settings_arg(&op[1]).as_ref()),
+                _ => TableSettings::new(&kw(&op[1])),
+            };
+            let r = tset.and_then(|tset| {
                 let tables = page.find_tables(&tset)?;
-                tables.iter().map(|t| t.extract(page, &tset.text_settings())).collect::<PyResult<Vec<_>>>()
+                let kwargs = tset.text_settings_kwargs("pdfplumber.table.Table.extract")?;
+                tables.iter().map(|t| t.extract(page, &kwargs)).collect::<PyResult<Vec<_>>>()
             });
             result(r, |ts| Value::List(ts.into_iter().map(table_text).collect()))
         }
@@ -714,7 +739,9 @@ fn run_op(page: &CasePage, op: &[Value]) -> Value {
             let r = TableSettings::resolve(settings_arg(&op[1]).as_ref()).and_then(|tset| {
                 match page.find_table(&tset)? {
                     None => Ok(None),
-                    Some(t) => Ok(Some(t.extract(page, &tset.text_settings())?)),
+                    Some(t) => {
+                        Ok(Some(t.extract(page, &tset.text_settings_kwargs("pdfplumber.table.Table.extract")?)?))
+                    }
                 }
             });
             result(r, |t| t.map_or(Value::None, table_text))
@@ -730,10 +757,11 @@ fn run_op(page: &CasePage, op: &[Value]) -> Value {
                     .iter()
                     .map(|(t, c)| {
                         let c = c.as_ref().map_or(Value::None, |c| to_value(&PyValue::Dict(c.clone())));
-                        Value::Tuple(vec![Value::str(t.to_string()), c])
+                        let t = pycompat::PyStr::from_code_point(*t);
+                        Value::Tuple(vec![Value::py_str(&t), c])
                     })
                     .collect();
-                Value::Tuple(vec![Value::str(tm.as_string.clone()), Value::List(tuples)])
+                Value::Tuple(vec![Value::py_str(&tm.as_string), Value::List(tuples)])
             })
         }
         other => panic!("unknown op {other}"),
@@ -805,7 +833,7 @@ fn pages_real() {
 /// behavior: Python computes the spans itself).
 #[test]
 fn search_refuses_spans_outside_the_string() {
-    let tm = TextMap::new(vec![('a', None), ('b', None)], &PyValue::str("ttb"), &PyValue::str("ltr")).unwrap();
+    let tm = TextMap::new(vec![(0x61, None), (0x62, None)], &PyValue::str("ttb"), &PyValue::str("ltr")).unwrap();
     for span in [(0, 3), (2, 1), (3, 3)] {
         let m = RegexMatch { spans: vec![Some(span)] };
         let e = tm.search(&[m], true, true, 0).unwrap_err();
@@ -830,27 +858,21 @@ fn table_helpers_smoke() {
     assert!(exc::ValueError("x").message == "x");
 }
 
-/// Sequence concatenation and repetition (`"ab" + "c"`, `"ab" * 2`,
-/// `2 * (1,)`) are outside the object model: the port refuses them with
-/// `NotPorted` instead of computing something else (not a Python behavior,
-/// so not in the oracle cases, which skip them). A non-int factor is
-/// Python's `TypeError`.
+/// The resource guard of sequence repetition: a result longer than
+/// `MAX_REPEAT` (10**7) items raises `MemoryError` where CPython would
+/// allocate it (no oracle case: the generator leaves these out). Beyond
+/// `PY_SSIZE_T_MAX`, CPython's own errors are oracle cases (`ops`).
 #[test]
-fn sequence_operations_are_not_ported() {
-    let s = PyValue::str("ab");
-    let t = PyValue::tuple([PyValue::from(1i64)]);
-    let two = PyValue::from(2i64);
-    let not_ported = |r: PyResult<PyValue>| r.is_err_and(|e| e.kind == pycompat::ExcKind::NotPorted);
-    assert!(not_ported(s.add(&s)));
-    assert!(not_ported(t.add(&t)));
-    assert!(not_ported(s.mul(&two)));
-    assert!(not_ported(two.mul(&s)));
-    assert!(not_ported(PyValue::Bool(true).mul(&t)));
-    assert!(not_ported(t.mul(&PyValue::Bool(false))));
-    let e = s.mul(&PyValue::from(2.0)).unwrap_err();
-    assert_eq!(e.message, "can't multiply sequence by non-int of type 'float'");
-    let e = PyValue::from(2.0).mul(&t).unwrap_err();
-    assert_eq!(e.message, "can't multiply sequence by non-int of type 'float'");
+fn sequence_repeat_resource_guard() {
+    let n = PyValue::from(10_000_001i64);
+    for seq in [PyValue::str("a"), PyValue::Bytes(std::rc::Rc::from(&b"a"[..])), PyValue::tuple([PyValue::None])] {
+        let e = seq.mul(&n).unwrap_err();
+        assert_eq!((e.kind, e.message.as_str()), (pycompat::ExcKind::MemoryError, ""), "{seq:?}");
+        let e = n.mul(&seq).unwrap_err();
+        assert_eq!(e.kind, pycompat::ExcKind::MemoryError);
+    }
+    let ok = PyValue::str("ab").mul(&PyValue::from(5_000_000i64)).unwrap();
+    assert_eq!(ok.as_str().map(str::len), Some(10_000_000));
 }
 
 /// The resource guard of layout text: `for i in range(n)` that appends a

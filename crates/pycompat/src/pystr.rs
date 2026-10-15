@@ -315,6 +315,12 @@ impl PyStr {
         b.finish()
     }
 
+    /// The rest of the string after `prefix`, if it starts with it
+    /// (`s[len(prefix):]` when `s[:len(prefix)] == prefix`).
+    pub fn strip_prefix(&self, prefix: &str) -> Option<PyStr> {
+        self.0.strip_prefix(prefix.as_bytes()).map(|rest| PyStr(Rc::from(rest)))
+    }
+
     /// `sub in s` (a substring test).
     pub fn contains(&self, sub: &PyStr) -> bool {
         let (h, n) = (&self.0[..], &sub.0[..]);

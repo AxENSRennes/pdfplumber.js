@@ -101,6 +101,14 @@ fn text(v: &Value) -> String {
     str_arg(v).to_owned()
 }
 
+/// A `str` value as the port's `str` (lone surrogates included).
+fn py_text(v: &Value) -> pycompat::PyStr {
+    match v {
+        Value::Str(s) => pycompat::PyStr::from(s),
+        other => panic!("not a str: {other:?}"),
+    }
+}
+
 fn path_segments(v: &Value) -> Option<Vec<(char, Vec<[Num; 2]>)>> {
     match v {
         Value::None => None,
@@ -131,7 +139,7 @@ impl Builder {
     fn char(&self, f: &[(Value, Value)]) -> LTChar<TP> {
         let (_, ncs) = fields(field(f, "ncs"));
         LTChar {
-            _text: text(field(f, "_text")),
+            _text: py_text(field(f, "_text")),
             matrix: nums(field(f, "matrix")),
             fontname: field(f, "fontname").clone(),
             ncs: Rc::new(PDFColorSpace::new(text(field(ncs, "name")), build(field(ncs, "ncomponents"), &self.weak))),
@@ -262,7 +270,7 @@ fn comp_fields(c: &LTComponent) -> Vec<(&'static str, Value)> {
 
 fn raw_char(c: &LTChar<TP>) -> Value {
     let mut f = vec![
-        ("_text", Value::str(c._text.clone())),
+        ("_text", Value::py_str(&c._text)),
         ("matrix", tuple(&c.matrix)),
         ("fontname", c.fontname.clone()),
         (
@@ -374,8 +382,8 @@ struct TreeDumper<'a> {
     index: &'a HashMap<usize, i64>,
 }
 
-fn text_value(r: PyResult<String>) -> Value {
-    result(r, Value::str)
+fn text_value(r: PyResult<pycompat::PyStr>) -> Value {
+    result(r, |s| Value::py_str(&s))
 }
 
 impl TreeDumper<'_> {
@@ -390,7 +398,7 @@ impl TreeDumper<'_> {
             .iter()
             .map(|o| match o {
                 TextLineElement::Char(c) => self.raw_ref(ptr(c)).expect("a raw char"),
-                TextLineElement::Anno(a) => named("LTAnno", vec![("_text", Value::str(a._text.clone()))]),
+                TextLineElement::Anno(a) => named("LTAnno", vec![("_text", Value::py_str(&a._text))]),
             })
             .collect();
         f.push(("_objs", Value::List(objs)));

@@ -4,7 +4,7 @@
 //! their `int`/`float` type, and the evaluation order (hence the first
 //! exception raised) is upstream's.
 
-use pycompat::{exc, PyResult};
+use pycompat::{exc, ExcKind, PyErr, PyResult, PyStr};
 
 use crate::obj::{bbox_from_value, Bbox, Hot, Obj, PyValue};
 use crate::utils::clustering::{cluster_objects, KeyKind};
@@ -96,7 +96,8 @@ pub fn get_bbox_overlap(a: &Bbox, b: &Bbox) -> PyResult<Option<Bbox>> {
 pub fn calculate_area(bbox: &PyValue) -> PyResult<PyValue> {
     let [left, top, right, bottom] = bbox_from_value(bbox)?;
     if left.gt(&right)? || top.gt(&bottom)? {
-        return Err(exc::ValueError(format!("{} has a negative width or height.", bbox.py_str())));
+        let message = bbox.py_str().concat(&PyStr::new(" has a negative width or height."));
+        return Err(PyErr::with_message(ExcKind::ValueError, &message));
     }
     right.sub(&left)?.mul(&bottom.sub(&top)?)
 }

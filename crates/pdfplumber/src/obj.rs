@@ -45,9 +45,10 @@
 //! pdfplumber computes each coordinate of each object. Not modeled (no
 //! real page gives them): two distinct objects sharing one NaN object (a
 //! dict copied by the user), and NaN cell coordinates in `Table.rows` and
-//! `Table.columns`, where Python looks a NaN up in a dict by identity. A
-//! `str` holding a lone surrogate cannot be represented (`str` is a Rust
-//! `str`).
+//! `Table.columns`, where Python looks a NaN up in a dict by identity.
+//!
+//! Text is Python's `str` ([`PyStr`]): values and keys may hold lone
+//! surrogates (a char's text from `chr(cid)`, a key or value a user gives).
 
 use rustc_hash::FxHashMap as HashMap;
 use std::cell::RefCell;
@@ -57,37 +58,93 @@ use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
 use pdfminer::pdftypes::PDFObject;
-use pycompat::float::float_div;
+use pycompat::float::{float_div, float_from_bytes, float_from_str};
 use pycompat::repr::{bytes_repr, float_repr, str_repr};
-use pycompat::{exc, Num, PyErr, PyInt, PyResult};
+use pycompat::{exc, Num, PyErr, PyInt, PyResult, PyStr};
 
 // -- keys ---------------------------------------------------------------------
 
 thread_local! {
-    static INTERNED: RefCell<HashMap<Box<str>, Rc<str>>> = RefCell::new(HashMap::default());
-    static HOT_KEYS: [Rc<str>; HOT_N] = std::array::from_fn(|i| Rc::from(HOT[i].name()));
+    static INTERNED: RefCell<HashMap<Box<[u8]>, PyStr>> = RefCell::new(HashMap::default());
+    static HOT_KEYS: [PyStr; HOT_N] = std::array::from_fn(|i| PyStr::new(HOT[i].name()));
+}
+
+/// A dict key: a `str`, given as Rust text or as a [`PyStr`].
+pub trait Key {
+    /// The key's bytes (`surrogatepass` UTF-8, as [`PyStr::as_bytes`]).
+    fn key_bytes(&self) -> &[u8];
+    /// The key as a stored `str` (interned when it is Rust text).
+    fn to_key(&self) -> PyStr;
+}
+
+impl Key for str {
+    fn key_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+    fn to_key(&self) -> PyStr {
+        intern(self)
+    }
+}
+
+impl Key for String {
+    fn key_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+    fn to_key(&self) -> PyStr {
+        intern(self)
+    }
+}
+
+impl Key for PyStr {
+    fn key_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+    fn to_key(&self) -> PyStr {
+        match self.as_str() {
+            Some(s) => intern(s),
+            None => self.clone(),
+        }
+    }
+}
+
+impl Key for Rc<str> {
+    fn key_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+    fn to_key(&self) -> PyStr {
+        intern(self)
+    }
+}
+
+impl<K: Key + ?Sized> Key for &K {
+    fn key_bytes(&self) -> &[u8] {
+        (**self).key_bytes()
+    }
+    fn to_key(&self) -> PyStr {
+        (**self).to_key()
+    }
 }
 
 /// A shared copy of a dict key (keys repeat across thousands of objects).
-pub fn intern(key: &str) -> Rc<str> {
+pub fn intern(key: &str) -> PyStr {
     if let Some(h) = Hot::of(key) {
         return hot_key(h);
     }
     INTERNED.with(|m| {
         let mut m = m.borrow_mut();
-        if let Some(k) = m.get(key) {
+        if let Some(k) = m.get(key.as_bytes()) {
             return k.clone();
         }
-        let k: Rc<str> = Rc::from(key);
+        let k = PyStr::new(key);
         if m.len() < 4096 {
-            m.insert(Box::from(key), k.clone());
+            m.insert(Box::from(key.as_bytes()), k.clone());
         }
         k
     })
 }
 
 /// The shared copy of a hot key.
-fn hot_key(h: Hot) -> Rc<str> {
+fn hot_key(h: Hot) -> PyStr {
     HOT_KEYS.with(|keys| keys[h as usize].clone())
 }
 
@@ -152,29 +209,37 @@ impl Hot {
     }
 
     pub fn of(key: &str) -> Option<Hot> {
+        Hot::of_bytes(key.as_bytes())
+    }
+
+    /// The hot key whose bytes are `key`.
+    pub fn of_bytes(key: &[u8]) -> Option<Hot> {
         Some(match key {
-            "x0" => Hot::X0,
-            "top" => Hot::Top,
-            "x1" => Hot::X1,
-            "bottom" => Hot::Bottom,
-            "doctop" => Hot::Doctop,
-            "width" => Hot::Width,
-            "height" => Hot::Height,
-            "text" => Hot::Text,
-            "upright" => Hot::Upright,
-            "size" => Hot::Size,
-            "orientation" => Hot::Orientation,
-            "object_type" => Hot::ObjectType,
-            "y0" => Hot::Y0,
-            "y1" => Hot::Y1,
+            b"x0" => Hot::X0,
+            b"top" => Hot::Top,
+            b"x1" => Hot::X1,
+            b"bottom" => Hot::Bottom,
+            b"doctop" => Hot::Doctop,
+            b"width" => Hot::Width,
+            b"height" => Hot::Height,
+            b"text" => Hot::Text,
+            b"upright" => Hot::Upright,
+            b"size" => Hot::Size,
+            b"orientation" => Hot::Orientation,
+            b"object_type" => Hot::ObjectType,
+            b"y0" => Hot::Y0,
+            b"y1" => Hot::Y1,
             _ => return None,
         })
     }
 }
 
 /// `KeyError(key)` for a `str` key: `str(e)` is the key's `repr`.
-pub fn key_error(key: &str) -> PyErr {
-    exc::KeyError(str_repr(key))
+pub fn key_error(key: &(impl Key + ?Sized)) -> PyErr {
+    match std::str::from_utf8(key.key_bytes()) {
+        Ok(s) => exc::KeyError(str_repr(s)),
+        Err(_) => exc::KeyError(key.to_key().repr()),
+    }
 }
 
 // -- values -------------------------------------------------------------------
@@ -186,7 +251,7 @@ pub enum PyValue {
     Bool(bool),
     Int(PyInt),
     Float(f64),
-    Str(Rc<str>),
+    Str(PyStr),
     Bytes(Rc<[u8]>),
     Tuple(Rc<[PyValue]>),
     List(Rc<[PyValue]>),
@@ -240,13 +305,19 @@ impl From<bool> for PyValue {
 
 impl From<&str> for PyValue {
     fn from(s: &str) -> PyValue {
-        PyValue::Str(Rc::from(s))
+        PyValue::Str(PyStr::new(s))
     }
 }
 
 impl From<String> for PyValue {
     fn from(s: String) -> PyValue {
-        PyValue::Str(Rc::from(s))
+        PyValue::Str(PyStr::new(&s))
+    }
+}
+
+impl From<PyStr> for PyValue {
+    fn from(s: PyStr) -> PyValue {
+        PyValue::Str(s)
     }
 }
 
@@ -288,7 +359,7 @@ impl CmpOp {
 impl PyValue {
     /// A `str` value.
     pub fn str(s: &str) -> PyValue {
-        PyValue::Str(Rc::from(s))
+        PyValue::Str(PyStr::new(s))
     }
 
     /// A `tuple` value.
@@ -388,8 +459,17 @@ impl PyValue {
         }
     }
 
-    /// The text of a `str`.
+    /// The text of a `str` without surrogates (a `str` with one is equal
+    /// to no Rust text).
     pub fn as_str(&self) -> Option<&str> {
+        match self {
+            PyValue::Str(s) => s.as_str(),
+            _ => None,
+        }
+    }
+
+    /// A `str`.
+    pub fn as_pystr(&self) -> Option<&PyStr> {
         match self {
             PyValue::Str(s) => Some(s),
             _ => None,
@@ -423,7 +503,7 @@ impl PyValue {
                 let _ = write!(out, "{i}");
             }
             PyValue::Float(x) => out.push_str(&float_repr(*x)),
-            PyValue::Str(s) => out.push_str(&str_repr(s)),
+            PyValue::Str(s) => out.push_str(&s.repr()),
             PyValue::Bytes(b) => out.push_str(&bytes_repr(b)),
             PyValue::Tuple(t) => {
                 out.push('(');
@@ -454,7 +534,7 @@ impl PyValue {
                     if i > 0 {
                         out.push_str(", ");
                     }
-                    out.push_str(&str_repr(k));
+                    out.push_str(&k.repr());
                     out.push_str(": ");
                     v.write_repr(out);
                 }
@@ -468,10 +548,10 @@ impl PyValue {
     }
 
     /// `str(v)` (`repr` except for `str` itself).
-    pub fn py_str(&self) -> String {
+    pub fn py_str(&self) -> PyStr {
         match self {
-            PyValue::Str(s) => s.to_string(),
-            other => other.repr(),
+            PyValue::Str(s) => s.clone(),
+            other => PyStr::from(other.repr()),
         }
     }
 
@@ -519,7 +599,7 @@ impl PyValue {
             return Ok(a.py_cmp(&b).is_some_and(|o| op.holds(o)));
         }
         match (self, other) {
-            (PyValue::Str(a), PyValue::Str(b)) => Ok(op.holds(a.as_ref().cmp(b.as_ref()))),
+            (PyValue::Str(a), PyValue::Str(b)) => Ok(op.holds(a.cmp(b))),
             (PyValue::Bytes(a), PyValue::Bytes(b)) => Ok(op.holds(a.as_ref().cmp(b.as_ref()))),
             (PyValue::Tuple(a), PyValue::Tuple(b)) | (PyValue::List(a), PyValue::List(b)) => {
                 // tuplerichcompare / list_richcompare: the first items that
@@ -586,9 +666,9 @@ impl PyValue {
         }
     }
 
-    /// The numbers of a binary operation, or its error: a sequence
-    /// operation that Python would perform (`str + str`, `str * int`) is
-    /// outside the model.
+    /// The numbers of a binary operation, or its error (the sequence
+    /// operations, `str + str` or `list * int`, are [`PyValue::add`]'s and
+    /// [`PyValue::mul`]'s).
     fn num_operands(&self, op: &str, other: &PyValue) -> PyResult<(Num, Num)> {
         if let Some((a, b)) = self.as_python2(other) {
             return a.num_operands(op, &b);
@@ -596,22 +676,8 @@ impl PyValue {
         match (self.as_num(), other.as_num()) {
             (Some(a), Some(b)) => Ok((a, b)),
             _ => {
-                let seq = |v: &PyValue| {
-                    matches!(v, PyValue::Str(_) | PyValue::Bytes(_) | PyValue::Tuple(_) | PyValue::List(_))
-                };
-                let same_seq = op == "+" && seq(self) && self.type_name() == other.type_name();
-                let repeat = op == "*"
-                    && ((seq(self) && matches!(other, PyValue::Int(_) | PyValue::Bool(_)))
-                        || (seq(other) && matches!(self, PyValue::Int(_) | PyValue::Bool(_))));
-                if same_seq || repeat {
-                    return Err(PyErr::not_ported(&format!(
-                        "{} {op} {} on sequences",
-                        self.type_name(),
-                        other.type_name()
-                    )));
-                }
-                if op == "*" && (seq(self) || seq(other)) {
-                    let non_int = if seq(self) { other } else { self };
+                if op == "*" && (self.is_sequence() || other.is_sequence()) {
+                    let non_int = if self.is_sequence() { other } else { self };
                     return Err(exc::TypeError(format!(
                         "can't multiply sequence by non-int of type '{}'",
                         non_int.type_name()
@@ -622,11 +688,92 @@ impl PyValue {
         }
     }
 
+    /// A `str`, `bytes`, `tuple` or `list` (the sequences with `+` and `*`).
+    fn is_sequence(&self) -> bool {
+        matches!(self, PyValue::Str(_) | PyValue::Bytes(_) | PyValue::Tuple(_) | PyValue::List(_))
+    }
+
+    /// `a + b` of two sequences of the same type (`unicode_concatenate`,
+    /// `bytes_concat`, `tuple_concat`, `list_concat`), `None` for other
+    /// operands.
+    fn seq_concat(&self, other: &PyValue) -> Option<PyResult<PyValue>> {
+        if let Some((a, b)) = self.as_python2(other) {
+            return a.seq_concat(&b);
+        }
+        Some(Ok(match (self, other) {
+            (PyValue::Str(a), PyValue::Str(b)) => PyValue::Str(a.concat(b)),
+            (PyValue::Bytes(a), PyValue::Bytes(b)) => {
+                if let Err(e) = check_repeat_len(a.len().checked_add(b.len())) {
+                    return Some(Err(e));
+                }
+                PyValue::Bytes(a.iter().chain(b.iter()).copied().collect())
+            }
+            (PyValue::Tuple(a), PyValue::Tuple(b)) => PyValue::Tuple(a.iter().chain(b.iter()).cloned().collect()),
+            (PyValue::List(a), PyValue::List(b)) => PyValue::List(a.iter().chain(b.iter()).cloned().collect()),
+            _ => return None,
+        }))
+    }
+
+    /// `seq * n` or `n * seq` for a sequence and an `int` (`bool`
+    /// included), `None` for other operands. `n` must fit a `Py_ssize_t`
+    /// (`OverflowError`); `n <= 0` gives an empty sequence; a result longer
+    /// than `PY_SSIZE_T_MAX` raises CPython's error (`OverflowError` for
+    /// `str` and `bytes`, `MemoryError` for `tuple` and `list`); beyond
+    /// [`MAX_REPEAT`] items the port raises `MemoryError` (a resource
+    /// guard, where Python would try to allocate).
+    fn seq_repeat(&self, other: &PyValue) -> Option<PyResult<PyValue>> {
+        if let Some((a, b)) = self.as_python2(other) {
+            return a.seq_repeat(&b);
+        }
+        let (seq, n) = match (self, other) {
+            (s, PyValue::Int(_) | PyValue::Bool(_)) if s.is_sequence() => (s, other),
+            (PyValue::Int(_) | PyValue::Bool(_), s) if s.is_sequence() => (s, self),
+            _ => return None,
+        };
+        Some(seq.repeat(n))
+    }
+
+    fn repeat(&self, n: &PyValue) -> PyResult<PyValue> {
+        let n = match n {
+            PyValue::Bool(b) => i64::from(*b),
+            PyValue::Int(i) => {
+                i.as_i64().ok_or_else(|| exc::OverflowError("cannot fit 'int' into an index-sized integer"))?
+            }
+            _ => unreachable!("an int"),
+        };
+        let n = n.max(0) as u64;
+        let len = match self {
+            PyValue::Str(s) => s.len(),
+            PyValue::Bytes(b) => b.len(),
+            PyValue::Tuple(t) | PyValue::List(t) => t.len(),
+            _ => unreachable!("a sequence"),
+        } as u64;
+        if n > 0 && len > i64::MAX as u64 / n {
+            return Err(match self {
+                PyValue::Str(_) => exc::OverflowError("repeated string is too long"),
+                PyValue::Bytes(_) => exc::OverflowError("repeated bytes are too long"),
+                _ => exc::MemoryError(""),
+            });
+        }
+        check_repeat_len(usize::try_from(len * n).ok())?;
+        let n = n as usize;
+        Ok(match self {
+            PyValue::Str(s) => PyValue::Str(s.repeat(n)),
+            PyValue::Bytes(b) => PyValue::Bytes(Rc::from(b.repeat(n))),
+            PyValue::Tuple(t) => PyValue::Tuple(t.iter().cloned().cycle().take(t.len() * n).collect()),
+            PyValue::List(t) => PyValue::List(t.iter().cloned().cycle().take(t.len() * n).collect()),
+            _ => unreachable!("a sequence"),
+        })
+    }
+
     /// `a + b`
     #[inline]
     pub fn add(&self, other: &PyValue) -> PyResult<PyValue> {
         if let (PyValue::Float(a), PyValue::Float(b)) = (self, other) {
             return Ok(PyValue::Float(a + b));
+        }
+        if let Some(r) = self.seq_concat(other) {
+            return r;
         }
         let (a, b) = self.num_operands("+", other)?;
         Ok(a.add(&b)?.into())
@@ -646,6 +793,9 @@ impl PyValue {
     pub fn mul(&self, other: &PyValue) -> PyResult<PyValue> {
         if let (PyValue::Float(a), PyValue::Float(b)) = (self, other) {
             return Ok(PyValue::Float(a * b));
+        }
+        if let Some(r) = self.seq_repeat(other) {
+            return r;
         }
         let (a, b) = self.num_operands("*", other)?;
         Ok(a.mul(&b)?.into())
@@ -676,8 +826,8 @@ impl PyValue {
         }
     }
 
-    /// `float(a)` for a number; other types are outside the model
-    /// (`float("1.5")` parses).
+    /// `float(a)`: a number, or the parse of a `str` or `bytes`
+    /// (`PyFloat_FromString`).
     pub fn to_float(&self) -> PyResult<PyValue> {
         if let Some(p) = self.as_python() {
             return p.to_float();
@@ -686,7 +836,13 @@ impl PyValue {
             PyValue::Float(x) => Ok(PyValue::Float(*x)),
             PyValue::Int(i) => Ok(PyValue::Float(i.to_f64()?)),
             PyValue::Bool(b) => Ok(PyValue::Float(f64::from(u8::from(*b)))),
-            PyValue::Str(_) | PyValue::Bytes(_) => Err(PyErr::not_ported("float() of a string")),
+            PyValue::Str(s) => match s.as_str() {
+                Some(text) => Ok(PyValue::Float(float_from_str(text)?)),
+                // _PyUnicode_TransformDecimalAndSpaceToASCII stops at the
+                // surrogate (neither a space nor a digit): no parse
+                None => Err(exc::ValueError(format!("could not convert string to float: {}", s.repr()))),
+            },
+            PyValue::Bytes(b) => Ok(PyValue::Float(float_from_bytes(b)?)),
             other => Err(exc::TypeError(format!(
                 "float() argument must be a string or a real number, not '{}'",
                 other.type_name()
@@ -740,6 +896,125 @@ pub fn py_sum<'a>(items: impl IntoIterator<Item = &'a PyValue>) -> PyResult<PyVa
     }
 }
 
+/// The resource guard of repeated sequences (`[x] * n`, `"ab" * n`, a
+/// loop over `range(n)` that appends): a length no real page reaches.
+/// Python would try to allocate (`MemoryError` when it cannot, which is
+/// certain from about 2**44 items on, beyond any address space) or loop
+/// until memory runs out.
+pub const MAX_REPEAT: usize = 10_000_000;
+
+/// `MemoryError` for a sequence longer than [`MAX_REPEAT`] (`None`: longer
+/// than `usize`).
+fn check_repeat_len(len: Option<usize>) -> PyResult<()> {
+    match len {
+        Some(n) if n <= MAX_REPEAT => Ok(()),
+        _ => Err(exc::MemoryError("")),
+    }
+}
+
+/// The items of `iter(v)` (a `for` loop, `list(v)`, unpacking, `*v`):
+/// `None` when `v` is not iterable (each caller raises its own
+/// `TypeError`). A `str` gives its characters, `bytes` its ints, a `dict`
+/// its keys. A `PDFStream` iterates through `__getitem__`, whose
+/// `self.attrs[0]` raises `KeyError(0)`.
+pub fn py_iter(v: &PyValue) -> Option<PyResult<Vec<PyValue>>> {
+    if let PyValue::Pdf(PDFObject::Stream(stream)) = v {
+        return Some(Err(stream_missing_attribute(stream, "0")));
+    }
+    if let Some(p) = v.as_python() {
+        return py_iter(&p);
+    }
+    Some(Ok(match v {
+        PyValue::Str(s) => s.code_points().map(|c| PyValue::Str(PyStr::from_code_point(c))).collect(),
+        PyValue::Bytes(b) => b.iter().map(|&x| PyValue::from(i64::from(x))).collect(),
+        PyValue::Tuple(t) | PyValue::List(t) => t.to_vec(),
+        PyValue::Dict(d) => d.keys().map(|k| PyValue::Str(k.clone())).collect(),
+        _ => return None,
+    }))
+}
+
+/// The `PDFKeyError` of `PDFStream.__getitem__` for a missing attribute
+/// (`str(e)` is the `repr()` of its message, as for any `KeyError`).
+fn stream_missing_attribute(stream: &pdfminer::pdftypes::PDFStream, name: &str) -> PyErr {
+    let objid = stream.objid().map_or_else(|| "None".to_owned(), |i| i.to_string());
+    exc::PDFKeyError(str_repr(&format!("PDF stream object {objid} does not have attribute '{name}'")))
+}
+
+/// `v[i]` for an `int` index `i >= 0` (`BBOX_ORIGIN_KEYS` reads a bbox so):
+/// a `str` gives its character, `bytes` an `int`, a `dict` (whose keys
+/// are `str`) raises `KeyError`, a `PDFStream` its `PDFKeyError`.
+pub fn py_getitem_index(v: &PyValue, i: usize) -> PyResult<PyValue> {
+    if let PyValue::Pdf(PDFObject::Stream(stream)) = v {
+        return Err(stream_missing_attribute(stream, &i.to_string()));
+    }
+    if let Some(p) = v.as_python() {
+        return py_getitem_index(&p, i);
+    }
+    match v {
+        PyValue::Tuple(t) => t.get(i).cloned().ok_or_else(|| exc::IndexError("tuple index out of range")),
+        PyValue::List(t) => t.get(i).cloned().ok_or_else(|| exc::IndexError("list index out of range")),
+        PyValue::Str(s) => s
+            .code_points()
+            .nth(i)
+            .map(|c| PyValue::Str(PyStr::from_code_point(c)))
+            .ok_or_else(|| exc::IndexError("string index out of range")),
+        PyValue::Bytes(b) => {
+            b.get(i).map(|&x| PyValue::from(i64::from(x))).ok_or_else(|| exc::IndexError("index out of range"))
+        }
+        PyValue::Dict(_) => Err(exc::KeyError(i.to_string())),
+        other => Err(exc::TypeError(format!("'{}' object is not subscriptable", other.type_name()))),
+    }
+}
+
+/// `item in container` (`PySequence_Contains`): a substring test for a
+/// `str` (whose left operand must be a `str`) and for `bytes`, `==` with
+/// each item (after an identity check, see the module documentation) for
+/// a `tuple` or `list`, a key look-up for a `dict` and for a `PDFStream`
+/// (`__contains__`, on its attributes); `TypeError` for a container that is
+/// not iterable.
+pub fn py_contains(container: &PyValue, item: &PyValue) -> PyResult<bool> {
+    if let Some(p) = item.as_python() {
+        return py_contains(container, &p);
+    }
+    if let PyValue::Pdf(PDFObject::Stream(stream)) = container {
+        // PDFStream.__contains__: `name in self.attrs`
+        check_hashable(item)?;
+        return Ok(match item {
+            PyValue::Str(k) => k.as_str().is_some_and(|k| stream.attrs.get(k).is_some()),
+            _ => false, // the keys are str
+        });
+    }
+    if let Some(p) = container.as_python() {
+        return py_contains(&p, item);
+    }
+    match container {
+        PyValue::Str(s) => match item {
+            PyValue::Str(sub) => Ok(s.contains(sub)),
+            other => {
+                Err(exc::TypeError(format!("'in <string>' requires string as left operand, not {}", other.type_name())))
+            }
+        },
+        PyValue::Bytes(b) => match item {
+            PyValue::Bytes(sub) => Ok(sub.is_empty() || b.windows(sub.len()).any(|w| w == &sub[..])),
+            PyValue::Int(i) => match i.as_i64() {
+                Some(x @ 0..=255) => Ok(b.contains(&(x as u8))),
+                _ => Err(exc::ValueError("byte must be in range(0, 256)")),
+            },
+            PyValue::Bool(x) => Ok(b.contains(&u8::from(*x))),
+            other => Err(exc::TypeError(format!("a bytes-like object is required, not '{}'", other.type_name()))),
+        },
+        PyValue::Tuple(t) | PyValue::List(t) => Ok(t.iter().any(|x| x.py_eq(item))),
+        PyValue::Dict(d) => {
+            check_hashable(item)?;
+            Ok(match item {
+                PyValue::Str(k) => d.contains(k),
+                _ => false, // the keys are str
+            })
+        }
+        other => Err(exc::TypeError(format!("argument of type '{}' is not iterable", other.type_name()))),
+    }
+}
+
 // -- hashing ------------------------------------------------------------------
 
 /// A value used as a `dict` key or `set` member: Python's `hash()` and
@@ -755,7 +1030,9 @@ impl HashKey {
     }
 }
 
-fn check_hashable(v: &PyValue) -> PyResult<()> {
+/// `hash(v)` succeeds: `TypeError("unhashable type: ...")` for a `list` or
+/// `dict` (also inside a `tuple`).
+pub fn check_hashable(v: &PyValue) -> PyResult<()> {
     if let Some(p) = v.as_python() {
         return check_hashable(&p);
     }
@@ -848,7 +1125,7 @@ impl Hash for HashKey {
 
 #[derive(Clone)]
 struct ObjData {
-    items: Vec<(Rc<str>, PyValue)>,
+    items: Vec<(PyStr, PyValue)>,
     /// Position + 1 of each [`Hot`] key in `items` (0: absent).
     hot: [u32; HOT_N],
 }
@@ -878,11 +1155,11 @@ impl Obj {
 
     /// `dict(pairs)`: a repeated key keeps its first position and its last
     /// value.
-    pub fn from_pairs<K: AsRef<str>>(pairs: impl IntoIterator<Item = (K, PyValue)>) -> Obj {
+    pub fn from_pairs<K: Key>(pairs: impl IntoIterator<Item = (K, PyValue)>) -> Obj {
         let pairs = pairs.into_iter();
         let mut o = Obj(Rc::new(ObjData { items: Vec::with_capacity(pairs.size_hint().0), hot: [0; HOT_N] }));
         for (k, v) in pairs {
-            o.set(k.as_ref(), v);
+            o.set(&k, v);
         }
         o
     }
@@ -908,15 +1185,16 @@ impl Obj {
     }
 
     /// `(key, value)` pairs, in order.
-    pub fn items(&self) -> &[(Rc<str>, PyValue)] {
+    pub fn items(&self) -> &[(PyStr, PyValue)] {
         &self.0.items
     }
 
-    fn position(&self, key: &str) -> Option<usize> {
-        if let Some(h) = Hot::of(key) {
+    fn position(&self, key: &(impl Key + ?Sized)) -> Option<usize> {
+        let key = key.key_bytes();
+        if let Some(h) = Hot::of_bytes(key) {
             return self.hot_position(h);
         }
-        self.0.items.iter().position(|(k, _)| k.as_ref() == key)
+        self.0.items.iter().position(|(k, _)| k.as_bytes() == key)
     }
 
     #[inline]
@@ -928,7 +1206,7 @@ impl Obj {
     }
 
     /// `obj.get(key)`
-    pub fn get(&self, key: &str) -> Option<&PyValue> {
+    pub fn get(&self, key: &(impl Key + ?Sized)) -> Option<&PyValue> {
         self.position(key).map(|p| &self.0.items[p].1)
     }
 
@@ -939,7 +1217,7 @@ impl Obj {
     }
 
     /// `obj[key]`
-    pub fn item(&self, key: &str) -> PyResult<&PyValue> {
+    pub fn item(&self, key: &(impl Key + ?Sized)) -> PyResult<&PyValue> {
         self.get(key).ok_or_else(|| key_error(key))
     }
 
@@ -950,16 +1228,17 @@ impl Obj {
     }
 
     /// `key in obj`
-    pub fn contains(&self, key: &str) -> bool {
+    pub fn contains(&self, key: &(impl Key + ?Sized)) -> bool {
         self.position(key).is_some()
     }
 
     /// `obj[key] = value` (copies a shared dict first).
-    pub fn set(&mut self, key: &str, value: PyValue) {
-        let hot = Hot::of(key);
+    pub fn set(&mut self, key: &(impl Key + ?Sized), value: PyValue) {
+        let bytes = key.key_bytes();
+        let hot = Hot::of_bytes(bytes);
         let position = match hot {
             Some(h) => self.hot_position(h),
-            None => self.0.items.iter().position(|(k, _)| k.as_ref() == key),
+            None => self.0.items.iter().position(|(k, _)| k.as_bytes() == bytes),
         };
         if let Some(p) = position {
             Rc::make_mut(&mut self.0).items[p].1 = value;
@@ -971,18 +1250,18 @@ impl Obj {
                 data.items.push((hot_key(h), value));
                 data.hot[h as usize] = data.items.len() as u32;
             }
-            None => data.items.push((intern(key), value)),
+            None => data.items.push((key.to_key(), value)),
         }
     }
 
     /// `del obj[key]` (`KeyError` when absent).
-    pub fn remove(&mut self, key: &str) -> PyResult<PyValue> {
+    pub fn remove(&mut self, key: &(impl Key + ?Sized)) -> PyResult<PyValue> {
         let p = self.position(key).ok_or_else(|| key_error(key))?;
         let data = Rc::make_mut(&mut self.0);
         let (_, v) = data.items.remove(p);
         data.hot = [0; HOT_N];
         for (i, (k, _)) in data.items.iter().enumerate() {
-            if let Some(h) = Hot::of(k) {
+            if let Some(h) = Hot::of_bytes(k.as_bytes()) {
                 data.hot[h as usize] = i as u32 + 1;
             }
         }
@@ -990,15 +1269,15 @@ impl Obj {
     }
 
     /// `obj.update(pairs)`
-    pub fn update<K: AsRef<str>>(&mut self, pairs: impl IntoIterator<Item = (K, PyValue)>) {
+    pub fn update<K: Key>(&mut self, pairs: impl IntoIterator<Item = (K, PyValue)>) {
         for (k, v) in pairs {
-            self.set(k.as_ref(), v);
+            self.set(&k, v);
         }
     }
 
     /// The keys, in order.
-    pub fn keys(&self) -> impl Iterator<Item = &str> {
-        self.0.items.iter().map(|(k, _)| k.as_ref())
+    pub fn keys(&self) -> impl Iterator<Item = &PyStr> {
+        self.0.items.iter().map(|(k, _)| k)
     }
 
     /// `a == b` for dicts: same keys, equal values (order-insensitive).
@@ -1024,13 +1303,11 @@ pub fn bbox_value(b: &Bbox) -> PyValue {
 /// `x0, top, x1, bottom = value`: a bbox from a `tuple`/`list` of four
 /// items (`ValueError` for another length, `TypeError` for a non-sequence).
 pub fn bbox_from_value(v: &PyValue) -> PyResult<Bbox> {
-    if let Some(p) = v.as_python() {
-        return bbox_from_value(&p);
-    }
-    let Some(items) = v.as_seq() else {
+    let Some(items) = py_iter(v) else {
         return Err(exc::TypeError(format!("cannot unpack non-iterable {} object", v.type_name())));
     };
-    match items {
+    let items = items?;
+    match &items[..] {
         [a, b, c, d] => Ok([a.clone(), b.clone(), c.clone(), d.clone()]),
         _ if items.len() > 4 => Err(exc::ValueError("too many values to unpack (expected 4)")),
         _ => Err(exc::ValueError(format!("not enough values to unpack (expected 4, got {})", items.len()))),

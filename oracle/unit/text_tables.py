@@ -417,6 +417,102 @@ def fuzz_cases(n: int, nan_sets: dict):
     yield from odd_explicit_cases()
     yield from nan_coord_cases(n // 2, nan_sets)
     yield from nan_line_dir_cases(nan_sets)
+    yield from surrogate_cases()
+    yield from user_arg_cases()
+
+
+#: Texts of the surrogate pages: lone surrogates (``chr(cid)`` of an
+#: ``IdentityUnicodeMap``), the two halves of a pair in one char or in two,
+#: a surrogate after a ligature, Unicode spaces.
+SURROGATE_TEXTS = ["\ud800", "\udfff", "a\ud83d", "\ud83d", "\ude00", "\ud83d\ude00", "\ufb01", "\u3000", "x", " ", "\udbff"]
+
+
+def surrogate_cases():
+    """Pages whose chars hold lone surrogates, through every page operation
+    (text, layout text, words, lines, search over a text with surrogates,
+    dedupe, tables of the text strategy, word maps)."""
+    rng = random.Random(19)
+    for i in range(40):
+        bbox = (0, 0, 612, 792)
+        chars = []
+        for line in range(rng.randint(1, 5)):
+            x = 10.0 + rng.choice([0, 3, 30])
+            for k in range(rng.randint(1, 9)):
+                text = rng.choice(SURROGATE_TEXTS)
+                chars.append(synth_char(rng, x, 20 + line * 14, 6, 10, text, rng.random() < 0.9, 0,
+                                        rng.choice(["F1", "F\ud800"]), 10.0, (0,)))
+                x += rng.choice([6, 6, 6, 9, 20])
+        ops = [
+            ("text", {}), ("text", {"layout": True}), ("text", {"line_dir_render": "btt", "char_dir_render": "rtl"}),
+            ("utext", {"expand_ligatures": False}), ("simple", {}), ("words", {"return_chars": True}),
+            ("words", {"split_at_punctuation": "\ud800\ud83d", "keep_blank_chars": True}),
+            ("words", {"extra_attrs": ["fontname"]}), ("lines", True, True, {}), ("lines", False, False, {"layout": True}),
+            ("search", {}, "\ud800", False, True, 0, True, True), ("search", {}, "\\S+", True, True, 0, False, False),
+            ("dedupe", {"tolerance": 1}), ("tables", {"vertical_strategy": "text", "horizontal_strategy": "text"}),
+            ("extract_tables", {"vertical_strategy": "text", "horizontal_strategy": "text", "min_words_vertical": 1}),
+            ("wordmap", {}, {"layout": rng.choice([True, False])}),
+        ]
+        yield page_case(FakePage(chars, [], bbox), {"chars": chars, "edges": [], "bbox": bbox}, ops)
+
+
+def user_arg_cases():
+    """Page operations with the user arguments of unexpected types that a
+    JavaScript caller can pass (strings, numbers, booleans, arrays,
+    objects, lone surrogates): ``extra_attrs`` and ``split_at_punctuation``
+    of every type, directions with surrogates, explicit lines that are
+    strings, bytes, dicts or numbers, string coordinates and tolerances
+    (sequence ``+`` and ``*``, ``float(str)``), a ``layout_bbox`` string,
+    unknown table settings with surrogates, and ``TableSettings`` built
+    directly with a ``text_settings`` that is not a dict."""
+    rng = random.Random(20)
+    bbox = (0, 0, 612, 792)
+    chars = synth_chars(rng)[:40] or [synth_char(rng, 10, 10, 6, 10, "a", True, 0, "F1", 10.0, (0,))]
+    edges = synth_edges(rng, bbox)
+    ops = []
+    for extra in ["fontname", "", {"fontname": 1}, [1], [None], [["x"]], [("x", ["y"])], 5, True, None, (),
+                  ("fontname", "\ud800"), ("size",), b"ab", [b"x"], [1.5], [(1, 2)]]:
+        ops.append(("words", {"extra_attrs": extra}))
+        ops.append(("dedupe", {"extra_attrs": extra}))
+    for punct in [[".", ","], ".,", "\ud800", 1, 0, {".": 1}, {}, b".", (".", "a"), True, False, None, "", 2.5,
+                  ["a", "b", "c", "d", "e"], "abcdefghijklmnopqrstuvwxyz", [["a"]]]:
+        ops.append(("words", {"split_at_punctuation": punct}))
+        ops.append(("text", {"split_at_punctuation": punct, "keep_blank_chars": True}))
+    for d in ["\ud800", "ttb\ud800", "", "TTB", 5, ["ttb"], {"ttb": 1}]:
+        ops.append(("words", {"line_dir": d}))
+        ops.append(("text", {"char_dir_render": d}))
+    # (a set of str and number coordinates is sorted in an order that
+    # follows str hashes, random per process: str lines only where no other
+    # edge of their orientation exists)
+    for lines, strategies in [("abc", ["explicit"]), ("12", ["explicit"]), (b"\x10\x20\x30\x40", ["explicit", "lines"]),
+                              ({"a": 1, "b": 2}, ["explicit"]), (5, ["explicit", "lines"]), (True, ["explicit", "lines"]),
+                              (2.5, ["explicit", "lines"]), (["10", "20"], ["explicit"]), ({"x0": 1}, ["explicit", "lines"]),
+                              ("\ud800\ud801", ["explicit"]), ([b"x", b"y"], ["explicit"])]:
+        for strategy in strategies:
+            ops.append(("tables", {"vertical_strategy": strategy, "explicit_vertical_lines": lines,
+                                   "horizontal_strategy": "explicit", "explicit_horizontal_lines": [10, 20, 30]}))
+            ops.append(("extract_tables", {"horizontal_strategy": strategy, "explicit_horizontal_lines": lines}))
+    for kw in [{"x_tolerance": "3"}, {"x_tolerance": [1]}, {"y_tolerance": "a"}, {"x_tolerance_ratio": "2"},
+               {"x_tolerance_ratio": [2]}, {"layout": True, "x_shift": "a"}, {"layout": True, "layout_bbox": "abcd"},
+               {"layout": True, "layout_bbox": "\ud800bcd", "y_shift": "x"}, {"layout": True, "layout_bbox": b"abcd"},
+               {"layout": True, "layout_bbox": {"a": 1, "b": 2, "c": 3, "d": 4}}, {"layout": True, "x_density": "7"},
+               {"layout": True, "layout_width_chars": "3"}, {"layout": True, "layout_width_chars": 2, "y_density": [1]}]:
+        ops.append(("text", kw))
+        ops.append(("utext", kw))
+    for settings in [{"snap_tolerance": "3"}, {"join_x_tolerance": [1]}, {"text_\ud800": 1}, {"\ud800x": 1},
+                     {"vertical_strategy": "\ud800"}, {"text_x_tolerance": "1", "vertical_strategy": "text"},
+                     {"text_settings": 5}, {"text_settings": {"x_tolerance": 1}}, {"text_": 1}, {"text": 2},
+                     {"intersection_tolerance": "a"}, {"edge_min_length": "1"}, {"min_words_vertical": "2"}]:
+        ops.append(("tables", settings))
+        ops.append(("extract_tables", settings))
+    for ts in [5, [], ["x_tolerance", "y_tolerance"], ["x_tolerance", "y_tolerance", "tolerance"], ["a"], "",
+               "x_tolerance y_tolerance", "x_tolerance y_tolerance tolerance", "abc", ("x_tolerance", "y_tolerance"),
+               ("x_tolerance", "y_tolerance", "tolerance"), b"x_tolerance y_tolerance", {"tolerance": 2}, False, 0,
+               {}, None]:
+        for strategy in ["text", "lines"]:
+            kw = {"text_settings": ts, "vertical_strategy": strategy}
+            ops.append(("tables_new", kw))
+            ops.append(("extract_tables_new", kw))
+    yield page_case(FakePage(chars, edges, bbox), {"chars": chars, "edges": edges, "bbox": bbox}, ops)
 
 
 def nan_line_dir_cases(nan_sets: dict):
@@ -796,6 +892,10 @@ OP_VALUES = [
     None, True, False, 0, 1, -1, 3, 2**70, 0.0, -0.0, 1.0, 1.5, -2.5, 3.0, float("inf"), float("nan"),
     float(2**70), 2**63, float(2**63), -(2**63), float(-(2**63)), (1, [2]),
     "", "a", "ab", "b", b"x", (), (1,), (1, 2), (1.0, 2.5), (1, None), [1], [1, 2], [], {}, {"a": 1}, {"a": 1, "b": (2,)},
+    # lone surrogates (chr(cid)), and strings float() parses
+    "\ud800", "a\udfff", "\ue000", " 1.5 ", "1e3", "-inf", "\u0661\u0662", b"2.5", b"x1",
+    # counts beyond the sizes CPython can repeat (OverflowError, MemoryError)
+    2**62, -(2**62),
     # a dict is equal to itself even with a NaN value (dict_equal's identity shortcut)
     {"a": float("nan")},
     # pdfminer objects found in pdfplumber dicts (pattern color names, ...)
@@ -843,30 +943,33 @@ def ops_cases():
         if op == "unpack4":
             x0, top, x1, bottom = a
             return (x0, top, x1, bottom)
+        if op == "float":
+            return float(a)
+        if op == "in":
+            return a in b
+        if op == "iter":
+            return list(a)
         raise ValueError(op)
 
-    seq = (str, bytes, tuple, list)
-    for op in ["add", "sub", "mul", "truediv", "lt", "le", "gt", "ge", "eq", "min", "max", "sum", "dictget"]:
+    for op in ["add", "sub", "mul", "truediv", "lt", "le", "gt", "ge", "eq", "min", "max", "sum", "dictget", "in"]:
         for a in OP_VALUES:
             for b in OP_VALUES:
-                # sequence concatenation and repetition: outside the model
-                if op == "add" and isinstance(a, seq) and type(a) is type(b):
+                # a repetition beyond MAX_REPEAT (the port's resource guard)
+                # that CPython would allocate
+                if op == "mul" and isinstance(a, (str, bytes, tuple, list)) and type(b) is int and a and 10**7 < b < 2**62:
                     continue
-                if op == "mul" and (isinstance(a, seq) or isinstance(b, seq)) and (type(a) in (int, bool) or type(b) in (int, bool)):
+                if op == "mul" and isinstance(b, (str, bytes, tuple, list)) and type(a) is int and b and 10**7 < a < 2**62:
                     continue
                 # a NaN key is found through its identity only, which the port does not model
                 if op == "dictget" and a is b and a != a:
                     continue
                 # a is b: the Rust replay passes the same value (identity of PDF objects)
                 yield [op, a, b, a is b], guarded(run, op, a, b)
-    for op in ["neg", "abs", "repr", "bool", "unpack4"]:
+    for op in ["neg", "abs", "repr", "bool", "unpack4", "float", "iter"]:
         for a in OP_VALUES:
-            # unpacking iterates: strings, bytes, dicts (and streams, through
-            # __getitem__) are outside the model
-            if op == "unpack4" and isinstance(a, (str, bytes, dict, PDFStream)):
-                continue
             yield [op, a, None, False], guarded(run, op, a, None)
-    for items in [(1, 2, 3, 4), [1.0, 2, 3, 4.5], (1, 2, 3), (1, 2, 3, 4, 5), [None] * 4, ()]:
+    for items in [(1, 2, 3, 4), [1.0, 2, 3, 4.5], (1, 2, 3), (1, 2, 3, 4, 5), [None] * 4, (), "abcd", "\ud800bcd",
+                  b"abcd", {"a": 1, "b": 2, "c": 3, "d": 4}, "abcde"]:
         yield ["unpack4", items, None, False], guarded(run, "unpack4", items, None)
 
 
@@ -1227,6 +1330,12 @@ def textline_cases():
         p = pats[strip]
         spans = [[(m.start(g), m.end(g)) if m.start(g) >= 0 else None for g in range(p.groups + 1)] for m in p.finditer(s)]
         yield [s, strip], spans
+    # lone surrogates and Unicode spaces (not matched by " *")
+    for s in ["\ud800", " \ud800 \n", "\u3000a\u3000\n\udfff", "\n\ud83d\ude00 "]:
+        for strip in (True, False):
+            p = pats[strip]
+            spans = [[(m.start(g), m.end(g)) if m.start(g) >= 0 else None for g in range(p.groups + 1)] for m in p.finditer(s)]
+            yield [s, strip], spans
 
 
 def settings_value(s: TableSettings):
@@ -1243,6 +1352,12 @@ def settings_cases():
         if rng.random() < 0.1:
             s[rng.choice(list(TableSettings.__dataclass_fields__))] = rng.choice([None, -1, "lines", 0.0, False, 2])
         yield [s], guarded(lambda: settings_value(TableSettings.resolve(s)))
+    # TableSettings(**kwargs) directly: text_settings that is not a dict
+    for ts in [5, [], ["x_tolerance", "y_tolerance"], ["x_tolerance", "y_tolerance", "tolerance"], ["a"], "", "abc",
+               "x_tolerance y_tolerance", "x_tolerance y_tolerance tolerance", ("x_tolerance", "y_tolerance"),
+               ("x_tolerance", "y_tolerance", "tolerance"), b"x", {"tolerance": 2}, False, 0, 1.5, None, True]:
+        kw = {"text_settings": ts}
+        yield ["new", kw], guarded(lambda: settings_value(TableSettings(**kw)))
 
 
 # -- main -----------------------------------------------------------------------------

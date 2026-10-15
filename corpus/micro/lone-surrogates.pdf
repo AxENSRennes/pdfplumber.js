@@ -1,0 +1,82 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Font /Subtype /CIDFontType2 /BaseFont /MicroIdentity /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor << /Type /FontDescriptor /FontName /MicroIdentity /Flags 32 /Ascent 718 /Descent -207 /CapHeight 718 /ItalicAngle 0 /StemV 80 >> /DW 600 >>
+endobj
+2 0 obj
+<< /Type /Font /Subtype /Type0 /BaseFont /MicroIdentity /Encoding /Identity-H /DescendantFonts [1 0 R] /ToUnicode /Identity-H >>
+endobj
+3 0 obj
+<<  /Length 272 >>
+stream
+/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CMapName /MicroNumbers def
+1 begincodespacerange
+<0000> <FFFF>
+endcodespacerange
+1 beginbfchar
+<0003> <0041>
+endbfchar
+2 beginbfrange
+<0001> <0002> [55296 57343]
+<0004> <0004> [56320]
+endbfrange
+endcmap
+end
+end
+endstream
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type0 /BaseFont /MicroNumbers /Encoding /Identity-H /DescendantFonts [1 0 R] /ToUnicode 3 0 R >>
+endobj
+5 0 obj
+<<  /Length 1041 >>
+stream
+BT /F1 10 Tf 20 300 Td <D800 0041 DFFF 0020 D83D DE00 0042> Tj 40 0 Td <DBFF 0043 0044> Tj ET
+BT /F2 10 Tf 160 300 Td <0001 0003 0002 0004> Tj 40 0 Td <0003 0001> Tj ET
+BT /F1 10 Tf 20 280 Td <D800 0041 DFFF 0020 D83D DE00 0042> Tj 40 0 Td <DBFF 0043 0044> Tj ET
+BT /F2 10 Tf 160 280 Td <0001 0003 0002 0004> Tj 40 0 Td <0003 0001> Tj ET
+BT /F1 10 Tf 20 260 Td <D800 0041 DFFF 0020 D83D DE00 0042> Tj 40 0 Td <DBFF 0043 0044> Tj ET
+BT /F2 10 Tf 160 260 Td <0001 0003 0002 0004> Tj 40 0 Td <0003 0001> Tj ET
+BT /F1 10 Tf 20 240 Td <D800 0041 DFFF 0020 D83D DE00 0042> Tj 40 0 Td <DBFF 0043 0044> Tj ET
+BT /F2 10 Tf 160 240 Td <0001 0003 0002 0004> Tj 40 0 Td <0003 0001> Tj ET
+BT /F1 10 Tf 20 200 Td <0041 0020 0042 0020 D800> Tj ET
+20 120 m 20 180 l S
+70 120 m 70 180 l S
+120 120 m 120 180 l S
+170 120 m 170 180 l S
+220 120 m 220 180 l S
+20 120 m 220 120 l S
+20 150 m 220 150 l S
+20 180 m 220 180 l S
+BT /F1 10 Tf 25 160 Td <D800> Tj 50 0 Td <0041 DC00> Tj 50 0 Td <DFFF DFFF> Tj ET
+BT /F2 10 Tf 25 130 Td <0001> Tj 50 0 Td <0004 0003> Tj ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /MediaBox [0 0 320 340] /Resources << /Font << /F1 2 0 R /F2 4 0 R >> >> /Contents 5 0 R >>
+endobj
+7 0 obj
+<< /Type /Pages /Kids [6 0 R] /Count 1 >>
+endobj
+8 0 obj
+<< /Type /Catalog /Pages 7 0 R  >>
+endobj
+xref
+0 9
+0000000000 65535 f 
+0000000015 00000 n 
+0000000323 00000 n 
+0000000467 00000 n 
+0000000791 00000 n 
+0000000928 00000 n 
+0000002022 00000 n 
+0000002144 00000 n 
+0000002201 00000 n 
+trailer
+<< /Size 9 /Root 8 0 R >>
+startxref
+2251
+%%EOF
