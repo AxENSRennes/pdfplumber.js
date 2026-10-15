@@ -9,14 +9,20 @@
 //! pdftrace --list-stages
 //! ```
 //!
-//! `--max-pages` defaults to 20 for page-by-page stages; `0` means every
-//! page. Exit codes: 0 on success, 1 when a file cannot be read or written,
-//! 2 for a usage error or a stage that is unknown or not implemented yet.
+//! Every option also takes the form `--option=value` (`--password=-x`: a
+//! password may start with `-`). `--max-pages` defaults to 20 for
+//! page-by-page stages; `0` means every page. With `--out`, the files are
+//! traced in order and, after each, the line `<sha256>\t<seconds>` is
+//! appended to `DIR/_times.tsv` (`oracle/verify.py` enforces its time limit
+//! per file with it). Exit codes: 0 on success, 1 when a file cannot be read
+//! or written, 2 for a usage error or a stage that is unknown or not
+//! implemented yet.
 
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::time::Instant;
 
 use pdftrace::canon::sha256_hex;
 use pdftrace::stages::{self, Stage, StageInput};
@@ -42,7 +48,14 @@ fn parse_args(mut argv: impl Iterator<Item = String>) -> Result<Option<Args>, St
     let mut out = None;
     let mut files = Vec::new();
     while let Some(arg) = argv.next() {
-        let mut value = |name: &str| argv.next().ok_or_else(|| format!("{name} needs a value"));
+        // `--option=value` is `--option value`.
+        let (arg, mut inline) = match arg.split_once('=') {
+            Some((name, value)) if name.starts_with("--") => (name.to_owned(), Some(value.to_owned())),
+            _ => (arg, None),
+        };
+        let has_inline = inline.is_some();
+        let mut value =
+            |name: &str| inline.take().or_else(|| argv.next()).ok_or_else(|| format!("{name} needs a value"));
         match arg.as_str() {
             "--stage" => stage = Some(value("--stage")?),
             "--password" => password = value("--password")?,
@@ -51,6 +64,7 @@ fn parse_args(mut argv: impl Iterator<Item = String>) -> Result<Option<Args>, St
                 max_pages = (n > 0).then_some(n);
             }
             "--out" => out = Some(PathBuf::from(value("--out")?)),
+            "--list-stages" | "--help" if has_inline => return Err(format!("{arg} takes no value")),
             "--list-stages" => return Ok(None),
             "-h" | "--help" => return Err(String::new()),
             flag if flag.starts_with("--") => return Err(format!("unknown option {flag}")),
@@ -71,15 +85,20 @@ fn trace(stage: &Stage, args: &Args, pdf: &[u8], out: &mut dyn Write) -> io::Res
     run(&StageInput { pdf, password: &args.password, max_pages: args.max_pages }, out)
 }
 
-/// Writes the trace of `file` to `dir/<sha256>.txt` through a temporary file.
+/// Writes the trace of `file` to `dir/<sha256>.txt` through a temporary file,
+/// then appends `<sha256>\t<seconds>` to `dir/_times.tsv`.
 fn trace_to_dir(stage: &Stage, args: &Args, file: &Path, dir: &Path) -> io::Result<()> {
+    let started = Instant::now();
     let pdf = fs::read(file)?;
-    let target = dir.join(format!("{}.txt", sha256_hex(&pdf)));
-    let tmp = dir.join(format!(".{}.{}.tmp", sha256_hex(&pdf), std::process::id()));
+    let sha = sha256_hex(&pdf);
+    let target = dir.join(format!("{sha}.txt"));
+    let tmp = dir.join(format!(".{sha}.{}.tmp", std::process::id()));
     let mut buf = Vec::new();
     trace(stage, args, &pdf, &mut buf)?;
     fs::write(&tmp, &buf)?;
-    fs::rename(&tmp, &target)
+    fs::rename(&tmp, &target)?;
+    let mut times = fs::OpenOptions::new().create(true).append(true).open(dir.join("_times.tsv"))?;
+    writeln!(times, "{sha}\t{:.3}", started.elapsed().as_secs_f64())
 }
 
 fn main() -> ExitCode {

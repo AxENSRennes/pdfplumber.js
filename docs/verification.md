@@ -124,15 +124,24 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
 
 - Chaque générateur se lance comme module depuis le dépôt dont le Rust rejoue
   les cas (`python -m oracle.unit.<module>`) et écrit, avec les outils de
-  `oracle/unit/_common.py`, dans `<cache>/unit/<module>/` (`<cache>` :
-  `PDFPLUMBER_CACHE`, sinon `$PDFPLUMBER_ROOT/.cache`) : `<nom>.jsonl`, une
-  ligne `{"in": [...], "out": ...}` au format typé ci-dessous, et `meta.json`,
-  dont `sources` donne le SHA-256 de chaque module de `oracle/` chargé par le
-  générateur (lui-même, `canon.py`, `typed_json.py`…). Les tests Rust
+  `oracle/unit/_common.py`, dans `<cache>/unit/<module>/<empreinte>/`
+  (`<cache>` : `PDFPLUMBER_CACHE`, sinon `$PDFPLUMBER_ROOT/.cache`) :
+  `<nom>.jsonl`, une ligne `{"in": [...], "out": ...}` au format typé
+  ci-dessous, et, en dernier, `meta.json`, dont `sources` donne le SHA-256 de
+  chaque module de `oracle/` chargé par le générateur (lui-même, `canon.py`,
+  `typed_json.py`…) et `environment` l'environnement de l'oracle
+  (`oracle/environment.py`, voir « Outils »). L'empreinte hache les deux :
+  des worktrees aux générateurs différents partagent le cache sans jamais
+  mélanger leurs fichiers. Les tests Rust
   (`crates/pdftrace/tests/<module>_unit.rs`, via `pdftrace::unit::UnitData`)
-  échouent si les données manquent ou si l'une de ces sources a changé depuis,
-  en affichant la commande qui les régénère. `python -m oracle.unit`
-  régénère tout ce qui manque ou est périmé (`--check` : constat seul).
+  prennent le répertoire le plus récent dont les sources sont celles de leur
+  dépôt, et échouent s'il n'y en a pas, en affichant la commande qui
+  régénère les données. `python -m oracle.unit` régénère tout ce qui manque
+  ou est périmé, environnement compris (`--check` : constat seul).
+- Les mêmes tests Rust tournent aussi compilés en WebAssembly
+  (`wasm32-wasip1`, exécutés par le WASI de Node via
+  `scripts/wasi-runner.mjs`, dans `scripts/check.sh`) : `usize` de 32 bits,
+  pas de libm de l'hôte, arithmétique du navigateur.
 - Générateurs actuels : `canon.py` (`canon` et JSON typé, ci-dessus),
   `pycompat.py` (sémantique CPython), `exceptions.py` (classes d'exception de
   pdfminer et pdfplumber), `pdftypes.py` (modèle d'objets, références, flux,
@@ -191,27 +200,45 @@ Mode d'emploi détaillé : [`oracle/README.md`](../oracle/README.md).
   écrit `DIR/<sha256 du PDF>.txt` pour une liste de fichiers. Code de sortie 2 :
   étape non implémentée. `pdftrace --list-stages` liste les étapes, suivies de
   `(not implemented)` tant qu'elles ne le sont pas.
+- Les deux outils acceptent aussi `--option=valeur` ; `verify` et le cache
+  passent toujours le mot de passe sous la forme `--password=P` (un mot de
+  passe peut commencer par `-`). Avec `--out`, `pdftrace` ajoute après
+  chaque fichier la ligne `<sha256>\t<secondes>` à `DIR/_times.tsv`.
 - `python -m oracle.verify --stage S --set NOM [-j N] [--max-pages N]
   [--pdftrace CHEMIN] [--limit K] [--files …] [--json]` : construit au besoin
   le cache de l'oracle (`-j` processus, 3 par défaut), lance `pdftrace` par lots
   de fichiers de même mot de passe, compare octet pour octet, puis affiche le
-  décompte (identiques / différents / plantages Rust / délais oracle / erreurs
-  oracle / total) et, pour chaque fichier en écart, son chemin et la première
-  ligne différente avec 3 lignes de contexte de chaque côté. Un lot qui échoue
-  est rejoué fichier par fichier pour isoler le coupable. `--json` donne un
+  décompte (identiques / différents / plantages Rust / délais Rust / délais
+  oracle / erreurs oracle / total) et, pour chaque fichier en écart, son chemin
+  et la première ligne différente avec 3 lignes de contexte de chaque côté.
+  La limite `--timeout` vaut par fichier des deux côtés : un lot est tué
+  quand aucun fichier ne s'achève pendant `--timeout` secondes, et un fichier
+  dont le temps (`_times.tsv`) la dépasse est un délai Rust, même si sa trace
+  est juste. Un lot qui échoue garde les traces qu'il a achevées et rejoue
+  chacun des autres fichiers seul pour isoler le coupable. `--json` donne un
   résumé lisible par machine ; `--oracle-only` ne fait que remplir le cache.
-  Code de sortie : 0 si tout est identique (hors délais), 1 sinon, 2 si
-  l'étape n'existe pas côté Rust ou si le binaire manque (vérifié par
-  `pdftrace --list-stages` avant de construire le cache de l'oracle).
+  Code de sortie : 0 seulement si au moins un fichier a été comparé et que
+  tout est identique ; 1 sinon (écart, plantage ou délai Rust, erreur oracle,
+  délai oracle sauf avec `--allow-timeouts`, rien de comparé) ; 2 si l'étape
+  n'existe pas côté Rust, si le binaire manque (vérifié par
+  `pdftrace --list-stages` avant de construire le cache de l'oracle) ou si
+  l'ensemble ne peut pas être listé (nom inconnu, `adv-<étape>` jamais
+  généré, répertoire absent : un ensemble vide ne passe jamais).
 - Cache : `.cache/oracle/<étape>/<empreinte>/<sha256 du PDF>.txt`
   (`<sha256>.pw-<12 hexa du SHA-256 du mot de passe>.txt` avec un mot de
-  passe). L'empreinte couvre les sources de l'étape (et des étapes de son `DEPENDS`), de `stages/__init__.py`,
-  `stages/_common.py`, `canon.py` et `typed_json.py`, les versions de Python,
-  pdfminer.six et pdfplumber, et `--max-pages` pour une étape par page : tout
-  changement invalide le cache. Écriture atomique (fichier temporaire puis
-  renommage). Chaque trace est calculée dans son propre processus ; au-delà de
-  120 s (`--timeout`), le fichier reçoit la trace `!Timeout`, exclue de la
-  comparaison et comptée à part (`--retry-timeouts` la recalcule).
+  passe). L'empreinte couvre les sources de l'étape (et des étapes de son
+  `DEPENDS`), de `stages/__init__.py`, `stages/_common.py`, `canon.py`,
+  `typed_json.py`, `trace.py` et `environment.py`, l'environnement de
+  l'oracle (`oracle/environment.py` : interpréteur, versions de tous les
+  paquets installés, SHA-256 des fichiers installés de pdfminer et pdfplumber,
+  zlib, bibliothèque C, drapeaux du processeur qui choisissent son `pow`) et
+  `--max-pages` pour une étape par page : tout changement invalide le cache.
+  Écriture atomique (fichier temporaire puis renommage). Chaque trace est
+  calculée dans son propre processus ; au-delà de 120 s (`--timeout`), le
+  fichier reçoit la trace `!Timeout <limite>`. Un délai n'est jamais un
+  succès : `verify` le compte à part et échoue (sauf `--allow-timeouts`, qui
+  le liste), et le recalcule de lui-même dès qu'il dispose d'une limite plus
+  grande (`--retry-timeouts` force le recalcul).
 - Racine du corpus : la variable `PDFPLUMBER_ROOT` (par défaut la racine du
   dépôt) donne l'emplacement de `corpus/`, `upstream/` et `.cache`
   (`PDFPLUMBER_CACHE` peut désigner un autre cache). Dans un worktree Git, elle
@@ -295,7 +322,7 @@ systemd-run --user --scope --quiet -p MemoryMax=5G -p MemorySwapMax=0 \
 1. Port fidèle : un module Rust par module Python, références upstream sur
    chaque fonction, aucun cas spécial.
 2. Parité sur `all` (20 premières pages) pour ses étapes : 100 % identique, hors
-   `!Timeout` de l'oracle (listés).
+   `!Timeout` de l'oracle (listés, `--allow-timeouts`).
 3. Corpus adverse de l'étape : 100 % identique.
 4. Mutations : aucune survivante non justifiée.
 

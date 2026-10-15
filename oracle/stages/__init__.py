@@ -73,6 +73,8 @@ def stage_source_files(name: str) -> list[Path]:
         STAGE_DIR / "_common.py",
         pkg / "canon.py",
         pkg / "typed_json.py",
+        pkg / "trace.py",  # writes the cached bytes
+        pkg / "environment.py",
     ]
 
 

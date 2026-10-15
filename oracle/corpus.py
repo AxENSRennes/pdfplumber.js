@@ -18,6 +18,10 @@ initialized submodules):
   never removes a file from the sample.
 - ``adv-<stage>``: ``<cache>/corpus/adv-<stage>`` (generated adversarial PDFs)
 
+A set directory that does not exist, or an ``adv-<stage>`` set of an unknown
+stage or never generated, raises ``CorpusError``: a parity run must never pass
+by comparing an empty set (a worktree without ``PDFPLUMBER_ROOT``, a typo).
+
 The cache directory is ``PDFPLUMBER_CACHE`` if set, else ``<root>/.cache``.
 
 A file is any ``*.pdf`` (case-insensitive) under the set directories,
@@ -81,6 +85,10 @@ BASE_SETS: dict[str, tuple[str, ...]] = {
 }
 SET_NAMES = (*BASE_SETS, "quick", "all")
 QUICK_BYTE_LIMIT = 18  # first SHA-256 byte < 18/256: ~7 % of the non-micro files
+
+
+class CorpusError(Exception):
+    """A set that cannot be listed (unknown name, missing directory)."""
 
 
 @dataclass(frozen=True)
@@ -247,13 +255,13 @@ def _rel(path: Path, root: Path) -> str:
 
 
 def _warn_if_incomplete(root: Path, d: str) -> None:
-    """Tell on stderr when PDFs a manifest lists are absent (not downloaded)."""
+    """Raise when a set directory is missing; tell on stderr when PDFs a
+    manifest lists are absent (not downloaded)."""
     directory = root / d
+    if not directory.is_dir():
+        raise CorpusError(f"corpus: {directory} is missing (should PDFPLUMBER_ROOT point at the main checkout?)")
     if Path(d).is_absolute():
         return  # adversarial corpora: generated, no manifest
-    if not directory.is_dir():
-        print(f"corpus: {directory} is missing (should PDFPLUMBER_ROOT point at the main checkout?)", file=sys.stderr)
-        return
     manifest = directory / "manifest.json"
     try:
         entries = json.loads(manifest.read_text()) if manifest.is_file() else []
@@ -293,9 +301,15 @@ def load_set(name: str, root: Path | None = None) -> list[CorpusFile]:
             micro = {f.sha256 for f in _collect(list(BASE_SETS["micro"]), root, index, passwords)}
             files = [f for f in files if f.sha256 in micro or int(f.sha256[:2], 16) < QUICK_BYTE_LIMIT]
     elif name.startswith("adv-") and len(name) > 4:
-        files = _collect([str(cache_dir() / "corpus" / name)], root, index, passwords)
+        stage = name[4:]
+        if not (PACKAGE_DIR / "stages" / f"{stage}.py").is_file() or stage.startswith("_"):
+            raise CorpusError(f"unknown corpus set {name!r}: no stage {stage!r} (oracle/stages/)")
+        directory = cache_dir() / "corpus" / name
+        if not directory.is_dir():
+            raise CorpusError(f"corpus set {name!r} was never generated ({directory} is missing; see oracle/adversarial/{stage}.py)")
+        files = _collect([str(directory)], root, index, passwords)
     else:
-        raise KeyError(f"unknown corpus set {name!r} (known: {', '.join(SET_NAMES)}, adv-<stage>)")
+        raise CorpusError(f"unknown corpus set {name!r} (known: {', '.join(SET_NAMES)}, adv-<stage>)")
     index.save()
     return files
 
@@ -324,7 +338,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--check", action="store_true", help="report password conflicts between sources")
     ap.add_argument("--summary", action="store_true", help="only print counts")
     args = ap.parse_args(argv)
-    files = load_set(args.set)
+    try:
+        files = load_set(args.set)
+    except CorpusError as e:
+        print(e, file=sys.stderr)
+        return 2
     if not args.summary:
         for f in files:
             pw = "" if f.password is None else "\tpassword=" + json.dumps(f.password)

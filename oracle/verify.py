@@ -12,24 +12,32 @@
 3. Runs the Rust binary (default ``<repo>/target/release/pdftrace``) in
    batches of files sharing a password::
 
-       pdftrace --stage S --max-pages N [--password P] --out DIR F1.pdf F2.pdf ...
+       pdftrace --stage S --max-pages N [--password=P] --out DIR F1.pdf F2.pdf ...
 
-   which writes ``DIR/<sha256 of the PDF>.txt`` for each file. Exit status 2
-   means "stage not implemented" and stops verify (status 2); before building
-   the oracle cache, verify asks ``pdftrace --list-stages`` and stops at once
-   when the stage is listed as not implemented. If a batch fails
-   otherwise (non-zero status, signal, time limit of ``--timeout`` per file),
-   each of its files is run again alone, and a file that still fails is
-   counted as ``rust-crashed``.
+   which writes ``DIR/<sha256 of the PDF>.txt`` for each file, in order, and
+   appends ``<sha256> <seconds>`` to ``DIR/_times.tsv`` after each. Exit
+   status 2 means "stage not implemented" and stops verify (status 2); before
+   building the oracle cache, verify asks ``pdftrace --list-stages`` and stops
+   at once when the stage is listed as not implemented. A batch is killed
+   when no file completes for ``--timeout`` seconds. If a batch fails
+   (non-zero status, signal, killed), the outputs it completed are kept and
+   each remaining file is run again alone: one that still fails is
+   ``rust-crashed``, one that runs out of time ``rust-timeout``. A file whose
+   own time exceeds ``--timeout`` is ``rust-timeout`` too, even when its
+   trace is right.
 4. Compares the traces byte for byte and prints the counts (identical /
-   different / rust-crashed / oracle-timeout / oracle-error / total) and, for
-   each differing file, its path and the first differing line with 3 lines of
-   context from each side. ``--json`` prints a machine-readable summary
-   instead.
+   different / rust-crashed / rust-timeout / oracle-timeout / oracle-error /
+   total) and, for each differing file, its path and the first differing line
+   with 3 lines of context from each side. ``--json`` prints a
+   machine-readable summary instead.
 
-Exit status: 0 if every compared file is identical (oracle timeouts are
-excluded), 1 otherwise (difference, Rust crash, oracle error), 2 if the stage
-is not implemented on the Rust side or the binary is missing.
+Exit status: 0 only if at least one file was compared and every file is
+identical; 1 otherwise (difference, Rust crash or timeout, oracle error, an
+oracle timeout unless ``--allow-timeouts``, nothing compared); 2 if the stage
+is not implemented on the Rust side, the binary is missing, or the set cannot
+be listed (unknown set, missing directory: ``oracle.corpus.CorpusError``).
+Oracle timeouts are unverified files: with ``--allow-timeouts`` they are
+listed but do not fail the run.
 
 ``--oracle-only`` stops after step 2 and reports the oracle build (counts,
 time, slowest files); it is how the oracle cache is warmed.
@@ -44,13 +52,14 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .cache import DEFAULT_JOBS, DEFAULT_TIMEOUT, OracleCache, OracleResult
-from .corpus import REPO_DIR, SET_NAMES, CorpusFile, cache_dir, files_from_paths, load_set
+from .corpus import REPO_DIR, SET_NAMES, CorpusError, CorpusFile, cache_dir, files_from_paths, load_set
 from .stages import DEFAULT_MAX_PAGES, available_stages
 
 DEFAULT_PDFTRACE = REPO_DIR / "target" / "release" / "pdftrace"
@@ -58,7 +67,9 @@ DEFAULT_BATCH = 64
 CONTEXT = 3
 SHOW_WIDTH = 240
 
-STATUSES = ("identical", "different", "rust-crashed", "oracle-timeout", "oracle-error")
+STATUSES = ("identical", "different", "rust-crashed", "rust-timeout", "oracle-timeout", "oracle-error")
+TIMES_FILE = "_times.tsv"
+POLL_S = 0.1
 
 
 class StageNotImplemented(Exception):
@@ -69,22 +80,69 @@ class StageNotImplemented(Exception):
 class RustRun:
     outputs: dict[str, Path] = field(default_factory=dict)  # sha256 -> trace file
     failures: dict[str, str] = field(default_factory=dict)  # sha256 -> reason
+    timeouts: dict[str, str] = field(default_factory=dict)  # sha256 -> reason
 
 
 # ------------------------------------------------------------------------- Rust side
 
 
-def _run_pdftrace(pdftrace: Path, stage: str, max_pages: int, password: str | None, files: list[CorpusFile], out: Path, timeout: float) -> tuple[int | None, str]:
+def _pdftrace_command(pdftrace: Path, stage: str, max_pages: int, password: str | None, files: list[CorpusFile], out: Path) -> list[str]:
     cmd = [str(pdftrace), "--stage", stage, "--max-pages", str(max_pages)]
     if password is not None:
-        cmd += ["--password", password]
-    cmd += ["--out", str(out), *(str(f.path) for f in files)]
+        cmd.append(f"--password={password}")  # one argument: the password may start with "-"
+    return cmd + ["--out", str(out), *(str(f.path) for f in files)]
+
+
+def _completed(out: Path) -> int:
     try:
-        proc = subprocess.run(cmd, capture_output=True, timeout=timeout * len(files))
-    except subprocess.TimeoutExpired:
-        return None, f"time limit ({timeout:g} s per file) exceeded"
-    stderr = proc.stderr.decode("utf-8", "replace").strip().splitlines()
+        return sum(1 for e in os.scandir(out) if e.name.endswith(".txt") and not e.name.startswith("."))
+    except OSError:
+        return 0
+
+
+def _run_pdftrace(cmd: list[str], out: Path, timeout: float) -> tuple[int | None, str]:
+    """Run one batch; kill it when no file completes for ``timeout`` seconds
+    (exit status None)."""
+    with tempfile.TemporaryFile() as err:
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=err)
+        done, last = 0, time.monotonic()
+        killed = False
+        while True:
+            try:
+                proc.wait(timeout=POLL_S)
+                break
+            except subprocess.TimeoutExpired:
+                pass
+            n = _completed(out)
+            now = time.monotonic()
+            if n > done:
+                done, last = n, now
+            elif now - last > timeout:
+                proc.kill()
+                proc.wait()
+                killed = True
+                break
+        err.seek(0)
+        stderr = err.read().decode("utf-8", "replace").strip().splitlines()
+    if killed:
+        return None, f"no file completed within the time limit ({timeout:g} s per file)"
     return proc.returncode, " | ".join(stderr[-5:])
+
+
+def _elapsed(out: Path) -> dict[str, float]:
+    """The per-file times pdftrace recorded in ``_times.tsv``."""
+    times: dict[str, float] = {}
+    try:
+        text = (out / TIMES_FILE).read_text(encoding="ascii")
+    except OSError:
+        return times
+    for line in text.splitlines():
+        sha, _, seconds = line.partition("\t")
+        try:
+            times[sha] = float(seconds)
+        except ValueError:
+            continue
+    return times
 
 
 def rust_stage_implemented(pdftrace: Path, stage: str) -> bool | None:
@@ -110,26 +168,39 @@ def run_rust(pdftrace: Path, stage: str, max_pages: int, files: list[CorpusFile]
     batches = [(pw, fs[i : i + batch_size]) for pw, fs in groups.items() for i in range(0, len(fs), batch_size)]
     result = RustRun()
     counter = iter(range(1 << 30))
+    lock = threading.Lock()
 
     def one_batch(item: tuple[str | None, list[CorpusFile]]) -> None:
         password, batch = item
         out = out_root / f"batch-{next(counter)}"
         out.mkdir(parents=True)
-        code, err = _run_pdftrace(pdftrace, stage, max_pages, password, batch, out, timeout)
+        code, err = _run_pdftrace(_pdftrace_command(pdftrace, stage, max_pages, password, batch, out), out, timeout)
         if code == 2:
             raise StageNotImplemented(err or f"pdftrace: stage {stage!r} not implemented")
-        if code == 0:
+        times = _elapsed(out)
+        remaining = []
+        with lock:
             for f in batch:
                 p = out / f"{f.sha256}.txt"
-                if p.is_file():
-                    result.outputs[f.sha256] = p
-                else:
-                    result.failures[f.sha256] = f"exit 0 but no {p.name}"
-            return
-        if len(batch) == 1:
-            result.failures[batch[0].sha256] = f"exit {code}: {err}" if code is not None else err
-            return
-        for f in batch:  # isolate the culprit(s): every file of the batch alone
+                if not p.is_file():
+                    remaining.append(f)
+                    continue
+                result.outputs[f.sha256] = p
+                seconds = times.get(f.sha256)
+                if seconds is not None and seconds > timeout:
+                    result.timeouts[f.sha256] = f"took {seconds:.1f} s (time limit {timeout:g} s per file)"
+            if code == 0:
+                for f in remaining:
+                    result.failures[f.sha256] = f"exit 0 but no {f.sha256}.txt"
+                return
+            if len(batch) == 1:
+                for f in remaining:
+                    if code is None:
+                        result.timeouts[f.sha256] = err
+                    else:
+                        result.failures[f.sha256] = f"exit {code}: {err}"
+                return
+        for f in remaining:  # isolate the culprit(s): every unfinished file alone
             one_batch((password, [f]))
 
     with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
@@ -204,6 +275,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     ap.add_argument("--limit", type=int, help="only the first K files of the set")
     ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT, help="seconds per file (oracle and pdftrace; default 120)")
     ap.add_argument("--retry-timeouts", action="store_true", help="rebuild oracle traces cached as !Timeout")
+    ap.add_argument("--allow-timeouts", action="store_true", help="oracle timeouts are listed but do not fail the run")
     ap.add_argument("--batch-size", type=int, default=DEFAULT_BATCH, help="files per pdftrace invocation (default 64)")
     ap.add_argument("--json", action="store_true", help="print a JSON summary on stdout instead of the report")
     ap.add_argument("--oracle-only", action="store_true", help="only build the oracle cache and report on it")
@@ -247,7 +319,11 @@ def _oracle_report(args: argparse.Namespace, cache: OracleCache, results: list[O
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    files = load_set(args.set) if args.set else files_from_paths(args.files)
+    try:
+        files = load_set(args.set) if args.set else files_from_paths(args.files)
+    except CorpusError as e:
+        print(f"verify: {e}", file=sys.stderr)
+        return 2
     if args.limit is not None:
         files = files[: args.limit]
     if not args.oracle_only:
@@ -284,6 +360,9 @@ def main(argv: list[str] | None = None) -> int:
             elif f.sha256 in rust.failures:
                 rec["status"] = "rust-crashed"
                 rec["reason"] = rust.failures[f.sha256]
+            elif f.sha256 in rust.timeouts:
+                rec["status"] = "rust-timeout"
+                rec["reason"] = rust.timeouts[f.sha256]
             else:
                 expected = r.path.read_bytes()
                 actual = rust.outputs[f.sha256].read_bytes()
@@ -301,7 +380,15 @@ def main(argv: list[str] | None = None) -> int:
 
     counts = {s: sum(1 for _, rec in records if rec["status"] == s) for s in STATUSES}
     counts["total"] = len(records)
-    failed = counts["different"] + counts["rust-crashed"] + counts["oracle-error"]
+    compared = counts["identical"] + counts["different"]
+    failed = counts["different"] + counts["rust-crashed"] + counts["rust-timeout"] + counts["oracle-error"]
+    if not args.allow_timeouts:
+        failed += counts["oracle-timeout"]
+    problems = []
+    if compared == 0:
+        problems.append("no file was compared")
+    if counts["oracle-timeout"] and not args.allow_timeouts:
+        problems.append(f"{counts['oracle-timeout']} oracle timeout(s) left unverified (--allow-timeouts accepts them, --retry-timeouts --timeout T rebuilds them)")
     if args.json:
         summary = {
             "stage": args.stage,
@@ -309,6 +396,7 @@ def main(argv: list[str] | None = None) -> int:
             "max_pages": args.max_pages,
             "fingerprint": cache.fingerprint,
             "counts": counts,
+            "problems": problems,
             "files": [rec for _, rec in records if rec["status"] != "identical"],
         }
         print(json.dumps(summary, indent=2))
@@ -316,17 +404,19 @@ def main(argv: list[str] | None = None) -> int:
         for f, rec in records:
             if rec["status"] == "different":
                 print(_format_difference(f, rec["difference"]))  # type: ignore[arg-type]
-            elif rec["status"] in ("rust-crashed", "oracle-error"):
+            elif rec["status"] in ("rust-crashed", "rust-timeout", "oracle-error"):
                 print(f"--- {f.rel}  (sha256 {f.sha256[:16]}) {rec['status']}: {rec.get('reason', '')}")
         timeouts = [f.rel for f, rec in records if rec["status"] == "oracle-timeout"]
         for path in timeouts:
-            print(f"    oracle timeout (excluded): {path}")
+            print(f"    oracle timeout (unverified): {path}")
         print(
             f"{args.stage} on {args.set or 'files'}: {counts['identical']} identical / {counts['different']} different / "
-            f"{counts['rust-crashed']} rust-crashed / {counts['oracle-timeout']} oracle-timeout / "
-            f"{counts['oracle-error']} oracle-error / {counts['total']} total"
+            f"{counts['rust-crashed']} rust-crashed / {counts['rust-timeout']} rust-timeout / "
+            f"{counts['oracle-timeout']} oracle-timeout / {counts['oracle-error']} oracle-error / {counts['total']} total"
         )
-    return 1 if failed else 0
+        for problem in problems:
+            print(f"verify: FAILED: {problem}")
+    return 1 if failed or problems else 0
 
 
 if __name__ == "__main__":

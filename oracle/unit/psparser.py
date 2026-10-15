@@ -10,7 +10,8 @@ over each job and records the SHA-256 of its canonical serialization: one line
 the exception that ended the job (``!PSEOF("Unexpected EOF")`` normally), with
 ``oracle.canon.canon``. The Rust replay is crates/pdftrace/tests/psparser_unit.rs.
 
-Modes (outputs in ``<cache>/unit/psparser/``, see ``oracle/unit/_common.py``):
+Modes (outputs in ``<cache>/unit/psparser/<fingerprint>/``, see
+``oracle/unit/_common.py``):
 
 - default: the real corpus. Decoded streams of the first ``--max-pages`` pages
   (and of the Form XObjects of their resources) of every PDF of the corpus set
@@ -50,8 +51,12 @@ from ..corpus import load_set
 from ..stages._common import open_document
 from ._common import oracle_sources, require_oracle_python, unit_dir, write_meta
 
-OUT = unit_dir("psparser")
 FILE_TIMEOUT_S = 120
+
+
+def out_dir():
+    """Where this generator's files go (``oracle/unit/_common.py``)."""
+    return unit_dir("psparser")
 
 
 # -- the job ------------------------------------------------------------------
@@ -156,7 +161,7 @@ def process_file(args):
 
 
 def write_corpus(name: str, payload) -> None:
-    with open(OUT / f"{name}.bin", "wb") as f:
+    with open(out_dir() / f"{name}.bin", "wb") as f:
         f.write(b"PSC2" + struct.pack("<I", len(payload)))
         for streams in payload:
             f.write(struct.pack("<I", len(streams)))
@@ -165,7 +170,7 @@ def write_corpus(name: str, payload) -> None:
 
 
 def read_corpus(name: str):
-    data = (OUT / f"{name}.bin").read_bytes()
+    data = (out_dir() / f"{name}.bin").read_bytes()
     assert data[:4] == b"PSC2"
     (n,) = struct.unpack_from("<I", data, 4)
     off, jobs = 8, []
@@ -183,7 +188,7 @@ def read_corpus(name: str):
 
 
 def write_oracle(name: str, records) -> None:
-    with open(OUT / f"{name}.json", "w", encoding="ascii") as f:
+    with open(out_dir() / f"{name}.json", "w", encoding="ascii") as f:
         json.dump({"sources": oracle_sources(), "records": records}, f)
     write_meta("psparser")
 

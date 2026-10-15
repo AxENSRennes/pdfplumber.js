@@ -5,16 +5,31 @@ replay its cases::
 
     PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.<module>
 
-and writes into ``<cache>/unit/<module>/`` (``<cache>`` is ``PDFPLUMBER_CACHE``
-or ``<PDFPLUMBER_ROOT>/.cache``, see ``oracle.corpus.cache_dir``):
+and writes into ``<cache>/unit/<module>/<fingerprint>/`` (``<cache>`` is
+``PDFPLUMBER_CACHE`` or ``<PDFPLUMBER_ROOT>/.cache``, see
+``oracle.corpus.cache_dir``):
 
 - ``<name>.jsonl``: one case per line, ``{"in": [arguments...], "out": result}``
   in typed JSON (``oracle.typed_json.dumps``, compact ASCII);
-- ``meta.json``: ``{"sources": {<repo path>: <sha256>, ...}, "python": ..., ...}``
-  where ``sources`` lists every ``oracle/`` module loaded by the generator
-  (the generator itself, ``canon.py``, ``typed_json.py``...). The Rust side
-  (``pdftrace::unit::UnitData``) refuses the data when one of these files has
-  changed since, and prints the command that regenerates it.
+- ``meta.json``, written last: ``{"sources": {<repo path>: <sha256>, ...},
+  "environment": {...}, "python": ..., ...}`` where ``sources`` lists every
+  ``oracle/`` module loaded by the generator (the generator itself,
+  ``canon.py``, ``typed_json.py``...) and ``environment`` is
+  ``oracle.environment.environment()`` (interpreter, packages, pdfminer and
+  pdfplumber files, native libraries).
+
+``<fingerprint>`` is a hash of these sources and of the environment, taken
+when the generator starts (``require_oracle_python``): checkouts with
+different generators, sharing one cache (git worktrees), write to different
+directories, and a run never mixes its files with another's. Readers pick the
+directory whose ``meta.json`` matches: the Rust side
+(``pdftrace::unit::UnitData``) takes the most recently confirmed one whose
+``sources`` are those of its checkout, and refuses the data otherwise,
+printing the command that regenerates it; ``python -m oracle.unit`` also
+compares the environment and regenerates when it changed. A generator must
+import every oracle module it uses before it starts (``write_meta`` checks
+that the sources did not grow). Old fingerprint directories are never read
+again and can be deleted.
 """
 
 from __future__ import annotations
@@ -29,9 +44,10 @@ from pathlib import Path
 from typing import Any
 
 from ..corpus import REPO_DIR, cache_dir
+from ..environment import environment
 from ..typed_json import dumps
 
-__all__ = ["oracle_sources", "require_oracle_python", "unit_dir", "write_cases", "write_meta"]
+__all__ = ["fingerprint", "oracle_sources", "require_oracle_python", "unit_dir", "write_cases", "write_meta"]
 
 ORACLE_DIR = REPO_DIR / "oracle"
 
@@ -54,9 +70,18 @@ def require_oracle_python() -> None:
     _snapshot.update(_loaded_sources())
 
 
+def fingerprint(sources: dict[str, str], env: dict[str, Any]) -> str:
+    """The directory name of the data of these sources and environment."""
+    blob = json.dumps({"sources": sources, "environment": env}, sort_keys=True).encode()
+    return hashlib.sha256(blob).hexdigest()[:16]
+
+
 def unit_dir(module: str) -> Path:
-    """``<cache>/unit/<module>/``, created if needed."""
-    path = cache_dir() / "unit" / module
+    """``<cache>/unit/<module>/<fingerprint>/``, created if needed (after
+    ``require_oracle_python``)."""
+    if not _snapshot:
+        raise RuntimeError("unit_dir() before require_oracle_python()")
+    path = cache_dir() / "unit" / module / fingerprint(_snapshot, environment())
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -75,6 +100,9 @@ def oracle_sources() -> dict[str, str]:
     changed = [path for path, sha in _snapshot.items() if now.get(path) != sha]
     if changed:
         raise RuntimeError(f"oracle sources changed during the run: {', '.join(changed)}; run the generator again")
+    late = [path for path in now if path not in _snapshot]
+    if late:
+        raise RuntimeError(f"oracle modules imported after require_oracle_python(): {', '.join(late)}; import them first")
     return now
 
 
@@ -111,5 +139,5 @@ def write_cases(module: str, name: str, cases: Iterable[tuple[list[Any], Any]]) 
 
 def write_meta(module: str, **extra: Any) -> None:
     """Writes ``meta.json``; call it last, once every case file is written."""
-    meta = {"sources": oracle_sources(), "python": sys.version.split()[0], **extra}
+    meta = {"sources": oracle_sources(), "environment": environment(), "python": sys.version.split()[0], **extra}
     _atomic_write_text(unit_dir(module) / "meta.json", json.dumps(meta, indent=1) + "\n")

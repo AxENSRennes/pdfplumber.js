@@ -11,17 +11,21 @@ Layout::
 
 The fingerprint (16 hex digits of a SHA-256) covers everything that decides a
 trace: the sources of the stage module and of the stages it ``DEPENDS`` on,
-of ``stages/__init__.py`` (runner), ``stages/_common.py``, ``canon.py`` and
-``typed_json.py``; the Python, pdfminer.six and pdfplumber versions; and
-``max_pages`` for a paged stage.
+of ``stages/__init__.py`` (runner), ``stages/_common.py``, ``canon.py``,
+``typed_json.py``, ``trace.py`` and ``environment.py``; the oracle's
+environment (``oracle/environment.py``: interpreter, installed package
+versions, a hash of the installed pdfminer and pdfplumber files, zlib, the C
+library, the CPU features that select its ``pow``); and ``max_pages`` for a
+paged stage.
 When a password is used, its SHA-256 is part of the file name, so changing a
 file's password in a manifest rebuilds its trace.
 
 Each trace is built in its own process (``python -m oracle.trace``, same
 interpreter), ``jobs`` at a time, so a crash or a runaway file cannot take the
 others down. A file that does not finish within ``timeout`` seconds gets the
-trace ``!Timeout`` (cached; ``retry_timeouts`` rebuilds them); verify.py
-excludes and counts these. A process that fails (non-zero exit) is a harness
+trace ``!Timeout <timeout>`` (cached with the limit it had): it is rebuilt
+when a later build allows more time, or with ``retry_timeouts``. A timeout
+is an unverified file, never a passing one (verify.py). A process that fails (non-zero exit) is a harness
 error: nothing is cached and the error is reported. Writes are atomic
 (temporary file in the same directory, then ``os.replace``).
 """
@@ -41,22 +45,31 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .corpus import REPO_DIR, CorpusFile, cache_dir
+from .environment import environment
 from .stages import get_stage, stage_source_files
 
-TIMEOUT_TEXT = "!Timeout\n"
+TIMEOUT_PREFIX = b"!Timeout"
 DEFAULT_TIMEOUT = 120.0
 DEFAULT_JOBS = 3
 
 
-def versions() -> dict[str, str]:
-    import pdfminer
-    import pdfplumber
+def timeout_text(limit: float) -> bytes:
+    """The cached trace of a file that did not finish within ``limit`` seconds."""
+    return TIMEOUT_PREFIX + f" {limit:g}\n".encode()
 
-    return {
-        "python": platform.python_implementation() + " " + sys.version.split()[0],
-        "pdfminer.six": pdfminer.__version__,
-        "pdfplumber": pdfplumber.__version__,
-    }
+
+def parse_timeout(head: bytes) -> float | None:
+    """The limit of a cached ``!Timeout`` trace (0 for the old form without
+    one), or None when ``head`` is not a timeout."""
+    first = head.split(b"\n", 1)[0]
+    if first == TIMEOUT_PREFIX:
+        return 0.0
+    if not first.startswith(TIMEOUT_PREFIX + b" "):
+        return None
+    try:
+        return float(first[len(TIMEOUT_PREFIX) + 1 :])
+    except ValueError:
+        return 0.0
 
 
 def fingerprint_inputs(stage: str, max_pages: int) -> dict[str, object]:
@@ -64,7 +77,7 @@ def fingerprint_inputs(stage: str, max_pages: int) -> dict[str, object]:
     sources = {}
     for path in stage_source_files(stage):
         sources[path.relative_to(REPO_DIR).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
-    inputs: dict[str, object] = {"stage": stage, "sources": sources, "versions": versions()}
+    inputs: dict[str, object] = {"stage": stage, "sources": sources, "environment": environment()}
     if getattr(module, "PAGED", True):
         inputs["max_pages"] = max_pages
     return inputs
@@ -82,6 +95,7 @@ class OracleResult:
     status: str  # "ok" | "timeout" | "error"
     seconds: float | None = None  # build time, None when read from the cache
     error: str = ""
+    limit: float | None = None  # for a timeout: the time limit it had
 
 
 class OracleCache:
@@ -108,11 +122,13 @@ class OracleCache:
         path = self.path_for(f)
         try:
             with open(path, "rb") as fh:
-                head = fh.read(len(TIMEOUT_TEXT) + 1)
+                head = fh.read(64)
         except FileNotFoundError:
             return None
-        status = "timeout" if head == TIMEOUT_TEXT.encode() else "ok"
-        return OracleResult(f, path, status)
+        limit = parse_timeout(head)
+        if limit is None:
+            return OracleResult(f, path, "ok")
+        return OracleResult(f, path, "timeout", limit=limit)
 
     def build(
         self,
@@ -122,12 +138,16 @@ class OracleCache:
         retry_timeouts: bool = False,
         progress: bool = True,
     ) -> list[OracleResult]:
-        """Make sure every file has a trace; return one result per file, in order."""
+        """Make sure every file has a trace; return one result per file, in order.
+
+        A cached timeout is rebuilt when ``timeout`` is larger than the limit
+        it was recorded with, or with ``retry_timeouts``."""
         results: list[OracleResult | None] = []
         todo: list[tuple[int, CorpusFile]] = []
         for i, f in enumerate(files):
             hit = self.lookup(f)
-            if hit is None or (retry_timeouts and hit.status == "timeout"):
+            stale_timeout = hit is not None and hit.status == "timeout" and (retry_timeouts or timeout > (hit.limit or 0.0))
+            if hit is None or stale_timeout:
                 todo.append((i, f))
                 results.append(None)
             else:
@@ -156,7 +176,7 @@ class OracleCache:
         path = self.path_for(f)
         cmd = [sys.executable, "-m", "oracle.trace", "--stage", self.stage, "--max-pages", str(self.max_pages)]
         if f.password is not None:
-            cmd += ["--password", f.password]
+            cmd.append(f"--password={f.password}")  # one argument: the password may start with "-"
         cmd.append(str(f.path))
         env = dict(os.environ)
         env["PYTHONPATH"] = str(REPO_DIR) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
@@ -165,9 +185,9 @@ class OracleCache:
             proc = subprocess.run(cmd, env=env, capture_output=True, timeout=timeout, cwd=REPO_DIR)
         except subprocess.TimeoutExpired:
             seconds = time.monotonic() - started
-            _atomic_write(path, TIMEOUT_TEXT.encode())
+            _atomic_write(path, timeout_text(timeout))
             self._log(f, "timeout", seconds, 0)
-            return OracleResult(f, path, "timeout", seconds)
+            return OracleResult(f, path, "timeout", seconds, limit=timeout)
         seconds = time.monotonic() - started
         if proc.returncode != 0:
             tail = proc.stderr.decode("utf-8", "replace").strip().splitlines()[-5:]

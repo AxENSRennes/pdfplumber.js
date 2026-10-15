@@ -1,12 +1,14 @@
 //! Access to the unit differential test data that `oracle/unit/<module>.py`
-//! writes under `<cache>/unit/<module>/` (`<cache>` is `$PDFPLUMBER_CACHE`,
-//! else `$PDFPLUMBER_ROOT/.cache`).
+//! writes under `<cache>/unit/<module>/<fingerprint>/` (`<cache>` is
+//! `$PDFPLUMBER_CACHE`, else `$PDFPLUMBER_ROOT/.cache`).
 //!
 //! Each generator also writes `meta.json`, whose `sources` gives the SHA-256
-//! of every `oracle/` module it loaded (`oracle/unit/_common.py`);
-//! [`UnitData::open`] refuses data produced by other versions of these
-//! files, and panics with the command that regenerates it when the data is
-//! missing or stale.
+//! of every `oracle/` module it loaded (`oracle/unit/_common.py`). Several
+//! checkouts share the cache, each generator version in its own fingerprint
+//! directory; [`UnitData::open`] takes the most recent directory whose
+//! sources are those of this checkout (`python -m oracle.unit` marks the one
+//! of the current oracle environment as the most recent), and panics with
+//! the command that regenerates the data when there is none.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -19,9 +21,11 @@ use crate::canon::sha256_hex;
 use crate::typed_json::{self, Json};
 use crate::value::Value;
 
-/// The checkout this crate belongs to (where `oracle/` is).
+/// The checkout this crate belongs to (where `oracle/` is): two levels up
+/// from this crate (not canonicalized: WASI has no `realpath`).
 pub fn workspace_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().expect("workspace root")
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    crate_dir.parent().and_then(Path::parent).expect("crates/pdftrace is two levels below the root").to_path_buf()
 }
 
 /// `$PDFPLUMBER_ROOT`, else the workspace root: where `corpus/`,
@@ -50,18 +54,44 @@ pub struct UnitData {
 }
 
 impl UnitData {
-    /// Opens `<cache>/unit/<module>/`, checking that the current
-    /// `oracle/unit/<module>.py` (and the oracle modules it uses) generated
-    /// it. Panics with instructions when it did not.
+    /// Opens the data of `module`: the most recent
+    /// `<cache>/unit/<module>/<fingerprint>/` whose `meta.json` was written
+    /// by the current `oracle/unit/<module>.py` (and the oracle modules it
+    /// uses). Panics with instructions when there is none.
     pub fn open(module: &str) -> UnitData {
-        let dir = cache_dir().join("unit").join(module);
-        let data = UnitData { module: module.to_owned(), dir };
-        let meta_path = data.path("meta.json");
-        let meta = fs::read_to_string(&meta_path)
-            .unwrap_or_else(|_| panic!("missing unit test data {}: {}", meta_path.display(), data.how()));
-        let meta = typed_json::parse_json(&meta).expect("meta.json is JSON");
-        data.check_sources(&meta_path, meta.get("sources"));
-        data
+        UnitData::open_in(&cache_dir().join("unit").join(module), module)
+    }
+
+    /// [`UnitData::open`] on the fingerprint directories under `base`.
+    pub fn open_in(base: &Path, module: &str) -> UnitData {
+        let mut candidates: Vec<(std::time::SystemTime, PathBuf)> = fs::read_dir(base)
+            .map(|entries| {
+                entries
+                    .filter_map(Result::ok)
+                    .map(|e| e.path())
+                    .filter_map(|dir| Some((fs::metadata(dir.join("meta.json")).ok()?.modified().ok()?, dir)))
+                    .collect()
+            })
+            .unwrap_or_default();
+        candidates.sort_by_key(|c| std::cmp::Reverse(c.0));
+        let mut reasons = Vec::new();
+        for (_, dir) in candidates {
+            let data = UnitData { module: module.to_owned(), dir };
+            let meta_path = data.path("meta.json");
+            let reason = match fs::read_to_string(&meta_path).map_err(|e| e.to_string()).and_then(|meta| {
+                let meta = typed_json::parse_json(&meta)?;
+                data.sources_reason(&meta_path, meta.get("sources")).map_or(Ok(()), Err)
+            }) {
+                Ok(()) => return data,
+                Err(reason) => reason,
+            };
+            reasons.push(reason);
+        }
+        let data = UnitData { module: module.to_owned(), dir: base.to_path_buf() };
+        match reasons.first() {
+            None => panic!("missing unit test data in {}: {}", base.display(), data.how()),
+            Some(reason) => panic!("no current unit test data in {} ({reason}): {}", base.display(), data.how()),
+        }
     }
 
     /// How to regenerate the data.
@@ -76,29 +106,36 @@ impl UnitData {
         )
     }
 
-    /// Checks the `sources` recorded in `file` (`{repo path: sha256}` of the
-    /// oracle modules that wrote it): the generator of this module must be
-    /// listed, and every file must be unchanged in this checkout.
-    pub fn check_sources(&self, file: &Path, sources: Option<&Json>) {
+    /// Why the `sources` recorded in `file` (`{repo path: sha256}` of the
+    /// oracle modules that wrote it) do not match this checkout: the
+    /// generator of this module must be listed, and every file must be
+    /// unchanged. `None` when they match.
+    fn sources_reason(&self, file: &Path, sources: Option<&Json>) -> Option<String> {
         let Some(Json::Object(sources)) = sources else {
-            panic!("{} has no \"sources\" (an older generator wrote it): {}", file.display(), self.how());
+            return Some(format!("{} has no \"sources\" (an older generator wrote it)", file.display()));
         };
         let generator = format!("oracle/unit/{}.py", self.module);
-        assert!(
-            sources.iter().any(|(path, _)| *path == generator),
-            "{} does not list {generator}: {}",
-            file.display(),
-            self.how()
-        );
+        if !sources.iter().any(|(path, _)| *path == generator) {
+            return Some(format!("{} does not list {generator}", file.display()));
+        }
         let workspace = workspace_root();
         for (path, recorded) in sources {
-            let source = fs::read(workspace.join(path)).unwrap_or_else(|e| panic!("cannot read {path}: {e}"));
-            assert!(
-                *recorded == Json::String(sha256_hex(&source)),
-                "stale unit test data {}: {path} changed since it was generated; {}",
-                file.display(),
-                self.how()
-            );
+            let Ok(source) = fs::read(workspace.join(path)) else {
+                return Some(format!("{path} no longer exists"));
+            };
+            if *recorded != Json::String(sha256_hex(&source)) {
+                return Some(format!("{path} changed since {} was written", file.display()));
+            }
+        }
+        None
+    }
+
+    /// Checks the `sources` recorded in another file of the data (a corpus
+    /// written with `meta.json`); panics with instructions if they do not
+    /// match this checkout.
+    pub fn check_sources(&self, file: &Path, sources: Option<&Json>) {
+        if let Some(reason) = self.sources_reason(file, sources) {
+            panic!("stale unit test data ({reason}): {}", self.how());
         }
     }
 
@@ -197,4 +234,34 @@ pub fn read_content_jobs(path: &Path) -> Vec<ContentJob> {
     }
     assert_eq!(off, data.len(), "{}: trailing bytes", path.display());
     jobs
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Writes a fingerprint directory whose `meta.json` records `sources`.
+    fn data_dir(base: &Path, name: &str, sources: &str) -> PathBuf {
+        let dir = base.join(name);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("meta.json"), format!("{{\"sources\": {sources}}}")).unwrap();
+        dir
+    }
+
+    #[test]
+    #[cfg_attr(target_family = "wasm", ignore = "panics abort on WebAssembly")]
+    fn open_picks_the_directory_of_this_checkout() {
+        let base = std::env::temp_dir().join(format!("pdftrace-unitdata-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let generator = workspace_root().join("oracle/unit/canon.py");
+        let sha = sha256_hex(&fs::read(&generator).unwrap());
+        // another checkout's generator, written last: never picked
+        data_dir(&base, "aaaa", &format!("{{\"oracle/unit/canon.py\": \"{sha}\"}}"));
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        data_dir(&base, "bbbb", "{\"oracle/unit/canon.py\": \"0000\"}");
+        assert_eq!(UnitData::open_in(&base, "canon").dir, base.join("aaaa"));
+        let missing = std::panic::catch_unwind(|| UnitData::open_in(&base.join("none"), "canon"));
+        assert!(missing.is_err());
+        fs::remove_dir_all(&base).unwrap();
+    }
 }

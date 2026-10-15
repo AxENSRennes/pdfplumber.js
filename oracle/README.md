@@ -76,9 +76,11 @@ $PY -m oracle.verify --stage pages --files a.pdf b.pdf --pdftrace target/debug/p
 ```
 
 `verify` builds the missing oracle traces (`-j` processes, default 3;
-`--timeout` 120 s per file, recorded as `!Timeout` and excluded), runs
-`pdftrace --stage S --max-pages N [--password P] --out DIR F1.pdf …` in
-batches of files that share a password (`--batch-size`, default 64), compares
+`--timeout` 120 s per file, recorded as `!Timeout <limit>`), runs
+`pdftrace --stage S --max-pages N [--password=P] --out DIR F1.pdf …` in
+batches of files that share a password (`--batch-size`, default 64; a batch
+is killed when no file completes for `--timeout` seconds, and a file that
+took longer than that, per `DIR/_times.tsv`, is a `rust-timeout`), compares
 byte for byte and prints, for each differing file, the first differing line
 with 3 lines of context from both sides:
 
@@ -100,17 +102,21 @@ with 3 lines of context from both sides:
         5 4 10
         6 7 10
         7 10 Kx"6d"
-psparser on micro: 15 identical / 1 different / 0 rust-crashed / 0 oracle-timeout / 0 oracle-error / 16 total
+psparser on micro: 15 identical / 1 different / 0 rust-crashed / 0 rust-timeout / 0 oracle-timeout / 0 oracle-error / 16 total
 ```
 
 (that report comes from the fake binary of `tests/`, told to perturb line 4).
 Lines longer than 240 characters are clipped around the first differing
 column.
 
-Exit status: 0 if all compared files are identical, 1 on any difference, Rust
-crash or oracle error, 2 if `pdftrace` is missing or answers "stage not
-implemented" (its exit status 2). A failing batch is re-run file by file so
-that a crash is attributed to the right PDF. `--keep` keeps the Rust outputs,
+Exit status: 0 only if at least one file was compared and all are identical;
+1 on any difference, Rust crash or timeout, oracle error, oracle timeout
+(unless `--allow-timeouts`, which lists them) or when nothing was compared;
+2 if `pdftrace` is missing or answers "stage not implemented" (its exit
+status 2), or if the set cannot be listed (unknown name, `adv-<stage>` never
+generated, missing directory). A failing batch keeps the traces it completed
+and re-runs each remaining file alone, so that a crash is attributed to the
+right PDF. `--keep` keeps the Rust outputs,
 `--limit K` takes the first K files of the set.
 
 Warm the cache without Rust (and see the slowest files and timeouts):
@@ -123,9 +129,12 @@ $PY -m oracle.verify --stage streams --set all --oracle-only --retry-timeouts --
 ## Cache
 
 `.cache/oracle/<stage>/<fingerprint>/<sha256>.txt` (`<sha256>.pw-<hash>.txt`
-when a password is used). The fingerprint hashes the stage module (and the stages in its `DEPENDS`),
-`stages/__init__.py`, `stages/_common.py`, `canon.py`, `typed_json.py`, the
-Python/pdfminer/pdfplumber versions and, for paged stages, `--max-pages`; each
+when a password is used). The fingerprint hashes the stage module (and the
+stages in its `DEPENDS`), `stages/__init__.py`, `stages/_common.py`,
+`canon.py`, `typed_json.py`, `trace.py`, `environment.py`, the oracle
+environment (`environment.py`: interpreter, every installed package version,
+the installed pdfminer/pdfplumber files, zlib, the C library and the CPU
+flags that select its `pow`) and, for paged stages, `--max-pages`; each
 directory has a `fingerprint.json` saying what was hashed and a
 `_builds.jsonl` with one record (time, size, status) per built trace. Old
 fingerprint directories are never read again and can be deleted.
@@ -151,7 +160,7 @@ fingerprint directories are never read again and can be deleted.
 
 ```bash
 $PY -m oracle.unit                 # regenerate what is missing or stale (--check: only report, --force: all)
-$PY -m oracle.unit.canon           # one generator -> $PDFPLUMBER_CACHE/unit/canon/
+$PY -m oracle.unit.canon           # one generator -> $PDFPLUMBER_CACHE/unit/canon/<fingerprint>/
 ```
 
 Generators: `canon` (the Rust `canon`/typed JSON), `pycompat` (CPython
@@ -160,8 +169,13 @@ semantics), `exceptions` (pdfminer/pdfplumber exception classes), `pdftypes`
 (`PDFContentParser` on the content streams of the `all` set, and with
 `--fuzz 4000` on an adversarial corpus). Each writes typed JSON lines
 `{"in": [args...], "out": result}` (fixed seed) and a `meta.json` whose
-`sources` holds the SHA-256 of every `oracle/` module the generator loaded;
-the Rust replay refuses data whose sources changed since.
+`sources` holds the SHA-256 of every `oracle/` module the generator loaded
+and `environment` the oracle environment (`environment.py`), in a directory
+named by a hash of both: checkouts sharing the cache never mix their files.
+The Rust replay takes the most recent directory whose sources are those of
+its checkout, and refuses to run without one. `scripts/check.sh` replays the
+cases natively and compiled to WebAssembly (`wasm32-wasip1` under Node's
+WASI, `scripts/wasi-runner.mjs`).
 
 The `canon` cases (about 6 300) are edge cases of every type (ints past the
 4 300-digit `str()` limit, subnormals, NaN payloads, `repr` exponent

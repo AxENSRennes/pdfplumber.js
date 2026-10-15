@@ -8,6 +8,7 @@ this checkout (``corpus/micro``), so it needs no downloaded corpus.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -41,7 +42,7 @@ class VerifyWithFakePdftrace(unittest.TestCase):
     def tearDownClass(cls) -> None:
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
-    def verify(self, *extra: str, mode: str = "copy", target: str = "", cache: str = "cache", files: list[Path] = FILES, stage: str = "psparser", line: int = 2) -> tuple[int, dict]:
+    def verify(self, *extra: str, mode: str = "copy", target: str = "", cache: str = "cache", files: list[Path] | None = FILES, stage: str = "psparser", line: int = 2, sleep: float = 30) -> tuple[int, dict]:
         env = dict(os.environ)
         env.update(
             PDFPLUMBER_ROOT=str(REPO),
@@ -50,9 +51,10 @@ class VerifyWithFakePdftrace(unittest.TestCase):
             FAKE_PDFTRACE_MODE=mode,
             FAKE_PDFTRACE_TARGET=target,
             FAKE_PDFTRACE_LINE=str(line),
+            FAKE_PDFTRACE_SLEEP=str(sleep),
         )
         cmd = [sys.executable, "-m", "oracle.verify", "--stage", stage, "--json", "--pdftrace", str(self.pdftrace)]
-        cmd += [*extra, "--files", *map(str, files)]
+        cmd += [*extra, *(["--files", *map(str, files)] if files is not None else [])]
         proc = subprocess.run(cmd, env=env, capture_output=True, cwd=REPO)
         self.stderr = proc.stderr.decode("utf-8", "replace")
         try:
@@ -140,19 +142,80 @@ class VerifyWithFakePdftrace(unittest.TestCase):
         code, _ = self.verify("--pdftrace", str(env_missing))
         self.assertEqual(code, 2)
 
-    def test_oracle_timeout_is_excluded(self) -> None:
-        # 1 ms cannot even start Python: every oracle trace becomes !Timeout,
-        # is cached as such, and is counted apart rather than compared.
+    def test_oracle_timeout_fails_unless_allowed(self) -> None:
+        # 1 ms cannot even start Python: every oracle trace becomes a timeout,
+        # cached with its limit, and never counts as passing.
         code, summary = self.verify("--timeout", "0.001", cache="cache-timeout", files=FILES[:2])
-        self.assertEqual(code, 0, summary)
+        self.assertEqual(code, 1, summary)
         self.assertEqual(summary["counts"]["oracle-timeout"], 2)
         self.assertEqual(summary["counts"]["identical"], 0)
+        self.assertIn("no file was compared", summary["problems"])
         cached = list((self.tmp / "cache-timeout").glob("oracle/psparser/*/*.txt"))
-        self.assertEqual(sorted(p.read_text() for p in cached), ["!Timeout\n", "!Timeout\n"])
-        # --retry-timeouts rebuilds them with a normal time limit.
-        code, summary = self.verify("--retry-timeouts", cache="cache-timeout", files=FILES[:2])
+        self.assertEqual(sorted(p.read_text() for p in cached), ["!Timeout 0.001\n", "!Timeout 0.001\n"])
+        # --allow-timeouts lists them without failing, but nothing was compared
+        code, summary = self.verify("--timeout", "0.001", "--allow-timeouts", cache="cache-timeout", files=FILES[:2])
+        self.assertEqual(code, 1, summary)
+        self.assertEqual(summary["problems"], ["no file was compared"])
+        # a later run with a larger limit rebuilds them by itself
+        code, summary = self.verify(cache="cache-timeout", files=FILES[:2])
         self.assertEqual(code, 0, summary)
         self.assertEqual(summary["counts"]["identical"], 2)
+
+    def test_old_timeout_entries_are_rebuilt(self) -> None:
+        # a "!Timeout" without its limit (older caches) is rebuilt too
+        self.verify(cache="cache-old-timeout", files=FILES[:1])
+        (cached,) = (self.tmp / "cache-old-timeout").glob("oracle/psparser/*/*.txt")
+        cached.write_text("!Timeout\n")
+        code, summary = self.verify(cache="cache-old-timeout", files=FILES[:1])
+        self.assertEqual(code, 0, summary)
+        self.assertEqual(summary["counts"]["identical"], 1)
+
+    def test_retry_timeouts(self) -> None:
+        self.verify("--timeout", "0.001", cache="cache-retry", files=FILES[:1])
+        code, summary = self.verify("--retry-timeouts", "--timeout", "60", cache="cache-retry", files=FILES[:1])
+        self.assertEqual(code, 0, summary)
+        self.assertEqual(summary["counts"]["identical"], 1)
+
+    def test_nothing_to_compare_fails(self) -> None:
+        code, summary = self.verify("--limit", "0")
+        self.assertEqual(code, 1, summary)
+        self.assertEqual(summary["counts"]["total"], 0)
+        self.assertEqual(summary["problems"], ["no file was compared"])
+
+    def test_unknown_or_missing_sets_are_errors(self) -> None:
+        for name in ("adv-nosuchstage", "adv-psparser", "nosuchset"):
+            code, _ = self.verify("--set", name, files=None, cache="cache-sets")
+            self.assertEqual(code, 2, name)
+            self.assertIn(name, self.stderr)
+
+    def test_rust_hang_is_a_timeout(self) -> None:
+        # the hanging file is killed after --timeout without completing; the
+        # files the batch had finished keep their traces
+        code, summary = self.verify("--timeout", "3", mode="hang", target="vector-objects", files=FILES[:3])
+        self.assertEqual(code, 1, summary)
+        self.assertEqual(summary["counts"]["rust-timeout"], 1)
+        self.assertEqual(summary["counts"]["identical"], 2)
+        (rec,) = summary["files"]
+        self.assertTrue(rec["path"].endswith("vector-objects.pdf"))
+
+    def test_rust_slow_file_is_a_timeout(self) -> None:
+        # a right trace that took longer than the limit does not pass
+        code, summary = self.verify("--timeout", "60", mode="slow", target="text-operators", sleep=61, files=FILES[:2])
+        self.assertEqual(code, 1, summary)
+        self.assertEqual(summary["counts"]["rust-timeout"], 1)
+        self.assertIn("61.0 s", summary["files"][0]["reason"])
+
+    def test_password_starting_with_a_dash(self) -> None:
+        # passwords reach both CLIs as one --password=P argument
+        cache = self.tmp / "cache-dash"
+        manifest = cache / "corpus" / "dash-manifest.json"
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        sha = hashlib.sha256(FILES[0].read_bytes()).hexdigest()
+        manifest.write_text(json.dumps([{"sha256": sha, "password": "-x"}]))
+        code, summary = self.verify(cache="cache-dash", files=FILES[:1])
+        self.assertEqual(code, 0, summary)
+        self.assertEqual(summary["counts"]["identical"], 1)
+        self.assertEqual(len(list(cache.glob("oracle/psparser/*/*.pw-*.txt"))), 1)
 
     def test_other_stages(self) -> None:
         for stage in ("objects", "streams", "pages"):
