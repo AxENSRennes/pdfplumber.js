@@ -29,6 +29,7 @@
 pub mod base64;
 pub mod binascii;
 pub mod builtins;
+pub mod diagnostics;
 pub mod err;
 pub mod float;
 pub mod int;

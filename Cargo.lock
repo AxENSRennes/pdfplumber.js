@@ -183,6 +183,13 @@ dependencies = [
 [[package]]
 name = "pdfplumber-wasm"
 version = "0.0.0"
+dependencies = [
+ "pdfminer",
+ "pdfplumber",
+ "pdftrace",
+ "pycompat",
+ "rustc-hash",
+]
 
 [[package]]
 name = "pdftrace"
