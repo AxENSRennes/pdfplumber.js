@@ -50,10 +50,15 @@ use std::sync::LazyLock;
 use indexmap::IndexMap;
 use pycompat::recursion::{self, Guard};
 use pycompat::repr::{bytes_repr, float_repr, str_repr};
-use pycompat::{exc, ExcKind, Num, PyErr, PyInt, PyResult};
+use pycompat::{exc, zlib, ExcKind, Num, PyErr, PyInt, PyResult};
 use rustc_hash::FxBuildHasher;
 
+use crate::ascii85::{ascii85decode, asciihexdecode};
+use crate::ccitt::ccittfaxdecode_obj;
+use crate::lzw::lzwdecode;
 use crate::psparser::{PSKeyword, PSLiteral, LIT};
+use crate::runlength::rldecode;
+use crate::utils::{apply_png_predictor, apply_tiff_predictor};
 
 /// Python `bytes`: immutable and shared.
 pub type PyBytes = Rc<[u8]>;
@@ -890,55 +895,33 @@ pub fn stream_value(x: &PDFObject) -> PyResult<Rc<PDFStream>> {
 }
 
 // ---------------------------------------------------------------------------
-// Filters whose modules are not ported yet. Each is replaced by a call to
-// its port (`crate::lzw::lzwdecode`, ...) when that module lands.
+// Flate fallback
 
-fn zlib_decompress(_data: &[u8]) -> PyResult<Vec<u8>> {
-    Err(PyErr::not_ported("zlib.decompress"))
-}
-
-// pdfminer/pdftypes.py:221 decompress_corrupted (needs zlib.decompressobj)
-fn decompress_corrupted(_data: &[u8]) -> PyResult<Vec<u8>> {
-    Err(PyErr::not_ported("pdfminer.pdftypes.decompress_corrupted"))
-}
-
-fn lzwdecode(_data: &[u8]) -> PyResult<Vec<u8>> {
-    Err(PyErr::not_ported("pdfminer.lzw.lzwdecode"))
-}
-
-fn ascii85decode(_data: &[u8]) -> PyResult<Vec<u8>> {
-    Err(PyErr::not_ported("pdfminer.ascii85.ascii85decode"))
-}
-
-fn asciihexdecode(_data: &[u8]) -> PyResult<Vec<u8>> {
-    Err(PyErr::not_ported("pdfminer.ascii85.asciihexdecode"))
-}
-
-fn rldecode(_data: &[u8]) -> PyResult<Vec<u8>> {
-    Err(PyErr::not_ported("pdfminer.runlength.rldecode"))
-}
-
-fn ccittfaxdecode(_data: &[u8], _params: &PDFObject) -> PyResult<Vec<u8>> {
-    Err(PyErr::not_ported("pdfminer.ccitt.ccittfaxdecode"))
-}
-
-fn apply_tiff_predictor(
-    _colors: &PyInt,
-    _columns: &PyInt,
-    _bitspercomponent: &PyInt,
-    _data: &[u8],
-) -> PyResult<Vec<u8>> {
-    Err(PyErr::not_ported("pdfminer.utils.apply_tiff_predictor"))
-}
-
-fn apply_png_predictor(
-    _pred: &PyInt,
-    _colors: &PyInt,
-    _columns: &PyInt,
-    _bitspercomponent: &PyInt,
-    _data: &[u8],
-) -> PyResult<Vec<u8>> {
-    Err(PyErr::not_ported("pdfminer.utils.apply_png_predictor"))
+// pdfminer/pdftypes.py:221 decompress_corrupted
+/// Called on some data that can't be properly decoded because of CRC
+/// checksum error. Attempt to decode it skipping the CRC: a
+/// `zlib.decompressobj()` is fed one byte at a time, and the output up to
+/// the first `zlib.error` is returned, unless that error comes before the
+/// last 4 bytes (the Adler-32 trailer), where it is raised.
+pub fn decompress_corrupted(data: &[u8]) -> PyResult<Vec<u8>> {
+    let mut d = zlib::Decompress::new(zlib::MAX_WBITS)?;
+    let mut result_str = Vec::new();
+    // i: the number of bytes decompressed without error
+    for (i, byte) in data.chunks(1).enumerate() {
+        match d.decompress(byte) {
+            Ok(out) => result_str.extend_from_slice(&out),
+            Err(e) if e.is_instance(ExcKind::ZlibError) => {
+                // Let the error propagate if we're not yet in the CRC checksum
+                if (i as i64) < data.len() as i64 - 3 {
+                    return Err(e);
+                }
+                // logger.warning("Data-loss while decompressing corrupted data")
+                break;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(result_str)
 }
 
 // ---------------------------------------------------------------------------
@@ -1088,8 +1071,9 @@ impl PDFStream {
         for (f, params) in &filters {
             if in_literals(f, &*LITERALS_FLATE_DECODE) {
                 // will get errors if the document is encrypted.
-                data = match zlib_decompress(&data) {
+                data = match zlib::decompress(&data) {
                     Ok(d) => d.into(),
+                    // (with settings.STRICT, a PDFException)
                     Err(e) if e.is_instance(ExcKind::ZlibError) => match decompress_corrupted(&data) {
                         Ok(d) => d.into(),
                         Err(e) if e.is_instance(ExcKind::ZlibError) => Rc::from(&[][..]),
@@ -1106,7 +1090,7 @@ impl PDFStream {
             } else if in_literals(f, &*LITERALS_RUNLENGTH_DECODE) {
                 data = rldecode(&data)?.into();
             } else if in_literals(f, &*LITERALS_CCITTFAX_DECODE) {
-                data = ccittfaxdecode(&data, params)?.into();
+                data = ccittfaxdecode_obj(&data, params)?.into();
             } else if in_literals(f, &*LITERALS_DCT_DECODE) {
                 // This is probably a JPG stream
                 // it does not need to be decoded twice.
@@ -1120,6 +1104,7 @@ impl PDFStream {
             }
             // apply predictors
             if params.is_truthy() && params.py_contains_str("Predictor")? {
+                // params.get(name, default): a dict, or a stream
                 let get = |name: &str, default: i64| -> PDFObject {
                     let default = PDFObject::Int(PyInt::Small(default));
                     match params {
@@ -1142,14 +1127,14 @@ impl PDFStream {
                     let colors = int_value(&get("Colors", 1))?;
                     let columns = int_value(&get("Columns", 1))?;
                     let raw_bits_per_component = get("BitsPerComponent", 8);
-                    let bitspercomponent = int_value(&raw_bits_per_component)?;
+                    let bitspercomponent = int_value_obj(&raw_bits_per_component)?;
                     data = apply_tiff_predictor(&colors, &columns, &bitspercomponent, &data)?.into();
                 } else if pred >= PyInt::Small(10) {
                     // PNG predictor
                     let colors = int_value(&get("Colors", 1))?;
                     let columns = int_value(&get("Columns", 1))?;
                     let raw_bits_per_component = get("BitsPerComponent", 8);
-                    let bitspercomponent = int_value(&raw_bits_per_component)?;
+                    let bitspercomponent = int_value_obj(&raw_bits_per_component)?;
                     data = apply_png_predictor(&pred, &colors, &columns, &bitspercomponent, &data)?.into();
                 } else {
                     let error_msg = format!("Unsupported predictor: {}", pred_obj.repr()?);

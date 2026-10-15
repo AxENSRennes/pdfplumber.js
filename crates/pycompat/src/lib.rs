@@ -21,7 +21,13 @@
 //!   units), counted where the ported code recurses.
 //! - [`libm`]: the C library's `pow` of the oracle (glibc 2.39), which
 //!   `float ** float` calls.
+//! - [`zlib`]: `zlib.decompress` and `zlib.decompressobj`, on a port of
+//!   zlib 1.3's inflate (exact output before an error, exact messages).
+//! - [`base64`], [`binascii`]: `a85decode` and `unhexlify`, which the
+//!   ASCII85 and ASCIIHex filters call.
 
+pub mod base64;
+pub mod binascii;
 pub mod builtins;
 pub mod err;
 pub mod float;
@@ -35,6 +41,7 @@ pub mod recursion;
 pub mod repr;
 pub mod text;
 mod unicode_tables;
+pub mod zlib;
 
 pub use builtins::{py_max, py_max_by, py_min, py_min_by, py_round, py_round_ndigits, py_sum, py_sum0};
 pub use err::{exc, ExcKind, PyErr, PyResult};

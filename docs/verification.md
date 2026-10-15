@@ -173,7 +173,16 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   imbriqués autour de la limite de `repr`/`str` et sur 10^6 niveaux ; pour
   `PDFContentParser`, comparés job par job par empreinte de la sérialisation
   canonique, chaque job rejoué depuis la profondeur de récursion où pdfminer
-  l'a exécuté).
+  l'a exécuté), `zlib.py` (`zlib.decompress` et `zlib.decompressobj` de
+  CPython sur zlib 1.3 : flux de compresseurs réels, troncatures,
+  inversions de bits, flux deflate fabriqués aux tables invalides ou de
+  taille maximale (`ENOUGH_LENS`, `ENOUGH_DISTS`), en
+  entier, octet par octet, par morceaux, avec `max_length`), `filters.py`
+  (LZW, ASCII85, ASCIIHex, RunLength, prédicteurs TIFF/PNG,
+  `decompress_corrupted`, `PDFStream.get_data` sur des chaînes de filtres
+  générées, références indirectes comprises, puis chaque flux de
+  l'ensemble `all` : `corpus.bin` et
+  `corpus.json`).
 
 ```sh
 export PDFPLUMBER_ROOT=/chemin/du/dépôt/principal   # .venv, corpus/, .cache/

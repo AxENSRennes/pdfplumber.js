@@ -1,17 +1,20 @@
 //! Port of `pdfminer/utils.py`.
 //!
-//! The file is shared by several ports, each in its own marked section:
+//! The file is shared by several ports, each in its own marked section, in
+//! the order of `utils.py` (a section holds a group of related functions;
+//! within a group the upstream order is kept where it can be):
 //!
-//! - "Iteration helpers": `choplist`, `uniq`, `fsplit`, `pick`;
+//! - "Predictors" (`paeth_predictor`, `apply_tiff_predictor`,
+//!   `apply_png_predictor`): written by the port of the stream filters;
 //! - "Matrices and geometry": `INF`, `Point`/`Rect`/`Matrix`/`PathSegment`,
 //!   `MATRIX_IDENTITY`, `parse_rect`, `mult_matrix`, `translate_matrix`,
 //!   `apply_matrix_pt`, `apply_matrix_rect`, `apply_matrix_norm`,
 //!   `get_bound`, `drange`, `bbox2str`, `matrix2str`, and `Plane`;
+//! - "Iteration helpers": `choplist`, `uniq`, `fsplit`, `pick`;
 //! - "Numbers and text": `isnumber`, `nunpack`, `PDFDocEncoding`,
 //!   `decode_text`, `format_int_roman`, `format_int_alpha`;
-//! - "Predictors" (`paeth_predictor`, `apply_tiff_predictor`,
-//!   `apply_png_predictor`) and "AES padding" (`unpad_aes`): written by the
-//!   ports of the filters and of the security handlers.
+//! - "AES padding" (`unpad_aes`): written by the port of the security
+//!   handlers.
 //!
 //! Not ported, because nothing on pdfplumber's path uses them:
 //! `open_filename` (files are bytes here), `make_compat_bytes`,
@@ -34,70 +37,286 @@ use std::hash::Hash;
 use std::ops::Range;
 
 use pycompat::float::float_to_int;
-use pycompat::{exc, Num, PyInt, PyResult};
+use pycompat::{exc, Num, PyErr, PyInt, PyResult};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::casting::IterItem;
 use crate::pdftypes::PDFObject;
 
 // ===========================================================================
-// Iteration helpers
+// Predictors (paeth_predictor, apply_tiff_predictor, apply_png_predictor):
+// written by the port of the stream filters.
+//
+// The parameters come from the stream's `/DecodeParms` through
+// `int_value`: Python ints of any size and sign, or bools. The code below
+// follows the Python arithmetic and indexing exactly, including its errors
+// (`range()` with a zero step, `IndexError` on short rows or when the
+// previous row is shorter than this one). Where Python loops up to a
+// number larger than the data, the port stops where Python must fail or
+// end (an index past the data), so the numbers are clamped to the data
+// length first; that changes no result.
+//
+// A large positive `/Columns` makes `list(b"\x00" * columns)` allocate that
+// many bytes (and 8 times more for the list) in Python, which fails with
+// `MemoryError` past the machine's memory. The port only materializes the
+// part that can be read, and raises `MemoryError` from `/Columns` 2**32 on
+// (`MEMORY_LIMIT`): what the oracle machine does (see there). Below, the
+// outcome depends on the machine's memory and the port goes on.
 
-// pdfminer/utils.py:402 choplist
-/// Groups every `n` elements of the list; a trailing incomplete group is
-/// dropped, like the Python generator.
-pub fn choplist<T>(n: usize, seq: &[T]) -> std::slice::ChunksExact<'_, T> {
-    seq.chunks_exact(n)
+/// `x` as a Python `int` or `bool` (`int_value`'s result): its value, and
+/// `str(x)` for messages.
+fn int_of(x: &PDFObject) -> PyInt {
+    match x {
+        PDFObject::Int(i) => i.clone(),
+        PDFObject::Bool(b) => PyInt::Small(i64::from(*b)),
+        other => unreachable!("int_value returns an int or a bool, not {}", other.type_name()),
+    }
 }
 
-// pdfminer/utils.py:349 uniq
-/// Eliminates duplicated elements, keeping the first of each (`key` is
-/// what Python hashes and compares: the identity of a layout object).
-pub fn uniq<T, K: Hash + Eq>(objs: impl IntoIterator<Item = T>, mut key: impl FnMut(&T) -> K) -> Vec<T> {
-    let mut done = HashSet::new();
-    let mut out = Vec::new();
-    for obj in objs {
-        if done.insert(key(&obj)) {
-            out.push(obj);
-        }
+/// `str(x)` of an int or a bool.
+fn str_of(x: &PDFObject) -> PyResult<String> {
+    match x {
+        PDFObject::Bool(b) => Ok(if *b { "True" } else { "False" }.to_owned()),
+        other => int_of(other).py_str(),
     }
-    out
 }
 
-// pdfminer/utils.py:359 fsplit
-/// Splits a list into two classes according to the predicate (which may
-/// raise, as a Python predicate can).
-pub fn fsplit<T>(
-    mut pred: impl FnMut(&T) -> PyResult<bool>,
-    objs: impl IntoIterator<Item = T>,
-) -> PyResult<(Vec<T>, Vec<T>)> {
-    let mut t = Vec::new();
-    let mut f = Vec::new();
-    for obj in objs {
-        if pred(&obj)? {
-            t.push(obj);
-        } else {
-            f.push(obj);
-        }
+/// `x` clamped to `lo..=hi` (exact for the values in between).
+fn clamp(x: &PyInt, lo: i64, hi: i64) -> i64 {
+    match x.as_i64() {
+        Some(v) => v.clamp(lo, hi),
+        None if x.is_negative() => lo,
+        None => hi,
     }
-    Ok((t, f))
 }
 
-// pdfminer/utils.py:388 pick
-/// Picks the object `obj` where `func(obj)` has the highest value (the
-/// first of equal ones; a score that does not compare greater, a NaN, never
-/// wins), else `maxobj`.
-pub fn pick<T>(seq: impl IntoIterator<Item = T>, mut func: impl FnMut(&T) -> Num, maxobj: Option<T>) -> Option<T> {
-    let mut maxscore: Option<Num> = None;
-    let mut maxobj = maxobj;
-    for obj in seq {
-        let score = func(&obj);
-        if maxscore.as_ref().is_none_or(|m| m.py_lt(&score)) {
-            maxscore = Some(score);
-            maxobj = Some(obj);
-        }
+/// The `IndexError` of `bytes[i]`.
+fn bytes_index_error() -> PyErr {
+    exc::IndexError("index out of range")
+}
+
+/// The `IndexError` of `list[i]`.
+fn list_index_error() -> PyErr {
+    exc::IndexError("list index out of range")
+}
+
+/// The `IndexError` of `list[i - bpp]` past the end: an index that does
+/// not fit in a `Py_ssize_t` fails before the bound check.
+fn list_index_error_at(i: i64, bpp: &PyInt) -> PyErr {
+    if PyInt::Small(i).sub(bpp).as_i64().is_none() {
+        exc::IndexError("cannot fit 'int' into an index-sized integer")
+    } else {
+        list_index_error()
     }
-    maxobj
+}
+
+/// The smallest `/Columns` for which `list(b"\x00" * columns)` raises
+/// `MemoryError` on the oracle machine, by its profile (64-bit CPython 3.12,
+/// Linux with heuristic overcommit, 24 GB of RAM and 4 GB of swap):
+/// the list of 2**32 pointers is 32 GiB, more than RAM and swap together,
+/// so its single allocation is refused at once (from 2**35 on, the bytes
+/// object itself is). Just below, Python fails or not depending on the
+/// machine's memory (from about 3.6e9 the list is refused on the oracle
+/// machine too); the port does not allocate (see above) and goes on. A
+/// wasm32 host cannot address 2**32 bytes either.
+const MEMORY_LIMIT: i64 = 1 << 32;
+
+/// A safety net for mutation testing, active with debug assertions only
+/// (and excluded from the mutants, `-E size_guard`): a predictor never
+/// outputs more bytes than it reads, so a broken row loop that would fill
+/// the memory panics at once.
+#[inline]
+fn size_guard(output: usize, data: usize) {
+    debug_assert!(output <= data, "a predictor writes more than it reads");
+}
+
+/// The `ValueError` of `range(start, stop, 0)`.
+fn range_step_zero() -> PyErr {
+    exc::ValueError("range() arg 3 must not be zero")
+}
+
+// pdfminer/utils.py:107 paeth_predictor
+pub fn paeth_predictor(left: i64, above: i64, upper_left: i64) -> i64 {
+    // From http://www.libpng.org/pub/png/spec/1.2/PNG-Filters.html
+    // Initial estimate
+    let p = left + above - upper_left;
+    // Distances to a,b,c
+    let pa = (p - left).abs();
+    let pb = (p - above).abs();
+    let pc = (p - upper_left).abs();
+    // Return nearest of a,b,c breaking ties in order a,b,c
+    if pa <= pb && pa <= pc {
+        left
+    } else if pb <= pc {
+        above
+    } else {
+        upper_left
+    }
+}
+
+// pdfminer/utils.py:125 apply_tiff_predictor
+/// Reverse the effect of the TIFF predictor 2. `bitspercomponent` is an
+/// int or a bool (only 8 is supported).
+pub fn apply_tiff_predictor(
+    colors: &PyInt,
+    columns: &PyInt,
+    bitspercomponent: &PDFObject,
+    data: &[u8],
+) -> PyResult<Vec<u8>> {
+    let bpc = int_of(bitspercomponent);
+    if bpc != PyInt::Small(8) {
+        let error_msg = format!("Unsupported `bitspercomponent': {}", str_of(bitspercomponent)?);
+        return Err(exc::PDFValueError(error_msg));
+    }
+    // bpp = colors * (bitspercomponent // 8), with bitspercomponent == 8
+    let bpp = colors.clone();
+    let nbytes = columns.mul(&bpp);
+    if nbytes.is_zero() {
+        return Err(range_step_zero());
+    }
+    let len = data.len() as i64;
+    let bpp_int = bpp;
+    // past the data, a row fails or the loop ends: clamping is exact
+    let nbytes = clamp(&nbytes, -1, len + 1);
+    let bpp = clamp(&bpp_int, -1, len + 1);
+    let mut buf: Vec<u8> = Vec::with_capacity(data.len());
+    if nbytes < 0 {
+        return Ok(buf); // an empty range
+    }
+    let mut scanline_i = 0;
+    while scanline_i < len {
+        let mut raw: Vec<u8> = Vec::new();
+        for i in 0..nbytes {
+            let Some(&byte) = data.get((scanline_i + i) as usize) else {
+                return Err(bytes_index_error());
+            };
+            let mut new_value = i64::from(byte);
+            if i >= bpp {
+                // raw[i - bpp]: i - bpp >= 0, and < len(raw) == i only if bpp > 0
+                let Some(&r) = raw.get((i - bpp) as usize) else {
+                    return Err(list_index_error_at(i, &bpp_int));
+                };
+                new_value += i64::from(r);
+                new_value %= 256;
+            }
+            raw.push(new_value as u8);
+        }
+        buf.extend_from_slice(&raw);
+        size_guard(buf.len(), data.len());
+        scanline_i += nbytes;
+    }
+    Ok(buf)
+}
+
+// pdfminer/utils.py:153 apply_png_predictor
+/// Reverse the effect of the PNG predictor. `bitspercomponent` is an int
+/// or a bool (8 and 1 are supported; `True` is 1). `pred` is not used.
+pub fn apply_png_predictor(
+    _pred: &PyInt,
+    colors: &PyInt,
+    columns: &PyInt,
+    bitspercomponent: &PDFObject,
+    data: &[u8],
+) -> PyResult<Vec<u8>> {
+    let bpc = int_of(bitspercomponent);
+    if bpc != PyInt::Small(8) && bpc != PyInt::Small(1) {
+        let msg = format!("Unsupported `bitspercomponent': {}", str_of(bitspercomponent)?);
+        return Err(exc::PDFValueError(msg));
+    }
+    let eight = PyInt::Small(8);
+    let nbytes = colors.mul(columns).mul(&bpc).floordiv(&eight)?;
+    // number of bytes per complete pixel
+    let bpp = colors.mul(&bpc).floordiv(&eight)?;
+    // line_above = list(b"\x00" * columns): only indexes below len(data) are
+    // ever read
+    let Some(columns) = columns.as_i64() else {
+        return Err(exc::OverflowError("cannot fit 'int' into an index-sized integer"));
+    };
+    if columns >= MEMORY_LIMIT {
+        return Err(exc::MemoryError(""));
+    }
+    let len = data.len() as i64;
+    let mut line_above: Vec<u8> = vec![0; columns.clamp(0, len) as usize];
+    let step = nbytes.add(&PyInt::Small(1));
+    if step.is_zero() {
+        return Err(range_step_zero());
+    }
+    let step = clamp(&step, -1, len + 1);
+    let nbytes = clamp(&nbytes, -1, len + 1);
+    let bpp_int = bpp;
+    let bpp = clamp(&bpp_int, -(len + 1), len + 1);
+    let mut buf: Vec<u8> = Vec::with_capacity(data.len());
+    if step < 0 {
+        return Ok(buf); // an empty range
+    }
+    let mut scanline_i = 0;
+    while scanline_i < len {
+        let start = scanline_i as usize;
+        let filter_type = data[start];
+        let line_encoded = &data[(start + 1).min(data.len())..(start as i64 + 1 + nbytes).min(len) as usize];
+        let mut raw: Vec<u8> = Vec::with_capacity(line_encoded.len());
+        // raw[j - bpp] when j - bpp >= 0 (else 0)
+        let raw_x_bpp = |raw: &[u8], j: i64| -> PyResult<i64> {
+            if j - bpp < 0 {
+                Ok(0)
+            } else {
+                raw.get((j - bpp) as usize).map(|&r| i64::from(r)).ok_or_else(|| list_index_error_at(j, &bpp_int))
+            }
+        };
+        // line_above[j] and line_above[j - bpp] (j - bpp >= 0)
+        let above = |line_above: &[u8], j: i64, minus_bpp: bool| -> PyResult<i64> {
+            let k = if minus_bpp { j - bpp } else { j };
+            line_above.get(k as usize).map(|&r| i64::from(r)).ok_or_else(|| {
+                if minus_bpp {
+                    list_index_error_at(j, &bpp_int)
+                } else {
+                    list_index_error()
+                }
+            })
+        };
+        match filter_type {
+            // Filter type 0: None
+            0 => raw.extend_from_slice(line_encoded),
+            // Filter type 1: Sub
+            1 => {
+                for (j, &sub_x) in line_encoded.iter().enumerate() {
+                    let raw_x_bpp = raw_x_bpp(&raw, j as i64)?;
+                    raw.push(((i64::from(sub_x) + raw_x_bpp) & 255) as u8);
+                }
+            }
+            // Filter type 2: Up
+            2 => {
+                for (&up_x, &prior_x) in line_encoded.iter().zip(&line_above) {
+                    raw.push(((u32::from(up_x) + u32::from(prior_x)) & 255) as u8);
+                }
+            }
+            // Filter type 3: Average
+            3 => {
+                for (j, &average_x) in line_encoded.iter().enumerate() {
+                    let raw_x_bpp = raw_x_bpp(&raw, j as i64)?;
+                    let prior_x = above(&line_above, j as i64, false)?;
+                    raw.push(((i64::from(average_x) + (raw_x_bpp + prior_x) / 2) & 255) as u8);
+                }
+            }
+            // Filter type 4: Paeth
+            4 => {
+                for (j, &paeth_x) in line_encoded.iter().enumerate() {
+                    let j = j as i64;
+                    let (raw_x_bpp, prior_x_bpp) =
+                        if j - bpp < 0 { (0, 0) } else { (raw_x_bpp(&raw, j)?, above(&line_above, j, true)?) };
+                    let prior_x = above(&line_above, j, false)?;
+                    let paeth = paeth_predictor(raw_x_bpp, prior_x, prior_x_bpp);
+                    raw.push(((i64::from(paeth_x) + paeth) & 255) as u8);
+                }
+            }
+            _ => return Err(exc::PDFValueError(format!("Unsupported predictor value: {filter_type}"))),
+        }
+        buf.extend_from_slice(&raw);
+        size_guard(buf.len(), data.len());
+        line_above = raw;
+        scanline_i += step;
+    }
+    Ok(buf)
 }
 
 // ===========================================================================
@@ -792,6 +1011,66 @@ impl<T: PlaneItem> Plane<T> {
 }
 
 // ===========================================================================
+// Iteration helpers
+
+// pdfminer/utils.py:402 choplist
+/// Groups every `n` elements of the list; a trailing incomplete group is
+/// dropped, like the Python generator.
+pub fn choplist<T>(n: usize, seq: &[T]) -> std::slice::ChunksExact<'_, T> {
+    seq.chunks_exact(n)
+}
+
+// pdfminer/utils.py:349 uniq
+/// Eliminates duplicated elements, keeping the first of each (`key` is
+/// what Python hashes and compares: the identity of a layout object).
+pub fn uniq<T, K: Hash + Eq>(objs: impl IntoIterator<Item = T>, mut key: impl FnMut(&T) -> K) -> Vec<T> {
+    let mut done = HashSet::new();
+    let mut out = Vec::new();
+    for obj in objs {
+        if done.insert(key(&obj)) {
+            out.push(obj);
+        }
+    }
+    out
+}
+
+// pdfminer/utils.py:359 fsplit
+/// Splits a list into two classes according to the predicate (which may
+/// raise, as a Python predicate can).
+pub fn fsplit<T>(
+    mut pred: impl FnMut(&T) -> PyResult<bool>,
+    objs: impl IntoIterator<Item = T>,
+) -> PyResult<(Vec<T>, Vec<T>)> {
+    let mut t = Vec::new();
+    let mut f = Vec::new();
+    for obj in objs {
+        if pred(&obj)? {
+            t.push(obj);
+        } else {
+            f.push(obj);
+        }
+    }
+    Ok((t, f))
+}
+
+// pdfminer/utils.py:388 pick
+/// Picks the object `obj` where `func(obj)` has the highest value (the
+/// first of equal ones; a score that does not compare greater, a NaN, never
+/// wins), else `maxobj`.
+pub fn pick<T>(seq: impl IntoIterator<Item = T>, mut func: impl FnMut(&T) -> Num, maxobj: Option<T>) -> Option<T> {
+    let mut maxscore: Option<Num> = None;
+    let mut maxobj = maxobj;
+    for obj in seq {
+        let score = func(&obj);
+        if maxscore.as_ref().is_none_or(|m| m.py_lt(&score)) {
+            maxscore = Some(score);
+            maxobj = Some(obj);
+        }
+    }
+    maxobj
+}
+
+// ===========================================================================
 // Numbers and text
 
 // pdfminer/utils.py:342 isnumber
@@ -923,10 +1202,6 @@ pub fn format_int_alpha(value: &PyInt) -> PyResult<String> {
     result.reverse();
     Ok(String::from_utf8(result).expect("ASCII letters"))
 }
-
-// ===========================================================================
-// Predictors (paeth_predictor, apply_tiff_predictor, apply_png_predictor):
-// written by the port of the stream filters.
 
 // ===========================================================================
 // AES padding (unpad_aes): written by the port of the security handlers.

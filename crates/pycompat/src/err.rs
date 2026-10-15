@@ -82,6 +82,8 @@ exc_kinds! {
     RecursionError = "RecursionError" in "builtins": [RuntimeError],
     NotImplementedError = "NotImplementedError" in "builtins": [RuntimeError],
     EOFError = "EOFError" in "builtins": [Exception],
+    /// `next()` on an exhausted iterator (`runlength.rldecode`)
+    StopIteration = "StopIteration" in "builtins": [Exception],
     /// `OSError` (`IOError` is an alias of it).
     OSError = "OSError" in "builtins": [Exception],
     ImportError = "ImportError" in "builtins": [Exception],
