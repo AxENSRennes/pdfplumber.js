@@ -387,6 +387,19 @@ fn table_cases() {
                     intersections_v(&i)
                 })
             }
+            "merge_edges" => result(
+                table::merge_edges(objs(&args[1]), &py(&args[2]), &py(&args[3]), &py(&args[4]), &py(&args[5])),
+                list_of_objs,
+            ),
+            "table" => {
+                let Value::List(cells) = &args[1] else { panic!("cells") };
+                let t = Table::new(cells.iter().map(|c| bbox_from_value(&py(c)).expect("a bbox")).collect());
+                let groups = if args[2].as_str() == Some("rows") { t.rows() } else { t.columns() };
+                Value::List(vec![
+                    result(t.bbox(), |b| bbox_v(&b)),
+                    result(groups, |g| Value::List(g.iter().map(cell_group_value).collect())),
+                ])
+            }
             other => panic!("{other}"),
         };
         c.check(|| format!("case {i}: {name}"), &got, &out);

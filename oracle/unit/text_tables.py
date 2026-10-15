@@ -830,6 +830,54 @@ def table_cases():
     would rarely give."""
     rng = random.Random(10)
     yield from window_cases(rng)
+    yield from merge_cases(rng)
+    yield from table_group_cases(rng)
+
+
+def table_group_cases(rng):
+    """``Table.rows``/``Table.columns``/``Table.bbox`` on cells with ties,
+    ints vs floats, and NaN coordinates on the grouping axis only (each NaN
+    its own group; a NaN on the other axis is a ``set`` member and a dict
+    key found by identity, which the port does not model)."""
+    for i in range(400):
+        kind = rng.choice(["rows", "columns"])
+        g = 1 if kind == "rows" else 0  # the grouping (anti)axis
+        cells = []
+        for _ in range(rng.randint(0, 9)):
+            c = [rng.choice([0, 0.0, 10, 10.5, 20, True]) for _ in range(4)]
+            if rng.random() < 0.3:
+                c[g] = nan()
+            if rng.random() < 0.3:
+                c[g + 2] = nan()
+            cells.append(tuple(c))
+        t = table.Table(None, cells)
+
+        def groups(t=t, kind=kind):
+            return [(r.cells, r.bbox) for r in getattr(t, kind)]
+
+        yield ["table", cells, kind], [guarded(lambda t=t: t.bbox), guarded(groups)]
+
+
+def merge_cases(rng):
+    """``merge_edges`` with NaN group keys (h tops, v x0s: each edge its own
+    group, ``groupby`` compares distinct NaN objects), ties and ints vs
+    floats. Snapping goes through dicts keyed by coordinates, where a NaN is
+    found by identity: no snapping when a NaN is present."""
+    for i in range(400):
+        edges = []
+        has_nan = rng.random() < 0.6
+        for _ in range(rng.randint(0, 8)):
+            o = rng.choice(["h", "v"])
+            pos = nan() if has_nan and rng.random() < 0.4 else rng.choice([10, 10.0, 12, 20.5, 30])
+            a = rng.choice([0, 5, 10.5, 20])
+            b = a + rng.choice([0, 3, 10, 25.5])
+            if rng.random() < 0.15 and has_nan:
+                a = nan()  # NaN along the edge: join comparisons are false
+            edges.append(window_edge(a, pos, b, pos, "h") if o == "h" else window_edge(pos, a, pos, b, "v"))
+        tols = [0, 1, 3, 2.5, 0.0]
+        snap = (0, 0) if has_nan else (rng.choice(tols), rng.choice(tols))
+        args = [edges, *snap, rng.choice(tols), rng.choice(tols)]
+        yield ["merge_edges", *args], guarded(table.merge_edges, *args)
 
 
 def textline_cases():
