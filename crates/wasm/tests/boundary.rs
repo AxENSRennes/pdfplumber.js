@@ -270,6 +270,12 @@ fn shapes_group_dicts_and_give_up_when_tables_save_nothing() {
     assert!(shapes(&[a.clone(), b.clone(), c.clone()]).is_none(), "more than one shape per two rows");
     let v = [a.clone(), b.clone(), c.clone(), a.clone(), b.clone(), c.clone()];
     assert_eq!(shapes(&v).unwrap().order, vec![0, 1, 2, 0, 1, 2]);
+    // equal keys held by distinct strings (the key interning table of
+    // pdfplumber::obj is full): still one shape
+    let filler: Vec<String> = (0..5000).map(|i| format!("filler{i}")).collect();
+    let _ = Obj::from_pairs(filler.iter().map(|k| (k.as_str(), PyValue::None)));
+    let late = [d(&["late_key"]), d(&["late_key"])];
+    assert_eq!(shapes(&late).unwrap().first.len(), 1);
     let empty = d(&[]);
     assert_eq!(shapes(&[empty.clone(), empty.clone()]).unwrap().first.len(), 1);
     // at most MAX_SHAPES shapes

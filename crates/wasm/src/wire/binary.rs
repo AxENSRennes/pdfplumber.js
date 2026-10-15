@@ -152,6 +152,7 @@ impl BinWriter {
                 self.buf.push(b);
                 return;
             }
+            // (`|` and `^` are the same here: `b` has no high bit)
             self.buf.push(b | 0x80);
         }
     }
