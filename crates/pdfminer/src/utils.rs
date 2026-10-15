@@ -1,11 +1,247 @@
 //! Port of `pdfminer/utils.py` (partial).
 //!
-//! Ported: `choplist`. Not ported yet: everything else (predictors, matrix
-//! helpers, `Plane`, `decode_text`, number formatting, ...).
+//! Ported: `choplist`, the predictors (`paeth_predictor`,
+//! `apply_tiff_predictor`, `apply_png_predictor`). Not ported yet:
+//! everything else (matrix helpers, `Plane`, `decode_text`, number
+//! formatting, ...).
+
+use pycompat::{exc, PyErr, PyInt, PyResult};
+
+use crate::pdftypes::PDFObject;
 
 // pdfminer/utils.py:402 choplist
 /// Groups every `n` elements of the list; a trailing incomplete group is
 /// dropped, like the Python generator.
 pub fn choplist<T>(n: usize, seq: &[T]) -> std::slice::ChunksExact<'_, T> {
     seq.chunks_exact(n)
+}
+
+// ---------------------------------------------------------------------------
+// predictors
+//
+// The parameters come from the stream's `/DecodeParms` through
+// `int_value`: Python ints of any size and sign, or bools. The code below
+// follows the Python arithmetic and indexing exactly, including its errors
+// (`range()` with a zero step, `IndexError` on short rows or when the
+// previous row is shorter than this one). Where Python loops up to a
+// number larger than the data, the port stops where Python must fail or
+// end (an index past the data), so the numbers are clamped to the data
+// length first; that changes no result.
+//
+// Not reproduced: a huge positive `/Columns` makes `list(b"\x00" * columns)`
+// allocate gigabytes in Python (and fail with `MemoryError` past the
+// machine's memory); the port only materializes the part that can be read.
+
+/// `x` as a Python `int` or `bool` (`int_value`'s result): its value, and
+/// `str(x)` for messages.
+fn int_of(x: &PDFObject) -> PyInt {
+    match x {
+        PDFObject::Int(i) => i.clone(),
+        PDFObject::Bool(b) => PyInt::Small(i64::from(*b)),
+        other => unreachable!("int_value returns an int or a bool, not {}", other.type_name()),
+    }
+}
+
+/// `str(x)` of an int or a bool.
+fn str_of(x: &PDFObject) -> PyResult<String> {
+    match x {
+        PDFObject::Bool(b) => Ok(if *b { "True" } else { "False" }.to_owned()),
+        other => int_of(other).py_str(),
+    }
+}
+
+/// `x` clamped to `lo..=hi` (exact for the values in between).
+fn clamp(x: &PyInt, lo: i64, hi: i64) -> i64 {
+    match x.as_i64() {
+        Some(v) => v.clamp(lo, hi),
+        None if x.is_negative() => lo,
+        None => hi,
+    }
+}
+
+/// The `IndexError` of `bytes[i]`.
+fn bytes_index_error() -> PyErr {
+    exc::IndexError("index out of range")
+}
+
+/// The `IndexError` of `list[i]`.
+fn list_index_error() -> PyErr {
+    exc::IndexError("list index out of range")
+}
+
+/// The `ValueError` of `range(start, stop, 0)`.
+fn range_step_zero() -> PyErr {
+    exc::ValueError("range() arg 3 must not be zero")
+}
+
+// pdfminer/utils.py:107 paeth_predictor
+pub fn paeth_predictor(left: i64, above: i64, upper_left: i64) -> i64 {
+    // From http://www.libpng.org/pub/png/spec/1.2/PNG-Filters.html
+    // Initial estimate
+    let p = left + above - upper_left;
+    // Distances to a,b,c
+    let pa = (p - left).abs();
+    let pb = (p - above).abs();
+    let pc = (p - upper_left).abs();
+    // Return nearest of a,b,c breaking ties in order a,b,c
+    if pa <= pb && pa <= pc {
+        left
+    } else if pb <= pc {
+        above
+    } else {
+        upper_left
+    }
+}
+
+// pdfminer/utils.py:125 apply_tiff_predictor
+/// Reverse the effect of the TIFF predictor 2. `bitspercomponent` is an
+/// int or a bool (only 8 is supported).
+pub fn apply_tiff_predictor(
+    colors: &PyInt,
+    columns: &PyInt,
+    bitspercomponent: &PDFObject,
+    data: &[u8],
+) -> PyResult<Vec<u8>> {
+    let bpc = int_of(bitspercomponent);
+    if bpc != PyInt::Small(8) {
+        let error_msg = format!("Unsupported `bitspercomponent': {}", str_of(bitspercomponent)?);
+        return Err(exc::PDFValueError(error_msg));
+    }
+    // bpp = colors * (bitspercomponent // 8), with bitspercomponent == 8
+    let bpp = colors.clone();
+    let nbytes = columns.mul(&bpp);
+    if nbytes.is_zero() {
+        return Err(range_step_zero());
+    }
+    let len = data.len() as i64;
+    // past the data, a row fails or the loop ends: clamping is exact
+    let nbytes = clamp(&nbytes, -1, len + 1);
+    let bpp = clamp(&bpp, -1, len + 1);
+    let mut buf: Vec<u8> = Vec::with_capacity(data.len());
+    if nbytes < 0 {
+        return Ok(buf); // an empty range
+    }
+    let mut scanline_i = 0;
+    while scanline_i < len {
+        let mut raw: Vec<u8> = Vec::new();
+        for i in 0..nbytes {
+            let Some(&byte) = data.get((scanline_i + i) as usize) else {
+                return Err(bytes_index_error());
+            };
+            let mut new_value = i64::from(byte);
+            if i >= bpp {
+                // raw[i - bpp]: i - bpp >= 0, and < len(raw) == i only if bpp > 0
+                let Some(&r) = raw.get((i - bpp) as usize) else {
+                    return Err(list_index_error());
+                };
+                new_value += i64::from(r);
+                new_value %= 256;
+            }
+            raw.push(new_value as u8);
+        }
+        buf.extend_from_slice(&raw);
+        scanline_i += nbytes;
+    }
+    Ok(buf)
+}
+
+// pdfminer/utils.py:153 apply_png_predictor
+/// Reverse the effect of the PNG predictor. `bitspercomponent` is an int
+/// or a bool (8 and 1 are supported; `True` is 1). `pred` is not used.
+pub fn apply_png_predictor(
+    _pred: &PyInt,
+    colors: &PyInt,
+    columns: &PyInt,
+    bitspercomponent: &PDFObject,
+    data: &[u8],
+) -> PyResult<Vec<u8>> {
+    let bpc = int_of(bitspercomponent);
+    if bpc != PyInt::Small(8) && bpc != PyInt::Small(1) {
+        let msg = format!("Unsupported `bitspercomponent': {}", str_of(bitspercomponent)?);
+        return Err(exc::PDFValueError(msg));
+    }
+    let eight = PyInt::Small(8);
+    let nbytes = colors.mul(columns).mul(&bpc).floordiv(&eight)?;
+    // number of bytes per complete pixel
+    let bpp = colors.mul(&bpc).floordiv(&eight)?;
+    // line_above = list(b"\x00" * columns): only indexes below len(data) are
+    // ever read
+    let Some(columns) = columns.as_i64() else {
+        return Err(exc::OverflowError("cannot fit 'int' into an index-sized integer"));
+    };
+    let len = data.len() as i64;
+    let mut line_above: Vec<u8> = vec![0; columns.clamp(0, len) as usize];
+    let step = nbytes.add(&PyInt::Small(1));
+    if step.is_zero() {
+        return Err(range_step_zero());
+    }
+    let step = clamp(&step, -1, len + 1);
+    let nbytes = clamp(&nbytes, -1, len + 1);
+    let bpp = clamp(&bpp, -(len + 1), len + 1);
+    let mut buf: Vec<u8> = Vec::with_capacity(data.len());
+    if step < 0 {
+        return Ok(buf); // an empty range
+    }
+    let mut scanline_i = 0;
+    while scanline_i < len {
+        let start = scanline_i as usize;
+        let filter_type = data[start];
+        let line_encoded = &data[(start + 1).min(data.len())..(start as i64 + 1 + nbytes).min(len) as usize];
+        let mut raw: Vec<u8> = Vec::with_capacity(line_encoded.len());
+        // raw[j - bpp] when j - bpp >= 0 (else 0)
+        let raw_x_bpp = |raw: &[u8], j: i64| -> PyResult<i64> {
+            if j - bpp < 0 {
+                Ok(0)
+            } else {
+                raw.get((j - bpp) as usize).map(|&r| i64::from(r)).ok_or_else(list_index_error)
+            }
+        };
+        let above = |line_above: &[u8], k: i64| -> PyResult<i64> {
+            line_above.get(k as usize).map(|&r| i64::from(r)).ok_or_else(list_index_error)
+        };
+        match filter_type {
+            // Filter type 0: None
+            0 => raw.extend_from_slice(line_encoded),
+            // Filter type 1: Sub
+            1 => {
+                for (j, &sub_x) in line_encoded.iter().enumerate() {
+                    let raw_x_bpp = raw_x_bpp(&raw, j as i64)?;
+                    raw.push(((i64::from(sub_x) + raw_x_bpp) & 255) as u8);
+                }
+            }
+            // Filter type 2: Up
+            2 => {
+                for (&up_x, &prior_x) in line_encoded.iter().zip(&line_above) {
+                    raw.push(((u32::from(up_x) + u32::from(prior_x)) & 255) as u8);
+                }
+            }
+            // Filter type 3: Average
+            3 => {
+                for (j, &average_x) in line_encoded.iter().enumerate() {
+                    let raw_x_bpp = raw_x_bpp(&raw, j as i64)?;
+                    let prior_x = above(&line_above, j as i64)?;
+                    raw.push(((i64::from(average_x) + (raw_x_bpp + prior_x) / 2) & 255) as u8);
+                }
+            }
+            // Filter type 4: Paeth
+            4 => {
+                for (j, &paeth_x) in line_encoded.iter().enumerate() {
+                    let j = j as i64;
+                    let (raw_x_bpp, prior_x_bpp) = if j - bpp < 0 {
+                        (0, 0)
+                    } else {
+                        (raw_x_bpp(&raw, j)?, above(&line_above, j - bpp)?)
+                    };
+                    let prior_x = above(&line_above, j)?;
+                    let paeth = paeth_predictor(raw_x_bpp, prior_x, prior_x_bpp);
+                    raw.push(((i64::from(paeth_x) + paeth) & 255) as u8);
+                }
+            }
+            _ => return Err(exc::PDFValueError(format!("Unsupported predictor value: {filter_type}"))),
+        }
+        buf.extend_from_slice(&raw);
+        line_above = raw;
+        scanline_i += step;
+    }
+    Ok(buf)
 }
