@@ -559,15 +559,10 @@ def gen_decompress(rng):
         yield run_decompress(zlib_header(cinfo, fdict=True) + b"\0\0\0\1" + raw, 15)
     # far output blocks: a 256-byte window (CINFO 0, wbits=0) and matches
     # 1000 bytes back starting just after a block boundary of CPython's
-    # output buffer (16 KiB, then 64 KiB, 256 KiB, 1 MiB blocks): a match
-    # reaching back across a boundary fails, so the boundaries are seen
-    for boundary in (16384, 16384 + 65536, 16384 + 65536 + 262144, 16384 + 65536 + 262144 + 1048576):
-        unit = rng.randbytes(1000)
-        data = rng.randbytes(boundary + 300) + unit * 30
-        raw, _ = compress(rng, data, wbits=-15, level=6, strategy=zlib.Z_DEFAULT_STRATEGY)
-        stream = zlib_header(0) + raw + zlib.adler32(data).to_bytes(4, "big")
+    # output buffer: a match reaching back across a boundary fails, so the
+    # boundaries are seen (block sizes up to 16 MiB)
+    for stream in far_block_streams(rng, 16384, 8):
         yield run_decompress(stream, 0)
-        yield run_decompress(stream, 0, 16385)
     # wbits and bufsize arguments
     ok = zlib.compress(b"abc" * 100)
     for wbits in [-16, -15, -9, -8, -7, 0, 7, 8, 9, 14, 15, 48, 64, 100, -100]:
@@ -576,7 +571,28 @@ def gen_decompress(rng):
         yield run_decompress(ok, 15, bufsize)
 
 
+def far_block_streams(rng, first, n):
+    """For each of the first ``n`` output blocks of CPython (first block
+    ``first``, then ``BUFFER_BLOCK_SIZE[1:]``), a stream with a 256-byte
+    window (CINFO 0) whose output has, from the start of that block to 90 %
+    of it, matches 1000 bytes back: Python decodes it, a shorter block makes
+    a match reach back across a boundary and fail. Before the block, only
+    matches 100 bytes back (which never fail): the streams stay small."""
+    sizes = [first, 64 << 10, 256 << 10, 1 << 20, 4 << 20, 8 << 20, 16 << 20, 16 << 20]
+    start = 0
+    for size in sizes[:n]:
+        unit = rng.randbytes(1000)
+        span = size * 9 // 10
+        data = (rng.randbytes(100) * (start // 100 + 3))[: start + 300] + (unit * (span // 1000 + 1))[:span]
+        raw, _ = compress(rng, data, wbits=-15, level=6, strategy=zlib.Z_DEFAULT_STRATEGY)
+        yield zlib_header(0) + raw + zlib.adler32(data).to_bytes(4, "big")
+        start += size
+
+
 def gen_decompressobj(rng):
+    # the output blocks of one decompress() call (32 KiB first)
+    for stream in far_block_streams(rng, 32 << 10, 5):
+        yield run_decompressobj(stream, 0, [[[len(stream), 0, 1]], [[len(stream), 40000, 1], [0, 40000, 3]]])
     for stream, wbits in real_streams(rng):
         if len(stream) > 20000 and rng.random() < 0.8:
             continue
