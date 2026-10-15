@@ -280,17 +280,12 @@ pub trait LTPayload: Clone + 'static {
 /// are then replaced in place. Only raw objects (chars, curves, images,
 /// figures) are tagged: the analysis runs later. The names are never those
 /// of the class's own attributes.
+#[derive(Clone)]
 pub struct ExtraAttrs<V>(RefCell<Vec<(&'static str, V)>>);
 
 impl<V> Default for ExtraAttrs<V> {
     fn default() -> ExtraAttrs<V> {
         ExtraAttrs(RefCell::new(Vec::new()))
-    }
-}
-
-impl<V: Clone> Clone for ExtraAttrs<V> {
-    fn clone(&self) -> ExtraAttrs<V> {
-        ExtraAttrs(RefCell::new(self.0.borrow().clone()))
     }
 }
 
