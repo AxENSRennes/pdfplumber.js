@@ -89,7 +89,7 @@ from ._common import oracle_sources, require_oracle_python, unit_dir, write_case
 BLOB_MAX = 2048
 MAX_RAW = 4 * 1024 * 1024
 MAX_FILE_RAW = 48 * 1024 * 1024
-FILE_TIMEOUT_S = 300
+FILE_TIMEOUT_S = 120
 
 
 def blob(b: bytes):
@@ -604,7 +604,9 @@ def build_corpus(jobs):
     tmp = out_dir / ".corpus.bin.tmp"
     with open(tmp, "wb") as f, multiprocessing.Pool(jobs) as pool:
         f.write(b"FLT1" + struct.pack("<I", 0))
-        for rel, status, cases in pool.imap(process_file, tasks, chunksize=2):
+        for k, (rel, status, cases) in enumerate(pool.imap(process_file, tasks, chunksize=1), 1):
+            if k % 50 == 0:
+                print(f"{k}/{len(tasks)} files, {len(records)} streams, {total / 1e6:.1f} MB", file=sys.stderr, flush=True)
             if status is not None:
                 skipped[status] += 1
                 print(f"skip {rel}: {status}", file=sys.stderr)

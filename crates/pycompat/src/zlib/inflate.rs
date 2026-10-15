@@ -856,3 +856,42 @@ pub fn inflate(strm: &mut ZStream, input: &[u8], output: &mut Vec<u8>, flush: Fl
     }
     ret
 }
+
+#[cfg(test)]
+mod tests {
+    use sha2::{Digest, Sha256};
+
+    use super::FIXED;
+
+    /// `inffixed.h` as `makefixed()` writes it from [`FIXED`]: its SHA-256
+    /// is that of the file in the zlib 1.3 sources, so the tables are
+    /// those the library is compiled with.
+    #[test]
+    fn fixed_tables_are_inffixed_h() {
+        let mut out = String::from(
+            "    /* inffixed.h -- table for decoding fixed codes\n     * Generated automatically by makefixed().\n     \
+             */\n\n    /* WARNING: this file should *not* be used by applications.\n       It is part of the \
+             implementation of this library and is\n       subject to change. Applications should only use zlib.h.\n     \
+             */\n\n",
+        );
+        for (name, table, per_line) in [("lenfix", &FIXED.lenfix[..], 7), ("distfix", &FIXED.distfix[..], 6)] {
+            if name == "distfix" {
+                out.push('\n');
+            }
+            out.push_str(&format!("    static const code {name}[{}] = {{", table.len()));
+            for (low, c) in table.iter().enumerate() {
+                if low % per_line == 0 {
+                    out.push_str("\n        ");
+                }
+                out.push_str(&format!("{{{},{},{}}}", c.op, c.bits, c.val));
+                if low + 1 < table.len() {
+                    out.push(',');
+                }
+            }
+            out.push_str("\n    };\n");
+        }
+        let sha: String = Sha256::digest(out.as_bytes()).iter().map(|b| format!("{b:02x}")).collect();
+        // sha256sum zlib-1.3/inffixed.h
+        assert_eq!(sha, "237ba710f090e432b62ebf963bee8b302867e9691406b2d3f8ee89ee7bfef9b0", "{out}");
+    }
+}
