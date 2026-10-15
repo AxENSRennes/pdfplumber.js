@@ -105,67 +105,24 @@ fn leaf_frame() -> PyResult<()> {
 }
 
 /// `list.sort(key=...)` with the keys already computed and Python's `<` on
-/// them (`lt`). CPython 3.12's timsort sorts a list shorter than 64 by
-/// finding the leading run (`count_run`: reversed when strictly descending)
-/// and inserting the rest with a binary insertion sort (`binarysort`); that
-/// is reproduced exactly, so the result is CPython's even when `lt` is not a
-/// total order (NaN keys). Longer lists are sorted by a stable sort:
-/// CPython's result whenever `lt` is a strict weak order, but not
-/// otherwise (a NaN key; Rust's sort may even panic on such an order), and
-/// timsort's merges are not ported.
+/// them (`lt`): CPython 3.12's timsort (`pycompat::listsort`, which makes
+/// the comparisons CPython makes, in its order), so the result is
+/// CPython's even when `lt` is not a total order (NaN keys). The layout's
+/// comparisons never raise (numbers and tuples of numbers).
 ///
 /// In the layout, only the two children of a group can have NaN keys;
 /// the lists of 64 or more are box lines by `-y1`, boxes by their index or
 /// by their coordinates, never NaN (an expandable container's bounds come
 /// from `min`/`max` against `INF`, which a NaN never replaces, see
-/// `LTExpandableContainer.add`), and Python compares ints and floats
-/// exactly, so these keys are totally ordered. Public for the differential
-/// test against Python's `list.sort` (`objects` cases `list_sort`).
-pub fn list_sort<T, K>(items: &mut Vec<T>, mut keys: Vec<K>, lt: impl Fn(&K, &K) -> bool) {
+/// `LTExpandableContainer.add`). Public for the differential test against
+/// Python's `list.sort` (`objects` cases `list_sort`).
+pub fn list_sort<T, K>(items: &mut Vec<T>, keys: Vec<K>, lt: impl Fn(&K, &K) -> bool) {
     let n = items.len();
     if n < 2 {
         return;
     }
-    let mut order: Vec<usize> = (0..n).collect();
-    if n < 64 {
-        // count_run
-        let mut run = 2;
-        if lt(&keys[1], &keys[0]) {
-            while run < n && lt(&keys[run], &keys[run - 1]) {
-                run += 1;
-            }
-            keys[..run].reverse();
-            order[..run].reverse();
-        } else {
-            while run < n && !lt(&keys[run], &keys[run - 1]) {
-                run += 1;
-            }
-        }
-        // binarysort(lo, hi, start = lo + run)
-        for start in run..n {
-            let (mut l, mut r) = (0, start);
-            while l < r {
-                let p = l + ((r - l) >> 1);
-                if lt(&keys[start], &keys[p]) {
-                    r = p;
-                } else {
-                    l = p + 1;
-                }
-            }
-            keys[l..=start].rotate_right(1);
-            order[l..=start].rotate_right(1);
-        }
-    } else {
-        order.sort_by(|&i, &j| {
-            if lt(&keys[i], &keys[j]) {
-                std::cmp::Ordering::Less
-            } else if lt(&keys[j], &keys[i]) {
-                std::cmp::Ordering::Greater
-            } else {
-                std::cmp::Ordering::Equal
-            }
-        });
-    }
+    let order = pycompat::listsort::sort_permutation(n, |i, j| Ok(lt(&keys[i], &keys[j])))
+        .expect("the layout's comparisons never raise");
     let mut slots: Vec<Option<T>> = items.drain(..).map(Some).collect();
     items.extend(order.into_iter().map(|i| slots[i].take().expect("each index once")));
 }

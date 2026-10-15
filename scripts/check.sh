@@ -47,6 +47,7 @@ step "generated tables are up to date"
 "$PY" oracle/codegen/libm_tables.py --check
 "$PY" oracle/codegen/saslprep_tables.py --check
 "$PY" oracle/codegen/pdfminer_tables.py --check
+"$PY" oracle/codegen/ccitt_tables.py --check
 
 step "unit oracle data (python -m oracle.unit)"
 capped "$PY" -m oracle.unit
@@ -57,7 +58,7 @@ capped cargo test --release --workspace
 
 step "cargo test on wasm32-wasip1 (Node WASI): the same unit replays compiled to WebAssembly"
 CARGO_TARGET_WASM32_WASIP1_RUNNER="node --no-warnings $ROOT/scripts/wasi-runner.mjs" \
-  capped cargo test --release --target wasm32-wasip1 -p pycompat -p pdfminer -p pdftrace
+  capped cargo test --release --target wasm32-wasip1 -p pycompat -p pdfminer -p pdfplumber -p pdftrace
 
 step "wasm32 build (dist profile)"
 cargo build --target wasm32-unknown-unknown --profile dist -p pdfplumber-wasm

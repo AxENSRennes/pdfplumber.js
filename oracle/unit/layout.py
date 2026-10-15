@@ -72,8 +72,10 @@ Object cases
   object): ``mult_matrix(matrix, ctm)`` (numbers, ``[type, len]`` of a
   sequence, or the exception) and ``LTFigure(name, bbox, that)``, lists
   repeated by an int of the CTM or the box included; and
-  ``list.sort`` on the keys the layout sorts by, with NaN keys in lists
-  shorter than 64 (``list_sort``, ``list_sort_tuple``: the sorted indices).
+  ``list.sort`` on the keys the layout sorts by, NaN keys included, in
+  lists shorter than 64 (``count_run`` + ``binarysort``) and longer ones
+  (runs and merges) (``list_sort``, ``list_sort_tuple``: the sorted
+  indices).
 - ``textline``: ``LTTextLineHorizontal``/``LTTextLineVertical`` built by
   ``add`` on random chars and word margins: the line, ``get_text()``,
   ``is_empty()``.
@@ -775,19 +777,19 @@ SORT_VALS = [math.nan, math.inf, -math.inf, 0.0, -0.0, 0, 1, -1, 1.5, 2, 2.0, 3,
 
 def gen_list_sort(rng):
     """``list.sort(key=...)`` as the layout calls it: keys are new objects
-    (``-x``, ``(kind, -a, -b)``), NaN among them only in lists shorter than
-    64 (the exact count_run + binarysort path), totally ordered keys in
-    longer ones (the stable sort). Output: the sorted indices."""
+    (``-x``, ``(kind, -a, -b)``), NaN among them, in lists shorter and
+    longer than 64 (timsort's binary insertion, then its runs and merges:
+    ``pycompat::listsort``). Output: the sorted indices."""
     for _ in range(1500):
         n = rng.choice([2, 3, 4, 5, 8, 16, 31, 32, 33, 62, 63, rng.randint(2, 63), rng.randint(64, 200)])
-        pool = SORT_VALS if n < 64 else SORT_VALS[1:]
+        pool = SORT_VALS
         vals = [rng.choice(pool) for _ in range(n)]
         order = list(range(n))
         order.sort(key=lambda i: -vals[i])
         yield ["list_sort", vals], order
     for _ in range(800):
         n = rng.choice([2, 3, 5, 10, 63, rng.randint(2, 63), rng.randint(64, 150)])
-        pool = SORT_VALS if n < 64 else SORT_VALS[1:]
+        pool = SORT_VALS
         rows = [[rng.choice([0, 1]), rng.choice(pool), rng.choice(pool)] for _ in range(n)]
         order = list(range(n))
         order.sort(key=lambda i: (rows[i][0], -rows[i][1], -rows[i][2]))
