@@ -471,16 +471,22 @@ def ops_cases():
             return max(a, b)
         if op == "sum":
             return sum([a, b])
+        if op == "dictget":
+            # a dict keyed by a, looked up with b (hash() and == of keys)
+            return {a: "found"}.get(b)
         raise ValueError(op)
 
     seq = (str, bytes, tuple, list)
-    for op in ["add", "sub", "mul", "truediv", "lt", "le", "gt", "ge", "eq", "min", "max", "sum"]:
+    for op in ["add", "sub", "mul", "truediv", "lt", "le", "gt", "ge", "eq", "min", "max", "sum", "dictget"]:
         for a in OP_VALUES:
             for b in OP_VALUES:
                 # sequence concatenation and repetition: outside the model
                 if op == "add" and isinstance(a, seq) and type(a) is type(b):
                     continue
                 if op == "mul" and (isinstance(a, seq) or isinstance(b, seq)) and (type(a) in (int, bool) or type(b) in (int, bool)):
+                    continue
+                # a NaN key is found through its identity only, which the port does not model
+                if op == "dictget" and a is b and a != a:
                     continue
                 # a is b: the Rust replay passes the same value (identity of PDF objects)
                 yield [op, a, b, a is b], guarded(run, op, a, b)

@@ -178,6 +178,11 @@ fn ops_cases() {
             "min" => v(pdfplumber::obj::py_min([&a, &b])),
             "max" => v(pdfplumber::obj::py_max([&a, &b])),
             "sum" => v(pdfplumber::obj::py_sum([&a, &b])),
+            "dictget" => v((|| {
+                let mut d = std::collections::HashMap::new();
+                d.insert(pdfplumber::obj::HashKey::new(a.clone())?, PyValue::str("found"));
+                Ok(d.get(&pdfplumber::obj::HashKey::new(b.clone())?).cloned().unwrap_or(PyValue::None))
+            })()),
             other => panic!("unknown op {other}"),
         };
         c.check(|| format!("case {i}: {op} {a:?} {b:?}"), &got, &out);
