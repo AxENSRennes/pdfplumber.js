@@ -201,18 +201,10 @@ fn normalization_correction(code: u32) -> Option<u32> {
         .map(|i| tables::NORMALIZATION_CORRECTIONS[i].1)
 }
 
-/// `find_nfc_index(nfc_first, code) != -1`
-fn is_comp_first(code: u32) -> bool {
-    let i = tables::COMPOSITION.partition_point(|&(a, _, _)| a < code);
-    matches!(tables::COMPOSITION.get(i), Some(&(a, _, _)) if a == code)
-}
-
-/// `find_nfc_index(nfc_last, code) != -1`
-fn is_comp_last(code: u32) -> bool {
-    tables::COMPOSITION.iter().any(|&(_, b, _)| b == code)
-}
-
-/// `comp_data[...]` of the pair, or `None` (0).
+/// `comp_data[...]` of the pair, or `None` (0). CPython first looks both
+/// characters up in `nfc_first`/`nfc_last` (`find_nfc_index`): a character
+/// that is the first (last) of no pair composes with nothing, so those
+/// look-ups only shortcut what this one finds (see `nfc_nfkc`).
 fn compose(first: u32, last: u32) -> Option<u32> {
     tables::COMPOSITION.binary_search_by(|&(a, b, _)| (a, b).cmp(&(first, last))).ok().map(|i| tables::COMPOSITION[i].2)
 }
@@ -314,12 +306,9 @@ fn nfc_nfkc(input: &[u32]) -> Vec<u32> {
             output.push(code);
             continue;
         }
-        // code is still input[i] here
-        if !is_comp_first(code) {
-            output.push(code);
-            i += 1;
-            continue;
-        }
+        // code is still input[i] here. CPython outputs it at once when it is
+        // the first of no pair (`find_nfc_index(nfc_first, code) == -1`):
+        // the loop below then composes nothing and outputs it the same way.
         // Find next unblocked character.
         let mut i1 = i + 1;
         let mut comb: u8 = 0;
@@ -338,8 +327,8 @@ fn nfc_nfkc(input: &[u32]) -> Vec<u32> {
                     continue;
                 }
             }
-            let composed = if is_comp_last(code1) { compose(current, code1) } else { None };
-            let Some(composed) = composed else {
+            // (find_nfc_index(nfc_last, code1) == -1 also means no pair)
+            let Some(composed) = compose(current, code1) else {
                 // not_combinable: i1 cannot be combined with i. If i1 is a
                 // starter, we don't need to look further. Otherwise, record
                 // the combining class.
@@ -355,9 +344,8 @@ fn nfc_nfkc(input: &[u32]) -> Vec<u32> {
             // Mark the second character unused.
             skipped.push(i1);
             i1 += 1;
-            if !is_comp_first(current) {
-                break;
-            }
+            // CPython stops here when the composed character is the first of
+            // no pair: going on composes nothing more.
         }
         // Output character was already written. Just advance the indices.
         output.push(current);
