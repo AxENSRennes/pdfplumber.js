@@ -21,8 +21,10 @@ pub type T_obj = crate::obj::Obj;
 pub type T_obj_list = Vec<crate::obj::Obj>;
 
 /// pdfplumber/_typing.py:10 T_dir: `"ltr"`, `"rtl"`, `"ttb"` or `"btt"`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// The default is `"ttb"` (`DEFAULT_LINE_DIR`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum T_dir {
+    #[default]
     Ttb,
     Btt,
     Ltr,

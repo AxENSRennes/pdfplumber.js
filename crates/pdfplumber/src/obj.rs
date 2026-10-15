@@ -184,6 +184,14 @@ pub enum PyValue {
     Pdf(PDFObject),
 }
 
+/// `None`. (A default lets cargo mutants replace a function returning a
+/// value by a constant one.)
+impl Default for PyValue {
+    fn default() -> PyValue {
+        PyValue::None
+    }
+}
+
 impl std::fmt::Debug for PyValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.repr())
