@@ -26,7 +26,7 @@ fi
 
 capped() {
   if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet true >/dev/null 2>&1; then
-    systemd-run --user --scope --quiet -p MemoryMax=5G -p MemorySwapMax=0 "$@"
+    systemd-run --user --scope --quiet -p MemoryMax=5G -p MemorySwapMax=0 -p OOMPolicy=continue "$@"
   else
     "$@"
   fi

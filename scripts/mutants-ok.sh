@@ -53,10 +53,12 @@ git -C "$SRC" ls-files -z --cached --others --exclude-standard \
 
 for f in "${files[@]}"; do
   # PyResult<T> -> Result<T, pycompat::PyErr>, T with any nesting of <> (a
-  # recursive pattern; a `->` inside T would end it early: checked below).
-  perl -0pi -e 's/(?<![A-Za-z0-9_:])(?:pycompat::)?PyResult(<((?:[^<>]++|(?1))*)>)/Result<$2, pycompat::PyErr>/g' "$WS/$f"
+  # recursive pattern) and any `->` (`PyResult<Box<dyn Fn(u8) -> u8>>`: the
+  # `>` of an arrow is not a closing bracket). A PyResult nested in T is
+  # rewritten by the next round (`1 while`). Anything left is an error.
+  perl -0pi -e '1 while s/(?<![A-Za-z0-9_:])(?:pycompat::)?PyResult(<((?:->|[^<>-]++|-(?!>)|(?1))*)>)/Result<$2, pycompat::PyErr>/g' "$WS/$f"
   if grep -n 'PyResult<' "$WS/$f"; then
-    echo "mutants-ok.sh: $f: PyResult<..> left after the rewrite (a '->' inside the type?)" >&2
+    echo "mutants-ok.sh: $f: PyResult<..> left after the rewrite" >&2
     exit 2
   fi
 done
