@@ -879,9 +879,15 @@ mod atan2_tests {
     //!   scaling down large operands changes no rounding (no product
     //!   overflows or becomes subnormal); a value exactly `2**±500` scales
     //!   exactly.
-    //! - `ay < ax` made `<=` (twice), `u < 1/16` made `<=` (four times): at
-    //!   the boundary the quotient is exact and both evaluations agree
-    //!   (`branch_boundaries_agree`).
+    //! - `ay < ax` made `<=` (three times: the quotient's direction and two
+    //!   branches), `u < 1/16` made `<=` (four times): at the boundary the
+    //!   quotient is exact (`u = 1` or `1/16`, `du = 0`, the same either
+    //!   way) and both evaluations agree (`branch_boundaries_agree`).
+    //! - `math_atan2`, `isinf(x) || y == 0` made `&&`: the cases it then
+    //!   passes to `atan2` (`y == ±0`, or `x == ±inf`) are among glibc's own
+    //!   special cases, which give the same `±0` and `±pi`
+    //!   (`special_values`). 11 of its 12 mutants are caught by the
+    //!   `pycompat_unit` replay (`--baseline skip --test-package=pdftrace`).
     use super::atan2;
 
     /// SplitMix64.

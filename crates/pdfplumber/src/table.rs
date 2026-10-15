@@ -174,8 +174,7 @@ fn len_ge(n: usize, threshold: &PyValue) -> PyResult<bool> {
 
 // pdfplumber/table.py:101 words_to_edges_h
 pub fn words_to_edges_h(words: &[Obj], word_threshold: &PyValue) -> PyResult<Vec<Obj>> {
-    let by_top =
-        cluster_objects(words, |w| Ok(w.hot(Hot::Top)?.clone()), &PyValue::from(1i64), false)?;
+    let by_top = cluster_objects(words, |w| Ok(w.hot(Hot::Top)?.clone()), &PyValue::from(1i64), false)?;
     let mut rects = Vec::new();
     for cluster in by_top {
         if len_ge(cluster.len(), word_threshold)? {

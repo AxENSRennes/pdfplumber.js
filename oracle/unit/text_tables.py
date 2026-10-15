@@ -772,6 +772,10 @@ def odd_text_cases():
                 for punct in [False, True]:
                     kw = {"keep_blank_chars": keep, "expand_ligatures": expand, "split_at_punctuation": punct}
                     ops += [("words", kw), ("text", kw), ("utext", kw), ("dedupe", {})]
+                    # the text maps of pdfplumber come from merge_chars, which
+                    # raises first: no WordMap char reaches to_textmap with
+                    # such a text
+                    ops += [("text", {**kw, "layout": True}), ("wordmap", kw, {"layout": True})]
         yield page_case(page, {"chars": chars, "edges": [], "bbox": (0, 0, 612, 792)}, ops)
 
 

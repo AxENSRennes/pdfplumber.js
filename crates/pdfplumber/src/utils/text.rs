@@ -206,7 +206,6 @@ pub fn line_cluster_key(line_dir: T_dir, x: &Obj) -> PyResult<PyValue> {
     }
 }
 
-
 /// A sort key of two values, compared as a `tuple`.
 pub type PairKey = (PyValue, PyValue);
 
@@ -1245,12 +1244,7 @@ impl WordExtractor {
 
         // Cluster by line
         let tolerance = if matches!(line_dir, T_dir::Ttb | T_dir::Btt) { &self.y_tolerance } else { &self.x_tolerance };
-        let subclusters = cluster_objects(
-            &chars,
-            |c| line_cluster_key(line_dir, c),
-            tolerance,
-            false,
-        )?;
+        let subclusters = cluster_objects(&chars, |c| line_cluster_key(line_dir, c), tolerance, false)?;
 
         let mut out = Vec::with_capacity(subclusters.len());
         for mut sc in subclusters {
@@ -1556,12 +1550,8 @@ pub fn dedupe_chars(chars: &[Obj], tolerance: &PyValue, extra_attrs: &PyValue) -
             end += 1;
         }
         let grp_chars = &indexed[g..end];
-        for y_cluster in
-            cluster_objects(grp_chars, |(_, c)| Ok(c.hot(Hot::Doctop)?.clone()), tolerance, false)?
-        {
-            for mut x_cluster in
-                cluster_objects(&y_cluster, |(_, c)| Ok(c.hot(Hot::X0)?.clone()), tolerance, false)?
-            {
+        for y_cluster in cluster_objects(grp_chars, |(_, c)| Ok(c.hot(Hot::Doctop)?.clone()), tolerance, false)? {
+            for mut x_cluster in cluster_objects(&y_cluster, |(_, c)| Ok(c.hot(Hot::X0)?.clone()), tolerance, false)? {
                 sort_by_key(&mut x_cluster, |(_, c)| pos_key(c), pair_lt)?;
                 deduped.push(x_cluster.swap_remove(0));
             }
