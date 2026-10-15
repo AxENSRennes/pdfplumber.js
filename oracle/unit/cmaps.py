@@ -651,6 +651,14 @@ FIXED = [
     b"1 beginbfchar <0001> <0020> endbfchar 1 beginbfchar <0001> <00A0> endbfchar",
     b"1 beginbfchar <0001> <00A0> endbfchar 1 beginbfchar <0001> <0020> endbfchar",
     b"[1 2] [3 4] /K def /x [5] def", b"1 2 3 begincodespacerange 4 endcodespacerange 5",
+    # usecmap of a unicode map file: AttributeError, not CMapNotFound
+    b"/to-unicode-Adobe-GB1 usecmap", b"/..#2Fcmap#2Fto-unicode-Adobe-CNS1 usecmap",
+    # each "begin..."/"end..." empties the stack: what def pops next shows it
+    b"1 beginnotdefrange <00> <1F> 1 endnotdefrange /CMapName def",
+    b"1 beginnotdefrange <00> <1F> 1 /CMapName def", b"<00> <1F> 1 endnotdefrange /CMapName def",
+    b"1 begincodespacerange <00> /CMapName def", b"<00> <FF> endcodespacerange /CMapName def",
+    b"1 begincidrange <00> /CMapName def", b"1 begincidchar <00> /CMapName def", b"1 beginbfrange <00> /CMapName def",
+    b"1 beginbfchar <00> /CMapName def", b"1 begincmap /CMapName def",
 ]
 
 

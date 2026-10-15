@@ -217,13 +217,15 @@ fn is_surrogate(c: u32) -> bool {
 pub fn decode_utf16be_ignore(b: &[u8]) -> String {
     let unit = |i: usize| u32::from(u16::from_be_bytes([b[i], b[i + 1]]));
     let mut out = String::with_capacity(b.len() / 2);
+    // UTF-8 bytes of the result: at most 4 per 2 input bytes
+    let limit = 2 * b.len();
     let mut i = 0;
     while i + 1 < b.len() {
         let ch = unit(i);
         i += 2;
         if !is_surrogate(ch) {
             out.push(char::from_u32(ch).expect("not a surrogate"));
-            check_growth(out.len(), 2 * b.len()); // UTF-8 bytes: at most 4 per 2 input bytes
+            check_growth(out.len(), limit);
             continue;
         }
         if ch >= 0xdc00 {
@@ -238,7 +240,7 @@ pub fn decode_utf16be_ignore(b: &[u8]) -> String {
         }
         i += 2;
         out.push(char::from_u32(0x10000 + ((ch - 0xd800) << 10) + (ch2 - 0xdc00)).expect("a supplementary char"));
-        check_growth(out.len(), 2 * b.len()); // UTF-8 bytes: at most 4 per 2 input bytes
+        check_growth(out.len(), limit);
     }
     out
 }
