@@ -582,7 +582,12 @@ def geometry_cases():
         elif fn == "snap_objects":
             args = [[rand_obj(rng) for _ in range(rng.randint(0, 8))], rng.choice(["x0", "x1", "top", "bottom"]), rng.choice([0, 1, 0.5, 3, 2.0])]
         elif fn == "resize_object":
-            args = [rand_obj(rng), rng.choice(["x0", "x1", "top", "bottom"]), num(rng, rng.randint(0, 40) * 0.5)]
+            o = rand_obj(rng)
+            value = num(rng, rng.randint(0, 40) * 0.5)
+            bounds = [o[k] for k in ("x0", "x1", "top", "bottom") if k in o]
+            if bounds and rng.random() < 0.5:
+                value = rng.choice(bounds)  # on the bound of the assert
+            args = [o, rng.choice(["x0", "x1", "top", "bottom"]), value]
         elif fn == "curve_to_edges":
             args = [rand_obj(rng, "curve")]
         elif fn == "rect_to_edges":
