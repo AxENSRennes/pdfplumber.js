@@ -207,23 +207,24 @@ chargement d'une CMap prédéfinie lève `RuntimeError` plutôt que
 - **Gros grain** : le JS envoie les octets du PDF et des requêtes (page,
   options) ; le Rust renvoie des résultats complets (objets d'une page, texte,
   mots, tables). Jamais un aller-retour par objet intermédiaire.
-- Pas de `wasm-bindgen` : ABI minimale (`alloc`, `free`, appels qui écrivent
-  un tampon de résultat). Le format de résultat est choisi par mesure
-  (JSON compact ou bande binaire en colonnes) ; les nombres traversent sans perte.
+- Pas de `wasm-bindgen` : ABI minimale (`pp_alloc`, `pp_free`, `pp_call` qui
+  écrit un tampon de résultat). Le format de résultat, choisi par mesure, est
+  le binaire `PJB1` (valeurs étiquetées, table de chaînes, objets en colonnes) ;
+  les nombres traversent sans perte. Détails, mesures, CMaps paresseuses,
+  erreurs et diagnostics : [`js-runtime.md`](js-runtime.md).
 - Les pages dérivées (`crop`, `within_bbox`, `filter`, `dedupe_chars`) vivent
   côté Rust. `filter(fn)` évalue `fn` en JS sur les objets déjà matérialisés
   et renvoie un masque au Rust. Une page rognée garde la `bbox` telle que
   l'appelant l'a donnée (`list` ou `tuple` : les messages d'erreur
   l'impriment, `calculate_area` reçoit cette valeur).
-- **`search` (question ouverte)** : `TextMap::search` reçoit les correspondances
-  de `re.finditer` de Python (positions en points de code). Une `RegExp` JS ne
-  les donne pas : règle des correspondances vides de `finditer` (`x*|abc` sur
-  `abc` : Python trouve `abc`, JS non), `\w` `\d` `\s` `\b` Unicode en Python,
-  syntaxe (`(?P<nom>…)`, drapeaux en ligne, `$` avant un saut de ligne final),
-  indices UTF-16 en JS. Avant l'API JS de `search`, il faut un moteur à la
-  sémantique de `re` (port de `sre` dans `pycompat`, vérifié par des cas de
-  l'oracle qui passent par ce moteur et non par des positions calculées en
-  Python) ; à défaut, des limites documentées et testées.
+- **`search` (décidé)** : `TextMap::search` reçoit les correspondances
+  (positions en points de code). L'API JS prend une `RegExp` ou une chaîne
+  avec la sémantique des `RegExp` de JavaScript (`re` n'est pas porté) : JS
+  exécute le motif sur `as_string`, le cœur convertit les positions UTF-16 en
+  points de code et construit les résultats de pdfplumber. Les écarts avec
+  `re` (correspondances vides de `finditer`, classes Unicode, syntaxe, `$`)
+  sont documentés dans `public-api.md` (« Search »). Un port de `sre` reste
+  possible plus tard (même interface : les spans).
 - Le même cœur doit pouvoir servir un module natif (PyO3) plus tard : pas de
   dépendance du cœur à `wasm32`, au JS ou à un runtime asynchrone.
 - Dépendances Rust : le moins possible. Une crate éprouvée est acceptable pour

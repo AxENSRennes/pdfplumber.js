@@ -7,7 +7,7 @@
 // Needs `node scripts/build.mjs` (dist/) and the corpus of
 // crates/wasm/examples/bench_corpus.rs.
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, openSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, firefox, webkit } from "playwright";
@@ -29,6 +29,12 @@ const { server, url } = await startServer(ROOT, {
 });
 const page = `${url}/js/bench/page.html?passes=${passes}`;
 const results = [];
+// each result as soon as it is known (a later browser may hang or crash)
+const partial = opt("--partial", join(process.env.PDFPLUMBER_ROOT ?? ROOT, ".cache/bench/browsers.jsonl"));
+const record = (r) => {
+  appendFileSync(partial, `${JSON.stringify(r)}\n`);
+  process.stderr.write(`${JSON.stringify(r).slice(0, 200)}\n`);
+};
 
 for (const [name, type] of [
   ["chromium", chromium],
@@ -53,7 +59,7 @@ for (const [name, type] of [
   } finally {
     await browser?.close();
   }
-  process.stderr.write(`${JSON.stringify(results.at(-1)).slice(0, 300)}\n`);
+  record(results.at(-1));
 }
 
 if (only.includes("system-firefox") && existsSync(systemFirefox)) {
@@ -69,15 +75,20 @@ if (only.includes("system-firefox") && existsSync(systemFirefox)) {
     v.on("close", () => ok(s.trim()));
   });
   const done = new Promise((ok) => (pending = ok));
+  const log = openSync(join(cacheDir, "firefox.log"), "w");
   const ff = spawn(systemFirefox, ["--headless", "--no-remote", "--profile", profile, `${page}&post`], {
-    stdio: "ignore",
+    stdio: ["ignore", log, log],
   });
-  const r = await Promise.race([done, new Promise((_, ko) => setTimeout(() => ko(new Error("timeout")), 30 * 60_000))]);
+  const exited = new Promise((ok) => ff.on("exit", (code) => ok({ error: `firefox exited (${code}), see ${join(cacheDir, "firefox.log")}` })));
+  const r = await Promise.race([done, exited, new Promise((ok) => setTimeout(() => ok({ error: "timeout" }), 30 * 60_000))]);
   ff.kill();
   rmSync(profile, { recursive: true, force: true });
   results.push({ browser: version, ...r });
+  record(results.at(-1));
 }
 
+server.closeAllConnections();
 server.close();
 console.log(JSON.stringify(results, null, 1));
+process.exit(0);
 

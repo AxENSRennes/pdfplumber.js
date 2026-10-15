@@ -1,0 +1,274 @@
+# Runtime JavaScript : Wasm, format des résultats, CMaps, tests
+
+Comment le cœur Rust (`crates/`) est servi à JavaScript : la crate
+`crates/wasm` (ABI, encodage des résultats, erreurs, diagnostics, CMaps) et le
+paquet `js/` (chargement, API publique, mode worker). L'API publique est
+décrite dans [`public-api.md`](public-api.md), les règles générales de la
+frontière dans [`architecture.md`](architecture.md) (« Frontière
+JavaScript »).
+
+## Vue d'ensemble
+
+```
+JS (js/src)                                    Rust (crates/wasm)
+open(input) ── platform.readInput ─► octets
+            ── core.call("doc_open", …, data) ─► pp_alloc ×2, pp_call ─► ops::Core::call
+                                                   requête PJB1 [op, handle, args, niveau]
+            ◄─ decodeResponse ◄── réponse PJR1 (statut, charge PJB1|JSON, diagnostics)
+statut 2 (CMaps manquantes) : fetch/fs des fichiers, "cmap_add", même requête relancée
+```
+
+- **Pas de `wasm-bindgen`** : le module n'importe rien et exporte `memory`,
+  `pp_alloc(len) -> ptr`, `pp_free(ptr)`, `pp_call(req, data) -> statut`,
+  `pp_result_ptr()`, `pp_result_len()`, `pp_result_free()`, `pp_buffers()`
+  (`crates/wasm/src/abi.rs`). Les noms sont préfixés pour qu'un build natif
+  n'exporte pas un `free` qui remplacerait celui de la libc.
+- **Mémoire** : `pp_alloc` crée un `Vec<u8>` que Rust garde dans une table
+  indexée par son adresse ; JS y écrit, puis `pp_call` *prend* le tampon (le
+  PDF passe dans le cœur sans copie supplémentaire). La réponse reste dans un
+  tampon de Rust jusqu'à l'appel suivant ; JS la décode en place puis appelle
+  `pp_result_free`. Aucun bloc `unsafe` : JS lit et écrit la mémoire, Rust ne
+  donne que des adresses de tampons qu'il possède. La crate a ses propres
+  lints (`unsafe_code = "deny"` au lieu du `forbid` de l'espace de travail)
+  pour que seul `abi.rs` autorise les `#[no_mangle]`, que le lint couvre.
+- **Handles** (`crates/wasm/src/handles.rs`) : documents, pages (à venir),
+  text maps. Un handle `u32` = index (20 bits) + génération (12 bits) : un
+  handle libéré puis réutilisé est refusé (`ValueError("invalid handle")`).
+- **Requêtes** : `crates/wasm/src/ops.rs` ; une requête est la liste PJB1
+  `[op, handle, args, niveau]` plus un tampon de données optionnel. La
+  réponse : en-tête `PJR1` (statut 0 ok / 1 exception / 2 CMaps manquantes,
+  format de la charge 0 PJB1 / 1 JSON, drapeau de correction JSON), charge,
+  bloc des diagnostics, chacun aligné sur 8 octets.
+- **Panique** : le profil `dist` a `panic = "abort"` ; une panique (un bogue)
+  devient un `unreachable` Wasm. JS lève `CoreCrash`, marque l'instance comme
+  morte, et le prochain `open()` instancie un nouveau cœur.
+
+## Format des résultats
+
+Deux encodages ont été implémentés et mesurés (`crates/wasm/src/wire/`) :
+
+- **PJB1** (binaire) : valeurs étiquetées (petits entiers en `i32`, entiers
+  ≤ 2^53 en `f64`, au-delà en décimal → `BigInt`, flottants sur leurs 8 octets
+  IEEE : NaN, ±inf, -0.0 passent tels quels), une **table de chaînes** (chaque
+  `str` une fois ; les chaînes sans surrogate forment un seul blob UTF-8 que
+  `TextDecoder` décode d'un coup, découpé par leurs fins en unités UTF-16 ;
+  les chaînes à surrogate isolé sont stockées en UTF-16), et des **tables** :
+  une liste de dicts (les objets d'une page) est écrite par colonnes, groupée
+  par séquence de clés (64 formes au plus, une forme pour deux lignes au plus),
+  chaque colonne typée quand toutes ses cellules le permettent (`f64`,
+  `f64`-ou-`None`, indices de chaînes, booléens, `None`, séquences de nombres
+  comme `matrix` et les couleurs, sinon valeurs génériques). JS construit les
+  lignes d'une forme avec une fonction générée (`new Function`, littéral
+  objet aux clés dans l'ordre ; repli sans génération de code si une CSP
+  l'interdit, testé), environ six fois plus vite que des affectations par
+  clé dans V8.
+- **JSON** : JSON ordinaire (nombres au plus court, relus exactement par
+  `JSON.parse`, `-0` compris) ; ce que JSON n'a pas (NaN, ±inf, grands
+  entiers, `bytes`, objets pdfminer) devient un objet à clé unique `"\u0000"`,
+  et une vraie clé qui commence par U+0000 reçoit un U+0000 de plus ; un
+  drapeau de la réponse dit si JS doit parcourir la valeur pour défaire ces
+  échappements.
+
+Les deux donnent les mêmes objets JS (vérifié sur tout le corpus de mesure
+et par les tests aléatoires de `crates/wasm/tests/boundary.rs`).
+
+### Mesures
+
+Corpus : les `chars` et `edges` des 215 pages réelles de
+`oracle/unit/text_tables_real.py` (229 555 caractères, 39 236 bords, objets
+de pdfplumber), chargés dans le cœur par `crates/wasm/examples/bench_corpus.rs`.
+Une passe encode chaque page (un appel par page, le cas typique) ; « cœur » =
+appel Wasm (encodage Rust, enveloppe, copie), « décodage » = construction des
+objets JS. Médianes de 5 passes, en ms, `dist/pdfplumber.wasm` optimisé
+(`wasm-opt -O3`). La machine est partagée (8 cœurs, d'autres projets
+tournent) : les écarts d'un run à l'autre atteignent ±30 %, les rapports entre
+formats sont stables.
+
+MESURES_ICI
+
+Taille des charges : binaire 52,2 Mo, JSON 122,5 Mo (≈ 227 et 534 octets
+par caractère).
+
+**Décision : PJB1.** Il est 2 à 4 fois plus rapide de bout en bout dans tous
+les moteurs, 2,3 fois plus petit, et son décodeur est itératif (une valeur
+imbriquée sur 10^5 niveaux passe partout). Le JSON reste disponible
+(`set_format`, benchmark, débogage) et testé.
+
+Reproduire :
+
+```sh
+cargo run --release -p pdfplumber-wasm --example bench_corpus -- $PDFPLUMBER_ROOT/.cache/bench/pages_real.pjb
+node scripts/build.mjs
+node js/bench/node.mjs --passes 5
+node js/bench/browsers.mjs --passes 5   # Chromium, WebKit, Firefox de Playwright, Firefox du système
+```
+
+## Valeurs
+
+| Python | JavaScript |
+|---|---|
+| `None`, `bool` | `null`, booléen |
+| `int` | `number` si \|n\| ≤ 2^53, sinon `bigint` |
+| `float` | `number` (NaN, ±Infinity, -0 compris) ; `3` et `3.0` donnent le même nombre |
+| `str` | chaîne ; un surrogate isolé est conservé (voir ci-dessous) |
+| `bytes` | `Uint8Array` |
+| `list`, `tuple` | `Array` |
+| `dict` | objet ordinaire, clés dans l'ordre Python (sauf les clés « entières », que JS met en tête) ; `__proto__` est une propriété propre |
+| `PSLiteral`, `PSKeyword`, `PDFObjRef`, `PDFStream` | classes `PSLiteral`, `PSKeyword`, `PDFObjRef`, `PDFStream` |
+
+Arguments (JS → Rust, PJB1 sans tables) : entier sûr → `int`, autre nombre
+→ `float`, `bigint` → `int`, `PyFloat(x)` force un `float`, `PyTuple([...])`
+un `tuple`, tableau → `list`, objet ou `Map` à clés chaînes → `dict`
+(propriétés `undefined` omises), `Uint8Array`/`ArrayBuffer` → `bytes`.
+
+**Chaînes et surrogates.** Une `str` Python peut contenir un surrogate
+isolé (`chr(0xd800)`), qu'une `String` Rust ne peut pas porter. L'écriture
+des résultats accepte une `str` sous toutes les formes qu'un module porté
+peut garder (`strings::PyStrRef` : `&str`, UTF-8 généralisé = le
+`surrogatepass` de Python, unités UTF-16, points de code) et l'envoie en
+unités UTF-16 ; testé avec des tampons faits à la main, dans tous les
+moteurs. Seule perte, côté JS : deux points de code « surrogate haut, puis
+bas » deviennent le caractère astral qu'ils codent. Dans l'autre sens, JS
+encode en UTF-8 généralisé ; le cœur refuse aujourd'hui une `str` d'argument
+à surrogate isolé (`UnicodeEncodeError`), faute d'un type `str` Python dans
+le modèle d'objets (à brancher quand il existera).
+
+## Erreurs
+
+Une exception (`pycompat::PyErr`) arrive avec son nom de classe, son module,
+son `__qualname__`, son MRO (linéarisation C3 des bases d'`ExcKind`, avec
+`builtins.object`) et `str(e)` ; JS en fait un `PDFPlumberError` dont `name`
+est le nom Python (`errors.ts`). Le MRO de chacune des 71 classes d'`ExcKind`
+est comparé à celui de CPython (`oracle/unit/js_runtime.py`,
+`exceptions.jsonl`), en Rust et dans chaque moteur. `NotPorted` (un chemin
+non porté) devient l'erreur JS `NotImplemented`, comme les fonctions de page
+en attendant la couche page.
+
+## Diagnostics
+
+`pycompat::diagnostics` est le canal des `logging` de pdfminer et des
+`warnings.warn` de pdfplumber : un module porté appelle
+`diagnostics::emit(source, niveau, || message)` (le message n'est formaté
+que si quelqu'un écoute). La frontière exécute chaque requête dans un
+`diagnostics::collect` au niveau demandé par JS (0 : rien n'est collecté ni
+formaté), au plus 1 000 entrées par appel (les autres sont comptées), et les
+renvoie avec la réponse, y compris quand l'appel lève. JS les passe à
+`onWarning` (`api.ts`, `diagnosticsPolicy`) avec le nom du niveau et, plus
+tard, le numéro de page. Le coût en cadres Python d'un appel de log (qui
+décide où tombe une `RecursionError`) reste l'affaire du module qui porte
+l'appel.
+
+## CMaps
+
+Les CMaps prédéfinies de pdfminer (`pdfminer/cmap/*.json.gz`, 7,9 Mo) ne sont
+pas dans le Wasm. `oracle/codegen/cmaps.py` les convertit au format compact
+lu par `cmapdb::CMapModule::parse` (148 fichiers, 3,9 Mo) ;
+`scripts/build-cmaps.mjs` les compresse en zlib dans
+`dist/cmaps/<nom>.pdfcmap.zlib` (3,0 Mo en tout ; un document japonais
+charge `UniJIS-UCS2-H` + `to-unicode-Adobe-Japan1` : 156 Ko) et écrit la liste
+des noms dans `js/src/generated/cmap-names.ts` (versionné ; `--check-names`
+dans `check.sh`).
+
+- **zlib plutôt que gzip ou brotli** : le cœur inflate lui-même les fichiers
+  avec son port de zlib (`pycompat::zlib`), donc tous les environnements
+  décodent avec le même code, sans `DecompressionStream`. Brotli ferait
+  2,1 Mo au lieu de 3,0 Mo, mais demanderait un décodeur brotli dans le cœur
+  ou un `DecompressionStream("brotli")` que tous les navigateurs n'ont pas.
+  Un fichier déjà décompressé (serveur qui applique son propre
+  `Content-Encoding`) est accepté tel quel.
+- **Chargement paresseux et relance déterministe** (`crates/wasm/src/cmaps.rs`,
+  `WasmCore.call`) : JS donne au cœur la liste des noms qui existent
+  (`cmap_configure`). Quand le cœur demande une CMap connue mais pas encore
+  fournie, le fournisseur la note et répond « absente » ; l'appel est alors
+  nul : la frontière jette son résultat, réinitialise l'état dérivé du
+  document sur lequel il tournait (`Document::reset` : la couche page y
+  mettra son état, reconstruit depuis les octets), et répond « CMaps
+  manquantes » avec les noms. JS les récupère (`fetch` dans le navigateur et
+  le worker, `fs` sous Node, ou la fonction `cmaps.load` de `configure`), les
+  passe au cœur (`cmap_add`) et relance la même requête, qui voit les CMaps
+  dès le début : son résultat est celui de Python avec toutes les CMaps
+  installées. Chaque nom est chargé une fois (les caches de `CMapDB` ne
+  gardent que les succès) ; un nom demandé deux fois est une erreur (boucle).
+  Un nom hors de la liste est `CMapNotFound` sans requête réseau. Avec
+  `cmaps: false`, toutes les CMaps sont absentes, comme une installation de
+  pdfminer sans son dossier `cmap`.
+- Alternative écartée pour l'instant : un `PyErr` hors hiérarchie Python
+  qui interromprait l'appel au lieu de le laisser finir. Elle éviterait de
+  jeter un calcul, mais demande de changer le trait `CMapProvider` (autre
+  chantier) et de prouver qu'aucun état partiel ne survit ; la relance est
+  sûre par construction.
+- Les cas `cmaps.jsonl` de `oracle/unit/js_runtime.py` (décodage et
+  `get_unichr` sur dix CMaps et quatre collections) passent par ce protocole
+  en Rust (`crates/wasm/tests/js_runtime_unit.rs`, fichiers zlib et
+  décompressés) et dans chaque moteur. `documents.jsonl` garde deux documents
+  CJK (`noembed-sjis.pdf`, `pr-136-example.pdf`) avec le texte de pdfplumber
+  et les CMaps chargées : le test JS correspondant est marqué *todo* jusqu'à
+  la couche page.
+
+## Paquet JS
+
+```
+js/src/index.ts, browser.ts   points d'entrée Node et navigateur (plateforme + exports.ts)
+js/src/api.ts                 open(), configure(), PDFPlumberDocument, PDFPlumberPage
+js/src/core/runtime.ts        WasmCore : ABI, requêtes, relance après CMaps
+js/src/core/wire.ts           décodeurs PJB1/JSON, encodeur des arguments
+js/src/platform/*.ts          Node (fs, fetch) et navigateur (fetch, compileStreaming, Worker)
+js/src/worker/*.ts            mode worker : requêtes encodées ici, exécutées (CMaps comprises)
+                              dans le worker, réponse décodée ici (les classes survivent)
+js/src/search.ts              motifs de search() (RegExp JS → spans, voir public-api.md)
+js/src/internal.ts            API interne des tests et du benchmark (pdfplumber-js/internal)
+```
+
+Build : `node scripts/build.mjs` = `build-wasm.mjs` (cargo `--profile dist`,
+puis `wasm-opt -O3` du paquet npm `binaryen`, `--no-opt` pour l'éviter),
+`build-cmaps.mjs`, `build-js.mjs` (`tsc` → `dist/src` avec les `.d.ts` ;
+esbuild → `dist/browser/{index,worker,internal}.js` avec morceaux partagés).
+Aucune dépendance d'exécution.
+
+## Taille
+
+`node scripts/size.mjs` (gzip -9, brotli 11) ; `--budget` dans `check.sh`.
+
+| Fichier | brut | gzip | brotli |
+|---|---|---|---|
+| `dist/pdfplumber.wasm`, cargo `dist` sans `wasm-opt` | 987 949 | 322 247 | 238 048 |
+| `dist/pdfplumber.wasm`, `wasm-opt -O3` | 760 450 | 299 366 | 226 421 |
+| `dist/browser/index.js` et ses morceaux | 26 371 | 9 745 | 8 837 |
+| `dist/browser/worker.js` | 587 | 376 | 331 |
+| `dist/src` (Node, `.js`) | 70 940 | 22 037 | 19 314 |
+| `dist/cmaps` (148 fichiers zlib) | 2 976 819 | — | — |
+
+Le Wasm contient déjà les tables générées de pdfminer (glyphlist,
+fontmetrics), les tables Unicode de `pycompat`, `layout`, `text`, `table` ;
+la couche page ajoutera l'interpréteur et les polices. Budget (brotli) :
+1 Mo pour le Wasm, 40 Ko pour le JS navigateur.
+
+## Tests
+
+- **Rust** (`cargo test -p pdfplumber-wasm`, natif et `wasm32-wasip1` dans
+  `check.sh`) : `tests/boundary.rs` (4 000 valeurs aléatoires encodées en
+  PJB1 et en JSON et décodées par des décodeurs Rust qui suivent `wire.ts`,
+  toutes les sortes de colonnes, formes multiples, surrogates, entiers aux
+  bornes, cycles PDF → `ValueError("Circular reference detected")`,
+  200 000 niveaux d'imbrication, arguments aléatoires, entrées tronquées ou
+  altérées sans panique, ABI, erreurs des requêtes, diagnostics) et
+  `tests/js_runtime_unit.rs` (rejeu des cas Python de
+  `oracle/unit/js_runtime.py` à travers `Core::call`, dans les deux formats).
+- **JS** : `js/test/shared/tests.mjs`, les mêmes tests pour Node (vitest,
+  `js/test/node/`, avec et sans génération de code) et les navigateurs
+  (Playwright, `js/test/browser/`, cœur dans la page et en mode worker) :
+  chargement, valeurs adverses (NaN, -0, grands entiers, surrogates isolés
+  depuis des tampons faits à la main, `__proto__`, 10^5 niveaux), bloc PJB1
+  fait à la main, erreurs et MRO contre CPython, diagnostics, CMaps
+  paresseuses contre pdfminer, texte/mots/recherche/tables contre
+  pdfplumber, entrées de `open()`, absence de fuite de tampons.
+- `scripts/check.sh` : noms de CMaps, build (sans `wasm-opt`), types, vitest,
+  budget. `scripts/check-browsers.sh` : build complet puis Playwright.
+- **Navigateurs sur cette machine** : Chromium 148, Firefox 150 (Nightly de
+  Playwright) et WebKit 26.4 de Playwright 1.60 ; Firefox 158 du système pour
+  les mesures. WebKit manque de bibliothèques système (GStreamer, libwoff2,
+  libavif, EGL de Mesa…) et la machine n'a pas `sudo` :
+  `scripts/webkit-local-libs.sh` les télécharge (`apt-get download`, sans
+  installation) sous `.cache/webkit-libs` et écrit un lanceur que
+  `check-browsers.sh` passe à Playwright (`PDFPLUMBER_WEBKIT`,
+  `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1`).
