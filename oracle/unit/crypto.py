@@ -249,6 +249,14 @@ def gen_nfkc(rng):
         s = rand_text(rng, p, rng.randint(1, 12))
         yield ["str", s], UCD.normalize("NFKC", s)
     yield ["str", ""], UCD.normalize("NFKC", "")
+    # Hangul composition at the bounds of the L, V and T ranges, at the end
+    # of the string or followed by another character
+    for lead in (0x10FF, 0x1100, 0x1112, 0x1113, 0xAC00, 0xAC01):
+        for vowel in (0x1160, 0x1161, 0x1175, 0x1176):
+            for trail in (None, 0x11A6, 0x11A7, 0x11A8, 0x11C2, 0x11C3, 0x1100, 0x0301):
+                for after in ("", "a"):
+                    s = chr(lead) + chr(vowel) + (chr(trail) if trail else "") + after
+                    yield ["str", s], UCD.normalize("NFKC", s)
 
 
 SASL_POOLS = {
