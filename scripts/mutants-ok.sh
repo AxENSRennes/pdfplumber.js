@@ -52,10 +52,11 @@ git -C "$SRC" ls-files -z --cached --others --exclude-standard \
   | tar -xf - -C "$WS"
 
 for f in "${files[@]}"; do
-  # PyResult<T> -> Result<T, pycompat::PyErr>, T with up to two levels of <>.
-  perl -0pi -e 's/(?<![A-Za-z0-9_:])(?:pycompat::)?PyResult<((?:[^<>]|<(?:[^<>]|<[^<>]*>)*>)*)>/Result<$1, pycompat::PyErr>/g' "$WS/$f"
+  # PyResult<T> -> Result<T, pycompat::PyErr>, T with any nesting of <> (a
+  # recursive pattern; a `->` inside T would end it early: checked below).
+  perl -0pi -e 's/(?<![A-Za-z0-9_:])(?:pycompat::)?PyResult(<((?:[^<>]++|(?1))*)>)/Result<$2, pycompat::PyErr>/g' "$WS/$f"
   if grep -n 'PyResult<' "$WS/$f"; then
-    echo "mutants-ok.sh: $f: PyResult<..> left after the rewrite (nested deeper than two levels?)" >&2
+    echo "mutants-ok.sh: $f: PyResult<..> left after the rewrite (a '->' inside the type?)" >&2
     exit 2
   fi
 done

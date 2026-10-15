@@ -7,6 +7,7 @@
 pub mod container;
 pub mod convert;
 pub mod ctm;
+pub mod obj;
 pub mod page;
 pub mod pdf;
 pub mod structure;

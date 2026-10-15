@@ -189,6 +189,13 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   fichiers compacts de `oracle/codegen/cmaps.py`, `CMapParser` sur un corpus
   adverse `--fuzz 3000` et, avec `--corpus`, sur chaque flux CMap embarqué de
   l'ensemble `all`).
+- Un résultat Python qui dépend d'adresses mémoire (l'ordre d'un `set` de
+  NaN : `hash(nan)` est l'adresse de l'objet) n'est jamais comparé tel quel.
+  Le port fixe un ordre que CPython peut donner ; le générateur fabrique des
+  objets dont le hachage donne cet ordre et vérifie, en observant chaque
+  `set` construit (rejeu de `setobject.c`, pour plusieurs valeurs des bits
+  d'adresse non choisis), que CPython l'a bien donné ; sinon le cas est
+  écarté, de façon déterministe (`oracle/unit/_nan_objects.py`).
 
 ```sh
 export PDFPLUMBER_ROOT=/chemin/du/dépôt/principal   # .venv, corpus/, .cache/
@@ -336,9 +343,13 @@ règles :
   corpus adverse ou passe sur un ensemble complet passe par
   `scripts/heavy.sh <commande>`. Le script attend l'un des deux créneaux
   partagés par tous les worktrees (`.cache/locks/`), puis lance la commande
-  dans `systemd-run --user --scope --quiet -p MemoryMax=5G -p MemorySwapMax=0`.
-  Pour `cargo mutants`, utiliser `-j 1 --timeout 20`. Les tests corrects
-  restent sous 250 Mo.
+  dans `systemd-run --user --scope --quiet -p MemoryMax=5G -p MemorySwapMax=0
+  -p OOMPolicy=continue`. Pour `cargo mutants`, utiliser `-j 1 --timeout 20`.
+  Les tests corrects restent sous 250 Mo. `OOMPolicy=continue` : le noyau
+  tue le processus qui dépasse le plafond (le binaire de test d'un mutant,
+  donc un mutant détecté) et la commande continue ; avec la politique par
+  défaut (`stop`), systemd arrête tout le scope et `cargo mutants` s'arrête
+  sur « interrupted » au milieu de sa passe.
 - **Profil `mutants`** (`--profile mutants`) : `release` avec les
   `debug_assertions`, qui activent `psparser::ProgressGuard`. Entre deux
   `seek`, un parseur ne lit qu'en avant (position
@@ -352,7 +363,7 @@ règles :
   d'octets en entrée (`psparser_base_unit`).
 
 ```sh
-systemd-run --user --scope --quiet -p MemoryMax=5G -p MemorySwapMax=0 \
+systemd-run --user --scope --quiet -p MemoryMax=5G -p MemorySwapMax=0 -p OOMPolicy=continue \
   cargo mutants -f crates/pdfminer/src/psparser.rs -E "ProgressGuard|check_progress|read_position" \
   --test-package pdftrace --cargo-test-arg=--test=psparser_unit \
   --profile mutants -j 1 --timeout 20
