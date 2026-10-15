@@ -14,10 +14,10 @@ use std::hint::black_box;
 use std::time::Instant;
 
 use pdfminer::pdfinterp::PDFContentParser;
-use pdftrace::unit::{pdfplumber_root, read_content_jobs};
+use pdftrace::unit::{read_content_jobs, UnitData};
 
 fn main() {
-    let path = pdfplumber_root().join(".cache/unit/psparser/corpus.bin");
+    let path = UnitData::open("psparser").path("corpus.bin");
     let jobs = read_content_jobs(&path);
     let bytes: usize = jobs.iter().map(|job| job.bytes()).sum();
     let runs: usize = std::env::var("RUNS").ok().and_then(|r| r.parse().ok()).unwrap_or(5);
