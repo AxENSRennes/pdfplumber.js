@@ -38,7 +38,15 @@ Generated cases (typed JSON lines, seed fixed), ``{"in": [...], "out": ...}``:
   lists, parameters as dict, list, stream, of the wrong length or type),
   predictors through ``DecodeParms`` (values int, bool, float, huge),
   pass-through and unsupported filters, data encoded for the chain then
-  sometimes damaged. ``in``: ``[attrs, raw]``.
+  sometimes damaged; any of the filter entry, its elements, the parameters
+  entry, its elements and the predictor values (``Predictor``, ``Colors``,
+  ``Columns``, ``BitsPerComponent``, ``K``) may be an indirect reference
+  (``refify``): to an object of the case's table, through a chain of
+  references, to a missing object (``None``) or to a broken one
+  (``PDFSyntaxError``). ``in``: ``[attrs, raw, table]``, the references
+  (``{"ref": n}``) resolving through the table, ``[[objid, object], ...]``
+  (``oracle/unit/pdftypes.py``'s ``TableDoc``: object ``BROKEN_OBJID``
+  raises ``PDFSyntaxError``, another missing one ``PDFObjectNotFound``).
 
 Real corpus (``corpus.bin`` + ``corpus.json``): every stream object of the
 PDFs of the set ``all`` (``oracle/corpus.py``), as ``getobj`` returns it:
@@ -85,6 +93,7 @@ from ..stages._common import open_document
 from ..stages.objects import fetch_order
 from ..typed_json import dumps
 from ._common import oracle_sources, require_oracle_python, unit_dir, write_cases, write_meta
+from .pdftypes import BROKEN_OBJID, TableDoc
 
 BLOB_MAX = 2048
 MAX_RAW = 4 * 1024 * 1024
@@ -355,6 +364,14 @@ def gen_png(rng):
         elif rng.random() < 0.1:
             data += rng.randbytes(rng.randint(1, 5))
         yield [pred, colors, columns, bpc, data], call(apply_png_predictor, pred, colors, columns, bpc, data)
+    # a /Columns too large for `list(b"\x00" * columns)` on the oracle
+    # machine (MemoryError; MEMORY_LIMIT in utils.rs): 2**32 builds the 4 GiB
+    # bytes object (about a second), then the 32 GiB list is refused; from
+    # 2**35 on the bytes object is refused at once
+    for columns in [2**32, 2**32 + 1, 2**35, 2**36, 2**40, 2**46, 2**47, 2**62]:
+        for colors, bpc, data in [(1, 8, b"\x00\x01\x02"), (1, 1, b"\x01\x05"), (3, 8, b""), (-1, 8, b"\x02\x07"),
+                                  (1, 2, b"\x00\x01")]:
+            yield [10, colors, columns, bpc, data], call(apply_png_predictor, 10, colors, columns, bpc, data)
 
 
 def gen_corrupted(rng):
@@ -425,6 +442,50 @@ def rand_params(rng, kind, rows_info):
     return p
 
 
+#: a missing object (resolves to None)
+MISSING_OBJID = 999
+PARAM_KEYS = ("Predictor", "Colors", "Columns", "BitsPerComponent", "K")
+
+
+def refify(rng, attrs, doc):
+    """Replaces some filter entries of ``attrs`` (in place, see the module
+    docstring) by references to new objects of ``doc``'s table."""
+
+    def ref_to(x):
+        if rng.random() < 0.1:
+            return PDFObjRef(doc, rng.choice([MISSING_OBJID, BROKEN_OBJID]))
+        objid = len(doc.table) + 1
+        doc.table[objid] = x
+        ref = PDFObjRef(doc, objid)
+        while rng.random() < 0.2:  # a chain
+            objid = len(doc.table) + 1
+            doc.table[objid] = ref
+            ref = PDFObjRef(doc, objid)
+        return ref
+
+    def params(p):
+        d = p.attrs if isinstance(p, PDFStream) else p
+        if isinstance(d, dict):
+            for k in PARAM_KEYS:
+                if k in d and rng.random() < 0.2:
+                    d[k] = ref_to(d[k])
+        return ref_to(p) if rng.random() < 0.15 else p
+
+    for key in list(attrs):
+        if key in ("F", "Filter"):
+            v = attrs[key]
+            if isinstance(v, list):
+                v = [ref_to(x) if rng.random() < 0.15 else x for x in v]
+            attrs[key] = ref_to(v) if rng.random() < 0.15 else v
+        elif key in ("DP", "DecodeParms", "FDecodeParms"):
+            v = attrs[key]
+            if isinstance(v, list):
+                v = [params(x) for x in v]
+                attrs[key] = ref_to(v) if rng.random() < 0.15 else v
+            else:
+                attrs[key] = params(v)
+
+
 def gen_streams(rng):
     for _ in range(4000):
         kinds = [rng.choice(["flate", "flate", "lzw", "a85", "ahx", "rl", "dct", "jpx", "jbig2"]) for _ in range(rng.choice([1, 1, 1, 2, 3]))]
@@ -470,10 +531,13 @@ def gen_streams(rng):
             attrs[pkey] = pv
         if rng.random() < 0.1:
             attrs["Length"] = len(data)
+        doc = TableDoc(None)
+        if rng.random() < 0.4:
+            refify(rng, attrs, doc)
         s = PDFStream(attrs, data)
         filters = call(s.get_filters)
         out = call(s.get_data)
-        yield [attrs, data], [filters, out, s.get_rawdata()]
+        yield [attrs, data, sorted(doc.table.items())], [filters, out, s.get_rawdata()]
 
 
 GENERATORS = {

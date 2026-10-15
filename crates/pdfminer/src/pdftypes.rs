@@ -54,7 +54,7 @@ use pycompat::{exc, zlib, ExcKind, Num, PyErr, PyInt, PyResult};
 use rustc_hash::FxBuildHasher;
 
 use crate::ascii85::{ascii85decode, asciihexdecode};
-use crate::ccitt::ccittfaxdecode;
+use crate::ccitt::ccittfaxdecode_obj;
 use crate::lzw::lzwdecode;
 use crate::psparser::{PSKeyword, PSLiteral, LIT};
 use crate::runlength::rldecode;
@@ -1090,19 +1090,7 @@ impl PDFStream {
             } else if in_literals(f, &*LITERALS_RUNLENGTH_DECODE) {
                 data = rldecode(&data)?.into();
             } else if in_literals(f, &*LITERALS_CCITTFAX_DECODE) {
-                // ccittfaxdecode starts with params.get("K"): a dict, or a
-                // stream (PDFStream.get reads its attrs)
-                data = match params {
-                    PDFObject::Dict(d) => ccittfaxdecode(&data, d)?,
-                    PDFObject::Stream(s) => ccittfaxdecode(&data, &s.attrs)?,
-                    other => {
-                        return Err(exc::AttributeError(format!(
-                            "'{}' object has no attribute 'get'",
-                            other.type_name()
-                        )))
-                    }
-                }
-                .into();
+                data = ccittfaxdecode_obj(&data, params)?.into();
             } else if in_literals(f, &*LITERALS_DCT_DECODE) {
                 // This is probably a JPG stream
                 // it does not need to be decoded twice.

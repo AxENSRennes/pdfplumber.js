@@ -31,7 +31,9 @@ Inputs (seed fixed):
   lengths, block type 3, fixed blocks using the invalid symbols 286/287 and
   distances 30/31, dynamic blocks with oversubscribed or incomplete code
   length / literal / distance codes, too many symbols, repeat codes at the
-  start or past the end, a missing end-of-block code, a single distance
+  start or past the end, dynamic blocks whose literal/length or distance
+  decoding tables are exactly as large as zlib allows (``ENOUGH_LENS``,
+  ``ENOUGH_DISTS``), a missing end-of-block code, a single distance
   code, distances exactly at and one past the output so far, matches
   crossing the window, and wrong Adler-32 trailers; headers with small
   windows decoded with ``wbits=0`` (the window then is smaller than the
@@ -475,6 +477,62 @@ def rand_deflate(rng, wsize=32768):
     return w.getvalue()
 
 
+#: Code length counts (index: length 1..15) of complete codes whose decoding
+#: tables are as large as zlib allows: 286 literal/length codes filling
+#: exactly ``ENOUGH_LENS`` = 852 entries with a 9-bit root table, and 30
+#: distance codes filling exactly ``ENOUGH_DISTS`` = 592 with a 6-bit root
+#: table (the maxima of zlib's ``examples/enough.c``; found by a search over
+#: count vectors). ``inflate_table`` checks ``used > ENOUGH`` after each
+#: sub-table: these reach the bound without passing it.
+ENOUGH_LIT_COUNTS = [[0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 57, 93, 81, 17, 33, 2], [0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 41, 133, 57, 49, 1, 2],
+                     [0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 61, 73, 113, 1, 33, 2], [0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 49, 117, 49, 65, 1, 2]]
+ENOUGH_DIST_COUNTS = [[0, 1, 1, 1, 0, 1, 0, 5, 13, 1, 1, 1, 1, 1, 1, 2], [0, 0, 3, 1, 0, 0, 0, 13, 5, 1, 1, 1, 1, 1, 1, 2],
+                      [0, 1, 1, 1, 0, 0, 0, 12, 7, 1, 1, 1, 1, 1, 1, 2], [0, 1, 1, 1, 0, 0, 0, 13, 5, 1, 1, 1, 0, 3, 1, 2]]
+
+
+def lengths_of_counts(rng, counts):
+    """Code lengths with these counts, over shuffled symbols."""
+    lengths = [ln for ln, n in enumerate(counts) for _ in range(n)]
+    rng.shuffle(lengths)
+    return lengths
+
+
+def enough_deflate(rng, kind):
+    """A raw deflate stream of one dynamic block whose literal/length table
+    (``kind`` "lit"), distance table ("dist") or both are of the maximal size
+    (``ENOUGH_*_COUNTS``), with tokens using every part of the tables."""
+    if kind in ("lit", "both"):
+        lit_lens = lengths_of_counts(rng, rng.choice(ENOUGH_LIT_COUNTS))
+    else:
+        lit_lens = rand_lengths(rng, 286, range(286), 15)
+    if kind in ("dist", "both"):
+        dist_lens = lengths_of_counts(rng, rng.choice(ENOUGH_DIST_COUNTS))
+    else:
+        dist_lens = rand_lengths(rng, 30, range(30), 15)
+    w = BitWriter()
+    w.bits(1, 1)
+    w.bits(2, 2)
+    write_dynamic_header(rng, w, lit_lens, dist_lens)
+    tokens, _ = rand_tokens(rng, 0, 32768, rng.choice([50, 400, 3000]))
+    if rng.random() < 0.9:  # only valid distances (they mostly are)
+        valid, produced = [], 0
+        for t in tokens:
+            if t[0] == "lit" or t[2] <= produced:
+                valid.append(t)
+                produced += 1 if t[0] == "lit" else t[1]
+        tokens = valid
+    write_tokens(rng, w, tokens, canonical(lit_lens), lit_lens, canonical(dist_lens), dist_lens, False)
+    return w.getvalue()
+
+
+def enough_streams(rng):
+    """(stream, wbits) of ``enough_deflate``, raw or in a zlib container."""
+    for kind in ("lit", "dist", "both"):
+        for _ in range(12):
+            raw = enough_deflate(rng, kind)
+            yield (raw, -15) if rng.random() < 0.5 else wrap_zlib(rng, raw)
+
+
 def zlib_header(cinfo=7, fdict=False, level=2, bad=False):
     cmf = (cinfo << 4) | 8
     flg = (level << 6) | (0x20 if fdict else 0)
@@ -542,6 +600,9 @@ def gen_decompress(rng):
             if rng.random() < 0.1:
                 for v in variants(rng, stream):
                     yield run_decompress(v, wbits)
+    # decoding tables of the largest size zlib allows
+    for stream, wbits in enough_streams(rng):
+        yield run_decompress(stream, wbits)
     # every 2-byte header in front of one body
     body = zlib.compress(b"header test " * 20)[2:]
     for h in range(65536):
@@ -613,6 +674,8 @@ def gen_decompressobj(rng):
         yield run_decompressobj(stream, 0, [[[len(stream), 0, 1]], [[len(stream), 40000, 1], [0, 40000, 3]],
                                             [[len(stream), 50000, 1], [0, 50000, 3]],
                                             [[len(stream), 120000, 1], [0, 120000, 3]]])
+    for stream, wbits in enough_streams(rng):
+        yield run_decompressobj(stream, wbits, feedings(rng, stream))
     for stream, wbits in real_streams(rng):
         if len(stream) > 20000 and rng.random() < 0.8:
             continue

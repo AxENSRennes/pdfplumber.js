@@ -31,9 +31,9 @@ pub fn choplist<T>(n: usize, seq: &[T]) -> std::slice::ChunksExact<'_, T> {
 // A large positive `/Columns` makes `list(b"\x00" * columns)` allocate that
 // many bytes (and 8 times more for the list) in Python, which fails with
 // `MemoryError` past the machine's memory. The port only materializes the
-// part that can be read; it raises `MemoryError` where every machine does
-// (at least the 2**47 bytes of the x86-64 user address space,
-// `ADDRESS_SPACE`), not below, where the outcome depends on the machine.
+// part that can be read, and raises `MemoryError` from `/Columns` 2**32 on
+// (`MEMORY_LIMIT`): what the oracle machine does (see there). Below, the
+// outcome depends on the machine's memory and the port goes on.
 
 /// `x` as a Python `int` or `bool` (`int_value`'s result): its value, and
 /// `str(x)` for messages.
@@ -82,11 +82,16 @@ fn list_index_error_at(i: i64, bpp: &PyInt) -> PyErr {
     }
 }
 
-/// x86-64 user space is 2**47 bytes: an allocation at least that large
-/// fails on every machine (`MemoryError`). Smaller ones that exceed the
-/// memory of the machine also fail in Python; the port does not allocate
-/// them (see above) and goes on.
-const ADDRESS_SPACE: i64 = 1 << 47;
+/// The smallest `/Columns` for which `list(b"\x00" * columns)` raises
+/// `MemoryError` on the oracle machine, by its profile (64-bit CPython 3.12,
+/// Linux with heuristic overcommit, 24 GB of RAM and 4 GB of swap):
+/// the list of 2**32 pointers is 32 GiB, more than RAM and swap together,
+/// so its single allocation is refused at once (from 2**35 on, the bytes
+/// object itself is). Just below, Python fails or not depending on the
+/// machine's memory (from about 3.6e9 the list is refused on the oracle
+/// machine too); the port does not allocate (see above) and goes on. A
+/// wasm32 host cannot address 2**32 bytes either.
+const MEMORY_LIMIT: i64 = 1 << 32;
 
 /// A safety net for mutation testing, active with debug assertions only
 /// (and excluded from the mutants, `-E size_guard`): a predictor never
@@ -199,7 +204,7 @@ pub fn apply_png_predictor(
     let Some(columns) = columns.as_i64() else {
         return Err(exc::OverflowError("cannot fit 'int' into an index-sized integer"));
     };
-    if columns >= ADDRESS_SPACE {
+    if columns >= MEMORY_LIMIT {
         return Err(exc::MemoryError(""));
     }
     let len = data.len() as i64;

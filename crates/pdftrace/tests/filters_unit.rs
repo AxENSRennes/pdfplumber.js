@@ -3,16 +3,22 @@
 //! `pdftypes::{PDFStream.get_data, decompress_corrupted}`: generated cases,
 //! then every stream of the real corpus.
 //!
+//! In the `streams` cases, references resolve through a table document
+//! built from the case (`TableDoc` of `oracle/unit/pdftypes.py`): object 13
+//! raises `PDFSyntaxError` like a broken object.
+//!
 //! `/CCITTFaxDecode` is ported separately: a case whose Rust result is the
 //! `NotPorted` error of the `ccitt` stub is counted as skipped (only cases
 //! with that filter may be).
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fs;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use pdfminer::ascii85::{ascii85decode, asciihexdecode};
 use pdfminer::lzw::lzwdecode;
-use pdfminer::pdftypes::{decompress_corrupted, PDFDict, PDFList, PDFObject, PDFStream};
+use pdfminer::pdftypes::{decompress_corrupted, PDFDict, PDFList, PDFObjRef, PDFObject, PDFResolver, PDFStream};
 use pdfminer::psparser::{LIT_bytes, KWD, LIT};
 use pdfminer::runlength::rldecode;
 use pdfminer::utils::{apply_png_predictor, apply_tiff_predictor, paeth_predictor};
@@ -20,7 +26,7 @@ use pdftrace::canon::sha256_hex;
 use pdftrace::typed_json::{self, Json};
 use pdftrace::unit::UnitData;
 use pdftrace::value::{NameValue, Value};
-use pycompat::{ExcKind, PyErr, PyInt, PyResult};
+use pycompat::{exc, recursion, ExcKind, PyErr, PyInt, PyResult};
 
 /// `BLOB_MAX` of the generator.
 const BLOB_MAX: usize = 2048;
@@ -65,8 +71,39 @@ fn int(v: &Value) -> PyInt {
     }
 }
 
-/// The PDF object of a typed JSON value (no references in these cases).
-fn build(v: &Value) -> PDFObject {
+/// The object number whose parsing fails (`BROKEN_OBJID` of the generator).
+const BROKEN_OBJID: i64 = 13;
+
+/// A document whose objects come from the case.
+#[derive(Default)]
+struct TableDoc {
+    table: RefCell<HashMap<PyInt, PDFObject>>,
+}
+
+impl PDFResolver for TableDoc {
+    /// `TableDoc.getobj` of the generator: a Python method (one frame).
+    fn getobj(&self, objid: &PyInt) -> PyResult<PDFObject> {
+        let _frame = recursion::py_frame()?;
+        if let Some(obj) = self.table.borrow().get(objid) {
+            return Ok(obj.clone());
+        }
+        if *objid == PyInt::Small(BROKEN_OBJID) {
+            return Err(exc::PDFSyntaxError(format!("broken {objid}")));
+        }
+        Err(exc::PDFObjectNotFound(objid.to_string()))
+    }
+}
+
+/// A new empty table document, and the reference objects hold to it.
+fn table_doc() -> (Rc<TableDoc>, Weak<dyn PDFResolver>) {
+    let doc = Rc::new(TableDoc::default());
+    let dyn_doc: Rc<dyn PDFResolver> = doc.clone();
+    let weak = Rc::downgrade(&dyn_doc);
+    (doc, weak)
+}
+
+/// The PDF object of a typed JSON value, its references to `doc`.
+fn build(v: &Value, doc: &Weak<dyn PDFResolver>) -> PDFObject {
     match v {
         Value::None => PDFObject::Null,
         Value::Bool(b) => PDFObject::Bool(*b),
@@ -76,18 +113,24 @@ fn build(v: &Value) -> PDFObject {
         Value::Literal(NameValue::Str(s)) => PDFObject::Literal(LIT(s.as_str().expect("a literal name"))),
         Value::Literal(NameValue::Bytes(b)) => PDFObject::Literal(LIT_bytes(b)),
         Value::Keyword(k) => PDFObject::Keyword(KWD(k)),
-        Value::List(items) => PDFObject::List(PDFList::new(items.iter().map(build).collect())),
-        Value::Dict(items) => PDFObject::Dict(dict(items)),
+        Value::List(items) => PDFObject::List(PDFList::new(items.iter().map(|x| build(x, doc)).collect())),
+        Value::Dict(items) => PDFObject::Dict(dict(items, doc)),
+        Value::Ref(objid) => PDFObject::Ref(PDFObjRef::new(Some(doc.clone()), objid.clone())),
         Value::Stream(sv) => {
             let (Value::Bytes(raw), Value::None) = (&sv.raw, &sv.data) else { panic!("a decoded stream: {sv:?}") };
-            PDFObject::Stream(Rc::new(PDFStream::new(dict(&sv.attrs), Rc::from(&raw[..]), None)))
+            PDFObject::Stream(Rc::new(PDFStream::new(dict(&sv.attrs, doc), Rc::from(&raw[..]), None)))
         }
         other => panic!("not a PDF object: {other:?}"),
     }
 }
 
-fn dict(items: &[(Value, Value)]) -> PDFDict {
-    PDFDict::from_pairs(items.iter().map(|(k, x)| (Rc::from(k.as_str().expect("a str key")), build(x))))
+fn dict(items: &[(Value, Value)], doc: &Weak<dyn PDFResolver>) -> PDFDict {
+    PDFDict::from_pairs(items.iter().map(|(k, x)| (Rc::from(k.as_str().expect("a str key")), build(x, doc))))
+}
+
+/// An object without references.
+fn build_direct(v: &Value) -> PDFObject {
+    build(v, &table_doc().1)
 }
 
 /// Whether the filter entries name `/CCITTFaxDecode` (or `/CCF`).
@@ -157,13 +200,13 @@ fn paeth() {
 
 #[test]
 fn tiff() {
-    check("tiff", 2500, |a| result(apply_tiff_predictor(&int(&a[0]), &int(&a[1]), &build(&a[2]), bytes(&a[3]))));
+    check("tiff", 2500, |a| result(apply_tiff_predictor(&int(&a[0]), &int(&a[1]), &build_direct(&a[2]), bytes(&a[3]))));
 }
 
 #[test]
 fn png() {
     check("png", 5000, |a| {
-        result(apply_png_predictor(&int(&a[0]), &int(&a[1]), &int(&a[2]), &build(&a[3]), bytes(&a[4])))
+        result(apply_png_predictor(&int(&a[0]), &int(&a[1]), &int(&a[2]), &build_direct(&a[3]), bytes(&a[4])))
     });
 }
 
@@ -175,7 +218,13 @@ fn corrupted() {
 #[test]
 fn streams() {
     check("streams", 4000, |a| {
-        let PDFObject::Dict(attrs) = build(&a[0]) else { panic!("attrs") };
+        let (doc, weak) = table_doc();
+        let Value::List(table) = &a[2] else { panic!("table") };
+        for pair in table {
+            let (Value::List(pair) | Value::Tuple(pair)) = pair else { panic!("an [objid, object] pair") };
+            doc.table.borrow_mut().insert(int(&pair[0]), build(&pair[1], &weak));
+        }
+        let PDFObject::Dict(attrs) = build(&a[0], &weak) else { panic!("attrs") };
         let s = PDFStream::new(attrs, Rc::from(bytes(&a[1])), None);
         let filters = match s.get_filters() {
             Ok(pairs) => {
@@ -219,7 +268,7 @@ fn real_corpus() {
         off += 4 + n;
         total += raw.len();
         let attrs = typed_json::from_json(&typed_json::parse_json(attrs_json).expect("attrs")).expect("typed attrs");
-        let PDFObject::Dict(attrs) = build(&attrs) else { panic!("attrs") };
+        let PDFObject::Dict(attrs) = build_direct(&attrs) else { panic!("attrs") };
         let expected = typed_json::from_json(rec.get("out").expect("out")).expect("typed out");
         let got = match PDFStream::new(attrs, Rc::from(raw), None).get_data() {
             Ok(b) => Some(sha(&b)),
