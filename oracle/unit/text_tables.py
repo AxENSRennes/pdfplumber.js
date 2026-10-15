@@ -402,6 +402,34 @@ def fuzz_cases(n: int):
         yield synth_page_case(rng)
     yield from rounding_cases()
     yield from odd_text_cases()
+    yield from huge_count_cases()
+
+
+def huge_count_cases():
+    """Layout text with repetition counts beyond any memory: ``[x] * n``
+    with ``n`` that does not fit a ``Py_ssize_t`` (``OverflowError``), or
+    from 2**60 items on (``MemoryError``), negative counts and empty
+    ``range()`` of huge negative ints. Never a huge positive ``range()``
+    (Python would loop until memory runs out)."""
+    rng = random.Random(11)
+    chars = synth_chars(rng)[:12] or [synth_char(rng, 0, 0, 5, 10, "a", True, 0, "F1", 10.0, (0,))]
+    variants = [
+        {"layout_width_chars": n} for n in [2**62, 2**63, -(2**70), 2**70, -5, 2**60, 10**15]
+    ] + [
+        {"layout_height_chars": n} for n in [-(2**70), -3, -(2**63) - 1]
+    ] + [
+        {"x_shift": x} for x in [-1e19, -1e20, -1e300, -1e18, 1e300, 1e20]
+    ] + [
+        {"y_shift": y} for y in [1e20, 1e300]
+    ] + [
+        {"x_shift": -1e19, "x_density": 3.5}, {"x_shift": -1e19, "x_density": 1}, {"layout_width_chars": 2**62, "layout_height_chars": -(2**70)},
+    ]
+    for page_chars in [chars, []]:
+        ops = []
+        for v in variants:
+            ops.append(("text", {"layout": True, **v}))
+            ops.append(("text", {"layout": True, "line_dir_render": "ttb", "char_dir_render": "ltr", **v}))
+        yield page_case(FakePage(page_chars, [], (0, 0, 612, 792)), {"chars": page_chars, "edges": [], "bbox": (0, 0, 612, 792)}, ops)
 
 
 def odd_text_cases():

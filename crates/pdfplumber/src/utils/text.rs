@@ -74,22 +74,42 @@ fn ligature(text: &str) -> Option<&'static str> {
     LIGATURES.iter().find(|(k, _)| *k == text).map(|(_, v)| *v)
 }
 
-/// The resource guard of repeated items (`[x] * n`, `range(n)`): a count
-/// no real page reaches, where Python would exhaust memory or time.
+/// The resource guard of repeated items (`[x] * n`, a loop over `range(n)`
+/// that appends): a count no real page reaches. Python would try to
+/// allocate (`MemoryError` when it cannot, which is certain from about
+/// 2**44 items on, beyond any address space) or loop until memory runs out.
 const MAX_REPEAT: i64 = 10_000_000;
 
-fn repeat_count(n: &PyInt) -> PyResult<usize> {
-    match n.as_i64() {
-        Some(v) if v <= 0 => Ok(0),
-        Some(v) if v <= MAX_REPEAT => Ok(v as usize),
+fn guarded_count(v: i64) -> PyResult<usize> {
+    match v {
+        ..=0 => Ok(0),
+        1..=MAX_REPEAT => Ok(v as usize),
         _ => Err(exc::MemoryError("")),
+    }
+}
+
+/// `[x] * n` for an `int` `n` (`list_repeat`): `n` must fit a `Py_ssize_t`
+/// (64 bits); a negative count gives an empty list.
+fn list_repeat_count(n: &PyInt) -> PyResult<usize> {
+    match n.as_i64() {
+        Some(v) => guarded_count(v),
+        None => Err(exc::OverflowError("cannot fit 'int' into an index-sized integer")),
+    }
+}
+
+/// The number of iterations of `for _ in range(n)` for an `int` `n`.
+fn range_len(n: &PyInt) -> PyResult<usize> {
+    match n.as_i64() {
+        Some(v) => guarded_count(v),
+        None if n.is_negative() => Ok(0),
+        None => Err(exc::MemoryError("")),
     }
 }
 
 /// `[x] * n` with a dynamic `n`.
 fn seq_repeat_count(n: &PyValue) -> PyResult<usize> {
     match n {
-        PyValue::Int(i) => repeat_count(i),
+        PyValue::Int(i) => list_repeat_count(i),
         PyValue::Bool(b) => Ok(usize::from(*b)),
         other => Err(exc::TypeError(format!("can't multiply sequence by non-int of type '{}'", other.type_name()))),
     }
@@ -98,7 +118,7 @@ fn seq_repeat_count(n: &PyValue) -> PyResult<usize> {
 /// `range(n)` with a dynamic `n`: its length.
 fn range_count(n: &PyValue) -> PyResult<usize> {
     match n {
-        PyValue::Int(i) => repeat_count(i),
+        PyValue::Int(i) => range_len(i),
         PyValue::Bool(b) => Ok(usize::from(*b)),
         other => Err(exc::TypeError(format!("'{}' object cannot be interpreted as an integer", other.type_name()))),
     }
@@ -721,7 +741,7 @@ impl WordMap {
             let num_newlines_prepend =
                 max_int(PyInt::Small(i64::from(i > 0)), py_round_value(&y_dist)?.sub(&num_newlines));
 
-            for _ in 0..repeat_count(&num_newlines_prepend)? {
+            for _ in 0..range_len(&num_newlines_prepend)? {
                 if textmap.last().is_none_or(|t| t.0 == '\n') {
                     push_blank_line(&mut textmap);
                 }
@@ -749,7 +769,7 @@ impl WordMap {
                 };
                 let num_spaces_prepend =
                     max_int(PyInt::Small(line_len.min(1)), py_round_value(&x_dist)?.sub(&PyInt::Small(line_len)));
-                let n = repeat_count(&num_spaces_prepend)?;
+                let n = list_repeat_count(&num_spaces_prepend)?;
                 textmap.extend(std::iter::repeat_n((' ', None), n));
                 line_len = line_len
                     .checked_add(num_spaces_prepend.as_i64().ok_or_else(|| exc::MemoryError(""))?)
