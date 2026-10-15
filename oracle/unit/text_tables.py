@@ -56,7 +56,7 @@ from pdfplumber.utils import text as ptext
 
 from ..canon import canon
 from ._common import require_oracle_python, unit_dir, write_cases, write_meta
-from ._nan_objects import NanPool, SetOrderCheck
+from ._nan_objects import NanPool, SetOrderCheck, tagged
 from ._plumber_ops import FakePage, exc_value, guarded, page_case, run_op
 
 MODULE = "text_tables"
@@ -417,6 +417,7 @@ def fuzz_cases(n: int, nan_sets: dict):
     yield from odd_explicit_cases()
     yield from nan_coord_cases(n // 2, nan_sets)
     yield from nan_line_dir_cases(nan_sets)
+    yield from nan_shared_cases(nan_sets)
     yield from surrogate_cases()
     yield from user_arg_cases()
 
@@ -513,6 +514,51 @@ def user_arg_cases():
             ops.append(("tables_new", kw))
             ops.append(("extract_tables_new", kw))
     yield page_case(FakePage(chars, edges, bbox), {"chars": chars, "edges": edges, "bbox": bbox}, ops)
+
+
+def nan_shared_cases(nan_sets: dict):
+    """NaN objects that several items share, as Python shares them
+    (``rect_to_edges`` gives the edges of a rect its own coordinate objects,
+    ``min()`` and ``objects_to_bbox`` return one of their arguments, an
+    explicit line is both ``x0`` and ``x1`` of its edge): a set lists such
+    an object once, every item holding it finds its cluster, and tuples
+    holding it are equal (``PyObject_RichCompareBool``). ``NanPool``
+    objects, each operation kept under ``SetOrderCheck``."""
+    rng = random.Random(21)
+    for i in range(80):
+        bbox = (0, 0, 612, 792)
+        chars = synth_chars(rng) or [synth_char(rng, 0, 0, 5, 10, "a", True, 0, "F1", 10.0, (0,))]
+        edges = synth_edges(rng, bbox) if rng.random() < 0.7 else []
+        pool = NanPool()
+        m = rng.randint(1, 3)
+        shared = [{a: pool.take(rank, m, COORDS.index(a)) for a in COORDS} for rank in range(m)]
+        for rank in range(m):
+            # the same objects on two to four chars
+            for c in rng.sample(chars, min(len(chars), rng.randint(2, 4))):
+                for a in rng.choice(NAN_PATTERNS):
+                    if a in c:
+                        c[a] = shared[rank][a]
+            # and on edges of the same orientation
+            for e in rng.sample(edges, min(len(edges), rng.randint(0, 3))):
+                for a in rng.choice([("x0", "x1"), ("top", "bottom"), ("x1",), ("bottom",), ("doctop",)]):
+                    if a in e:
+                        e[a] = shared[rank][a]
+        explicit = [shared[0]["x0"], shared[0]["x0"], 10, 20.5] if rng.random() < 0.5 else [10, shared[0]["x1"], 30]
+        ops = [
+            ("text", {}),
+            ("text", {"layout": True}),
+            ("simple", {}),
+            ("words", {}),
+            ("dedupe", {}),
+            ("dedupe", {"tolerance": 0}),
+            ("lines", True, False, {}),
+            ("tables", {}),
+            ("tables", {"vertical_strategy": "text", "horizontal_strategy": "text", "min_words_horizontal": 1}),
+            ("tables", {"vertical_strategy": "explicit", "explicit_vertical_lines": explicit}),
+            ("extract_tables", {"horizontal_strategy": "explicit", "explicit_horizontal_lines": explicit}),
+        ]
+        record = {"chars": chars, "edges": edges, "bbox": bbox}
+        yield page_case(FakePage(chars, edges, bbox), record, ops, nan_sets)
 
 
 def nan_line_dir_cases(nan_sets: dict):
@@ -1392,14 +1438,14 @@ def main() -> int:
         dump(args.dump)
         return 0
     counts = {}
-    counts["sort"] = write_cases(MODULE, "sort", sort_cases())
-    counts["ops"] = write_cases(MODULE, "ops", ops_cases())
-    counts["cluster"] = write_cases(MODULE, "cluster", cluster_cases())
-    counts["geometry"] = write_cases(MODULE, "geometry", geometry_cases())
-    counts["tables"] = write_cases(MODULE, "tables", table_cases())
-    counts["textlines"] = write_cases(MODULE, "textlines", textline_cases())
-    counts["settings"] = write_cases(MODULE, "settings", settings_cases())
-    counts["dicts"] = write_cases(MODULE, "dicts", dict_cases())
+    counts["sort"] = write_cases(MODULE, "sort", tagged(sort_cases()))
+    counts["ops"] = write_cases(MODULE, "ops", tagged(ops_cases()))
+    counts["cluster"] = write_cases(MODULE, "cluster", tagged(cluster_cases()))
+    counts["geometry"] = write_cases(MODULE, "geometry", tagged(geometry_cases()))
+    counts["tables"] = write_cases(MODULE, "tables", tagged(table_cases()))
+    counts["textlines"] = write_cases(MODULE, "textlines", tagged(textline_cases()))
+    counts["settings"] = write_cases(MODULE, "settings", tagged(settings_cases()))
+    counts["dicts"] = write_cases(MODULE, "dicts", tagged(dict_cases()))
     nan_sets: dict = {}
     counts["pages_fuzz"] = write_cases(MODULE, "pages_fuzz", fuzz_cases(args.fuzz, nan_sets))
     write_meta(MODULE, counts=counts, fuzz=args.fuzz, nan_coord_ops=nan_sets)

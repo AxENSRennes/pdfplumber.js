@@ -24,7 +24,7 @@ use pdfplumber::obj::{bbox_from_value, bbox_value, Bbox, Obj, PyValue};
 use pdfplumber::table::{
     self, cells_to_tables, CellGroup, Intersections, Table, TableFinder, TablePage, TableSettings,
 };
-use pdfplumber::utils::clustering::{cluster_list, cluster_objects, make_cluster_dict, KeyKind};
+use pdfplumber::utils::clustering::{cluster_list, cluster_objects, make_cluster_dict};
 use pdfplumber::utils::geometry::{self, Axis, SnapAttr};
 use pdfplumber::utils::text::{
     chars_to_textmap, dedupe_chars, extract_text_kwargs, extract_text_simple, extract_words_kwargs, text_line_matches,
@@ -297,9 +297,9 @@ fn cluster_cases() {
                 let xs = objs(&args[1]);
                 let preserve = matches!(args[3], Value::Bool(true));
                 let r = if name == "cluster_objects" {
-                    cluster_objects(&xs, |o| Ok(o.item("v")?.clone()), KeyKind::Stored, &py(&args[2]), preserve)
+                    cluster_objects(&xs, |o| Ok(o.item("v")?.clone()), &py(&args[2]), preserve)
                 } else {
-                    cluster_objects(&xs, |o| o.item("v")?.neg(), KeyKind::Computed, &py(&args[2]), preserve)
+                    cluster_objects(&xs, |o| o.item("v")?.neg(), &py(&args[2]), preserve)
                 };
                 result(r, |groups| Value::List(groups.into_iter().map(list_of_objs).collect()))
             }
@@ -911,6 +911,39 @@ fn layout_range_resource_guard() {
         ("layout_height_chars", PyValue::from(3i64)),
     ]);
     assert_eq!(chars_to_textmap(&chars, &kwargs).unwrap().as_string, "\n\n a"); // Python: chars_to_textmap([c], layout=True, ...)
+}
+
+/// `edges_to_intersections` never makes a vertex holding a NaN, whatever
+/// coordinate of an edge is a NaN and whatever the tolerances (a NaN
+/// included): each coordinate of a vertex takes part in a comparison that a
+/// NaN makes false. So `Table.rows`/`Table.columns` never look a NaN cell
+/// coordinate up through `TableFinder` (see `edges_to_intersections`).
+#[test]
+fn no_nan_vertex() {
+    let n = |x: f64| PyValue::from(x);
+    let coords = ["x0", "x1", "top", "bottom"];
+    let mut seen = 0;
+    for nan_mask in 0u32..256 {
+        let mut edges = Vec::new();
+        for (k, orientation) in ["v", "h"].into_iter().enumerate() {
+            let base = [10.0, 10.0, 0.0, 100.0];
+            let base = if orientation == "h" { [0.0, 100.0, 50.0, 50.0] } else { base };
+            let mut e = Obj::from_pairs([("orientation", PyValue::str(orientation))]);
+            for (i, c) in coords.iter().enumerate() {
+                let nan = nan_mask & (1 << (4 * k + i)) != 0;
+                e.set(*c, if nan { n(f64::NAN) } else { n(base[i]) });
+            }
+            edges.push(e);
+        }
+        for tol in [0.0, 3.0, f64::INFINITY, f64::NAN] {
+            let inter = table::edges_to_intersections(&edges, &n(tol), &n(tol)).expect("numbers");
+            for ((x, y), _, _) in &inter.points {
+                assert!(x.py_eq(x) && y.py_eq(y), "NaN vertex: mask {nan_mask:#x}, tolerance {tol}");
+                seen += 1;
+            }
+        }
+    }
+    assert!(seen > 0, "some masks give vertices");
 }
 
 /// `{:?}` of a value or a dict is its Python `repr` (the replay's mismatch

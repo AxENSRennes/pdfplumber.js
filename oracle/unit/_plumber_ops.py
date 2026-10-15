@@ -28,7 +28,7 @@ from pdfplumber.utils import geometry
 from pdfplumber.utils import text as ptext
 
 from ..canon import ExcValue, canon, exception_name
-from ._nan_objects import SetOrderCheck
+from ._nan_objects import SetOrderCheck, tag_nans
 
 FULL_CANON_LIMIT = 4096
 
@@ -184,7 +184,8 @@ def page_case(page, record, ops, nan_sets=None):
         if check.ok:
             rops.append(rop)
             outs.append(out)
-    return [record, rops], outs
+    # each distinct NaN object of the case keeps its identity in the JSON
+    return tag_nans([record, rops]), outs
 
 
 

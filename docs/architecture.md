@@ -77,9 +77,22 @@ observable, et seulement là.
   repli entier arbitraire) et `pycompat::Num` (`Int`/`Float`) suivent les règles
   d'arithmétique Python. Un code qui, upstream, ne voit que des floats peut
   utiliser `f64`, à condition de le justifier en commentaire.
-- **Texte** : `str` Python ↔ `String` Rust. Si un chemin upstream peut produire
-  un surrogate isolé (`chr()` sur une valeur arbitraire), le signaler et le
-  traiter explicitement (la trace le détecte).
+- **Texte** : `str` Python ↔ `pycompat::PyStr` (les octets de
+  `s.encode("utf-8", "surrogatepass")` : un surrogate isolé, que pdfminer
+  produit par `chr(cid)`, y tient comme en Python ; ordre, égalité,
+  concaténation et `in` sont ceux des octets, `as_str()` donne le `&str` d'un
+  texte sans surrogate). Le texte des objets (`LTChar`, valeurs et clés des
+  objets pdfplumber, `TextMap`, cellules de tables) et les messages
+  d'exception qui reprennent une `str` de l'utilisateur
+  (`PyErr::with_message`) l'utilisent ; une chaîne qui ne peut pas contenir
+  de surrogate (nom de classe, mot-clé de pdfminer) reste un `String`. Vers
+  JavaScript, `to_utf16`/`from_utf16` (un surrogate isolé est une unité
+  UTF-16 ; une paire valide se relit comme un seul caractère).
+- **Identité des NaN** : Python compare les éléments des conteneurs et les
+  clés de `set`/`dict` avec un raccourci d'identité (`x is y or x == y`) ;
+  une valeur NaN du modèle d'objets porte l'identité de son objet dans sa
+  charge utile (`PyValue::float` : un nouvel objet ; un clone : le même),
+  voir `obj.rs`, « NaN identity ».
 - **Objets pdfplumber** (`T_obj`) : dictionnaires ordonnés à clés `str`, comme
   en Python. L'ordre des clés est celui de Python (ordre d'affectation de
   `__dict__` des objets `LT*`, puis ajouts de `process_object`). Les attributs

@@ -43,7 +43,7 @@ use pycompat::{exc, ExcKind, PyErr, PyInt, PyResult, PyStr};
 
 use crate::obj::{check_hashable, py_contains, py_iter, HashKey, Hot, Obj, PyValue};
 use crate::typing::T_dir;
-use crate::utils::clustering::{cluster_objects, KeyKind};
+use crate::utils::clustering::cluster_objects;
 use crate::utils::geometry::objects_to_bbox_refs;
 
 /// Options passed as `**kwargs`: an ordered `str`-keyed dict.
@@ -206,24 +206,17 @@ pub fn line_cluster_key(line_dir: T_dir, x: &Obj) -> PyResult<PyValue> {
     }
 }
 
-/// How [`line_cluster_key`] makes its value: `x["top"]` and `x["x0"]` are
-/// the stored objects, `-x["bottom"]` and `-x["x1"]` new ones.
-pub fn line_cluster_key_kind(line_dir: T_dir) -> KeyKind {
-    match line_dir {
-        T_dir::Ttb | T_dir::Ltr => KeyKind::Stored,
-        T_dir::Btt | T_dir::Rtl => KeyKind::Computed,
-    }
-}
 
 /// A sort key of two values, compared as a `tuple`.
 pub type PairKey = (PyValue, PyValue);
 
-/// `a < b` for two pairs (`tuplerichcompare`).
+/// `a < b` for two pairs (`tuplerichcompare`: the first items that differ
+/// by `PyObject_RichCompareBool`, which has the identity shortcut).
 pub fn pair_lt(a: &PairKey, b: &PairKey) -> PyResult<bool> {
-    if !a.0.py_eq(&b.0) {
+    if !a.0.eq_bool(&b.0) {
         return a.0.lt(&b.0);
     }
-    if !a.1.py_eq(&b.1) {
+    if !a.1.eq_bool(&b.1) {
         return a.1.lt(&b.1);
     }
     Ok(false)
@@ -776,7 +769,6 @@ impl WordMap {
         let tuples_by_line = cluster_objects(
             &words_sorted_line_dir,
             |&i| line_cluster_key(line_dir, &self.tuples[i].0),
-            line_cluster_key_kind(line_dir),
             &o.y_tolerance,
             keep_order,
         )?;
@@ -1256,7 +1248,6 @@ impl WordExtractor {
         let subclusters = cluster_objects(
             &chars,
             |c| line_cluster_key(line_dir, c),
-            line_cluster_key_kind(line_dir),
             tolerance,
             false,
         )?;
@@ -1479,7 +1470,6 @@ pub fn extract_text(
         let lines = cluster_objects(
             &words,
             |w| line_cluster_key(line_dir, w),
-            line_cluster_key_kind(line_dir),
             if vertical { &y_tolerance } else { &x_tolerance },
             false,
         )?;
@@ -1526,7 +1516,7 @@ pub fn collate_line(line_chars: &[Obj], tolerance: &PyValue) -> PyResult<PyStr> 
 
 // pdfplumber/utils/text.py:785 extract_text_simple
 pub fn extract_text_simple(chars: &[Obj], x_tolerance: &PyValue, y_tolerance: &PyValue) -> PyResult<PyStr> {
-    let clustered = cluster_objects(chars, |c| Ok(c.hot(Hot::Doctop)?.clone()), KeyKind::Stored, y_tolerance, false)?;
+    let clustered = cluster_objects(chars, |c| Ok(c.hot(Hot::Doctop)?.clone()), y_tolerance, false)?;
     let mut out = PyStrBuilder::new();
     for (i, c) in clustered.iter().enumerate() {
         if i > 0 {
@@ -1567,10 +1557,10 @@ pub fn dedupe_chars(chars: &[Obj], tolerance: &PyValue, extra_attrs: &PyValue) -
         }
         let grp_chars = &indexed[g..end];
         for y_cluster in
-            cluster_objects(grp_chars, |(_, c)| Ok(c.hot(Hot::Doctop)?.clone()), KeyKind::Stored, tolerance, false)?
+            cluster_objects(grp_chars, |(_, c)| Ok(c.hot(Hot::Doctop)?.clone()), tolerance, false)?
         {
             for mut x_cluster in
-                cluster_objects(&y_cluster, |(_, c)| Ok(c.hot(Hot::X0)?.clone()), KeyKind::Stored, tolerance, false)?
+                cluster_objects(&y_cluster, |(_, c)| Ok(c.hot(Hot::X0)?.clone()), tolerance, false)?
             {
                 sort_by_key(&mut x_cluster, |(_, c)| pos_key(c), pair_lt)?;
                 deduped.push(x_cluster.swap_remove(0));

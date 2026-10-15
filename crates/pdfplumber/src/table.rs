@@ -25,7 +25,7 @@ use pycompat::pystr::PyStrBuilder;
 use pycompat::{exc, ExcKind, PyErr, PyResult, PyStr};
 
 use crate::obj::{bbox_value, py_contains, py_iter, Bbox, HashKey, Hot, Obj, PyValue};
-use crate::utils::clustering::{cluster_objects, KeyKind};
+use crate::utils::clustering::cluster_objects;
 use crate::utils::geometry::{
     bbox_to_rect, filter_edges, get_bbox_overlap, obj_to_bbox, obj_to_edges, objects_to_bbox, objects_to_rect,
     resize_object, snap_objects, SnapAttr,
@@ -175,7 +175,7 @@ fn len_ge(n: usize, threshold: &PyValue) -> PyResult<bool> {
 // pdfplumber/table.py:101 words_to_edges_h
 pub fn words_to_edges_h(words: &[Obj], word_threshold: &PyValue) -> PyResult<Vec<Obj>> {
     let by_top =
-        cluster_objects(words, |w| Ok(w.hot(Hot::Top)?.clone()), KeyKind::Stored, &PyValue::from(1i64), false)?;
+        cluster_objects(words, |w| Ok(w.hot(Hot::Top)?.clone()), &PyValue::from(1i64), false)?;
     let mut rects = Vec::new();
     for cluster in by_top {
         if len_ge(cluster.len(), word_threshold)? {
@@ -211,11 +211,11 @@ pub fn words_to_edges_h(words: &[Obj], word_threshold: &PyValue) -> PyResult<Vec
 pub fn words_to_edges_v(words: &[Obj], word_threshold: &PyValue) -> PyResult<Vec<Obj>> {
     let one = PyValue::from(1i64);
     // Find words that share the same left, right, or centerpoints
-    let by_x0 = cluster_objects(words, |w| Ok(w.hot(Hot::X0)?.clone()), KeyKind::Stored, &one, false)?;
-    let by_x1 = cluster_objects(words, |w| Ok(w.hot(Hot::X1)?.clone()), KeyKind::Stored, &one, false)?;
+    let by_x0 = cluster_objects(words, |w| Ok(w.hot(Hot::X0)?.clone()), &one, false)?;
+    let by_x1 = cluster_objects(words, |w| Ok(w.hot(Hot::X1)?.clone()), &one, false)?;
     // get_center (nested in words_to_edges_v)
     let get_center = |w: &Obj| w.hot(Hot::X0)?.add(w.hot(Hot::X1)?)?.to_float()?.truediv(&PyValue::from(2i64));
-    let by_center = cluster_objects(words, get_center, KeyKind::Computed, &one, false)?;
+    let by_center = cluster_objects(words, get_center, &one, false)?;
     let mut clusters = by_x0;
     clusters.extend(by_x1);
     clusters.extend(by_center);
@@ -311,6 +311,16 @@ fn ordered_number(v: &PyValue) -> bool {
 }
 
 // pdfplumber/table.py:207 edges_to_intersections
+/// A vertex `(v["x0"], h["top"])` never holds a NaN: `v["x0"]` is compared
+/// by `v["x0"] >= h["x0"] - x_tolerance` and `h["top"]` by `v["top"] <=
+/// h["top"] + y_tolerance`, and a NaN on either side (or a NaN tolerance)
+/// makes the comparison false. The cells (`intersections_to_cells`, made
+/// of vertices), the tables and their rows and columns therefore never
+/// hold one either: `Table.rows` and `Table.columns`, which look cell
+/// coordinates up in a dict, never meet a NaN through `TableFinder`
+/// (`no_nan_vertex` in `crates/pdftrace/tests/text_tables_unit.rs` checks
+/// this on edges with NaN at every coordinate; a `Table` built by hand
+/// from NaN cells would still look them up by identity, as Python does).
 pub fn edges_to_intersections(edges: &[Obj], x_tolerance: &PyValue, y_tolerance: &PyValue) -> PyResult<Intersections> {
     let mut intersections = Intersections::default();
     let mut v_edges = Vec::new();
@@ -395,26 +405,18 @@ fn partition_point(items: &[Obj], mut pred: impl FnMut(&Obj) -> PyResult<bool>) 
     Ok(lo)
 }
 
-/// What makes two edges the same member of an `edges_to_set` set: an
-/// equal bbox, or for a bbox not equal to itself (a NaN), the same dict.
-#[derive(PartialEq, Eq, Hash)]
-enum EdgeKey {
-    Bbox([HashKey; 4]),
-    Dict(*const ()),
-}
-
 /// `edges_to_set(intersections[p]["v"])` and `["h"]` (nested in
 /// `intersections_to_cells`) as sorted ids of distinct bboxes, computed the
 /// first time `edge_connects` needs them, so that its `KeyError` (a missing
 /// coordinate) or `TypeError` (an unhashable one) is raised where Python
 /// raises it, or not at all. Two edges have the same id when their bboxes
-/// are equal, or when they are the same dict: CPython compares tuple items
-/// with an identity shortcut, so the bbox of one edge is equal to itself
-/// even with a NaN (two dicts sharing a NaN object are not modeled, see
-/// `obj.rs`).
+/// are equal as set members: CPython compares tuple items with an identity
+/// shortcut, so a bbox holding a NaN is equal to a bbox holding the same
+/// NaN object (the edge's own, or one it shares with another edge: see
+/// "NaN identity" in `obj.rs`).
 struct EdgeSets<'a> {
     points: &'a [(Point, Vec<Obj>, Vec<Obj>)],
-    ids: HashMap<EdgeKey, u32>,
+    ids: HashMap<[HashKey; 4], u32>,
     /// `[v, h]` of each point, once computed
     sets: Vec<[Option<Vec<u32>>; 2]>,
 }
@@ -439,7 +441,6 @@ impl<'a> EdgeSets<'a> {
                 HashKey::new(b[2].clone())?,
                 HashKey::new(b[3].clone())?,
             ];
-            let key = if key.iter().all(|k| k.0.py_eq(&k.0)) { EdgeKey::Bbox(key) } else { EdgeKey::Dict(e.addr()) };
             let next = self.ids.len() as u32;
             ids.push(*self.ids.entry(key).or_insert(next));
         }
@@ -507,10 +508,18 @@ pub fn intersections_to_cells(intersections: &Intersections) -> PyResult<Vec<Bbo
         }
         let p = points[i];
         let (x, y) = pt(p);
-        // Get all the points directly below and directly right
-        // (a NaN equals no point, not even itself: no group)
-        let below = by_x.get(&HashKey(x.clone())).map_or_else(Vec::new, |l| after(l, i));
-        let right = by_y.get(&HashKey(y.clone())).map_or_else(Vec::new, |l| after(l, i));
+        // Get all the points directly below and directly right (`==`, the
+        // operator: a NaN equals no point, not even itself; an intersection
+        // never holds one, see `edges_to_intersections`)
+        let group = |by: &HashMap<HashKey, Vec<usize>>, v: &PyValue| {
+            if v.py_eq(v) {
+                by.get(&HashKey(v.clone())).map_or_else(Vec::new, |l| after(l, i))
+            } else {
+                Vec::new()
+            }
+        };
+        let below = group(&by_x, x);
+        let right = group(&by_y, y);
         'search: for &b in &below {
             let below_pt = points[b];
             if !sets.edge_connects(p, below_pt)? {

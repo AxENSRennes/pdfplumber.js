@@ -6,31 +6,30 @@
 //!
 //! - **The order of `list(set(values))`**, which `sorted` starts from. The
 //!   port lists the values equal to themselves first, each at its first
-//!   occurrence, then the values not equal to themselves (NaN) in their
-//!   order. Sorting distinct, totally ordered values gives the same list
-//!   whatever their order. NaNs listed last stay last, in their order: a
-//!   NaN is never less than anything and nothing is less than a NaN, so
-//!   binary insertion leaves it where it is and a merge takes it after the
-//!   other run's values. Each NaN then becomes a one-value cluster, after
-//!   all the others. In CPython, a NaN's place in the set follows
-//!   `hash(nan)`, its object's address, so Python's result varies with
-//!   memory layout; the port's is the one CPython gives when every NaN
-//!   hashes after the other values, in the order of their first
+//!   occurrence, then the NaNs (each object once, see below) in the order
+//!   of their first occurrence. Sorting distinct, totally ordered values
+//!   gives the same list whatever their order. NaNs listed last stay last,
+//!   in their order: a NaN is never less than anything and nothing is less
+//!   than a NaN, so binary insertion leaves it where it is and a merge
+//!   takes it after the other run's values. Each NaN then becomes a
+//!   one-value cluster, after all the others. In CPython, a NaN's place in
+//!   the set follows `hash(nan)`, its object's address, so Python's result
+//!   varies with memory layout; the port's is the one CPython gives when
+//!   every NaN hashes after the other values, in the order of their first
 //!   occurrence. The generated cases (`oracle/unit/_nan_objects.py`) build
 //!   NaN objects whose hashes give CPython exactly this order, and check it
 //!   on every set built. Values that are not totally ordered for another
 //!   reason (`None`, a `str` among numbers) raise or not depending on that
 //!   order; the port's order is its first occurrences'.
-//! - **Identity.** A set or dict lookup tries `is` before `==`. A key
-//!   function that returns an object stored in the item (`itemgetter`,
-//!   `lambda x: x["top"]`, [`KeyKind::Stored`]) gives the lookup the very
-//!   object that went into the set, so a NaN key finds its own cluster. One
-//!   that computes its value (`lambda x: -x["bottom"]`, `get_center`,
-//!   [`KeyKind::Computed`]) gives a new object: a NaN is not found, its
-//!   cluster index is `None`, and sorting the clusters raises `TypeError`.
-//!   Every occurrence of a NaN is taken to be its own object, as pdfplumber
-//!   computes each coordinate of each object; two items sharing one NaN
-//!   object would share one set entry in Python.
+//! - **Identity.** A set or dict lookup tries `is` before `==`, and a
+//!   [`PyValue`] NaN carries its object's identity (`obj.rs`, "NaN
+//!   identity"). A key function that returns an object stored in the item
+//!   (`itemgetter`, `lambda x: x["top"]`) gives the lookup the very object
+//!   that went into the set, so a NaN key finds its own cluster, and items
+//!   sharing one NaN object share its set entry and its cluster. One that
+//!   computes its value (`lambda x: -x["bottom"]`, `get_center`) gives a new
+//!   object: a NaN is not found, its cluster index is `None`, and sorting
+//!   the clusters raises `TypeError`.
 //!
 //! `HashKey` holds `Rc`-shared values, which clippy takes for interior
 //! mutability; a key's hash only reads immutable parts (numbers, strings,
@@ -43,19 +42,6 @@ use pycompat::listsort::{sort_by_key, sort_permutation};
 use pycompat::{exc, PyResult};
 
 use crate::obj::{HashKey, PyValue};
-
-/// How `key_fn` makes its result, which decides whether a NaN key is
-/// found again (see the module documentation).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum KeyKind {
-    /// The value stored in the item (`itemgetter("top")`,
-    /// `lambda x: x["top"]`): the same object at every call.
-    #[default]
-    Stored,
-    /// A value computed at each call (`lambda x: -x["bottom"]`,
-    /// `get_center`): a new object every time.
-    Computed,
-}
 
 // pdfplumber/utils/clustering.py:9 cluster_list
 pub fn cluster_list(xs: Vec<PyValue>, tolerance: &PyValue) -> PyResult<Vec<Vec<PyValue>>> {
@@ -91,40 +77,33 @@ fn cluster_indices(xs: &[PyValue], tolerance: &PyValue) -> PyResult<Vec<Vec<usiz
 }
 
 /// `cluster_list(list(set(values)), tolerance)` (see the module
-/// documentation): the distinct values, those equal to themselves first
-/// (`n_equal` of them), then the others (NaN) at `positions` in `values`
-/// (`n` values in all), and the clusters as indices into `unique`.
+/// documentation): the distinct values (`==` with the identity shortcut),
+/// those equal to themselves first, then the NaNs, each in the order of its
+/// first occurrence, and the clusters as indices into `unique`.
 struct SetClusters {
     unique: Vec<PyValue>,
-    n_equal: usize,
-    positions: Vec<usize>,
-    n: usize,
     groups: Vec<Vec<usize>>,
 }
 
 fn set_clusters(values: impl IntoIterator<Item = PyResult<PyValue>>, tolerance: &PyValue) -> PyResult<SetClusters> {
     let mut seen: HashSet<HashKey> = HashSet::default();
     let mut unique: Vec<PyValue> = Vec::new();
-    let mut unequal: Vec<(PyValue, usize)> = Vec::new();
-    let mut n = 0;
+    let mut nans: Vec<PyValue> = Vec::new();
     for v in values {
         let key = HashKey::new(v?)?;
-        if !key.0.py_eq(&key.0) {
-            unequal.push((key.0, n));
-        } else if !seen.contains(&key) {
-            unique.push(key.0.clone());
-            seen.insert(key);
+        if seen.contains(&key) {
+            continue;
         }
-        n += 1;
+        if key.0.py_eq(&key.0) {
+            unique.push(key.0.clone());
+        } else {
+            nans.push(key.0.clone());
+        }
+        seen.insert(key);
     }
-    let n_equal = unique.len();
-    let mut positions = Vec::with_capacity(unequal.len());
-    for (v, i) in unequal {
-        unique.push(v);
-        positions.push(i);
-    }
+    unique.append(&mut nans);
     let groups = cluster_indices(&unique, tolerance)?;
-    Ok(SetClusters { unique, n_equal, positions, n, groups })
+    Ok(SetClusters { unique, groups })
 }
 
 // pdfplumber/utils/clustering.py:29 make_cluster_dict
@@ -145,30 +124,18 @@ pub fn make_cluster_dict(
     Ok(items)
 }
 
-/// `make_cluster_dict(values, tolerance)` as `cluster_objects` looks it up:
-/// the values equal to themselves by `==` (`dict`), the others by their
-/// position in `values` (`own`: a NaN is found through its identity only).
-struct Clusters {
-    dict: HashMap<HashKey, usize>,
-    own: Vec<Option<usize>>,
-}
-
-fn clusters(values: impl IntoIterator<Item = PyResult<PyValue>>, tolerance: &PyValue) -> PyResult<Clusters> {
-    let s = set_clusters(values, tolerance)?;
-    let mut dict = HashMap::with_capacity_and_hasher(s.n_equal, Default::default());
-    let mut own = vec![None; s.n];
-    let mut slots: Vec<Option<PyValue>> = s.unique.into_iter().map(Some).collect();
-    for (i, value_cluster) in s.groups.into_iter().enumerate() {
-        for u in value_cluster {
-            if u < s.n_equal {
-                // dict(chain(...)): the values are distinct
-                dict.insert(HashKey(slots[u].take().expect("each value once")), i);
-            } else {
-                own[s.positions[u - s.n_equal]] = Some(i);
-            }
-        }
+/// `make_cluster_dict(values, tolerance)` as a dict (`dict(chain(...))`:
+/// the values are distinct).
+fn clusters(
+    values: impl IntoIterator<Item = PyResult<PyValue>>,
+    tolerance: &PyValue,
+) -> PyResult<HashMap<HashKey, usize>> {
+    let items = make_cluster_dict(values, tolerance)?;
+    let mut dict = HashMap::with_capacity_and_hasher(items.len(), Default::default());
+    for (v, i) in items {
+        dict.insert(HashKey(v), i);
     }
-    Ok(Clusters { dict, own })
+    Ok(dict)
 }
 
 /// `a < b` for the cluster indices `cluster_dict.get(...)` returns (an
@@ -184,11 +151,12 @@ fn cluster_id_lt(a: Option<usize>, b: Option<usize>) -> PyResult<bool> {
 }
 
 // pdfplumber/utils/clustering.py:42 cluster_objects
-/// `kind` tells how `key_fn` makes its value (see [`KeyKind`]).
+/// `key_fn` must give the stored object itself when Python's key function
+/// reads it from the item, and a new value (a new NaN identity) when Python
+/// computes one (see the module documentation).
 pub fn cluster_objects<T: Clone>(
     xs: &[T],
     mut key_fn: impl FnMut(&T) -> PyResult<PyValue>,
-    kind: KeyKind,
     tolerance: &PyValue,
     preserve_order: bool,
 ) -> PyResult<Vec<Vec<T>>> {
@@ -198,14 +166,7 @@ pub fn cluster_objects<T: Clone>(
         // cluster_dict.get(key_fn(x)): every key was hashed when the set
         // was built, so this one is hashable
         let key = key_fn(x)?;
-        let id = if key.py_eq(&key) {
-            clusters.dict.get(&HashKey(key)).copied()
-        } else if kind == KeyKind::Stored {
-            clusters.own[i]
-        } else {
-            None
-        };
-        cluster_tuples.push((i, id));
+        cluster_tuples.push((i, clusters.get(&HashKey(key)).copied()));
     }
     if !preserve_order {
         sort_by_key(&mut cluster_tuples, |t| Ok(t.1), |a, b| cluster_id_lt(*a, *b))?;

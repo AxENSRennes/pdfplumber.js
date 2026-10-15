@@ -42,7 +42,7 @@ pub fn from_value(v: &Value) -> Result<PyValue, String> {
         Value::None => PyValue::None,
         Value::Bool(b) => PyValue::Bool(*b),
         Value::Int(i) => PyValue::Int(i.clone()),
-        Value::Float(x) => PyValue::Float(*x),
+        Value::Float(x) => PyValue::float_with_identity(*x),
         Value::Str(s) => PyValue::Str(pycompat::PyStr::from(s)),
         Value::Bytes(b) => PyValue::Bytes(Rc::from(&b[..])),
         Value::Tuple(t) => PyValue::Tuple(t.iter().map(from_value).collect::<Result<_, _>>()?),

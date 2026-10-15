@@ -26,26 +26,37 @@
 //!   `object_type`, `y0`, `y1`) are found through a small index instead of
 //!   a scan.
 //!
-//! The identity of float objects is not part of a [`PyValue`]. CPython
-//! compares container items and looks up set and dict keys with an
-//! identity shortcut (`x is y or x == y`), so a NaN found again through the
-//! *same* object is equal to itself, and `hash(nan)` is its object's
-//! address. Here [`PyValue::py_eq`] never finds a NaN equal to anything;
-//! the places where pdfplumber meets a NaN again through the same object
-//! model it from where the value comes from:
+//! # NaN identity
 //!
-//! - `cluster_objects` (`utils/clustering.rs`): a key read from the item
-//!   (`itemgetter`) finds its own cluster, a computed one does not; the
-//!   order of the NaNs in `set(values)`, which in CPython follows their
-//!   addresses, is fixed (after the other values, in their order).
-//! - `intersections_to_cells` (`table.rs`): the bbox of one edge dict
-//!   ([`Obj::addr`]) is equal to itself.
+//! CPython compares container items, looks up set and dict keys and tests
+//! membership with an identity shortcut (`PyObject_RichCompareBool`: `x is
+//! y or x == y`), so a NaN is equal to itself *as the same object*, and
+//! `hash(nan)` is its object's address. The identity of a float matters
+//! only for a NaN (any other float equals itself), and a [`PyValue`]
+//! carries it in the NaN's payload: [`PyValue::float`] gives every NaN it
+//! makes a payload of its own (a new object, as each computation makes in
+//! Python), and a clone keeps it (the same object: `min()` returning one of
+//! its arguments, `itemgetter`, `dict(obj)` sharing the values). Then:
 //!
-//! Every other occurrence of a NaN is taken to be its own object, as
-//! pdfplumber computes each coordinate of each object. Not modeled (no
-//! real page gives them): two distinct objects sharing one NaN object (a
-//! dict copied by the user), and NaN cell coordinates in `Table.rows` and
-//! `Table.columns`, where Python looks a NaN up in a dict by identity.
+//! - `a == b` ([`PyValue::py_eq`]) is the operator: a NaN never equals
+//!   anything;
+//! - [`PyValue::eq_bool`] is `PyObject_RichCompareBool`: a NaN equals the
+//!   same object. The items of a `tuple` or `list` and the values of a
+//!   `dict` compare with it (also in `<`, which looks for the first items
+//!   that differ), as do [`HashKey`]s (sets and dicts) and `in`;
+//! - the order in which a `set` lists NaNs, which follows their addresses
+//!   in CPython, is fixed by the port where it matters
+//!   (`utils/clustering.rs`).
+//!
+//! Values made from outside (a JavaScript number, a value of a test case)
+//! are new objects, except that a NaN whose payload already carries an
+//! identity keeps it ([`PyValue::float_with_identity`]): the generators of
+//! the test cases write each distinct NaN object of a case with a payload
+//! of its own, so that sharing (`rect_to_edges` gives the edges of a rect
+//! its very coordinate objects) survives the serialization. Code that
+//! builds objects (the port of `page.py`) gives a NaN one identity per
+//! Python object and clones the value wherever Python shares the object
+//! (`LTChar.size` is its `height` or `width`, `bbox` holds `x0`...).
 //!
 //! Text is Python's `str` ([`PyStr`]): values and keys may hold lone
 //! surrogates (a char's text from `chr(cid)`, a key or value a user gives).
@@ -280,15 +291,34 @@ impl From<Num> for PyValue {
     fn from(n: Num) -> PyValue {
         match n {
             Num::Int(i) => PyValue::Int(i),
-            Num::Float(x) => PyValue::Float(x),
+            Num::Float(x) => PyValue::float(x),
         }
     }
 }
 
+/// A new `float` object ([`PyValue::float`]).
 impl From<f64> for PyValue {
     fn from(x: f64) -> PyValue {
-        PyValue::Float(x)
+        PyValue::float(x)
     }
+}
+
+/// The payload bit of the NaN identities the port makes; the generators of
+/// test cases use payloads without it.
+const FRESH_NAN: u64 = 1 << 50;
+
+thread_local! {
+    static NAN_COUNTER: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// A quiet NaN with a payload no other NaN of this thread has.
+fn fresh_nan() -> f64 {
+    let k = NAN_COUNTER.with(|c| {
+        let k = c.get().wrapping_add(1) & (FRESH_NAN - 1);
+        c.set(k);
+        k
+    });
+    f64::from_bits(0x7ff8_0000_0000_0000 | FRESH_NAN | k)
 }
 
 impl From<i64> for PyValue {
@@ -362,6 +392,24 @@ impl PyValue {
         PyValue::Str(PyStr::new(s))
     }
 
+    /// A new `float` object: a NaN gets an identity of its own (see the
+    /// module documentation).
+    #[inline]
+    pub fn float(x: f64) -> PyValue {
+        PyValue::Float(if x.is_nan() { fresh_nan() } else { x })
+    }
+
+    /// A `float` from outside the port: a NaN whose payload holds an
+    /// identity (non-zero, without the port's own bit) keeps it, any other
+    /// NaN is a new object.
+    pub fn float_with_identity(x: f64) -> PyValue {
+        let payload = x.to_bits() & ((1 << 51) - 1);
+        if x.is_nan() && (payload == 0 || payload & FRESH_NAN != 0) {
+            return PyValue::Float(fresh_nan());
+        }
+        PyValue::Float(x)
+    }
+
     /// A `tuple` value.
     pub fn tuple(items: impl IntoIterator<Item = PyValue>) -> PyValue {
         PyValue::Tuple(items.into_iter().collect())
@@ -379,7 +427,7 @@ impl PyValue {
             PDFObject::Null => PyValue::None,
             PDFObject::Bool(b) => PyValue::Bool(b),
             PDFObject::Int(i) => PyValue::Int(i),
-            PDFObject::Float(x) => PyValue::Float(x),
+            PDFObject::Float(x) => PyValue::float(x),
             PDFObject::Bytes(b) => PyValue::Bytes(b),
             other => PyValue::Pdf(other),
         }
@@ -557,7 +605,19 @@ impl PyValue {
 
     // -- ==, <, hash ------------------------------------------------------------
 
-    /// `a == b` (no identity shortcut: see the module documentation).
+    /// `a is b or a == b` (`PyObject_RichCompareBool`): `==` with the
+    /// identity shortcut, which only a NaN can tell apart (see the module
+    /// documentation; a `dict` is equal to itself through [`Obj::py_eq`]).
+    #[inline]
+    pub fn eq_bool(&self, other: &PyValue) -> bool {
+        if let (PyValue::Float(a), PyValue::Float(b)) = (self, other) {
+            return a == b || (a.is_nan() && a.to_bits() == b.to_bits());
+        }
+        self.py_eq(other)
+    }
+
+    /// `a == b`, the operator: a NaN equals nothing; the items of
+    /// containers compare with [`PyValue::eq_bool`].
     pub fn py_eq(&self, other: &PyValue) -> bool {
         if let (PyValue::Float(a), PyValue::Float(b)) = (self, other) {
             return a == b;
@@ -573,7 +633,7 @@ impl PyValue {
             (PyValue::Str(a), PyValue::Str(b)) => a == b,
             (PyValue::Bytes(a), PyValue::Bytes(b)) => a == b,
             (PyValue::Tuple(a), PyValue::Tuple(b)) | (PyValue::List(a), PyValue::List(b)) => {
-                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.py_eq(y))
+                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.eq_bool(y))
             }
             (PyValue::Dict(a), PyValue::Dict(b)) => a.py_eq(b),
             (PyValue::Pdf(a), PyValue::Pdf(b)) => a == b,
@@ -605,7 +665,7 @@ impl PyValue {
                 // tuplerichcompare / list_richcompare: the first items that
                 // differ decide, else the lengths.
                 for (x, y) in a.iter().zip(b.iter()) {
-                    if !x.py_eq(y) {
+                    if !x.eq_bool(y) {
                         return x.compare(y, op);
                     }
                 }
@@ -770,7 +830,7 @@ impl PyValue {
     #[inline]
     pub fn add(&self, other: &PyValue) -> PyResult<PyValue> {
         if let (PyValue::Float(a), PyValue::Float(b)) = (self, other) {
-            return Ok(PyValue::Float(a + b));
+            return Ok(PyValue::float(a + b));
         }
         if let Some(r) = self.seq_concat(other) {
             return r;
@@ -783,7 +843,7 @@ impl PyValue {
     #[inline]
     pub fn sub(&self, other: &PyValue) -> PyResult<PyValue> {
         if let (PyValue::Float(a), PyValue::Float(b)) = (self, other) {
-            return Ok(PyValue::Float(a - b));
+            return Ok(PyValue::float(a - b));
         }
         let (a, b) = self.num_operands("-", other)?;
         Ok(a.sub(&b)?.into())
@@ -792,7 +852,7 @@ impl PyValue {
     /// `a * b`
     pub fn mul(&self, other: &PyValue) -> PyResult<PyValue> {
         if let (PyValue::Float(a), PyValue::Float(b)) = (self, other) {
-            return Ok(PyValue::Float(a * b));
+            return Ok(PyValue::float(a * b));
         }
         if let Some(r) = self.seq_repeat(other) {
             return r;
@@ -804,7 +864,7 @@ impl PyValue {
     /// `a / b`
     pub fn truediv(&self, other: &PyValue) -> PyResult<PyValue> {
         if let (PyValue::Float(a), PyValue::Float(b)) = (self, other) {
-            return Ok(PyValue::Float(float_div(*a, *b)?));
+            return Ok(PyValue::float(float_div(*a, *b)?));
         }
         let (a, b) = self.num_operands("/", other)?;
         Ok(a.truediv(&b)?.into())
@@ -833,16 +893,17 @@ impl PyValue {
             return p.to_float();
         }
         match self {
+            // float(x) of a float is x itself (PyNumber_Float)
             PyValue::Float(x) => Ok(PyValue::Float(*x)),
             PyValue::Int(i) => Ok(PyValue::Float(i.to_f64()?)),
             PyValue::Bool(b) => Ok(PyValue::Float(f64::from(u8::from(*b)))),
             PyValue::Str(s) => match s.as_str() {
-                Some(text) => Ok(PyValue::Float(float_from_str(text)?)),
+                Some(text) => Ok(PyValue::float(float_from_str(text)?)),
                 // _PyUnicode_TransformDecimalAndSpaceToASCII stops at the
                 // surrogate (neither a space nor a digit): no parse
                 None => Err(exc::ValueError(format!("could not convert string to float: {}", s.repr()))),
             },
-            PyValue::Bytes(b) => Ok(PyValue::Float(float_from_bytes(b)?)),
+            PyValue::Bytes(b) => Ok(PyValue::float(float_from_bytes(b)?)),
             other => Err(exc::TypeError(format!(
                 "float() argument must be a string or a real number, not '{}'",
                 other.type_name()
@@ -1003,7 +1064,7 @@ pub fn py_contains(container: &PyValue, item: &PyValue) -> PyResult<bool> {
             PyValue::Bool(x) => Ok(b.contains(&u8::from(*x))),
             other => Err(exc::TypeError(format!("a bytes-like object is required, not '{}'", other.type_name()))),
         },
-        PyValue::Tuple(t) | PyValue::List(t) => Ok(t.iter().any(|x| x.py_eq(item))),
+        PyValue::Tuple(t) | PyValue::List(t) => Ok(t.iter().any(|x| x.eq_bool(item))),
         PyValue::Dict(d) => {
             check_hashable(item)?;
             Ok(match item {
@@ -1107,9 +1168,10 @@ fn hash_value<H: Hasher>(v: &PyValue, state: &mut H) {
     }
 }
 
+/// Set and dict keys compare with the identity shortcut.
 impl PartialEq for HashKey {
     fn eq(&self, other: &HashKey) -> bool {
-        self.0.py_eq(&other.0)
+        self.0.eq_bool(&other.0)
     }
 }
 
@@ -1167,13 +1229,6 @@ impl Obj {
     /// Same dict object (`a is b`).
     pub fn ptr_eq(&self, other: &Obj) -> bool {
         Rc::ptr_eq(&self.0, &other.0)
-    }
-
-    /// The address of the shared dict (`id(obj)`), valid while this `Obj`
-    /// lives. Copies that share it hold the very same values, as a dict
-    /// copied in Python (`dict(obj)`) holds the same value objects.
-    pub fn addr(&self) -> *const () {
-        Rc::as_ptr(&self.0) as *const ()
     }
 
     pub fn len(&self) -> usize {
@@ -1287,7 +1342,7 @@ impl Obj {
             // whose identity shortcut makes a dict equal to itself.
             return true;
         }
-        self.len() == other.len() && self.0.items.iter().all(|(k, v)| other.get(k).is_some_and(|w| v.py_eq(w)))
+        self.len() == other.len() && self.0.items.iter().all(|(k, v)| other.get(k).is_some_and(|w| v.eq_bool(w)))
     }
 }
 
