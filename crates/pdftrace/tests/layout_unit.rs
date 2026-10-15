@@ -213,8 +213,10 @@ impl Builder {
                     attrs: extra_attrs(f, &LTFigure::<TP>::DICT_KEYS),
                 }));
                 self.order.push(ptr(&fig));
-                let objs: Vec<LTItem<TP>> = items(field(f, "_objs")).iter().map(|c| self.item(c)).collect();
-                fig.borrow_mut().layout._objs = objs;
+                for c in items(field(f, "_objs")) {
+                    let item = self.item(c);
+                    fig.borrow_mut().layout.add(item);
+                }
                 LTItem::Figure(fig)
             }
             other => panic!("raw object {other}"),
@@ -224,13 +226,14 @@ impl Builder {
     fn page(&mut self, v: &Value) -> LTPage<TP> {
         let (name, f) = fields(v);
         assert_eq!(name, "LTPage");
-        let objs = items(field(f, "_objs")).iter().map(|c| self.item(c)).collect();
-        let Value::Int(pageid) = field(f, "pageid") else { panic!("pageid") };
-        LTPage {
-            layout: LTLayoutContainer { comp: component(f), _objs: objs, groups: None },
-            pageid: pageid.clone(),
-            rotate: num(field(f, "rotate")),
+        // the converter's cur_item.add(item)
+        let mut layout = LTLayoutContainer { comp: component(f), _objs: Vec::new(), groups: None };
+        for c in items(field(f, "_objs")) {
+            let item = self.item(c);
+            layout.add(item);
         }
+        let Value::Int(pageid) = field(f, "pageid") else { panic!("pageid") };
+        LTPage { layout, pageid: pageid.clone(), rotate: num(field(f, "rotate")) }
     }
 }
 

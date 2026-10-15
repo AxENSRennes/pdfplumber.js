@@ -340,10 +340,11 @@ pub enum CharDisp {
 /// A repetition is not built: its only use is a further `* 0.001`, which
 /// raises. Only the size checks CPython makes before allocating are
 /// reproduced (`OverflowError` for a count beyond `Py_ssize_t` or a too
-/// long result, `MemoryError` for a list); a repetition that fits these
-/// checks but not in memory raises `MemoryError` in Python, depending on
-/// the machine, and not here. The interpreter passes a float `fontsize`,
-/// or the int `0` of a text state without `Tf`, which repeats nothing.
+/// long result, `MemoryError` for a list or a `str` too long for its
+/// allocation size); a repetition that fits these checks but not in memory
+/// raises `MemoryError` in Python, depending on the machine, and not here.
+/// The interpreter passes a float `fontsize`, or the int `0` of a text
+/// state without `Tf`, which repeats nothing.
 fn item_mul(x: &IterItem, y: &Num) -> PyResult<Option<Num>> {
     if let IterItem::Obj(o) = x {
         if let Some(n) = o.as_num() {
@@ -385,6 +386,22 @@ fn item_mul(x: &IterItem, y: &Num) -> PyResult<Option<Num>> {
     // list_new_prealloc: PyMem_New(PyObject *, size)
     if matches!(x, IterItem::Obj(PDFObject::List(_))) && len * i128::from(count) > max / 8 {
         return Err(exc::MemoryError(""));
+    }
+    // unicode_repeat's PyUnicode_New(len * count, maxchar): the header
+    // (sizeof(PyASCIIObject) for an ASCII str, else
+    // sizeof(PyCompactUnicodeObject), on 64 bits) and the characters, of 1,
+    // 2 or 4 bytes as the largest one needs, then a NUL, within
+    // PY_SSIZE_T_MAX bytes
+    if let IterItem::Str(s) = x {
+        let (struct_size, char_size) = match s.chars().map(u32::from).max().unwrap_or(0) {
+            0..=0x7f => (40, 1),
+            0x80..=0xff => (56, 1),
+            0x100..=0xffff => (56, 2),
+            _ => (56, 4),
+        };
+        if len * i128::from(count) > (max - struct_size) / char_size - 1 {
+            return Err(exc::MemoryError(""));
+        }
     }
     Ok(None)
 }

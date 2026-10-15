@@ -19,7 +19,8 @@ raises ``PDFObjectNotFound``, object 13 ``PDFSyntaxError``).
   which ``float()`` reads with Unicode digits and spaces).
 - ``iter``: ``uniq``, ``fsplit``, ``pick`` on numbers (``1 == 1.0 ==
   True``, NaN scores).
-- ``numbers``: ``isnumber``, ``nunpack``, ``format_int_roman``,
+- ``numbers``: ``isnumber``, ``nunpack`` (random bytes, and 8 bytes on
+  both sides of the int64 bound), ``format_int_roman``,
   ``format_int_alpha`` (assertions, big ints).
 - ``decode_text``: every single byte, random strings, and UTF-16BE strings
   after the BOM (odd lengths, lone and paired surrogates).
@@ -27,7 +28,7 @@ raises ``PDFObjectNotFound``, object 13 ``PDFSyntaxError``).
   ``safe_matrix``, ``safe_rgb``, ``safe_cmyk``, ``safe_rect``,
   ``safe_rect_list`` (lists, dict keys, bytes, streams) on PDF objects.
 - ``plane``: sequences of ``Plane`` operations (``add``, ``remove``,
-  ``find``, iteration, ``len``, ``in``) on boxes of random sizes, some on
+  ``find``, iteration, ``len`` and ``bool``, ``in``) on boxes of random sizes, some on
   cell boundaries, some outside the plane, with several grid sizes.
 - ``numbertree``: ``NumberTree(obj).values`` (and ``nums``/``kids``/
   ``limits``) on the page label and structure parent trees of the corpus
@@ -183,6 +184,9 @@ def gen_numbers(rng):
         s = bytes(rng.randrange(256) for _ in range(rng.randint(0, 20)))
         default = rng.choice([0, 1, 5])
         yield ["nunpack", s, default], utils.nunpack(s, default)
+    # 8 bytes: an int64 when the high bit is clear, beyond it otherwise
+    for s in [b"\x7f" + b"\xff" * 7, b"\x80" + b"\x00" * 7, b"\x80" + b"\xff" * 7, b"\xff" * 8, b"\x00" * 8]:
+        yield ["nunpack", s, 0], utils.nunpack(s, 0)
     for v in list(range(-3, 4010, 1)) + [2**70, -(2**70)]:
         yield ["format_int_roman", v], call(utils.format_int_roman, v)
     for v in list(range(-3, 2000)) + [26**2, 26**2 + 26, 26**3 + 26**2 + 26, 2**64, 10**40]:
@@ -313,7 +317,7 @@ def run_plane(bbox, gridsize, ops):
             elif op[0] == "iter":
                 out.append([o.i for o in plane])
             elif op[0] == "len":
-                out.append(len(plane))
+                out.append([len(plane), bool(plane)])
             else:
                 out.append(objs[op[1]] in plane)
         except Exception as e:  # the exception is the expected result; the job stops

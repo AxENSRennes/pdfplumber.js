@@ -62,13 +62,16 @@ Object cases
   attributes or the exception; then vertical chars whose ``(vx, vy)`` are
   any value ``pdffont`` can hand over (PDF objects of every type, ``str``
   dict keys) with float and int font sizes (``TypeError``/``OverflowError``
-  of the arithmetic, sequence repetition).
+  of the arithmetic, sequence repetition), and lists and ``str`` repeated
+  beyond the bound of CPython's ``PyMem_New`` or ``PyUnicode_New``
+  (``MemoryError``).
 - ``objects``: the constructors of ``LTCurve``, ``LTLine``, ``LTRect``,
   ``LTImage``, ``LTFigure``, ``LTPage``, ``LAParams`` (validation), the
   ``LTComponent`` distance methods on random boxes, and the figure of a Form
   XObject from its unchecked ``/Matrix`` and ``/BBox`` items (any PDF
   object): ``mult_matrix(matrix, ctm)`` (numbers, ``[type, len]`` of a
-  sequence, or the exception) and ``LTFigure(name, bbox, that)``; and
+  sequence, or the exception) and ``LTFigure(name, bbox, that)``, lists
+  repeated by an int of the CTM or the box included; and
   ``list.sort`` on the keys the layout sorts by, with NaN keys in lists
   shorter than 64 (``list_sort``, ``list_sort_tuple``: the sorted indices).
 - ``textline``: ``LTTextLineHorizontal``/``LTTextLineVertical`` built by
@@ -679,6 +682,27 @@ def gen_ltchar(rng):
         args = [matrix, [font.fontname, True, font.descent], fontsize, 1.0, 0.0, "t", 0.5, textdisp]
         out = call(LTChar, matrix, font, fontsize, 1.0, 0.0, "t", 0.5, textdisp, GRAY, None)
         yield args, out if isinstance(out, BaseException) else dump_raw(out)
+    # a sequence vx repeated by an int: small repetitions (built, then
+    # `* 0.001` raises), and lists and strs CPython refuses to allocate
+    # (MemoryError, no allocation tried)
+    for vx, fontsize in LIST_REPEATS:
+        textdisp = (vx, 880)
+        font = TestFont("V", True, -0.2)
+        matrix = (1.0, 0.0, 0.0, 1.0, 10.0, 20.0)
+        args = [matrix, [font.fontname, True, font.descent], fontsize, 1.0, 0.0, "t", 0.5, textdisp]
+        out = call(LTChar, matrix, font, fontsize, 1.0, 0.0, "t", 0.5, textdisp, GRAY, None)
+        yield args, out if isinstance(out, BaseException) else dump_raw(out)
+
+
+#: (sequence, int count): repetitions Python builds (small), or refuses
+#: before allocating, their length within PY_SSIZE_T_MAX: a list of more
+#: than PY_SSIZE_T_MAX / 8 items (PyMem_New), a str beyond PyUnicode_New's
+#: bound (PY_SSIZE_T_MAX less the header, in bytes of 1, 2 or 4 by the
+#: largest character).
+LIST_REPEATS = [([1, 2], 3), ([1, 2, 3], 8), (b"ab", 1000), ("ab", 1000), ("\u0101b", 1000), ([1, 2], 1000),
+                ([1, 2], 2**59 + 1), ([1, 2, 3], 2**59), ([1], 2**60), ([1, 2], (2**63 - 1) // 2),
+                ("a", 2**63 - 1), ("ab", (2**63 - 1) // 2), ("\xe9", 2**63 - 1), ("\u0101", 2**62),
+                ("\U0001f600", 2**61)]
 
 
 DISP_ITEMS = [None, True, False, 0, 880, -1000, 1000, 0.5, -0.0, math.nan, math.inf, 1e308, 10**400, b"9", b"", b"ab",
@@ -734,6 +758,16 @@ def gen_figure_obj(rng):
         bbox = [rng.choice([0, 1, 2, 5, -1, 2**62, 2**63, 0.5, True, b"ab", [1]]) for _ in range(4)]
         yield ["mult_matrix_obj", m1, m0], call(lambda: operands(mult_matrix(m1, m0)))
         yield ["LTFigure_obj", m1, m0, bbox], call(figure_obj, m1, m0, bbox)
+    # a list repeated by a large int: of the CTM (in mult_matrix), or of the
+    # box (in apply_matrix_pt, the matrix keeping the lists)
+    for seq, count in LIST_REPEATS:
+        if isinstance(seq, str):
+            continue  # not a PDF object
+        cases = [([seq, 0, 0, 1, 0, 0], (count, 0, 0, 1, 0, 0), [0, 0, 1, 1]),
+                 ([seq, seq[:0], seq[:0], seq, 0, 0], (1, 0, 0, 1, 0, 0), [count, 0, 0, 0])]
+        for m1, m0, bbox in cases:
+            yield ["mult_matrix_obj", m1, m0], call(lambda: operands(mult_matrix(m1, m0)))
+            yield ["LTFigure_obj", m1, m0, bbox], call(figure_obj, m1, m0, bbox)
 
 
 SORT_VALS = [math.nan, math.inf, -math.inf, 0.0, -0.0, 0, 1, -1, 1.5, 2, 2.0, 3, 1e300, 2**53, 2**53 + 1, 2**70]

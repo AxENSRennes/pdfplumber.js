@@ -175,7 +175,8 @@ fn plane() {
                 "remove" => result(plane.remove(&objs[&int_arg(&op[1])]), |()| Value::None),
                 "find" => result(plane.find(&nums(&op[1])), ids),
                 "iter" => ids(plane.iter().cloned().collect()),
-                "len" => Value::Int(PyInt::from(plane.len())),
+                // len(plane), and bool(plane) (__len__ too)
+                "len" => Value::List(vec![Value::Int(PyInt::from(plane.len())), Value::Bool(!plane.is_empty())]),
                 "contains" => Value::Bool(plane.contains(&objs[&int_arg(&op[1])])),
                 other => panic!("{other}"),
             };
