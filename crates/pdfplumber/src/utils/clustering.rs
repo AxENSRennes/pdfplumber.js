@@ -13,7 +13,7 @@
 //! tuples), so `mutable_key_type` is allowed.
 #![allow(clippy::mutable_key_type)]
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 
 use pycompat::listsort::sort_by_key;
 use pycompat::{exc, PyResult};
@@ -61,7 +61,7 @@ pub fn make_cluster_dict(
     tolerance: &PyValue,
 ) -> PyResult<ClusterDict> {
     // list(set(values)), see the module documentation
-    let mut seen: HashSet<HashKey> = HashSet::new();
+    let mut seen: HashSet<HashKey> = HashSet::default();
     let mut unique = Vec::new();
     for v in values {
         let key = HashKey::new(v?)?;
@@ -71,7 +71,7 @@ pub fn make_cluster_dict(
         }
     }
     let clusters = cluster_list(unique, tolerance)?;
-    let mut dict = ClusterDict::with_capacity(seen.len());
+    let mut dict = ClusterDict::with_capacity_and_hasher(seen.len(), Default::default());
     for (i, value_cluster) in clusters.into_iter().enumerate() {
         for val in value_cluster {
             // dict(chain(...)): a later equal key keeps the first key and

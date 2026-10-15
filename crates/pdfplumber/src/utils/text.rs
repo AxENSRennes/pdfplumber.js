@@ -27,7 +27,7 @@
 //! `mutable_key_type` is allowed.
 #![allow(clippy::mutable_key_type)]
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 use std::rc::Rc;
 
 use pycompat::listsort::sort_by_key;
@@ -1489,7 +1489,7 @@ struct IndexOf<'a> {
 
 impl<'a> IndexOf<'a> {
     fn new(chars: &'a [Obj]) -> IndexOf<'a> {
-        let mut buckets: HashMap<[HashKey; 3], Vec<usize>> = HashMap::new();
+        let mut buckets: HashMap<[HashKey; 3], Vec<usize>> = HashMap::default();
         for (i, c) in chars.iter().enumerate() {
             match IndexOf::bucket(c) {
                 Some(b) => buckets.entry(b).or_default().push(i),

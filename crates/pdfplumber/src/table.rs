@@ -17,7 +17,7 @@
 //! tuples), so `mutable_key_type` is allowed.
 #![allow(clippy::mutable_key_type)]
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 
 use pycompat::listsort::sort_by_key;
 use pycompat::{exc, PyErr, PyResult};
@@ -389,7 +389,7 @@ pub fn edges_to_intersections(edges: &[Obj], x_tolerance: &PyValue, y_tolerance:
 pub fn intersections_to_cells(intersections: &Intersections) -> PyResult<Vec<Bbox>> {
     // edges_to_set (nested in edge_connects): edges compared by bbox value;
     // one id per distinct bbox.
-    let mut bbox_ids: HashMap<[HashKey; 4], u32> = HashMap::new();
+    let mut bbox_ids: HashMap<[HashKey; 4], u32> = HashMap::default();
     let mut ids_of = |edges: &[Obj]| -> PyResult<Vec<u32>> {
         let mut ids = Vec::with_capacity(edges.len());
         for e in edges {
@@ -440,8 +440,8 @@ pub fn intersections_to_cells(intersections: &Intersections) -> PyResult<Vec<Bbo
     sort_by_key(&mut points, |&k| Ok(pt(k).clone()), pair_lt)?;
 
     // Points of equal x (resp. y), by position in `points`.
-    let mut by_x: HashMap<HashKey, Vec<usize>> = HashMap::new();
-    let mut by_y: HashMap<HashKey, Vec<usize>> = HashMap::new();
+    let mut by_x: HashMap<HashKey, Vec<usize>> = HashMap::default();
+    let mut by_y: HashMap<HashKey, Vec<usize>> = HashMap::default();
     for (i, &k) in points.iter().enumerate() {
         by_x.entry(HashKey::new(pt(k).0.clone())?).or_default().push(i);
         by_y.entry(HashKey::new(pt(k).1.clone())?).or_default().push(i);
@@ -489,7 +489,7 @@ pub fn intersections_to_cells(intersections: &Intersections) -> PyResult<Vec<Bbo
 // pdfplumber/table.py:297 cells_to_tables
 pub fn cells_to_tables(cells: &[Bbox]) -> PyResult<Vec<Vec<Bbox>>> {
     // bbox_to_corners (nested in cells_to_tables), as ids of distinct points
-    let mut corner_ids: HashMap<HashKey, usize> = HashMap::new();
+    let mut corner_ids: HashMap<HashKey, usize> = HashMap::default();
     let mut corners_of = Vec::with_capacity(cells.len());
     for cell in cells {
         let [x0, top, x1, bottom] = cell;
@@ -618,7 +618,7 @@ impl Table {
         sort_by_key(&mut sorted, |c| Ok((c[antiaxis].clone(), c[axis].clone())), pair_lt)?;
 
         // Sort get all x0s/tops: sorted(set(...))
-        let mut seen: HashSet<HashKey> = HashSet::new();
+        let mut seen: HashSet<HashKey> = HashSet::default();
         let mut xs = Vec::new();
         for c in &self.cells {
             if seen.insert(HashKey::new(c[axis].clone())?) {
@@ -636,7 +636,7 @@ impl Table {
                 j += 1;
             }
             // xdict = {cell[axis]: cell for cell in row_cells}
-            let mut xdict: HashMap<HashKey, &Bbox> = HashMap::new();
+            let mut xdict: HashMap<HashKey, &Bbox> = HashMap::default();
             for cell in &sorted[i..j] {
                 xdict.insert(HashKey::new(cell[axis].clone())?, cell);
             }
