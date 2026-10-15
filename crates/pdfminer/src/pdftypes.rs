@@ -542,11 +542,15 @@ impl Renderer {
     /// by C.
     fn stream(&mut self, s: &PDFStream, unit: Guard) -> PyResult<()> {
         let method = python_method()?;
-        let objid = {
-            let _unit = recursion::c_call(WHILE_REPR)?;
-            match s.objid() {
-                Some(i) => i.py_str()?,
-                None => "None".to_owned(),
+        let objid = match s.objid() {
+            // PyObject_Repr of another id ([`ObjId`]) takes its own unit
+            Some(id) if id.as_int().is_none() => id.repr()?,
+            id => {
+                let _unit = recursion::c_call(WHILE_REPR)?;
+                match id.as_ref().and_then(ObjId::as_int) {
+                    Some(i) => i.py_str()?,
+                    None => "None".to_owned(),
+                }
             }
         };
         // len(self.data): a builtin call
@@ -705,6 +709,146 @@ impl PDFObjRef {
             Err(e) if e.is_instance(ExcKind::PDFObjectNotFound) => Ok(default.clone()),
             other => other,
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Object ids
+
+/// A Python object used as an object id: an argument of
+/// `PDFDocument.getobj`, a key of `PDFXRef.offsets` and of the document's
+/// caches, `PDFStream.objid`.
+///
+/// Upstream's object ids are ints, except where `PDFXRefFallback` stores the
+/// object an object stream holds at an id position as it is (`5.5`, `True`,
+/// a name, a reference...) and where `PDFXRefStream` yields `start + i` for
+/// whatever `start` its `/Index` holds: any hashable value can reach
+/// `getobj`, which stores it in the stream it returns (`set_objid`). `==`
+/// and `hash()` are Python's (`docs/architecture.md`, "Résolution des
+/// références"): numbers by value across `bool`/`int`/`float`
+/// (`1 == 1.0 == True`), `bytes` by content, `None` equal to itself,
+/// literals, keywords, references and streams by identity (no `__eq__`
+/// upstream). A list or a dict is unhashable ([`ObjId::new`]). The id keeps
+/// the object it was made from (`5.0` stays a float in a trace), as a dict
+/// keeps its first key.
+#[derive(Clone)]
+pub struct ObjId(PDFObject);
+
+impl ObjId {
+    /// The id of `obj`, or `TypeError("unhashable type: 'list'")` (what
+    /// `hash(obj)` raises).
+    pub fn new(obj: PDFObject) -> PyResult<ObjId> {
+        match obj {
+            PDFObject::List(_) | PDFObject::Dict(_) => {
+                Err(exc::TypeError(format!("unhashable type: '{}'", obj.type_name())))
+            }
+            obj => Ok(ObjId(obj)),
+        }
+    }
+
+    /// The id of an int.
+    pub fn int(i: PyInt) -> ObjId {
+        ObjId(PDFObject::Int(i))
+    }
+
+    /// The object.
+    pub fn obj(&self) -> &PDFObject {
+        &self.0
+    }
+
+    /// The id when it is an `int` (not a `bool`).
+    pub fn as_int(&self) -> Option<&PyInt> {
+        match &self.0 {
+            PDFObject::Int(i) => Some(i),
+            _ => None,
+        }
+    }
+
+    /// The id as the `objid` argument of a [`DecipherCallable`]: the
+    /// security handlers only pack it with `struct.pack("<L", objid)`
+    /// (or ignore it), where a `bool` is the int 0 or 1. A decipher call on
+    /// another id (a float id in an encrypted document repaired by
+    /// `PDFXRefFallback`) is not ported: `struct.pack` would raise for
+    /// RC4/AES-128, the identity and AES-256 filters would ignore the id.
+    pub fn decipher_arg(&self) -> PyResult<PyInt> {
+        match &self.0 {
+            PDFObject::Int(i) => Ok(i.clone()),
+            PDFObject::Bool(b) => Ok(PyInt::Small(i64::from(*b))),
+            _ => Err(PyErr::not_ported("decipher() of an object whose id is not an int")),
+        }
+    }
+
+    /// `str(objid)`
+    pub fn py_str(&self) -> PyResult<String> {
+        self.0.py_str()
+    }
+
+    /// `repr(objid)`
+    pub fn repr(&self) -> PyResult<String> {
+        self.0.repr()
+    }
+}
+
+impl From<PyInt> for ObjId {
+    fn from(i: PyInt) -> ObjId {
+        ObjId::int(i)
+    }
+}
+
+impl PartialEq for ObjId {
+    fn eq(&self, other: &ObjId) -> bool {
+        match (self.0.as_num(), other.0.as_num()) {
+            (Some(a), Some(b)) => a.py_eq(&b),
+            (Some(_), None) | (None, Some(_)) => false,
+            (None, None) => match (&self.0, &other.0) {
+                (PDFObject::Bytes(a), PDFObject::Bytes(b)) => a == b,
+                (a, b) => same_object(a, b),
+            },
+        }
+    }
+}
+
+impl Eq for ObjId {}
+
+impl std::hash::Hash for ObjId {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        if let Some(n) = self.0.as_num() {
+            // A NaN cannot be parsed (the tokenizer reads no "nan"); its hash
+            // would be its identity: any constant keeps Hash and Eq
+            // consistent.
+            state.write_i64(n.py_hash().unwrap_or(0));
+            return;
+        }
+        match &self.0 {
+            PDFObject::Null => state.write_u8(0),
+            PDFObject::Bytes(b) => {
+                state.write_u8(1);
+                b.hash(state);
+            }
+            PDFObject::Literal(lit) => {
+                state.write_u8(2);
+                lit.hash(state);
+            }
+            PDFObject::Keyword(kwd) => {
+                state.write_u8(3);
+                kwd.hash(state);
+            }
+            PDFObject::Ref(r) => {
+                state.write_u8(4);
+                std::ptr::hash(Rc::as_ptr(&r.0), state);
+            }
+            PDFObject::Stream(s) => {
+                state.write_u8(5);
+                std::ptr::hash(Rc::as_ptr(s), state);
+            }
+            _ => unreachable!("numbers are hashed above; lists and dicts are not ids"),
+        }
+    }
+}
+
+impl fmt::Debug for ObjId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
     }
 }
 
@@ -935,7 +1079,7 @@ pub struct PDFStream {
     /// `self.decipher`
     pub decipher: Option<DecipherCallable>,
     data: RefCell<Option<PyBytes>>,
-    objid: RefCell<Option<PyInt>>,
+    objid: RefCell<Option<ObjId>>,
     genno: RefCell<Option<PyInt>>,
 }
 
@@ -953,13 +1097,14 @@ impl PDFStream {
     }
 
     // pdfminer/pdftypes.py:258 PDFStream.set_objid
-    pub fn set_objid(&self, objid: PyInt, genno: PyInt) {
-        *self.objid.borrow_mut() = Some(objid);
+    /// `objid` is an int, or any id `getobj` was called with ([`ObjId`]).
+    pub fn set_objid(&self, objid: impl Into<ObjId>, genno: PyInt) {
+        *self.objid.borrow_mut() = Some(objid.into());
         *self.genno.borrow_mut() = Some(genno);
     }
 
     /// `self.objid`
-    pub fn objid(&self) -> Option<PyInt> {
+    pub fn objid(&self) -> Option<ObjId> {
         self.objid.borrow().clone()
     }
 
@@ -978,8 +1123,12 @@ impl PDFStream {
         self.rawdata.borrow().clone()
     }
 
-    fn objid_repr(&self) -> String {
-        self.objid.borrow().as_ref().map_or_else(|| "None".to_owned(), |i| i.to_string())
+    /// `str(self.objid)`
+    fn objid_str(&self) -> PyResult<String> {
+        match self.objid() {
+            Some(id) => id.py_str(),
+            None => Ok("None".to_owned()),
+        }
     }
 
     // pdfminer/pdftypes.py:262 PDFStream.__repr__
@@ -993,9 +1142,15 @@ impl PDFStream {
         self.attrs.contains_key(name)
     }
 
-    fn missing_attribute(&self, name: &str) -> PyErr {
+    /// The error of `stream[name]` for a missing `name` (`name` as `str()`
+    /// writes it).
+    pub fn missing_attribute(&self, name: &str) -> PyErr {
+        let objid = match self.objid_str() {
+            Ok(objid) => objid,
+            Err(e) => return e,
+        };
         // str() of a KeyError is the repr() of its argument.
-        let msg = format!("PDF stream object {} does not have attribute '{name}'", self.objid_repr());
+        let msg = format!("PDF stream object {objid} does not have attribute '{name}'");
         exc::PDFKeyError(str_repr(&msg))
     }
 
@@ -1060,7 +1215,7 @@ impl PDFStream {
             let (Some(objid), Some(genno)) = (self.objid(), self.genno()) else {
                 return Err(exc::AssertionError(""));
             };
-            data = decipher(&objid, &genno, &data, Some(&self.attrs))?.into();
+            data = decipher(&objid.decipher_arg()?, &genno, &data, Some(&self.attrs))?.into();
         }
         let filters = self.get_filters()?;
         if filters.is_empty() {

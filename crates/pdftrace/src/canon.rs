@@ -298,8 +298,13 @@ pub fn write_canon_obj(out: &mut String, obj: &PDFObject) {
             PDFObject::Dict(d) => push_dict(&mut steps, &d),
             PDFObject::Stream(s) => {
                 out.push_str("Stream(");
-                let opt = |i: Option<pycompat::PyInt>| i.map_or_else(|| "None".to_owned(), |i| i.to_string());
-                let _ = write!(out, "{}, {}, ", opt(s.objid()), opt(s.genno()));
+                // the id: an int, or any scalar id (`pdftypes::ObjId`)
+                match s.objid() {
+                    Some(id) => write_canon_obj(out, id.obj()),
+                    None => out.push_str("None"),
+                }
+                let genno = s.genno().map_or_else(|| "None".to_owned(), |i| i.to_string());
+                let _ = write!(out, ", {genno}, ");
                 let raw = match s.rawdata() {
                     Some(raw) => {
                         let mut text = String::new();

@@ -1379,3 +1379,34 @@ impl Iterator for RevReadLines<'_> {
         }
     }
 }
+
+impl<X: PSStackParserExt> PSStackParser<X> {
+    /// A parser in the state `__init__` leaves before its `seek(0)`: no
+    /// file, empty buffers and stacks. Not a Python state: it only stands
+    /// in for a parser moved elsewhere for a while (`pdfparser.rs`, where a
+    /// nested `getobj` uses the parser that is running `do_keyword`).
+    pub fn placeholder(ext: X) -> Self {
+        PSStackParser {
+            fp: None,
+            eof: false,
+            bufpos: 0,
+            buf: Buf::empty(),
+            charpos: 0,
+            lexer: Lexer::new(),
+            context: Vec::new(),
+            curtype: None,
+            curstack: Vec::new(),
+            results: VecDeque::new(),
+            ext,
+            structure_keywords: [
+                *KEYWORD_ARRAY_BEGIN,
+                *KEYWORD_ARRAY_END,
+                *KEYWORD_DICT_BEGIN,
+                *KEYWORD_DICT_END,
+                *KEYWORD_PROC_BEGIN,
+                *KEYWORD_PROC_END,
+            ],
+            progress: ProgressGuard::default(),
+        }
+    }
+}

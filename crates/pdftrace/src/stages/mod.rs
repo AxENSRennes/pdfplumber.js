@@ -14,6 +14,7 @@ use std::io::Write;
 
 use pycompat::recursion::{Depth, C_RECURSION_LIMIT};
 
+pub mod common;
 pub mod fonts;
 pub mod interp;
 pub mod layout;

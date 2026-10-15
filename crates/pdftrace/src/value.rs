@@ -11,7 +11,7 @@
 //! comparing, writing and dropping them is iterative, never limited by the
 //! stack, as in `oracle/canon.py`.
 
-use pdfminer::pdftypes::{PDFObject, PDFStream};
+use pdfminer::pdftypes::{ObjId, PDFObject, PDFStream};
 use pdfminer::psparser::LiteralName;
 use pycompat::{PyErr, PyInt};
 
@@ -248,10 +248,15 @@ fn opt_int(i: Option<PyInt>) -> Value {
     i.map_or(Value::None, Value::Int)
 }
 
+/// `stream.objid`: an int, or any id `getobj` was called with.
+fn opt_id(id: Option<ObjId>) -> Value {
+    id.map_or(Value::None, |id| Value::from(id.obj()))
+}
+
 impl From<&PDFStream> for StreamValue {
     fn from(s: &PDFStream) -> StreamValue {
         StreamValue {
-            objid: opt_int(s.objid()),
+            objid: opt_id(s.objid()),
             genno: opt_int(s.genno()),
             attrs: dict_items(Value::from(&PDFObject::Dict(s.attrs.clone()))),
             raw: s.rawdata().map_or(Value::None, |r| Value::Bytes(r.to_vec())),
@@ -323,7 +328,7 @@ impl From<&PDFObject> for Value {
                 Step::Stream(s, keys) => {
                     let values = done.split_off(done.len() - keys.len());
                     done.push(Value::Stream(Box::new(StreamValue {
-                        objid: opt_int(s.objid()),
+                        objid: opt_id(s.objid()),
                         genno: opt_int(s.genno()),
                         attrs: keys.iter().map(|k| Value::str(k.to_string())).zip(values).collect(),
                         raw: s.rawdata().map_or(Value::None, |r| Value::Bytes(r.to_vec())),
