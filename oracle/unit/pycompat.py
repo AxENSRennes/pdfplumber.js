@@ -21,7 +21,8 @@ import re
 import struct
 import unicodedata
 
-from ._common import require_oracle_python, write_cases, write_meta
+from ..stages import entry_depth
+from ._common import depth_here, require_oracle_python, write_cases, write_meta
 
 
 def call(f, *args):
@@ -552,6 +553,23 @@ def gen_num_dict(rng):
         yield [ops], [results, list(d.items()), repr(d)]
 
 
+def gen_recursion(rng):
+    """The recursion limits and depths the Rust side relies on
+    (``pycompat::recursion``): ``sys.getrecursionlimit()``, the C units left
+    in a fresh thread's target (the limit minus the evaluation loop entry of
+    the thread), and the depth of a stage function's body."""
+    import sys
+    import threading
+
+    yield ["recursionlimit"], sys.getrecursionlimit()
+    box = {}
+    thread = threading.Thread(target=lambda: box.update(depth_here(1)))
+    thread.start()
+    thread.join()
+    yield ["fresh_thread"], box
+    yield ["stage_entry"], entry_depth()
+
+
 GENERATORS = {
     "exc_hierarchy": gen_exc_hierarchy,
     "int_parse": gen_int_parse,
@@ -573,6 +591,7 @@ GENERATORS = {
     "bytesio": gen_bytesio,
     "num_hash": gen_num_hash,
     "num_dict": gen_num_dict,
+    "recursion": gen_recursion,
 }
 
 

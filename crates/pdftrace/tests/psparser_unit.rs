@@ -3,7 +3,10 @@
 //! SHA-256 of the canonical serialization with pdfminer's.
 //!
 //! A job serializes to one line `<pos> <canon(obj)>` per object returned by
-//! `nextobject()`, then the line of the exception that ended it.
+//! `nextobject()`, then the line of the exception that ended it. Each job
+//! runs from the recursion depth pdfminer ran it at, so that a
+//! `RecursionError` of `repr`/`str` on a deep object (the fixed jobs nest
+//! objects around that limit) happens at the same place.
 //!
 //! A job stops as soon as it yields more objects than pdfminer did (the
 //! serialization then differs anyway): a broken parser that keeps returning
@@ -22,6 +25,7 @@ use pdfminer::pdfinterp::PDFContentParser;
 use pdftrace::canon::{canon_exc, sha256_hex, write_canon_obj};
 use pdftrace::typed_json::Json;
 use pdftrace::unit::{read_content_jobs, ContentJob, UnitData};
+use pycompat::recursion::{self, Depth, C_RECURSION_LIMIT};
 
 /// The canonical serialization of a job, as the oracle writes it, and the
 /// number of objects; stops after `max_objects + 1` objects.
@@ -77,7 +81,13 @@ fn replay(corpus: &str, min_jobs: usize) {
             Some(Json::Number(n)) => n.parse::<usize>().expect("object count"),
             other => panic!("record without object count: {other:?}"),
         };
-        let (text, count) = serialize(job, expected_objects);
+        // the recursion depth pdfminer ran at (`parse_job`)
+        let depth = |name: &str| match rec.get("depth").and_then(|d| d.get(name)) {
+            Some(Json::Number(n)) => n.parse::<u32>().expect("a depth"),
+            other => panic!("record without depth.{name}: {other:?}"),
+        };
+        let base = Depth { py: depth("py"), c: C_RECURSION_LIMIT - depth("c_left") };
+        let (text, count) = recursion::with_depth(base, || serialize(job, expected_objects));
         objects += count;
         let Some(Json::String(expected)) = rec.get("sha256") else { panic!("record without sha256") };
         if &sha256_hex(text.as_bytes()) != expected {

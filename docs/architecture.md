@@ -91,9 +91,85 @@ observable, et seulement là.
   `struct.error`, `UnicodeDecodeError`, `RecursionError`, …) avec sa
   hiérarchie (`except PSException:` attrape `PSEOF`). Le message reproduit
   `str(e)`. Les `try/except` upstream deviennent des `match` sur ces types.
-- **Avertissements** (`logging`, `warnings.warn`) : sans effet sur la sortie ;
-  ils remontent par un canal de diagnostics (option `onWarning` côté JS).
+- **Avertissements** (`logging`, `warnings.warn`) : leur texte est sans effet
+  sur la sortie et remonte par un canal de diagnostics (option `onWarning`
+  côté JS) ; leurs cadres Python comptent pour la profondeur de récursion
+  (ci-dessous).
 - **Réglages** : `pdfminer.settings.STRICT = False`, comme l'oracle.
+
+## Profondeur de récursion
+
+Python lève `RecursionError` à partir de deux compteurs, que
+`pycompat::recursion` reproduit (`Depth`, par fil d'exécution) : les cadres
+Python (au plus `sys.getrecursionlimit()` = 1000) et les unités de récursion
+C (10 000 : `repr()`, `str()`, les comparaisons, l'appel d'une fonction
+native en prennent une, une entrée dans la boucle d'évaluation depuis du C
+deux). Règles :
+
+- Les structures arbitrairement profondes que Python construit sans
+  récursion (un flux de contenu de 10^6 `[`) se libèrent, se comparent,
+  s'écrivent et se convertissent sans récursion en Rust non plus
+  (`PDFObject`, `Value`, JSON typé, `canon`) : la pile Rust (1 Mio dans un
+  navigateur) ne limite jamais rien.
+- Là où Python a une limite, le port la reproduit : `repr()`/`str()` d'un
+  objet PDF prennent les unités C de CPython à chaque niveau (cas
+  unitaires à la frontière pour chaque sorte d'objet), `resolve_all` et
+  `decipher_all` un cadre par niveau. Une fonction Python portée prend son
+  cadre (`py_frame()`) pour sa durée, un appel depuis du C ses unités
+  (`eval_entry()`), un appel de log ses cadres (`py_frames(2)`, 3 au premier
+  appel d'un niveau sur un logger, voir `docs/verification.md`).
+- Le comptage est en place dans `pdftypes` (`resolve_all`, `decipher_all`,
+  `PDFObjRef.resolve`, `repr`) et pour `literal_name`. Les fonctions de
+  `psparser` et de `pdfinterp` ne prennent pas encore de cadre : aucun
+  appelant porté ne peut les exécuter près de la limite des cadres (une
+  étape les appelle à une profondeur d'environ 10). Elles en prendront avec
+  le port de l'interpréteur, dont la récursion (`do_Do` → `render_contents`)
+  les y amène, chaque module étant vérifié par des cas unitaires à la
+  frontière, comme `pdftypes`.
+- Le harnais fixe la profondeur de départ (`with_depth`) à celle que
+  l'oracle a mesurée au même point d'appel ; le code porté ne la fixe jamais.
+
+## Résolution des références et ré-entrance du parseur (pour `pdfparser`/`pdfdocument`)
+
+Décisions prises avant le port de `pdfparser.py` et `pdfdocument.py` :
+
+- `PDFParser.do_keyword(KEYWORD_STREAM)` lit `int_value(dic["Length"])`
+  quand `fallback` est faux (tout PDF dont la table xref est valide, et tout
+  PDF chiffré) ; avec un `/Length` indirect, la résolution passe par
+  `PDFDocument.getobj` → `_getobj_parse`, qui réutilise **le même**
+  parseur (`self._parser.seek(pos)`, dont le `reset()` vide le contexte et la
+  pile du `nextobject` extérieur) pendant que celui-ci est dans
+  `do_keyword`. Le document garde donc son parseur dans un
+  `RefCell<Option<PDFParser>>` : un `getobj` venu de l'extérieur le prend,
+  et la résolution faite depuis `do_keyword` reçoit le parseur en cours
+  (`&mut PDFParser`, contexte explicite : `getobj_in(objid, Some(parser))`,
+  `int_value_in`), sans emprunt du `RefCell`, de sorte que le `seek` et le
+  `reset` imbriqués agissent sur le même état, comme en Python. Un cas
+  adverse de l'étape `objects` le vérifie : un `/Length` indirect dont le
+  dictionnaire du flux est dans un tableau non fermé.
+- `PDFDocument.__init__` résout déjà des références (`Encrypt`, `ID`,
+  `Info`, `Root` du trailer) : le document est créé dans un `Rc` dont l'état
+  est intérieur (`RefCell`/`Cell`) avant que sa logique d'`__init__` ne
+  s'exécute, pour que `PDFObjRef.resolve` (`Weak<dyn PDFResolver>`) puisse le
+  joindre pendant l'initialisation (`Rc::new_cyclic` ne suffit pas : son
+  `Weak` ne se résout qu'une fois la construction finie).
+- Les clés de `PDFXRef.offsets`, de `_cached_objs`, l'argument de
+  `getobj` et `PDFStream.objid` sont des valeurs Python hachables quelconques
+  (`PDFXRefFallback` stocke tel quel l'en-tête d'un flux d'objets : `5.5`,
+  `True`, un littéral, un mot-clé…) : un type de clé `ObjId` suit `hash()` et
+  `==` de Python (nombres via `pycompat::NumKey` : `5 == 5.0 == True` ;
+  littéraux et mots-clés par identité ; `bytes` par valeur ; une liste ou un
+  dict lève `TypeError("unhashable type: 'list'")`). `PDFObjRef.objid` reste un
+  `PyInt` : pdfminer ne crée de référence qu'à travers `safe_int`
+  (`pdfparser.py`), toujours un `int`.
+- `CMapParser.do_keyword` appelle `CMapDB.get_cmap` (`usecmap`) de façon
+  synchrone : le fournisseur de CMaps prédéfinies est synchrone pour le
+  cœur ; un chargement paresseux côté navigateur se fait avant l'analyse
+  (le cœur signale le nom manquant et l'analyse est relancée).
+- `Type1FontHeaderParser` met dans `results` des paires `(cid, nom)` dont
+  `cid` est un `int` Python quelconque : le parseur générique reçoit un type
+  de résultat associé (`PSStackParserExt::Result`) plutôt qu'un encodage dans
+  `PDFObject`.
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 

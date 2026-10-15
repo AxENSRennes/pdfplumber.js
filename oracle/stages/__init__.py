@@ -23,9 +23,23 @@ rather than a segmentation fault; Python's recursion limit is left at its
 default (1000) and counts frames, not bytes, so the larger C stack cannot
 change a trace.
 
-Logging is disabled while a stage runs (``logging.disable``): pdfminer only
-logs, it never reads its own log level, so this cannot change results; it
-just keeps stderr quiet. Warnings keep their default filters.
+Logging is disabled while a stage runs (``logging.disable``), which keeps
+stderr quiet. pdfminer never reads its log level, but a logging call costs
+Python frames: ``log.debug(...)`` runs ``Logger.debug`` and
+``Logger.isEnabledFor`` (two frames below the caller; the first call of a
+level on a logger, after ``logging.disable`` cleared the caches, a third:
+``_acquireLock``), which decides where a ``RecursionError`` happens in deep
+recursions (the page tree of ``PDFPage.create_pages`` logs at each node).
+Disabled logging costs exactly what the default configuration (no handler,
+level WARNING) costs, so traces are those of a user with the default
+configuration; a user who configures DEBUG logging runs more frames in
+handlers and can see a ``RecursionError`` earlier. The Rust side counts these
+frames like the others (``pycompat::recursion``). Warnings keep their default
+filters.
+
+``entry_depth()`` measures the recursion depth a stage function's body runs
+at (``oracle.depth.depth_here``); the Rust stages start from it
+(``pdftrace::stages::STAGE_ENTRY``, checked against it by the unit tests).
 """
 
 from __future__ import annotations
@@ -34,8 +48,12 @@ import importlib
 import logging
 import sys
 import threading
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import ModuleType
+
+from ..depth import depth_here
+from ._common import terminated
 
 DEFAULT_MAX_PAGES = 20
 STACK_SIZE = 256 << 20
@@ -73,6 +91,7 @@ def stage_source_files(name: str) -> list[Path]:
         STAGE_DIR / "_common.py",
         pkg / "canon.py",
         pkg / "typed_json.py",
+        pkg / "depth.py",
         pkg / "trace.py",  # writes the cached bytes
         pkg / "environment.py",
     ]
@@ -81,18 +100,38 @@ def stage_source_files(name: str) -> list[Path]:
 def trace_lines(name: str, path: str | Path, password: str | None = None, max_pages: int = DEFAULT_MAX_PAGES) -> list[str]:
     """Run stage ``name`` on one PDF and return its trace lines."""
     stage = get_stage(name)
+    return _in_stage_thread(lambda: stage.run(str(path), password, max_pages))
+
+
+def entry_depth() -> dict[str, int]:
+    """The recursion depth (``oracle.depth.depth_here``) at which the body of
+    a stage function runs: a generator decorated with ``terminated``, run by
+    the stage thread like ``trace_lines`` runs a stage."""
+
+    @terminated
+    def probe(path: str, password: str | None, max_pages: int) -> Iterator[str]:
+        depth = depth_here()
+        yield f"{depth['py']} {depth['c_left']}"
+
+    py, c_left = _in_stage_thread(lambda: probe("", None, 0))[0].split()
+    return {"py": int(py), "c_left": int(c_left)}
+
+
+def _in_stage_thread(make: Callable[[], Iterator[str]]) -> list[str]:
+    """The lines of the generator ``make()`` returns, consumed by ``list()``
+    in a fresh thread with a 256 MiB stack and logging disabled."""
     box: dict[str, object] = {}
 
     def _target() -> None:
         try:
-            box["lines"] = list(stage.run(str(path), password, max_pages))
+            box["lines"] = list(make())
         except BaseException as e:  # harness error (CanonError...): re-raised below
             box["error"] = e
 
     previous_stack = threading.stack_size(STACK_SIZE)
     logging.disable(logging.CRITICAL)
     try:
-        thread = threading.Thread(target=_target, name=f"oracle-{name}")
+        thread = threading.Thread(target=_target, name="oracle-stage")
         thread.start()
         thread.join()
     finally:
@@ -112,6 +151,7 @@ __all__ = [
     "DEFAULT_MAX_PAGES",
     "STAGE_ENTRY_DEPTH",
     "available_stages",
+    "entry_depth",
     "get_stage",
     "stage_source_files",
     "trace_lines",

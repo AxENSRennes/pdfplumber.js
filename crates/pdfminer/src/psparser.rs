@@ -349,21 +349,26 @@ pub static KEYWORD_DICT_END: LazyLock<PSKeyword> = LazyLock::new(|| KWD(b">>"));
 // pdfminer/psparser.py:110 literal_name
 /// `literal_name(x)` with `settings.STRICT = False`: the literal's name as a
 /// `str` (a `bytes` name is decoded as UTF-8, or else written as its repr),
-/// and `str(x)` for any other object.
-pub fn literal_name(x: &PDFObject) -> String {
+/// and `str(x)` for any other object, which raises `RecursionError` for an
+/// object nested too deep (see `pdftypes`, "Depth").
+pub fn literal_name(x: &PDFObject) -> PyResult<String> {
     if let PDFObject::Literal(lit) = x {
-        return match lit.name() {
+        return Ok(match lit.name() {
             LiteralName::Str(s) => s.to_owned(),
             LiteralName::Bytes(b) => match std::str::from_utf8(b) {
                 Ok(s) => s.to_owned(),
-                Err(_) => bytes_repr(b),
+                Err(_) => {
+                    // str(x.name): PyObject_Str of the bytes
+                    let _unit = pycompat::recursion::c_call(" while getting the str of an object")?;
+                    bytes_repr(b)
+                }
             },
-        };
+        });
     }
     if settings::STRICT {
         unreachable!("settings.STRICT is False");
     }
-    x.repr()
+    x.py_str()
 }
 
 /// Result of [`keyword_name`]: Python returns either a `str` or, for a
@@ -1281,14 +1286,14 @@ impl<X: PSStackParserExt> PSStackParser<X> {
                             Ok((pos, objs)) => {
                                 if !objs.len().is_multiple_of(2) {
                                     let error_msg =
-                                        format!("Invalid dictionary construct: {}", PDFObject::list_repr(&objs));
+                                        format!("Invalid dictionary construct: {}", PDFObject::list_repr(&objs)?);
                                     return Err(exc::PSSyntaxError(error_msg));
                                 }
                                 let d = PDFDict::new();
                                 for pair in choplist(2, &objs) {
                                     let (k, v) = (&pair[0], &pair[1]);
                                     if !matches!(v, PDFObject::Null) {
-                                        d.insert(literal_name(k).into(), v.clone());
+                                        d.insert(literal_name(k)?.into(), v.clone());
                                     }
                                 }
                                 self.push((pos, PDFObject::Dict(d)));

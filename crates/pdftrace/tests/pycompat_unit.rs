@@ -393,3 +393,27 @@ fn num_dict() {
         Value::List(vec![Value::List(results), Value::List(items.collect()), Value::str(format!("{{{repr}}}"))])
     });
 }
+
+/// The limits and depths `pycompat::recursion` and the stages rely on,
+/// measured by the oracle.
+#[test]
+fn recursion_limits() {
+    use pycompat::recursion::{Depth, C_RECURSION_LIMIT, PY_RECURSION_LIMIT};
+    let depth = |v: &Value| {
+        let Value::Dict(fields) = v else { panic!("{v:?}") };
+        let get = |name: &str| match fields.iter().find(|(k, _)| k.as_str() == Some(name)) {
+            Some((_, Value::Int(i))) => u32::try_from(i.as_i64().expect("small")).expect("a depth"),
+            other => panic!("{other:?}"),
+        };
+        Depth { py: get("py"), c: C_RECURSION_LIMIT - get("c_left") }
+    };
+    for (args, out) in data().cases("recursion") {
+        match str_arg(&args[0]) {
+            "recursionlimit" => assert!(Value::Int(PY_RECURSION_LIMIT.into()).same(&out), "{out:?}"),
+            // a thread starts with the C limit, minus its evaluation loop entry
+            "fresh_thread" => assert_eq!(depth(&out).c, 2),
+            "stage_entry" => assert_eq!(depth(&out), pdftrace::stages::STAGE_ENTRY),
+            other => panic!("{other}"),
+        }
+    }
+}

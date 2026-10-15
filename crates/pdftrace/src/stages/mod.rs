@@ -12,6 +12,8 @@
 
 use std::io::Write;
 
+use pycompat::recursion::{Depth, C_RECURSION_LIMIT};
+
 pub mod fonts;
 pub mod interp;
 pub mod layout;
@@ -23,6 +25,16 @@ pub mod plumber_tables;
 pub mod plumber_text;
 pub mod psparser;
 pub mod streams;
+
+/// The recursion depth at which the body of a Python stage function runs
+/// (`oracle/stages/__init__.py` `entry_depth`: six Python frames, the stage
+/// thread's and `terminated`'s below the stage function's own, and the C
+/// units its thread and the `list()` that consumes the stage generator
+/// take). A stage runs its body under `pycompat::recursion::with_depth`
+/// from here and counts every frame and unit of the Python stage function
+/// it mirrors, so that a `RecursionError` happens where the oracle's does.
+/// The unit tests check this against the oracle.
+pub const STAGE_ENTRY: Depth = Depth { py: 6, c: C_RECURSION_LIMIT - 9996 };
 
 /// What a stage reads: the PDF and the trace options.
 pub struct StageInput<'a> {

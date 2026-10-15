@@ -10,7 +10,7 @@
 
 use std::fs;
 
-use pdftrace::canon::canon;
+use pdftrace::canon::{canon, sha256_hex};
 use pdftrace::typed_json::{from_json, parse_json, to_json, Json};
 use pdftrace::unit::UnitData;
 use pdftrace::value::Value;
@@ -63,4 +63,27 @@ fn canon_and_typed_json_match_python() {
         failures.len(),
         failures.iter().take(15).cloned().collect::<Vec<_>>().join("\n")
     );
+}
+
+/// Values nested 2*10^5 to 10^6 deep (`deep.jsonl`): parsed, decoded,
+/// written by `canon`, re-encoded, compared and freed without recursion
+/// (as `oracle/canon.py` writes them).
+#[test]
+fn deep_values() {
+    let data = UnitData::open("canon");
+    let path = data.path("deep.jsonl");
+    let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    let mut count = 0;
+    for (n, line) in text.lines().enumerate() {
+        let json = parse_json(line).unwrap_or_else(|e| panic!("line {}: {e}", n + 1));
+        let Some(Json::Array(args)) = json.get("in") else { panic!("line {}: no \"in\"", n + 1) };
+        let Some(Json::String(expected)) = json.get("out") else { panic!("line {}: no \"out\"", n + 1) };
+        let value = from_json(&args[0]).unwrap_or_else(|e| panic!("line {}: {e}", n + 1));
+        assert_eq!(&sha256_hex(canon(&value).as_bytes()), expected, "line {}: canon", n + 1);
+        assert!(to_json(&value) == value_text(line), "line {}: typed JSON", n + 1);
+        let again = from_json(&parse_json(&to_json(&value)).expect("JSON")).expect("typed JSON");
+        assert!(value.same(&again), "line {}: round trip", n + 1);
+        count += 1;
+    }
+    assert_eq!(count, 4);
 }

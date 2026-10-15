@@ -111,8 +111,24 @@ bord par le cache) et le format de chaque ligne. Règles communes :
   récursion C profonde finisse en `RecursionError` et non en erreur de
   segmentation (la limite compte des cadres, pas des octets : sans effet sur
   les traces).
-- La journalisation (`logging`) est coupée pendant une étape : pdfminer ne
-  lit jamais son niveau de log, cela ne change aucun résultat.
+- La journalisation (`logging`) est coupée pendant une étape. pdfminer ne
+  lit jamais son niveau de log, mais un appel de log coûte des cadres Python
+  (`log.debug(...)` exécute `Logger.debug` puis `Logger.isEnabledFor` : deux
+  cadres sous l'appelant, trois au premier appel d'un niveau sur un logger,
+  `_acquireLock` remplissant le cache), ce qui décide où tombe une
+  `RecursionError` dans une récursion profonde (`create_pages` journalise à
+  chaque nœud). Coupée, elle coûte exactement ce que coûte la configuration
+  par défaut (aucun gestionnaire, niveau WARNING) : la référence est un
+  utilisateur sans configuration de logging ; une configuration DEBUG
+  exécute des gestionnaires et peut avancer la `RecursionError`. Le port
+  compte ces cadres comme les autres (« Profondeur de récursion » de
+  `architecture.md`).
+- `oracle.stages.entry_depth()` mesure la profondeur (cadres Python, unités
+  C restantes, `oracle/depth.py`) où s'exécute le corps d'une fonction
+  d'étape ; `pdftrace::stages::STAGE_ENTRY` la reprend et un test unitaire
+  la compare à la mesure. Les générateurs unitaires mesurent de même la
+  profondeur de leurs points d'appel (`depth_here`, `at_depth`) et le Rust
+  rejoue chaque cas depuis la même profondeur.
 - Une étape par page traite les `--max-pages` premières pages (20 par défaut,
   0 = toutes), créées paresseusement : le générateur `create_pages` n'est plus
   relancé après la dernière page demandée.
@@ -142,14 +158,22 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   (`wasm32-wasip1`, exécutés par le WASI de Node via
   `scripts/wasi-runner.mjs`, dans `scripts/check.sh`) : `usize` de 32 bits,
   pas de libm de l'hôte, arithmétique du navigateur.
-- Générateurs actuels : `canon.py` (`canon` et JSON typé, ci-dessus),
-  `pycompat.py` (sémantique CPython), `exceptions.py` (classes d'exception de
-  pdfminer et pdfplumber), `pdftypes.py` (modèle d'objets, références, flux,
-  déchiffrement), `psparser_base.py` (`PSStackParser` sur un fichier :
-  `nexttoken`, `nextline`, `revreadlines`, `seek`, `pop`), `psparser.py`
-  (flux de contenu des pages et Form XObjects de l'ensemble `all`, et corpus
-  adverse `--fuzz 4000`, pour `PDFContentParser`, comparés job par job par
-  empreinte de la sérialisation canonique).
+- Générateurs actuels : `canon.py` (`canon` et JSON typé, ci-dessus, plus
+  des valeurs imbriquées sur 2·10^5 à 10^6 niveaux), `pycompat.py`
+  (sémantique CPython, `pow` de la libm, `hash()` numérique, limites de
+  récursion), `exceptions.py` (classes d'exception de pdfminer et
+  pdfplumber), `pdftypes.py` (modèle d'objets, références, flux,
+  déchiffrement, `uint_value`, et objets imbriqués à la frontière des
+  limites de récursion : `repr`/`str` en unités C, `resolve_all`/
+  `decipher_all` en cadres), `psparser_base.py` (`PSStackParser` sur un
+  fichier : `nexttoken`, `nextline`, `revreadlines`, `seek`, `pop`),
+  `psparser.py` (flux de contenu des pages et Form XObjects de l'ensemble
+  `all`, et corpus adverse `--fuzz 4000` suivi de jobs fixes : chaque
+  fragment qui lève, chaque fragment posé sur une frontière de bloc, objets
+  imbriqués autour de la limite de `repr`/`str` et sur 10^6 niveaux ; pour
+  `PDFContentParser`, comparés job par job par empreinte de la sérialisation
+  canonique, chaque job rejoué depuis la profondeur de récursion où pdfminer
+  l'a exécuté).
 
 ```sh
 export PDFPLUMBER_ROOT=/chemin/du/dépôt/principal   # .venv, corpus/, .cache/

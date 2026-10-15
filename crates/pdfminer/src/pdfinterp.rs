@@ -203,12 +203,12 @@ impl PSStackParserExt for ContentStreams {
 fn inline_image(p: &mut PDFContentParser, pos: Pos) -> PyResult<()> {
     let (_, objs) = p.end_type("inline")?;
     if !objs.len().is_multiple_of(2) {
-        let error_msg = format!("Invalid dictionary construct: {}", PDFObject::list_repr(&objs));
+        let error_msg = format!("Invalid dictionary construct: {}", PDFObject::list_repr(&objs)?);
         return Err(exc::PSTypeError(error_msg));
     }
     let d = PDFDict::new();
     for pair in choplist(2, &objs) {
-        d.insert(literal_name(&pair[0]).into(), resolve1_none(&pair[1])?);
+        d.insert(literal_name(&pair[0])?.into(), resolve1_none(&pair[1])?);
     }
     let mut eos: &[u8] = b"EI";
     if let Some(filter) = d.get("F") {

@@ -20,10 +20,19 @@ crates/pdftrace/tests/pdftypes_unit.rs. In the inputs, ``{"ref": n}`` is a
   ``PDFStream.get_data`` with a decipher callback, the test callback
   ``test_decipher`` below (the Rust test implements the same function).
 - ``refs``: ``PDFObjRef.resolve`` without a document (``AssertionError``).
+- ``uint``: ``uint_value(x, n_bits)`` (two's complement, a ``True`` kept).
+- ``deep``: objects nested close to Python's recursion limits, called at a
+  measured depth (``_common.at_depth``; the Rust test starts from the same
+  depth): ``repr`` and ``literal_name`` (``str``) around the C recursion
+  limit, for every kind of innermost object, and ``resolve_all`` and
+  ``decipher_all`` around the Python frame limit. Deep objects are given
+  as ``["deep", shape, n, leaf]`` (``deep_object``), results of
+  ``resolve_all``/``decipher_all`` as the SHA-256 of their ``canon``.
 
 Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.pdftypes
 """
 
+import hashlib
 import math
 import random
 import struct
@@ -41,10 +50,12 @@ from pdfminer.pdftypes import (
     resolve1,
     resolve_all,
     str_value,
+    uint_value,
 )
 from pdfminer.psparser import KWD, LIT, keyword_name, literal_name
 
-from ._common import require_oracle_python, write_cases, write_meta
+from ..canon import canon
+from ._common import at_depth, depth_here, require_oracle_python, write_cases, write_meta
 
 
 class TableDoc:
@@ -78,6 +89,8 @@ def build(spec, doc):
         return [build(x, doc) for x in spec[1]]
     if kind == "dict":
         return {k: build(x, doc) for k, x in spec[1]}
+    if kind == "stream":
+        return PDFStream({k: build(x, doc) for k, x in spec[1]}, b"raw")
     raise ValueError(kind)
 
 
@@ -293,6 +306,79 @@ def gen_refs(rng):
         yield [objid], [repr(r), call(r.resolve), call(resolve1, r), call(resolve_all, [r])]
 
 
+def gen_uint(rng):
+    values = [0, -1, 1, 2, 255, 256, -128, -(2**31), 2**31, 2**32, -(2**40), 2**63, -(2**63), 2**70, -(2**70), True, False,
+              1.5, -1.5, 0.0, None, b"x", LIT("A"), [1], {"A": 1}]
+    for v in values:
+        for n_bits in (0, 1, 8, 16, 32, 64, 100):
+            yield [v, n_bits], call(uint_value, v, n_bits)
+    for v in (5, -5, True, 2.5):  # through a reference
+        doc = TableDoc(None)
+        doc.table = {1: v}
+        yield [[[1, ["v", v]]], 8], call(uint_value, PDFObjRef(doc, 1), 8)
+
+
+def deep_object(shape, n, leaf, doc):
+    """``n`` containers deep around ``leaf``: lists, dicts (``{"K": ...}``),
+    both alternating, or a list holding itself (``n`` ignored)."""
+    if shape == "cycle":
+        x = [build(leaf, doc)]
+        x.append(x)
+        return x
+    x = build(leaf, doc)
+    for i in range(n):
+        x = {"K": x} if shape == "dict" or (shape == "mixed" and i % 2) else [x]
+    return x
+
+
+def canon_sha(x):
+    if isinstance(x, BaseException):
+        return x
+    return hashlib.sha256(canon(x).encode("ascii")).hexdigest()
+
+
+def text_sha(x):
+    """The SHA-256 of a (long) str result, or the exception."""
+    if isinstance(x, BaseException):
+        return x
+    return hashlib.sha256(x.encode("utf-8")).hexdigest()
+
+
+DEEP_LEAVES = [["list", []], ["dict", []], ["v", 7], ["v", 2**80], ["v", 1.5], ["v", None], ["v", b"x'y"], ["lit", "F1"],
+               ["lit", b"\xff"], ["kw", b"Tj"], ["ref", 5], ["stream", [["Length", ["v", 3]], ["A", ["list", [["v", 1]]]]]],
+               ["dict", [["Q", ["lit", "R"]]]]]
+
+
+def gen_deep(rng):
+    # repr() and str() (literal_name) around the C recursion limit
+    for op_name, op in (("repr", repr), ("literal_name", literal_name)):
+        for shape in ("list", "dict", "mixed"):
+            for leaf in DEEP_LEAVES:
+                left = depth_here()["c_left"]
+                for n in range(left - 5, left + 2):
+                    spec = ["deep", shape, n, leaf]
+                    depth, out = at_depth(op, deep_object(shape, n, leaf, TableDoc([])))
+                    yield [op_name, depth, spec, []], text_sha(out)
+        depth, out = at_depth(op, deep_object("cycle", 0, ["v", 1], None))
+        yield [op_name, depth, ["deep", "cycle", 0, ["v", 1]], []], text_sha(out)
+    # resolve_all and decipher_all around the Python frame limit (the leaf
+    # reference resolves through PDFObjRef.resolve and TableDoc.getobj, the
+    # leaf bytes through test_decipher and its generator expression)
+    table = [[5, ["list", [["v", 1], ["ref", 6]]]], [6, ["v", b"z"]]]
+    for shape in ("list", "dict", "mixed"):
+        for leaf in (["ref", 5], ["v", b"ab"], ["v", 3], ["list", []]):
+            frames = depth_here()["py"] + 1  # at_depth's frame
+            for n in range(1000 - frames - 8, 1000 - frames + 2):
+                spec = ["deep", shape, n, leaf]
+                doc = TableDoc(None)
+                for i, s in table:
+                    doc.table[i] = build(s, doc)
+                depth, out = at_depth(resolve_all, deep_object(shape, n, leaf, doc))
+                yield ["resolve_all", depth, spec, table], canon_sha(out)
+                depth, out = at_depth(decipher_all, test_decipher, 1, 0, deep_object(shape, n, leaf, TableDoc([])))
+                yield ["decipher_all", depth, spec, []], canon_sha(out)
+
+
 GENERATORS = {
     "objects": gen_objects,
     "eq": gen_eq,
@@ -300,6 +386,8 @@ GENERATORS = {
     "streams": gen_streams,
     "decipher": gen_decipher,
     "refs": gen_refs,
+    "uint": gen_uint,
+    "deep": gen_deep,
 }
 
 

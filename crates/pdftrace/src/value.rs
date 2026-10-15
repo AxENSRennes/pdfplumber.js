@@ -6,6 +6,10 @@
 //! "named" object (`LTChar{...}`: a class name and its attributes, used by
 //! later stages for the objects they trace). Conversions exist from
 //! [`PDFObject`] and [`PyErr`].
+//!
+//! Values may be nested arbitrarily deep (a parsed `[[[...]]]`): converting,
+//! comparing, writing and dropping them is iterative, never limited by the
+//! stack, as in `oracle/canon.py`.
 
 use pdfminer::pdftypes::{PDFObject, PDFStream};
 use pdfminer::psparser::LiteralName;
@@ -132,38 +136,78 @@ pub enum Value {
     },
 }
 
+/// The values a container holds directly, in order (keys before their
+/// values).
+fn children(v: &Value) -> Vec<&Value> {
+    match v {
+        Value::List(items) | Value::Tuple(items) => items.iter().collect(),
+        Value::Dict(pairs) | Value::Named { fields: pairs, .. } => pairs.iter().flat_map(|(k, v)| [k, v]).collect(),
+        Value::Stream(s) => {
+            let mut out = vec![&s.objid, &s.genno];
+            out.extend(s.attrs.iter().flat_map(|(k, v)| [k, v]));
+            out.extend([&s.raw, &s.data]);
+            out
+        }
+        _ => Vec::new(),
+    }
+}
+
+impl Drop for Value {
+    /// Drops the values this one holds with a work list, not by recursion.
+    fn drop(&mut self) {
+        fn take_children(v: &mut Value, into: &mut Vec<Value>) {
+            match v {
+                Value::List(items) | Value::Tuple(items) => into.append(items),
+                Value::Dict(pairs) | Value::Named { fields: pairs, .. } => {
+                    into.extend(pairs.drain(..).flat_map(|(k, v)| [k, v]));
+                }
+                Value::Stream(s) => {
+                    into.extend(s.attrs.drain(..).flat_map(|(k, v)| [k, v]));
+                    for field in [&mut s.objid, &mut s.genno, &mut s.raw, &mut s.data] {
+                        into.push(std::mem::replace(field, Value::None));
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut stack = Vec::new();
+        take_children(self, &mut stack);
+        while let Some(mut v) = stack.pop() {
+            take_children(&mut v, &mut stack);
+        }
+    }
+}
+
 impl Value {
     /// Exact equality: floats compare by bit pattern (so `-0.0 != 0.0` and
     /// a NaN equals a NaN with the same bits), everything else by value.
     pub fn same(&self, other: &Value) -> bool {
         use Value::*;
-        let pairs_same = |a: &[(Value, Value)], b: &[(Value, Value)]| {
-            a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.0.same(&y.0) && x.1.same(&y.1))
-        };
-        let seq_same = |a: &[Value], b: &[Value]| a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.same(y));
-        match (self, other) {
-            (None, None) => true,
-            (Bool(a), Bool(b)) => a == b,
-            (Int(a), Int(b)) => a == b,
-            (Float(a), Float(b)) => a.to_bits() == b.to_bits(),
-            (Str(a), Str(b)) => a == b,
-            (Bytes(a), Bytes(b)) => a == b,
-            (Tuple(a), Tuple(b)) | (List(a), List(b)) => seq_same(a, b),
-            (Dict(a), Dict(b)) => pairs_same(a, b),
-            (Literal(a), Literal(b)) => a == b,
-            (Keyword(a), Keyword(b)) => a == b,
-            (Ref(a), Ref(b)) => a == b,
-            (Stream(a), Stream(b)) => {
-                a.objid.same(&b.objid)
-                    && a.genno.same(&b.genno)
-                    && pairs_same(&a.attrs, &b.attrs)
-                    && a.raw.same(&b.raw)
-                    && a.data.same(&b.data)
+        let mut pending = vec![(self, other)];
+        while let Some((a, b)) = pending.pop() {
+            let shallow = match (a, b) {
+                (None, None) => true,
+                (Bool(a), Bool(b)) => a == b,
+                (Int(a), Int(b)) => a == b,
+                (Float(a), Float(b)) => a.to_bits() == b.to_bits(),
+                (Str(a), Str(b)) => a == b,
+                (Bytes(a), Bytes(b)) => a == b,
+                (Tuple(a), Tuple(b)) | (List(a), List(b)) => a.len() == b.len(),
+                (Dict(a), Dict(b)) => a.len() == b.len(),
+                (Literal(a), Literal(b)) => a == b,
+                (Keyword(a), Keyword(b)) => a == b,
+                (Ref(a), Ref(b)) => a == b,
+                (Stream(a), Stream(b)) => a.attrs.len() == b.attrs.len(),
+                (Exception { class: c1, message: m1 }, Exception { class: c2, message: m2 }) => c1 == c2 && m1 == m2,
+                (Named { name: n1, fields: f1 }, Named { name: n2, fields: f2 }) => n1 == n2 && f1.len() == f2.len(),
+                _ => false,
+            };
+            if !shallow {
+                return false;
             }
-            (Exception { class: c1, message: m1 }, Exception { class: c2, message: m2 }) => c1 == c2 && m1 == m2,
-            (Named { name: n1, fields: f1 }, Named { name: n2, fields: f2 }) => n1 == n2 && pairs_same(f1, f2),
-            _ => false,
+            pending.extend(children(a).into_iter().zip(children(b)));
         }
+        true
     }
 
     /// A `str` value.
@@ -209,29 +253,85 @@ impl From<&PDFStream> for StreamValue {
         StreamValue {
             objid: opt_int(s.objid()),
             genno: opt_int(s.genno()),
-            attrs: s.attrs.items().into_iter().map(|(k, v)| (Value::str(k.to_string()), Value::from(&v))).collect(),
+            attrs: dict_items(Value::from(&PDFObject::Dict(s.attrs.clone()))),
             raw: s.rawdata().map_or(Value::None, |r| Value::Bytes(r.to_vec())),
             data: s.data().map_or(Value::None, |d| Value::Bytes(d.to_vec())),
         }
     }
 }
 
+/// The items of a dict value.
+fn dict_items(mut v: Value) -> Vec<(Value, Value)> {
+    match &mut v {
+        Value::Dict(items) => std::mem::take(items),
+        other => unreachable!("not a dict: {other:?}"),
+    }
+}
+
+/// A scalar PDF object (not a list, dict or stream).
+fn scalar(obj: &PDFObject) -> Value {
+    match obj {
+        PDFObject::Null => Value::None,
+        PDFObject::Bool(b) => Value::Bool(*b),
+        PDFObject::Int(i) => Value::Int(i.clone()),
+        PDFObject::Float(f) => Value::Float(*f),
+        PDFObject::Bytes(b) => Value::Bytes(b.to_vec()),
+        PDFObject::Literal(lit) => Value::Literal(NameValue::from(&lit.name())),
+        PDFObject::Keyword(kwd) => Value::Keyword(kwd.name().to_vec()),
+        PDFObject::Ref(r) => Value::Ref(r.objid().clone()),
+        PDFObject::List(_) | PDFObject::Dict(_) | PDFObject::Stream(_) => unreachable!("a container"),
+    }
+}
+
 impl From<&PDFObject> for Value {
+    /// The value of an object, built bottom-up with an explicit stack.
     fn from(obj: &PDFObject) -> Value {
-        match obj {
-            PDFObject::Null => Value::None,
-            PDFObject::Bool(b) => Value::Bool(*b),
-            PDFObject::Int(i) => Value::Int(i.clone()),
-            PDFObject::Float(f) => Value::Float(*f),
-            PDFObject::Bytes(b) => Value::Bytes(b.to_vec()),
-            PDFObject::Literal(lit) => Value::Literal(NameValue::from(&lit.name())),
-            PDFObject::Keyword(kwd) => Value::Keyword(kwd.name().to_vec()),
-            PDFObject::List(l) => Value::List(l.borrow().iter().map(Value::from).collect()),
-            PDFObject::Dict(d) => {
-                Value::Dict(d.borrow().iter().map(|(k, v)| (Value::str(k.to_string()), Value::from(v))).collect())
-            }
-            PDFObject::Stream(s) => Value::Stream(Box::new(StreamValue::from(&**s))),
-            PDFObject::Ref(r) => Value::Ref(r.objid().clone()),
+        enum Step {
+            Enter(PDFObject),
+            List(usize),
+            Dict(Vec<std::rc::Rc<str>>),
+            Stream(std::rc::Rc<PDFStream>, Vec<std::rc::Rc<str>>),
         }
+        let mut steps = vec![Step::Enter(obj.clone())];
+        let mut done: Vec<Value> = Vec::new();
+        while let Some(step) = steps.pop() {
+            match step {
+                Step::Enter(PDFObject::List(l)) => {
+                    let items = l.to_vec();
+                    steps.push(Step::List(items.len()));
+                    steps.extend(items.into_iter().rev().map(Step::Enter));
+                }
+                Step::Enter(PDFObject::Dict(d)) => {
+                    let (keys, values): (Vec<_>, Vec<_>) = d.items().into_iter().unzip();
+                    steps.push(Step::Dict(keys));
+                    steps.extend(values.into_iter().rev().map(Step::Enter));
+                }
+                Step::Enter(PDFObject::Stream(s)) => {
+                    let (keys, values): (Vec<_>, Vec<_>) = s.attrs.items().into_iter().unzip();
+                    steps.push(Step::Stream(s.clone(), keys));
+                    steps.extend(values.into_iter().rev().map(Step::Enter));
+                }
+                Step::Enter(leaf) => done.push(scalar(&leaf)),
+                Step::List(n) => {
+                    let items = done.split_off(done.len() - n);
+                    done.push(Value::List(items));
+                }
+                Step::Dict(keys) => {
+                    let values = done.split_off(done.len() - keys.len());
+                    done.push(Value::Dict(keys.iter().map(|k| Value::str(k.to_string())).zip(values).collect()));
+                }
+                Step::Stream(s, keys) => {
+                    let values = done.split_off(done.len() - keys.len());
+                    done.push(Value::Stream(Box::new(StreamValue {
+                        objid: opt_int(s.objid()),
+                        genno: opt_int(s.genno()),
+                        attrs: keys.iter().map(|k| Value::str(k.to_string())).zip(values).collect(),
+                        raw: s.rawdata().map_or(Value::None, |r| Value::Bytes(r.to_vec())),
+                        data: s.data().map_or(Value::None, |d| Value::Bytes(d.to_vec())),
+                    })));
+                }
+            }
+        }
+        done.pop().expect("one value")
     }
 }

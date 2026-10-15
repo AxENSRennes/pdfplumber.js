@@ -25,7 +25,7 @@
 
 use std::fmt::Write;
 
-use pdfminer::pdftypes::{PDFObject, PDFStream};
+use pdfminer::pdftypes::PDFObject;
 use pdfminer::psparser::LiteralName;
 use pycompat::repr::{float_repr, write_json_code_points, write_json_str};
 use pycompat::PyErr;
@@ -136,142 +136,184 @@ fn write_exc(out: &mut String, class: &str, message: ExcMessage<'_>) {
     out.push(')');
 }
 
-fn write_seq<T>(out: &mut String, open: char, items: &[T], close: char, mut item: impl FnMut(&mut String, &T)) {
-    out.push(open);
-    for (i, x) in items.iter().enumerate() {
-        if i > 0 {
-            out.push_str(", ");
+/// A step of the canonical writers: a value to write, or fixed text.
+enum Step<T> {
+    Write(T),
+    Text(&'static str),
+    Owned(String),
+}
+
+/// Pushes the steps that write `open a, b, ... close` (in reverse: the
+/// steps are a stack).
+fn push_seq<T>(
+    steps: &mut Vec<Step<T>>,
+    open: &'static str,
+    items: impl DoubleEndedIterator<Item = T>,
+    close: &'static str,
+) {
+    steps.push(Step::Text(close));
+    let mut items = items.rev().peekable();
+    while let Some(x) = items.next() {
+        steps.push(Step::Write(x));
+        if items.peek().is_some() {
+            steps.push(Step::Text(", "));
         }
-        item(out, x);
     }
-    out.push(close);
+    steps.push(Step::Text(open));
 }
 
-fn write_pairs(out: &mut String, items: &[(Value, Value)]) {
-    write_seq(out, '{', items, '}', |out, (k, v)| {
-        write_canon(out, k);
-        out.push_str(": ");
-        write_canon(out, v);
-    });
-}
-
-/// Appends `canon(v)` to `out`.
-pub fn write_canon(out: &mut String, v: &Value) {
-    match v {
-        Value::None => out.push_str("None"),
-        Value::Bool(b) => out.push_str(if *b { "True" } else { "False" }),
-        Value::Int(i) => {
-            let _ = write!(out, "{i}");
+/// Pushes the steps that write `{k: v, ...}`.
+fn push_pairs<'a>(steps: &mut Vec<Step<&'a Value>>, items: &'a [(Value, Value)]) {
+    steps.push(Step::Text("}"));
+    for (i, (k, v)) in items.iter().enumerate().rev() {
+        steps.extend([Step::Write(v), Step::Text(": "), Step::Write(k)]);
+        if i > 0 {
+            steps.push(Step::Text(", "));
         }
-        Value::Float(f) => out.push_str(&float_repr(*f)),
-        Value::Str(s) => write_py_str(out, s),
-        Value::Bytes(b) => write_bytes(out, b),
-        Value::Tuple(items) => write_seq(out, '(', items, ')', write_canon),
-        Value::List(items) => write_seq(out, '[', items, ']', write_canon),
-        Value::Dict(items) => write_pairs(out, items),
-        Value::Literal(name) => {
-            out.push('/');
-            match name {
-                NameValue::Str(s) => write_py_str(out, s),
-                NameValue::Bytes(b) => write_bytes(out, b),
+    }
+    steps.push(Step::Text("{"));
+}
+
+/// Appends `canon(v)` to `out` (any depth: an explicit stack, like
+/// `oracle/canon.py`).
+pub fn write_canon(out: &mut String, v: &Value) {
+    let mut steps = vec![Step::Write(v)];
+    while let Some(step) = steps.pop() {
+        let v = match step {
+            Step::Text(t) => {
+                out.push_str(t);
+                continue;
+            }
+            Step::Owned(t) => {
+                out.push_str(&t);
+                continue;
+            }
+            Step::Write(v) => v,
+        };
+        match v {
+            Value::None => out.push_str("None"),
+            Value::Bool(b) => out.push_str(if *b { "True" } else { "False" }),
+            Value::Int(i) => {
+                let _ = write!(out, "{i}");
+            }
+            Value::Float(f) => out.push_str(&float_repr(*f)),
+            Value::Str(s) => write_py_str(out, s),
+            Value::Bytes(b) => write_bytes(out, b),
+            Value::Tuple(items) => push_seq(&mut steps, "(", items.iter(), ")"),
+            Value::List(items) => push_seq(&mut steps, "[", items.iter(), "]"),
+            Value::Dict(items) => push_pairs(&mut steps, items),
+            Value::Literal(name) => {
+                out.push('/');
+                match name {
+                    NameValue::Str(s) => write_py_str(out, s),
+                    NameValue::Bytes(b) => write_bytes(out, b),
+                }
+            }
+            Value::Keyword(name) => {
+                out.push('K');
+                write_bytes(out, name);
+            }
+            Value::Ref(objid) => {
+                let _ = write!(out, "R{objid}");
+            }
+            Value::Stream(s) => {
+                out.push_str("Stream(");
+                steps.extend([Step::Text(")"), Step::Write(&s.raw), Step::Text(", ")]);
+                push_pairs(&mut steps, &s.attrs);
+                steps.extend([Step::Text(", "), Step::Write(&s.genno), Step::Text(", "), Step::Write(&s.objid)]);
+            }
+            Value::Exception { class, message } => {
+                let message = match message {
+                    PyStr::Text(m) => ExcMessage::Text(m),
+                    PyStr::CodePoints(c) => ExcMessage::CodePoints(c),
+                };
+                write_exc(out, class, message)
+            }
+            Value::Named { name, fields } => {
+                out.push_str(name);
+                push_pairs(&mut steps, fields);
             }
         }
-        Value::Keyword(name) => {
-            out.push('K');
-            write_bytes(out, name);
-        }
-        Value::Ref(objid) => {
-            let _ = write!(out, "R{objid}");
-        }
-        Value::Stream(s) => {
-            out.push_str("Stream(");
-            write_canon(out, &s.objid);
-            out.push_str(", ");
-            write_canon(out, &s.genno);
-            out.push_str(", ");
-            write_pairs(out, &s.attrs);
-            out.push_str(", ");
-            write_canon(out, &s.raw);
-            out.push(')');
-        }
-        Value::Exception { class, message } => {
-            let message = match message {
-                PyStr::Text(m) => ExcMessage::Text(m),
-                PyStr::CodePoints(c) => ExcMessage::CodePoints(c),
-            };
-            write_exc(out, class, message)
-        }
-        Value::Named { name, fields } => {
-            out.push_str(name);
-            write_pairs(out, fields);
-        }
     }
 }
 
-fn write_stream(out: &mut String, s: &PDFStream) {
-    out.push_str("Stream(");
-    match s.objid() {
-        Some(i) => {
-            let _ = write!(out, "{i}");
+/// What [`write_canon_obj`] writes: an object, or a dict key (a `str`).
+enum ObjItem {
+    Obj(PDFObject),
+    Key(std::rc::Rc<str>),
+}
+
+/// Pushes the steps that write a dict of `str` keys.
+fn push_dict(steps: &mut Vec<Step<ObjItem>>, d: &pdfminer::pdftypes::PDFDict) {
+    steps.push(Step::Text("}"));
+    for (i, (k, v)) in d.items().into_iter().enumerate().rev() {
+        steps.extend([Step::Write(ObjItem::Obj(v)), Step::Text(": "), Step::Write(ObjItem::Key(k))]);
+        if i > 0 {
+            steps.push(Step::Text(", "));
         }
-        None => out.push_str("None"),
     }
-    out.push_str(", ");
-    match s.genno() {
-        Some(i) => {
-            let _ = write!(out, "{i}");
-        }
-        None => out.push_str("None"),
-    }
-    out.push_str(", ");
-    write_canon_obj(out, &PDFObject::Dict(s.attrs.clone()));
-    out.push_str(", ");
-    match s.rawdata() {
-        Some(raw) => write_bytes(out, &raw),
-        None => out.push_str("None"),
-    }
-    out.push(')');
+    steps.push(Step::Text("{"));
 }
 
 /// Appends `canon(obj)` to `out`; the same text as
-/// `write_canon(out, &Value::from(obj))`.
+/// `write_canon(out, &Value::from(obj))` (any depth: an explicit stack).
 pub fn write_canon_obj(out: &mut String, obj: &PDFObject) {
-    match obj {
-        PDFObject::Null => out.push_str("None"),
-        PDFObject::Bool(b) => out.push_str(if *b { "True" } else { "False" }),
-        PDFObject::Int(i) => {
-            let _ = write!(out, "{i}");
-        }
-        PDFObject::Float(f) => out.push_str(&float_repr(*f)),
-        PDFObject::Bytes(b) => write_bytes(out, b),
-        PDFObject::Literal(lit) => {
-            out.push('/');
-            match lit.name() {
-                LiteralName::Str(s) => write_json_str(out, s),
-                LiteralName::Bytes(b) => write_bytes(out, b),
+    let mut steps = vec![Step::Write(ObjItem::Obj(obj.clone()))];
+    while let Some(step) = steps.pop() {
+        let obj = match step {
+            Step::Text(t) => {
+                out.push_str(t);
+                continue;
             }
-        }
-        PDFObject::Keyword(kwd) => {
-            out.push('K');
-            write_bytes(out, kwd.name());
-        }
-        PDFObject::List(l) => write_seq(out, '[', &l.borrow(), ']', write_canon_obj),
-        PDFObject::Dict(d) => {
-            let d = d.borrow();
-            out.push('{');
-            for (i, (k, v)) in d.iter().enumerate() {
-                if i > 0 {
-                    out.push_str(", ");
+            Step::Owned(t) => {
+                out.push_str(&t);
+                continue;
+            }
+            Step::Write(ObjItem::Key(k)) => {
+                write_json_str(out, &k);
+                continue;
+            }
+            Step::Write(ObjItem::Obj(obj)) => obj,
+        };
+        match obj {
+            PDFObject::Null => out.push_str("None"),
+            PDFObject::Bool(b) => out.push_str(if b { "True" } else { "False" }),
+            PDFObject::Int(i) => {
+                let _ = write!(out, "{i}");
+            }
+            PDFObject::Float(f) => out.push_str(&float_repr(f)),
+            PDFObject::Bytes(b) => write_bytes(out, &b),
+            PDFObject::Literal(lit) => {
+                out.push('/');
+                match lit.name() {
+                    LiteralName::Str(s) => write_json_str(out, s),
+                    LiteralName::Bytes(b) => write_bytes(out, b),
                 }
-                write_json_str(out, k);
-                out.push_str(": ");
-                write_canon_obj(out, v);
             }
-            out.push('}');
-        }
-        PDFObject::Stream(s) => write_stream(out, s),
-        PDFObject::Ref(r) => {
-            let _ = write!(out, "R{}", r.objid());
+            PDFObject::Keyword(kwd) => {
+                out.push('K');
+                write_bytes(out, kwd.name());
+            }
+            PDFObject::List(l) => push_seq(&mut steps, "[", l.to_vec().into_iter().map(ObjItem::Obj), "]"),
+            PDFObject::Dict(d) => push_dict(&mut steps, &d),
+            PDFObject::Stream(s) => {
+                out.push_str("Stream(");
+                let opt = |i: Option<pycompat::PyInt>| i.map_or_else(|| "None".to_owned(), |i| i.to_string());
+                let _ = write!(out, "{}, {}, ", opt(s.objid()), opt(s.genno()));
+                let raw = match s.rawdata() {
+                    Some(raw) => {
+                        let mut text = String::new();
+                        write_bytes(&mut text, &raw);
+                        text
+                    }
+                    None => "None".to_owned(),
+                };
+                steps.extend([Step::Text(")"), Step::Owned(raw), Step::Text(", ")]);
+                push_dict(&mut steps, &s.attrs);
+            }
+            PDFObject::Ref(r) => {
+                let _ = write!(out, "R{}", r.objid());
+            }
         }
     }
 }

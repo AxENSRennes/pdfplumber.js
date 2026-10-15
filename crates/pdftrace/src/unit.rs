@@ -163,7 +163,10 @@ impl UnitData {
             .iter()
             .map(|line| {
                 let args = match typed_json::from_json(line.get("in").expect("\"in\"")) {
-                    Ok(Value::List(args)) => args,
+                    Ok(mut v @ Value::List(_)) => match &mut v {
+                        Value::List(args) => std::mem::take(args),
+                        _ => unreachable!(),
+                    },
                     other => panic!("{name}: \"in\" is not a list: {other:?}"),
                 };
                 let out = typed_json::from_json(line.get("out").expect("\"out\"")).expect("typed \"out\"");

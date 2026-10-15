@@ -44,10 +44,21 @@ from pathlib import Path
 from typing import Any
 
 from ..corpus import REPO_DIR, cache_dir
+from ..depth import at_depth, depth_here, nested_list
 from ..environment import environment
 from ..typed_json import dumps
 
-__all__ = ["fingerprint", "oracle_sources", "require_oracle_python", "unit_dir", "write_cases", "write_meta"]
+__all__ = [
+    "at_depth",
+    "depth_here",
+    "fingerprint",
+    "nested_list",
+    "oracle_sources",
+    "require_oracle_python",
+    "unit_dir",
+    "write_cases",
+    "write_meta",
+]
 
 ORACLE_DIR = REPO_DIR / "oracle"
 

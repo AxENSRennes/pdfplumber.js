@@ -16,8 +16,21 @@
 //! `bool`/`int`/`float`, `bytes` by content, lists and dicts by content
 //! (with Python's identity shortcut for elements), literals, keywords,
 //! streams and references by identity (no `__eq__` upstream). Python's
-//! `repr()`/`str()` of an object is [`PDFObject::repr`] (both are the same
-//! for these types).
+//! `repr()` and `str()` of an object are [`PDFObject::repr`] and
+//! [`PDFObject::py_str`] (the same text for these types).
+//!
+//! # Depth
+//!
+//! The parsers build arbitrarily deep lists and dicts without recursing (a
+//! content stream of 10^6 `[` is 2 MB), and Python can hold, compare and
+//! free them. So can the port: dropping, comparing and writing an object
+//! are iterative, never limited by the Rust stack (which is 1 MiB in a
+//! browser). Where Python itself has a limit, the port reproduces it with
+//! [`pycompat::recursion`]: `repr()`/`str()` take one C recursion unit per
+//! nested object, as CPython's do, and raise the same `RecursionError`
+//! ("maximum recursion depth exceeded while getting the repr of an
+//! object") at the same depth; `resolve_all` and `decipher_all` take one
+//! Python frame per level, like their Python versions.
 //!
 //! # Indirect references and the document
 //!
@@ -35,6 +48,7 @@ use std::rc::{Rc, Weak};
 use std::sync::LazyLock;
 
 use indexmap::IndexMap;
+use pycompat::recursion::{self, Guard};
 use pycompat::repr::{bytes_repr, float_repr, str_repr};
 use pycompat::{exc, ExcKind, Num, PyErr, PyInt, PyResult};
 use rustc_hash::FxBuildHasher;
@@ -190,6 +204,12 @@ impl PDFDict {
         self.0.borrow().keys().cloned().collect()
     }
 
+    /// The `i`-th item in insertion order (how a `for` loop over
+    /// `d.items()` reads the dict as it goes).
+    pub fn get_index(&self, i: usize) -> Option<(Rc<str>, PDFObject)> {
+        self.0.borrow().get_index(i).map(|(k, v)| (k.clone(), v.clone()))
+    }
+
     /// `list(d.items())`
     pub fn items(&self) -> Vec<(Rc<str>, PDFObject)> {
         self.0.borrow().iter().map(|(k, v)| (k.clone(), v.clone())).collect()
@@ -209,6 +229,52 @@ impl PDFDict {
 impl From<Vec<PDFObject>> for PDFList {
     fn from(items: Vec<PDFObject>) -> PDFList {
         PDFList::new(items)
+    }
+}
+
+// Freeing an object frees what only it holds without recursing: the
+// elements of a list, dict or stream dictionary dropped last are moved to a
+// work list first (what CPython's trashcan does for deep containers).
+
+impl Drop for PDFList {
+    fn drop(&mut self) {
+        if let Some(items) = Rc::get_mut(&mut self.0) {
+            drop_iteratively(std::mem::take(items.get_mut()));
+        }
+    }
+}
+
+impl Drop for PDFDict {
+    fn drop(&mut self) {
+        if let Some(map) = Rc::get_mut(&mut self.0) {
+            drop_iteratively(std::mem::take(map.get_mut()).into_values().collect());
+        }
+    }
+}
+
+/// Drops `objects` and everything only they hold, depth first, with a work
+/// list instead of the call stack.
+fn drop_iteratively(mut stack: Vec<PDFObject>) {
+    while let Some(obj) = stack.pop() {
+        match obj {
+            PDFObject::List(mut l) => {
+                if let Some(items) = Rc::get_mut(&mut l.0) {
+                    stack.append(items.get_mut());
+                }
+            }
+            PDFObject::Dict(mut d) => {
+                if let Some(map) = Rc::get_mut(&mut d.0) {
+                    stack.extend(std::mem::take(map.get_mut()).into_values());
+                }
+            }
+            PDFObject::Stream(s) => {
+                if let Ok(stream) = Rc::try_unwrap(s) {
+                    stack.push(PDFObject::Dict(stream.attrs));
+                }
+            }
+            _ => {}
+        }
+        // A container is empty here (or still shared): dropping it is shallow.
     }
 }
 
@@ -256,34 +322,23 @@ impl PDFObject {
         }
     }
 
-    /// `repr(x)` (also `str(x)` for every PDF object type).
-    pub fn repr(&self) -> String {
-        let mut out = String::new();
-        self.write_repr(&mut out);
-        out
+    /// `repr(x)`: raises `RecursionError` where CPython runs out of C
+    /// recursion units (see the module documentation), and `ValueError` for
+    /// an int of more than 4 300 digits.
+    pub fn repr(&self) -> PyResult<String> {
+        Renderer::render(Item::Obj(self.clone()), Conv::Repr)
+    }
+
+    /// `str(x)`: the same text as [`Self::repr`], but entered through
+    /// `PyObject_Str` (whose `RecursionError` says "while getting the str of
+    /// an object").
+    pub fn py_str(&self) -> PyResult<String> {
+        Renderer::render(Item::Obj(self.clone()), Conv::Str)
     }
 
     /// `repr(list(objs))`
-    pub fn list_repr(objs: &[PDFObject]) -> String {
-        let mut out = String::new();
-        write_list_repr(&mut out, objs);
-        out
-    }
-
-    fn write_repr(&self, out: &mut String) {
-        match self {
-            PDFObject::Null => out.push_str("None"),
-            PDFObject::Bool(b) => out.push_str(if *b { "True" } else { "False" }),
-            PDFObject::Int(i) => out.push_str(&i.to_string()),
-            PDFObject::Float(f) => out.push_str(&float_repr(*f)),
-            PDFObject::Bytes(b) => out.push_str(&bytes_repr(b)),
-            PDFObject::Literal(lit) => out.push_str(&lit.repr()),
-            PDFObject::Keyword(kwd) => out.push_str(&kwd.repr()),
-            PDFObject::List(l) => write_list_repr(out, &l.borrow()),
-            PDFObject::Dict(d) => write_dict_repr(out, d),
-            PDFObject::Stream(s) => out.push_str(&s.repr()),
-            PDFObject::Ref(r) => out.push_str(&r.repr()),
-        }
+    pub fn list_repr(objs: &[PDFObject]) -> PyResult<String> {
+        PDFObject::List(PDFList::new(objs.to_vec())).repr()
     }
 
     /// `"Predictor" in x` for a `str` key: `TypeError` where Python's `in`
@@ -316,33 +371,201 @@ impl PDFObject {
     }
 }
 
-fn write_list_repr(out: &mut String, objs: &[PDFObject]) {
-    out.push('[');
-    for (i, x) in objs.iter().enumerate() {
-        if i > 0 {
-            out.push_str(", ");
-        }
-        x.write_repr(out);
-    }
-    out.push(']');
+// ---------------------------------------------------------------------------
+// repr() and str()
+
+const WHILE_REPR: &str = " while getting the repr of an object";
+const WHILE_STR: &str = " while getting the str of an object";
+const WHILE_CALLING: &str = " while calling a Python object";
+
+/// A `__repr__` written in Python, run by C (`slot_tp_repr`): the
+/// evaluation loop entry, then the method's frame.
+fn python_method() -> PyResult<(Guard, Guard)> {
+    let entry = recursion::eval_entry()?;
+    Ok((entry, recursion::py_frame()?))
 }
 
-fn write_dict_repr(out: &mut String, d: &PDFDict) {
-    out.push('{');
-    for (i, (k, v)) in d.borrow().iter().enumerate() {
-        if i > 0 {
-            out.push_str(", ");
+/// How an object is entered: `PyObject_Repr` or `PyObject_Str`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Conv {
+    Repr,
+    Str,
+}
+
+/// What [`Renderer`] writes.
+enum Item {
+    Obj(PDFObject),
+    /// The fields of `<PDFStream(...): ...>` after the `PyObject_Repr` unit
+    /// of the stream.
+    Stream(Rc<PDFStream>),
+}
+
+/// A step of the depth-first walk of [`Renderer`].
+enum Task {
+    Visit(Item, Conv),
+    Text(&'static str),
+    Owned(String),
+    /// Leaves C units or a `__repr__` frame (the guard drops).
+    Leave(Guard),
+    /// `Py_ReprLeave` of the container being written.
+    ReprLeave,
+}
+
+/// `repr()`/`str()` of PDF objects, iterative, taking the C recursion units
+/// CPython takes at each level (`Objects/object.c` `PyObject_Repr` and
+/// `PyObject_Str` take one; a `__repr__` written in Python is entered from C,
+/// two more and a frame). CPython writes a container being written again
+/// (a cycle, `Py_ReprEnter`) as `[...]` or `{...}`.
+struct Renderer {
+    out: String,
+    tasks: Vec<Task>,
+    /// The containers being written (`Py_ReprEnter`), by address.
+    active: Vec<usize>,
+}
+
+impl Renderer {
+    fn render(item: Item, conv: Conv) -> PyResult<String> {
+        let mut r = Renderer { out: String::new(), tasks: vec![Task::Visit(item, conv)], active: Vec::new() };
+        while let Some(task) = r.tasks.pop() {
+            match task {
+                Task::Visit(item, conv) => r.visit(item, conv)?,
+                Task::Text(t) => r.out.push_str(t),
+                Task::Owned(t) => r.out.push_str(&t),
+                Task::Leave(guard) => drop(guard),
+                Task::ReprLeave => {
+                    r.active.pop();
+                }
+            }
         }
-        out.push_str(&str_repr(k));
-        out.push_str(": ");
-        v.write_repr(out);
+        Ok(r.out)
     }
-    out.push('}');
+
+    /// `PyObject_Repr(x)` or `PyObject_Str(x)`: one unit while `x` is
+    /// written.
+    fn visit(&mut self, item: Item, conv: Conv) -> PyResult<()> {
+        let unit = recursion::c_call(if conv == Conv::Repr { WHILE_REPR } else { WHILE_STR })?;
+        let obj = match item {
+            Item::Obj(obj) => obj,
+            Item::Stream(s) => return self.stream(&s, unit),
+        };
+        match obj {
+            PDFObject::Null => self.out.push_str("None"),
+            PDFObject::Bool(b) => self.out.push_str(if b { "True" } else { "False" }),
+            PDFObject::Int(i) => self.out.push_str(&i.py_str()?),
+            PDFObject::Float(f) => self.out.push_str(&float_repr(f)),
+            PDFObject::Bytes(b) => self.out.push_str(&bytes_repr(&b)),
+            // pdfminer/psparser.py:50 PSLiteral.__repr__, :69 PSKeyword.__repr__:
+            // f"/{name!r}", a Python method called by C
+            PDFObject::Literal(lit) => {
+                let _method = python_method()?;
+                let _name = recursion::c_call(WHILE_REPR)?;
+                self.out.push_str(&lit.repr());
+            }
+            PDFObject::Keyword(kwd) => {
+                let _method = python_method()?;
+                let _name = recursion::c_call(WHILE_REPR)?;
+                self.out.push_str(&kwd.repr());
+            }
+            // pdfminer/pdftypes.py:96 PDFObjRef.__repr__: f"<PDFObjRef:{self.objid}>",
+            // whose format() of an int is str()
+            PDFObject::Ref(r) => {
+                let _method = python_method()?;
+                let _objid = recursion::c_call(WHILE_STR)?;
+                self.out.push_str(&format!("<PDFObjRef:{}>", r.objid().py_str()?));
+            }
+            PDFObject::Stream(s) => return self.stream(&s, unit),
+            PDFObject::List(l) => {
+                let items = l.to_vec();
+                if items.is_empty() {
+                    self.out.push_str("[]");
+                } else if !self.enter(Rc::as_ptr(&l.0) as *const () as usize) {
+                    self.out.push_str("[...]");
+                } else {
+                    self.out.push('[');
+                    self.tasks.extend([Task::ReprLeave, Task::Leave(unit), Task::Text("]")]);
+                    for (i, x) in items.into_iter().enumerate().rev() {
+                        self.tasks.push(Task::Visit(Item::Obj(x), Conv::Repr));
+                        if i > 0 {
+                            self.tasks.push(Task::Text(", "));
+                        }
+                    }
+                    return Ok(());
+                }
+            }
+            PDFObject::Dict(d) => {
+                if !self.enter(Rc::as_ptr(&d.0) as *const () as usize) {
+                    self.out.push_str("{...}");
+                } else if d.is_empty() {
+                    self.active.pop();
+                    self.out.push_str("{}");
+                } else {
+                    self.out.push('{');
+                    self.tasks.extend([Task::ReprLeave, Task::Leave(unit), Task::Text("}")]);
+                    // Each key's repr (a str) takes a unit at the depth of
+                    // the values, before its value: if it fails, it fails for
+                    // the first key, before any value is written.
+                    drop(recursion::c_call(WHILE_REPR)?);
+                    for (i, (k, x)) in d.items().into_iter().enumerate().rev() {
+                        self.tasks.push(Task::Visit(Item::Obj(x), Conv::Repr));
+                        self.tasks.push(Task::Owned(format!("{}: ", str_repr(&k))));
+                        if i > 0 {
+                            self.tasks.push(Task::Text(", "));
+                        }
+                    }
+                    return Ok(());
+                }
+            }
+        }
+        drop(unit);
+        Ok(())
+    }
+
+    /// `Py_ReprEnter`: false when the container is already being written.
+    fn enter(&mut self, address: usize) -> bool {
+        if self.active.contains(&address) {
+            return false;
+        }
+        self.active.push(address);
+        true
+    }
+
+    // pdfminer/pdftypes.py:262 PDFStream.__repr__
+    /// `f"<PDFStream({self.objid!r}): len={len(self.data)}, {self.attrs!r}>"`
+    /// (`raw=` and the raw length before decoding), a Python method called
+    /// by C.
+    fn stream(&mut self, s: &PDFStream, unit: Guard) -> PyResult<()> {
+        let method = python_method()?;
+        let objid = {
+            let _unit = recursion::c_call(WHILE_REPR)?;
+            match s.objid() {
+                Some(i) => i.py_str()?,
+                None => "None".to_owned(),
+            }
+        };
+        // len(self.data): a builtin call
+        drop(recursion::c_call(WHILE_CALLING)?);
+        let size = match &*s.data.borrow() {
+            Some(data) => format!("len={}", data.len()),
+            None => format!("raw={}", s.rawdata.borrow().as_ref().map_or(0, |r| r.len())),
+        };
+        self.out.push_str(&format!("<PDFStream({objid}): {size}, "));
+        self.tasks.extend([
+            Task::Leave(unit),
+            Task::Leave(method.1),
+            Task::Leave(method.0),
+            Task::Text(">"),
+            Task::Visit(Item::Obj(PDFObject::Dict(s.attrs.clone())), Conv::Repr),
+        ]);
+        Ok(())
+    }
 }
 
 impl fmt::Debug for PDFObject {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.repr())
+        match self.repr() {
+            Ok(text) => f.write_str(&text),
+            Err(e) => write!(f, "<{e}>"),
+        }
     }
 }
 
@@ -360,35 +583,60 @@ fn same_object(a: &PDFObject, b: &PDFObject) -> bool {
     }
 }
 
-/// `PyObject_RichCompareBool(a, b, Py_EQ)`: identity, then `==`.
-fn eq_or_same(a: &PDFObject, b: &PDFObject) -> bool {
-    same_object(a, b) || a == b
-}
-
 impl PartialEq for PDFObject {
-    /// Python's `==` (see the module documentation).
+    /// Python's `==` (see the module documentation), iterative. CPython's
+    /// comparison of nested containers takes a C recursion unit per level
+    /// ("maximum recursion depth exceeded in comparison"); no ported upstream
+    /// code compares containers, so that limit is not modeled here.
     fn eq(&self, other: &PDFObject) -> bool {
-        if let (Some(a), Some(b)) = (self.as_num(), other.as_num()) {
-            return a.py_eq(&b);
-        }
-        match (self, other) {
-            (PDFObject::Bytes(a), PDFObject::Bytes(b)) => a == b,
-            (PDFObject::List(a), PDFObject::List(b)) => {
-                if a.ptr_eq(b) {
-                    return true;
+        let mut pending = vec![(self.clone(), other.clone())];
+        while let Some((a, b)) = pending.pop() {
+            if let (Some(x), Some(y)) = (a.as_num(), b.as_num()) {
+                if !x.py_eq(&y) {
+                    return false;
                 }
-                let (a, b) = (a.borrow(), b.borrow());
-                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| eq_or_same(x, y))
+                continue;
             }
-            (PDFObject::Dict(a), PDFObject::Dict(b)) => {
-                if a.ptr_eq(b) {
-                    return true;
+            match (&a, &b) {
+                (PDFObject::Bytes(x), PDFObject::Bytes(y)) => {
+                    if x != y {
+                        return false;
+                    }
                 }
-                let (a, b) = (a.borrow(), b.borrow());
-                a.len() == b.len() && a.iter().all(|(k, x)| b.get(k).is_some_and(|y| eq_or_same(x, y)))
+                (PDFObject::List(x), PDFObject::List(y)) => {
+                    if x.ptr_eq(y) {
+                        continue;
+                    }
+                    let (x, y) = (x.to_vec(), y.to_vec());
+                    if x.len() != y.len() {
+                        return false;
+                    }
+                    // PyObject_RichCompareBool: identity first
+                    pending.extend(x.into_iter().zip(y).filter(|(p, q)| !same_object(p, q)));
+                }
+                (PDFObject::Dict(x), PDFObject::Dict(y)) => {
+                    if x.ptr_eq(y) {
+                        continue;
+                    }
+                    if x.len() != y.len() {
+                        return false;
+                    }
+                    for (k, p) in x.items() {
+                        match y.get(&k) {
+                            None => return false,
+                            Some(q) if !same_object(&p, &q) => pending.push((p, q)),
+                            Some(_) => {}
+                        }
+                    }
+                }
+                _ => {
+                    if !same_object(&a, &b) {
+                        return false;
+                    }
+                }
             }
-            _ => same_object(self, other),
         }
+        true
     }
 }
 
@@ -437,13 +685,11 @@ impl PDFObjRef {
         self.0.doc.as_ref()
     }
 
-    // pdfminer/pdftypes.py:96 PDFObjRef.__repr__
-    pub fn repr(&self) -> String {
-        format!("<PDFObjRef:{}>", self.0.objid)
-    }
-
     // pdfminer/pdftypes.py:99 PDFObjRef.resolve
+    /// `self.resolve(default)`, a Python frame (the document's `getobj`
+    /// counts its own).
     pub fn resolve(&self, default: &PDFObject) -> PyResult<PDFObject> {
+        let _frame = recursion::py_frame()?;
         let Some(doc) = &self.0.doc else {
             return Err(exc::AssertionError(""));
         };
@@ -471,41 +717,36 @@ pub fn resolve1_none(x: &PDFObject) -> PyResult<PDFObject> {
     resolve1(x, &PDFObject::Null)
 }
 
-/// Python's recursion limit (`sys.getrecursionlimit()`), used where the
-/// port recurses like upstream does. Python counts every frame on the stack,
-/// so the depth at which it raises `RecursionError` is approximated here by
-/// the depth of the recursive function alone.
-pub const RECURSION_LIMIT: usize = 1000;
-
-fn recursion_error() -> PyErr {
-    exc::RecursionError("maximum recursion depth exceeded")
-}
-
 // pdfminer/pdftypes.py:118 resolve_all
 /// Recursively resolves the given object and all the internals: lists are
-/// rebuilt, dicts are updated in place.
+/// rebuilt, dicts are updated in place. One Python frame per level (and the
+/// frames of `resolve()` and of the document's `getobj`), so a structure
+/// nested too deep raises `RecursionError` where Python does.
 pub fn resolve_all(x: &PDFObject, default: &PDFObject) -> PyResult<PDFObject> {
-    resolve_all_depth(x, default, 0)
-}
-
-fn resolve_all_depth(x: &PDFObject, default: &PDFObject, depth: usize) -> PyResult<PDFObject> {
-    if depth >= RECURSION_LIMIT {
-        return Err(recursion_error());
-    }
+    let _frame = recursion::py_frame()?;
     let mut x = x.clone();
     while let PDFObject::Ref(r) = &x {
         x = r.resolve(default)?;
     }
     match &x {
         PDFObject::List(l) => {
-            let items =
-                l.to_vec().iter().map(|v| resolve_all_depth(v, default, depth + 1)).collect::<PyResult<Vec<_>>>()?;
+            // [resolve_all(v, default=default) for v in x] (inlined, no frame)
+            let mut items = Vec::with_capacity(l.len());
+            let mut i = 0;
+            while let Some(v) = l.get(i) {
+                items.push(resolve_all(&v, default)?);
+                i += 1;
+            }
             Ok(PDFObject::List(PDFList::new(items)))
         }
         PDFObject::Dict(d) => {
-            for (k, v) in d.items() {
-                let v = resolve_all_depth(&v, default, depth + 1)?;
+            // for k, v in x.items(): x[k] = ...; the items are read as the
+            // loop reaches them (a nested call may have replaced a value)
+            let mut i = 0;
+            while let Some((k, v)) = d.get_index(i) {
+                let v = resolve_all(&v, default)?;
                 d.insert(k, v);
+                i += 1;
             }
             Ok(x)
         }
@@ -519,21 +760,10 @@ pub type DecipherCallable = Rc<dyn Fn(&PyInt, &PyInt, &[u8], Option<&PDFDict>) -
 
 // pdfminer/pdftypes.py:134 decipher_all
 /// Recursively deciphers the given object: lists are rebuilt, dicts are
-/// updated in place.
+/// updated in place. One Python frame per level (the callback counts its
+/// own).
 pub fn decipher_all(decipher: &DecipherCallable, objid: &PyInt, genno: &PyInt, x: &PDFObject) -> PyResult<PDFObject> {
-    decipher_all_depth(decipher, objid, genno, x, 0)
-}
-
-fn decipher_all_depth(
-    decipher: &DecipherCallable,
-    objid: &PyInt,
-    genno: &PyInt,
-    x: &PDFObject,
-    depth: usize,
-) -> PyResult<PDFObject> {
-    if depth >= RECURSION_LIMIT {
-        return Err(recursion_error());
-    }
+    let _frame = recursion::py_frame()?;
     match x {
         PDFObject::Bytes(b) => {
             if b.is_empty() {
@@ -542,17 +772,20 @@ fn decipher_all_depth(
             Ok(PDFObject::Bytes(decipher(objid, genno, b, None)?.into()))
         }
         PDFObject::List(l) => {
-            let items = l
-                .to_vec()
-                .iter()
-                .map(|v| decipher_all_depth(decipher, objid, genno, v, depth + 1))
-                .collect::<PyResult<Vec<_>>>()?;
+            let mut items = Vec::with_capacity(l.len());
+            let mut i = 0;
+            while let Some(v) = l.get(i) {
+                items.push(decipher_all(decipher, objid, genno, &v)?);
+                i += 1;
+            }
             Ok(PDFObject::List(PDFList::new(items)))
         }
         PDFObject::Dict(d) => {
-            for (k, v) in d.items() {
-                let v = decipher_all_depth(decipher, objid, genno, &v, depth + 1)?;
+            let mut i = 0;
+            while let Some((k, v)) = d.get_index(i) {
+                let v = decipher_all(decipher, objid, genno, &v)?;
                 d.insert(k, v);
+                i += 1;
             }
             Ok(x.clone())
         }
@@ -601,15 +834,20 @@ pub fn num_value(x: &PDFObject) -> PyResult<Num> {
 
 // pdfminer/pdftypes.py:175 uint_value
 /// Resolves a number and interprets it as a two's-complement unsigned
-/// number.
-pub fn uint_value(x: &PDFObject, n_bits: u32) -> PyResult<PyInt> {
-    let xi = int_value(x)?;
-    if xi > PyInt::ZERO {
-        Ok(xi)
-    } else {
-        let two_pow = PyInt::Small(2).pow(&PyInt::from(n_bits))?.expect("non-negative exponent");
-        Ok(xi.add(&two_pow))
+/// number: `int_value(x)` when it is positive (a `True` stays `True`), else
+/// that value plus `2**n_bits` (an int).
+pub fn uint_value(x: &PDFObject, n_bits: u32) -> PyResult<PDFObject> {
+    let xi = int_value_obj(x)?;
+    let value = match &xi {
+        PDFObject::Int(i) => i.clone(),
+        PDFObject::Bool(b) => PyInt::Small(i64::from(*b)),
+        _ => unreachable!("int_value_obj returns an int or a bool"),
+    };
+    if value > PyInt::ZERO {
+        return Ok(xi);
     }
+    let two_pow = PyInt::Small(2).pow(&PyInt::from(n_bits))?.expect("non-negative exponent");
+    Ok(PDFObject::Int(value.add(&two_pow)))
 }
 
 // pdfminer/pdftypes.py:184 str_value
@@ -760,15 +998,9 @@ impl PDFStream {
     }
 
     // pdfminer/pdftypes.py:262 PDFStream.__repr__
-    pub fn repr(&self) -> String {
-        let attrs = PDFObject::Dict(self.attrs.clone()).repr();
-        match &*self.data.borrow() {
-            None => {
-                let raw = self.rawdata.borrow().as_ref().map_or(0, |r| r.len());
-                format!("<PDFStream({}): raw={raw}, {attrs}>", self.objid_repr())
-            }
-            Some(data) => format!("<PDFStream({}): len={}, {attrs}>", self.objid_repr(), data.len()),
-        }
+    /// `repr(stream)` (see [`PDFObject::repr`]).
+    pub fn repr(self: &Rc<Self>) -> PyResult<String> {
+        Renderer::render(Item::Stream(self.clone()), Conv::Repr)
     }
 
     // pdfminer/pdftypes.py:272 PDFStream.__contains__
@@ -882,7 +1114,7 @@ impl PDFStream {
                 // not yet..
                 return Err(exc::PDFNotImplementedError("/Crypt filter is unsupported"));
             } else {
-                return Err(exc::PDFNotImplementedError(format!("Unsupported filter: {}", f.repr())));
+                return Err(exc::PDFNotImplementedError(format!("Unsupported filter: {}", f.repr()?)));
             }
             // apply predictors
             if params.is_truthy() && params.py_contains_str("Predictor")? {
@@ -918,7 +1150,7 @@ impl PDFStream {
                     let bitspercomponent = int_value(&raw_bits_per_component)?;
                     data = apply_png_predictor(&pred, &colors, &columns, &bitspercomponent, &data)?.into();
                 } else {
-                    let error_msg = format!("Unsupported predictor: {}", pred_obj.repr());
+                    let error_msg = format!("Unsupported predictor: {}", pred_obj.repr()?);
                     return Err(exc::PDFNotImplementedError(error_msg));
                 }
             }

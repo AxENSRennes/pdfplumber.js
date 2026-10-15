@@ -24,11 +24,16 @@ message holds a memory address; ``Named`` objects; nested containers), then
 patterns, random decimals, random strings over a mix of code point classes,
 and random nested structures of all of these. Every case is checked to
 round-trip through typed JSON with the same canon before it is written.
+
+``deep.jsonl`` holds values nested 2*10^5 to 10^6 deep (``DEEP``), with the
+SHA-256 of their canon: the Rust side must parse, decode, write, re-encode
+and free them without recursing.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import random
 import struct
 import sys
@@ -45,7 +50,7 @@ from pdfminer.psparser import KWD, LIT, PSEOF
 
 from ..canon import Named, canon
 from ..typed_json import dumps, loads
-from ._common import require_oracle_python, write_cases, write_meta
+from ._common import require_oracle_python, unit_dir, write_cases, write_meta
 
 
 def _f(bits: int) -> float:
@@ -280,6 +285,53 @@ def checked_case(v: Any) -> tuple[list[Any], str]:
     return [v], text
 
 
+#: The deep values of ``deep.jsonl``: shape, depth, typed JSON of the leaf.
+DEEP = [("list", 10**6, "null"), ("tuple", 200000, '{"i":"7"}'), ("dict", 200000, '{"lit":"F"}'), ("mixed", 200000, "[]")]
+
+
+def deep_value(shape: str, n: int, leaf: Any) -> Any:
+    """A value nested ``n`` deep (lists, tuples, ``{"k": ...}`` dicts, or
+    list/dict alternating), built without recursion."""
+    v = leaf
+    for i in range(n):
+        if shape == "list" or (shape == "mixed" and i % 2 == 0):
+            v = [v]
+        elif shape == "tuple":
+            v = (v,)
+        else:
+            v = {"k": v}
+    return v
+
+
+def deep_json(shape: str, n: int, leaf_json: str) -> str:
+    """The typed JSON of ``deep_value``, written directly: ``dumps`` (like
+    ``json``) recurses, and stops long before these depths."""
+    opens = {"list": "[", "tuple": '{"t":[', "dict": '{"d":[["k",'}
+    closes = {"list": "]", "tuple": "]}", "dict": "]]}"}
+    if shape != "mixed":
+        return opens[shape] * n + leaf_json + closes[shape] * n
+    order = ["list" if i % 2 == 0 else "dict" for i in range(n)]
+    return "".join(opens[k] for k in reversed(order)) + leaf_json + "".join(closes[k] for k in order)
+
+
+def write_deep() -> int:
+    """``deep.jsonl``: ``{"in": [<typed JSON of a deep value>], "out": "<SHA-256 of
+    its canon>"}`` per value of ``DEEP`` (``canon`` is iterative)."""
+    lines = []
+    for shape, n, leaf_json in DEEP:
+        leaf = loads(leaf_json)
+        for small in (1, 2, 7):  # the direct writing is dumps(), checked on small depths
+            if deep_json(shape, small, leaf_json) != dumps(deep_value(shape, small, leaf)):
+                raise AssertionError(f"deep_json({shape!r}, {small}) differs from dumps()")
+        digest = hashlib.sha256(canon(deep_value(shape, n, leaf)).encode("ascii")).hexdigest()
+        lines.append('{"in":[' + deep_json(shape, n, leaf_json) + '],"out":"' + digest + '"}\n')
+    path = unit_dir("canon") / "deep.jsonl"
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text("".join(lines), encoding="ascii")
+    tmp.replace(path)
+    return len(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m oracle.unit.canon", description=__doc__.split("\n\n")[0])
     ap.add_argument("--seed", type=int, default=1)
@@ -291,7 +343,8 @@ def main(argv: list[str] | None = None) -> int:
     for v in values:
         kinds[kind(v)] += 1
     n = write_cases("canon", "cases", (checked_case(v) for v in values))
-    write_meta("canon", seed=args.seed, random=args.random, kinds=dict(kinds.most_common()))
+    deep = write_deep()
+    write_meta("canon", seed=args.seed, random=args.random, kinds=dict(kinds.most_common()), deep=deep)
     print(f"{n} cases", file=sys.stderr)
     print("  " + ", ".join(f"{k} {n}" for k, n in kinds.most_common()), file=sys.stderr)
     return 0
