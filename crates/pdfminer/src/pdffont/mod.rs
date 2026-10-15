@@ -158,20 +158,32 @@ fn get_data(stream: &PDFStream) -> PyResult<Rc<[u8]>> {
     let _frame = frames::frame()?;
     if stream.data().is_none() {
         let _decode = frames::frame()?;
-        frames::leaf(2)?; // get_filters -> get_any, resolve1
-        if let Ok(filters) = stream.get_filters() {
-            for (f, params) in &filters {
-                let flate = crate::pdftypes::in_literals(f, &crate::pdftypes::LITERALS_FLATE_DECODE[..]);
-                if !flate && !matches!(f, PDFObject::Literal(_)) {
-                    continue;
-                }
-                if !flate {
-                    frames::leaf(1)?; // the filter function
-                }
-                if params.py_contains_str("Predictor").unwrap_or(false) {
-                    frames::leaf(2)?; // int_value -> resolve1
+        // get_filters, and the frames of get_any and of resolve1 (whose
+        // resolve() and getobj() count theirs)
+        let filters = {
+            let _get_filters = frames::frame()?;
+            frames::leaf(1)?; // get_any
+            let _resolve1 = frames::frame()?;
+            stream.get_filters()
+        };
+        match filters {
+            Ok(filters) => {
+                for (f, params) in &filters {
+                    let flate = crate::pdftypes::in_literals(f, &crate::pdftypes::LITERALS_FLATE_DECODE[..]);
+                    if !flate && !matches!(f, PDFObject::Literal(_)) {
+                        continue;
+                    }
+                    if !flate {
+                        frames::leaf(1)?; // the filter function
+                    }
+                    if params.is_truthy() && params.py_contains_str("Predictor").unwrap_or(false) {
+                        frames::leaf(2)?; // int_value -> resolve1
+                    }
                 }
             }
+            // decode raises it again below, at the same point
+            Err(e) if e.is_instance(ExcKind::RecursionError) => return Err(e),
+            Err(_) => {}
         }
     }
     stream.get_data()
