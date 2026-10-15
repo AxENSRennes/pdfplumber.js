@@ -6,7 +6,7 @@
 use pdftrace::canon::sha256_hex;
 use pdftrace::unit::UnitData;
 use pdftrace::value::Value;
-use pycompat::zlib::{decompress_with, Decompress};
+use pycompat::zlib::{self, decompress_with, Decompress};
 use pycompat::{PyInt, PyResult};
 
 /// `BLOB_MAX` of the generator.
@@ -66,7 +66,14 @@ fn check(name: &str, min_cases: usize, run: impl Fn(&[Value]) -> Value) {
 fn decompress() {
     check("decompress", 10_000, |args| {
         let data = bytes(&args[0]);
-        result(decompress_with(data, int(&args[1]) as i32, int(&args[2]) as isize))
+        let (wbits, bufsize) = (int(&args[1]) as i32, int(&args[2]) as isize);
+        // the defaults of zlib.decompress (written out: the constants of
+        // the module are what this checks)
+        if (wbits, bufsize) == (15, 16384) {
+            result(zlib::decompress(data))
+        } else {
+            result(decompress_with(data, wbits, bufsize))
+        }
     });
 }
 

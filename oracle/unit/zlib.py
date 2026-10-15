@@ -557,6 +557,17 @@ def gen_decompress(rng):
             yield run_decompress(stream, 0, bufsize)
         yield run_decompress(stream, 15)
         yield run_decompress(zlib_header(cinfo, fdict=True) + b"\0\0\0\1" + raw, 15)
+    # far output blocks: a 256-byte window (CINFO 0, wbits=0) and matches
+    # 1000 bytes back starting just after a block boundary of CPython's
+    # output buffer (16 KiB, then 64 KiB, 256 KiB, 1 MiB blocks): a match
+    # reaching back across a boundary fails, so the boundaries are seen
+    for boundary in (16384, 16384 + 65536, 16384 + 65536 + 262144, 16384 + 65536 + 262144 + 1048576):
+        unit = rng.randbytes(1000)
+        data = rng.randbytes(boundary + 300) + unit * 30
+        raw, _ = compress(rng, data, wbits=-15, level=6, strategy=zlib.Z_DEFAULT_STRATEGY)
+        stream = zlib_header(0) + raw + zlib.adler32(data).to_bytes(4, "big")
+        yield run_decompress(stream, 0)
+        yield run_decompress(stream, 0, 16385)
     # wbits and bufsize arguments
     ok = zlib.compress(b"abc" * 100)
     for wbits in [-16, -15, -9, -8, -7, 0, 7, 8, 9, 14, 15, 48, 64, 100, -100]:
