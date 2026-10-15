@@ -36,6 +36,7 @@ Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.te
 from __future__ import annotations
 
 import argparse
+import math
 import random
 import re
 import sys
@@ -396,6 +397,51 @@ def fuzz_cases(n: int):
     rng = random.Random(1)
     for _ in range(n):
         yield synth_page_case(rng)
+    yield from rounding_cases()
+
+
+def rounding_triples():
+    """(h_top, tolerance, v_end) where the rounding of ``h_top + tol`` (or
+    ``h_top - tol``) decides an intersection: ``h_top`` is the float just
+    beyond ``v_top - tol`` (``v_bottom + tol``), yet the predicate of
+    ``edges_to_intersections`` holds. Deterministic search."""
+    rng = random.Random(8)
+    top, bottom = [], []
+    while len(top) < 6 or len(bottom) < 6:
+        b = rng.choice([0.3, 0.7, 1.1, 10.3, 100.7, 33.33, 612.9]) + rng.randint(0, 50) * 0.1
+        t = rng.choice([0.1, 0.3, 1, 3, 0.5, 2.7])
+        a = math.nextafter(b - t, -math.inf)
+        if len(top) < 6 and a + t >= b:
+            top.append((a, t, b))
+        a = math.nextafter(b + t, math.inf)
+        if len(bottom) < 6 and a - t <= b:
+            bottom.append((a, t, b))
+    return top, bottom
+
+
+def line_edge(x0, top, x1, bottom):
+    return {
+        "x0": x0, "y0": 800 - bottom, "x1": x1, "y1": 800 - top, "width": x1 - x0, "height": bottom - top,
+        "object_type": "line", "top": top, "bottom": bottom, "doctop": top,
+        "orientation": "v" if x0 == x1 else "h",
+    }
+
+
+def rounding_cases():
+    """Pages with one vertical and one horizontal edge meeting only through
+    the rounding of the tolerance arithmetic (the search window of the
+    port's edges_to_intersections must keep them)."""
+    top, bottom = rounding_triples()
+    for (a, t, b), side in [(x, "top") for x in top] + [(x, "bottom") for x in bottom]:
+        v = line_edge(50, b, 50, b + 20) if side == "top" else line_edge(50, b - 20, 50, b)
+        h = line_edge(0, a, 100, a)
+        page = FakePage([], [v, h], (0, 0, 612, 792))
+        base = {"snap_tolerance": 0, "join_tolerance": 0, "edge_min_length": 0, "edge_min_length_prefilter": 0}
+        ops = [
+            ("tables", {**base, "intersection_tolerance": t}),
+            ("tables", {**base, "intersection_y_tolerance": t, "intersection_x_tolerance": 0}),
+        ]
+        yield page_case(page, {"chars": [], "edges": [v, h], "bbox": (0, 0, 612, 792)}, ops)
 
 
 # -- unit sets ------------------------------------------------------------------------
