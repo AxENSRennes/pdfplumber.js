@@ -159,6 +159,7 @@ pub fn merge_edges(
         let items: Vec<Obj> = keyed[i..j].iter().map(|(_, e)| e.clone()).collect();
         let (o, tol) = if horizontal { (Orientation::H, join_x_tolerance) } else { (Orientation::V, join_y_tolerance) };
         out.extend(join_edge_group(items, o, tol)?);
+        debug_assert!(j > i, "progress guard (debug assertions: the `mutants` profile)");
         i = j;
     }
     Ok(out)
@@ -509,7 +510,11 @@ pub fn cells_to_tables(cells: &[Bbox]) -> PyResult<Vec<Vec<Bbox>>> {
     let mut remaining_cells: Vec<usize> = (0..cells.len()).collect();
     let mut current_cells: Vec<usize> = Vec::new();
     let mut tables: Vec<Vec<usize>> = Vec::new();
+    let mut passes = 0usize;
     while !remaining_cells.is_empty() {
+        // each pass assigns a cell or closes a table: at most 2n + 1 passes
+        passes += 1;
+        debug_assert!(passes <= 2 * cells.len() + 1, "progress guard (debug assertions: the `mutants` profile)");
         let initial_cell_count = current_cells.len();
         let mut next_remaining = Vec::with_capacity(remaining_cells.len());
         for &cell in &remaining_cells {
@@ -645,6 +650,7 @@ impl Table {
                 .map(|x| Ok(xdict.get(&HashKey::new(x.clone())?).map(|c| (*c).clone())))
                 .collect::<PyResult<Vec<_>>>()?;
             rows.push(CellGroup::new(row_cells)?);
+            debug_assert!(j > i, "progress guard (debug assertions: the `mutants` profile)");
             i = j;
         }
         Ok(rows)

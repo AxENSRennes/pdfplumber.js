@@ -76,7 +76,7 @@ fn ligature(text: &str) -> Option<&'static str> {
 
 /// The resource guard of repeated items (`[x] * n`, `range(n)`): a count
 /// no real page reaches, where Python would exhaust memory or time.
-const MAX_REPEAT: i64 = 100_000_000;
+const MAX_REPEAT: i64 = 10_000_000;
 
 fn repeat_count(n: &PyInt) -> PyResult<usize> {
     match n.as_i64() {
@@ -430,6 +430,7 @@ pub fn text_line_matches(s: &[char], strip: bool) -> Vec<RegexMatch> {
             while i < n && s[i] != '\n' {
                 i += 1;
             }
+            debug_assert!(i > start, "progress guard (debug assertions: the `mutants` profile)");
             out.push(RegexMatch { spans: vec![Some((start, i)), Some((start, i))] });
         }
         return out;
@@ -448,6 +449,7 @@ pub fn text_line_matches(s: &[char], strip: bool) -> Vec<RegexMatch> {
         let Some(m) = found else { break };
         let end = m.spans[0].expect("whole match").1;
         out.push(m);
+        debug_assert!(end > pos, "progress guard (debug assertions: the `mutants` profile)");
         pos = end; // never an empty match: group 1 takes a character
     }
     out
@@ -1214,6 +1216,7 @@ impl WordExtractor {
         let mut i = 0;
         let mut next_key: Option<PyValue> = None;
         while i < chars.len() {
+            let group_start = i;
             // groupby: the key of the group's first char
             let tgtkey = match next_key.take() {
                 Some(k) => k,
@@ -1271,6 +1274,7 @@ impl WordExtractor {
                     self.iter_chars_to_words(line_chars.into_iter().map(Ok), direction, &mut emit_word)?;
                 }
             }
+            debug_assert!(i > group_start, "progress guard (debug assertions: the `mutants` profile)");
         }
         Ok(())
     }
@@ -1478,6 +1482,7 @@ pub fn dedupe_chars(chars: &[Obj], tolerance: &PyValue, extra_attrs: &[Rc<str>])
                 deduped.push(x_cluster.swap_remove(0));
             }
         }
+        debug_assert!(end > g, "progress guard (debug assertions: the `mutants` profile)");
         g = end;
     }
     // sorted(deduped, key=chars.index): the first char equal to each one

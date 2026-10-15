@@ -603,6 +603,8 @@ pub fn sort_permutation(n: usize, mut lt: impl FnMut(usize, usize) -> PyResult<b
             run = force;
         }
         ms.found_new_run(run)?;
+        // at most log_phi(n) runs are pending (MAX_MERGE_PENDING = 85)
+        debug_assert!(ms.pending.len() < 85, "progress guard (debug assertions: the `mutants` profile)");
         ms.pending.push(Run { base: lo, len: run, power: 0 });
         lo += run;
         nremaining -= run;
