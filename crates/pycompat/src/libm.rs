@@ -425,8 +425,8 @@ pub fn atan2(y: f64, x: f64) -> f64 {
     const EP: i32 = 59_768_832; //  57*16**5
     const EM: i32 = -59_768_832; // -57*16**5
     let k = asdouble;
-    let (opi, opi1, mopi) = (k(ATAN2_OPI), k(ATAN2_OPI1), k(ATAN2_MOPI));
-    let (hpi, hpi1, mhpi) = (k(ATAN2_HPI), k(ATAN2_HPI1), k(ATAN2_MHPI));
+    let (opi, mopi) = (k(ATAN2_OPI), k(ATAN2_MOPI));
+    let (hpi, mhpi) = (k(ATAN2_HPI), k(ATAN2_MHPI));
     let (two500, twom500, inv16) = (k(ATAN2_TWO500), k(ATAN2_TWOM500), k(ATAN2_INV16));
 
     // x=NaN or y=NaN
@@ -534,80 +534,121 @@ pub fn atan2(y: f64, x: f64) -> f64 {
         du = ((ax - v) - vv) / ay;
     }
 
-    if x > 0.0 {
-        // (i)   x>0, abs(y)< abs(x):  atan(ay/ax)
+    let z = if x > 0.0 {
         if ay < ax {
+            // (i)   x>0, abs(y)< abs(x):  atan(ay/ax)
             if u < inv16 {
-                let v = u * u;
-                // du + u * v * poly: the product u * v, then fused
-                let zz = (u * v).mul_add(atan2_poly(v), du);
-                let z = u + zz;
-                return sign_arctan2(y, z);
+                atan_small(u, du)
+            } else {
+                atan_table(u, du)
             }
-            let i = atan2_row(u);
-            let t3 = u - cij(i, 0);
-            let (v, dv) = eadd(t3, du);
-            let t1 = cij(i, 1);
-            let t2 = cij(i, 2);
-            // v * t2 + (dv * t2 + v * v * (c3 + v * (c4 + v * (c5 + v * c6)))):
-            // the polynomial fused, its product with v * v rounded, then two
-            // fused steps
-            let p = v.mul_add(v.mul_add(v.mul_add(cij(i, 6), cij(i, 5)), cij(i, 4)), cij(i, 3));
-            let zz = v.mul_add(t2, dv.mul_add(t2, (v * v) * p));
-            let z = t1 + zz;
-            return sign_arctan2(y, z);
+        } else if u < inv16 {
+            // (ii)  x>0, abs(x)<=abs(y):  pi/2-atan(ax/ay)
+            hpi_minus_small(u, du)
+        } else {
+            hpi_minus_table(u, du)
         }
-
-        // (ii)  x>0, abs(x)<=abs(y):  pi/2-atan(ax/ay)
+    } else if ax < ay {
+        // (iii) x<0, abs(x)< abs(y):  pi/2+atan(ax/ay)
         if u < inv16 {
-            let v = u * u;
-            let zz = (u * v) * atan2_poly(v);
-            let (t2, cor) = esub(hpi, u);
-            let t3 = ((hpi1 + cor) - du) - zz;
-            let z = t2 + t3;
-            return sign_arctan2(y, z);
+            hpi_plus_small(u, du)
+        } else {
+            hpi_plus_table(u, du)
         }
-        let i = atan2_row(u);
-        let v = (u - cij(i, 0)) + du;
-        let zz = (-v).mul_add(atan2_row_poly(i, v), hpi1); // hpi1 - v * poly, fused
-        let t1 = hpi - cij(i, 1);
-        let z = t1 + zz;
-        return sign_arctan2(y, z);
-    }
+    } else if u < inv16 {
+        // (iv)  x<0, abs(y)<=abs(x):  pi-atan(ax/ay)
+        pi_minus_small(u, du)
+    } else {
+        pi_minus_table(u, du)
+    };
+    sign_arctan2(y, z)
+}
 
-    // (iii) x<0, abs(x)< abs(y):  pi/2+atan(ax/ay)
-    if ax < ay {
-        if u < inv16 {
-            let v = u * u;
-            let zz = (u * v) * atan2_poly(v);
-            let (t2, cor) = eadd(hpi, u);
-            let t3 = ((hpi1 + cor) + du) + zz;
-            let z = t2 + t3;
-            return sign_arctan2(y, z);
-        }
-        let i = atan2_row(u);
-        let v = (u - cij(i, 0)) + du;
-        let zz = v.mul_add(atan2_row_poly(i, v), hpi1); // hpi1 + v * poly, fused
-        let t1 = hpi + cij(i, 1);
-        let z = t1 + zz;
-        return sign_arctan2(y, z);
-    }
+// The eight evaluations of __ieee754_atan2 for `u + du` (`u` the rounded
+// quotient, `du` its remainder), each a block of e_atan2.c (max ULP 0.501
+// to 0.56).
 
-    // (iv)  x<0, abs(y)<=abs(x):  pi-atan(ax/ay)
-    if u < inv16 {
-        let v = u * u;
-        let zz = (u * v) * atan2_poly(v);
-        let (t2, cor) = esub(opi, u);
-        let t3 = ((opi1 + cor) - du) - zz;
-        let z = t2 + t3;
-        return sign_arctan2(y, z);
-    }
+/// (i), `u < 1/16`: `atan(u + du)` by the polynomial.
+fn atan_small(u: f64, du: f64) -> f64 {
+    let v = u * u;
+    // du + u * v * poly: the product u * v, then fused
+    let zz = (u * v).mul_add(atan2_poly(v), du);
+    u + zz
+}
+
+/// (i), `u >= 1/16`: `atan(u + du)` by the row of `cij` (Taylor series at
+/// its `x0`).
+fn atan_table(u: f64, du: f64) -> f64 {
+    let i = atan2_row(u);
+    let t3 = u - cij(i, 0);
+    let (v, dv) = eadd(t3, du);
+    let t1 = cij(i, 1);
+    let t2 = cij(i, 2);
+    // v * t2 + (dv * t2 + v * v * (c3 + v * (c4 + v * (c5 + v * c6)))): the
+    // polynomial fused, its product with v * v rounded, then two fused steps
+    let p = v.mul_add(v.mul_add(v.mul_add(cij(i, 6), cij(i, 5)), cij(i, 4)), cij(i, 3));
+    let zz = v.mul_add(t2, dv.mul_add(t2, (v * v) * p));
+    t1 + zz
+}
+
+/// (ii), `u < 1/16`: `pi/2 - atan(u + du)`.
+fn hpi_minus_small(u: f64, du: f64) -> f64 {
+    let (hpi, hpi1) = (asdouble(ATAN2_HPI), asdouble(ATAN2_HPI1));
+    let v = u * u;
+    let zz = (u * v) * atan2_poly(v);
+    let (t2, cor) = esub(hpi, u);
+    let t3 = ((hpi1 + cor) - du) - zz;
+    t2 + t3
+}
+
+/// (ii), `u >= 1/16`: `pi/2 - atan(u + du)` by the table.
+fn hpi_minus_table(u: f64, du: f64) -> f64 {
+    let (hpi, hpi1) = (asdouble(ATAN2_HPI), asdouble(ATAN2_HPI1));
+    let i = atan2_row(u);
+    let v = (u - cij(i, 0)) + du;
+    let zz = (-v).mul_add(atan2_row_poly(i, v), hpi1); // hpi1 - v * poly, fused
+    let t1 = hpi - cij(i, 1);
+    t1 + zz
+}
+
+/// (iii), `u < 1/16`: `pi/2 + atan(u + du)`.
+fn hpi_plus_small(u: f64, du: f64) -> f64 {
+    let (hpi, hpi1) = (asdouble(ATAN2_HPI), asdouble(ATAN2_HPI1));
+    let v = u * u;
+    let zz = (u * v) * atan2_poly(v);
+    let (t2, cor) = eadd(hpi, u);
+    let t3 = ((hpi1 + cor) + du) + zz;
+    t2 + t3
+}
+
+/// (iii), `u >= 1/16`: `pi/2 + atan(u + du)` by the table.
+fn hpi_plus_table(u: f64, du: f64) -> f64 {
+    let (hpi, hpi1) = (asdouble(ATAN2_HPI), asdouble(ATAN2_HPI1));
+    let i = atan2_row(u);
+    let v = (u - cij(i, 0)) + du;
+    let zz = v.mul_add(atan2_row_poly(i, v), hpi1); // hpi1 + v * poly, fused
+    let t1 = hpi + cij(i, 1);
+    t1 + zz
+}
+
+/// (iv), `u < 1/16`: `pi - atan(u + du)`.
+fn pi_minus_small(u: f64, du: f64) -> f64 {
+    let (opi, opi1) = (asdouble(ATAN2_OPI), asdouble(ATAN2_OPI1));
+    let v = u * u;
+    let zz = (u * v) * atan2_poly(v);
+    let (t2, cor) = esub(opi, u);
+    let t3 = ((opi1 + cor) - du) - zz;
+    t2 + t3
+}
+
+/// (iv), `u >= 1/16`: `pi - atan(u + du)` by the table.
+fn pi_minus_table(u: f64, du: f64) -> f64 {
+    let (opi, opi1) = (asdouble(ATAN2_OPI), asdouble(ATAN2_OPI1));
     let i = atan2_row(u);
     let v = (u - cij(i, 0)) + du;
     let zz = (-v).mul_add(atan2_row_poly(i, v), opi1); // opi1 - v * poly, fused
     let t1 = opi - cij(i, 1);
-    let z = t1 + zz;
-    sign_arctan2(y, z)
+    t1 + zz
 }
 
 /// `math.atan2(y, x)` of CPython 3.12 (`m_atan2`, Modules/mathmodule.c): NaNs,
@@ -811,6 +852,36 @@ mod atan2_tests {
     //! an x86-64 glibc host whose CPU has FMA and AVX2) and C99 Annex F.
     //! `PYCOMPAT_ATAN2_SAMPLES` sets the number of random pairs (default
     //! 2 000 000; see the module documentation for the large run).
+    //!
+    //! Mutation testing (`cargo mutants -f crates/pycompat/src/libm.rs --re
+    //! 'atan2|atan_|hpi_|pi_minus|eadd|esub|words|cij' --test-package
+    //! pycompat`; `math_atan2` with `--test-package pdftrace
+    //! --cargo-test-arg=--test=pycompat_unit`): every mutant is caught except
+    //! these, equivalent for every input:
+    //!
+    //! - `eadd`, `|x| > |y|` made `>=`, and the `+ x` of its other branch:
+    //!   with `|x| == |y|` both branches are exact (Dekker needs `|x| >=
+    //!   |y|`); the other branch only runs in (i) for `t3 = u - x0` with
+    //!   `|t3| <= |du|`, which needs `t3 == 0` (a non-zero `t3` is a multiple
+    //!   of the ulp of `x0`, larger than `|du| <= ulp(u) / 2`) or an exact
+    //!   cancellation, where `x` is 0 or the remainder is 0 either way.
+    //! - `esub`: only called with `pi` or `pi/2` and `u < 1/16`, so its
+    //!   other branch never runs and `>` versus `>=` cannot matter.
+    //! - `x + y` / `y + y` made `-` or `*` where an operand is a NaN: a NaN
+    //!   either way.
+    //! - `x < 0.0` made `<=` for `ax`, `ay`; `x > 0.0` and `y > 0.0` made
+    //!   `>=`: zeros returned earlier.
+    //! - `de >= EP` made `>`: at `de == EP` the general path gives `±pi/2`
+    //!   too (`u < 2**-56` is below half an ulp of `pi/2`).
+    //! - The scalings (`||` made `&&`, `<`/`>` made `<=`, `==`, `>=`): only
+    //!   a subnormal operand changes a result, and then both operands are
+    //!   below `2**-500` (their exponents differ by less than 57 binades);
+    //!   scaling down large operands changes no rounding (no product
+    //!   overflows or becomes subnormal); a value exactly `2**±500` scales
+    //!   exactly.
+    //! - `ay < ax` made `<=` (twice), `u < 1/16` made `<=` (four times): at
+    //!   the boundary the quotient is exact and both evaluations agree
+    //!   (`branch_boundaries_agree`).
     use super::atan2;
 
     /// SplitMix64.
@@ -855,9 +926,25 @@ mod atan2_tests {
     /// special values, and matrix entries such as pdfplumber's.
     fn pair(rng: &mut Rng, i: u64) -> (f64, f64) {
         let swap = |rng: &mut Rng, a: f64, b: f64| if rng.next() & 1 == 0 { (a, b) } else { (b, a) };
-        match i % 12 {
+        match i % 13 {
             0 => (f64::from_bits(rng.next()), f64::from_bits(rng.next())),
             1 => (rng.sign() * rng.unit() * 1e3, rng.sign() * rng.unit() * 1e3),
+            12 => {
+                // |y/x| a few ulps from a boundary (1/16, 1) or from the x0
+                // of a row of cij, so that the quotient rounds onto it with
+                // a non-zero remainder `du` (the branch and EADD's order)
+                let k = 16 + rng.below(241) as usize;
+                let b = match rng.below(3) {
+                    0 => 0.0625,
+                    1 => 1.0,
+                    _ => f64::from_bits(super::ATAN2_CIJ[k - 16][0]),
+                };
+                let x = (1.0 + rng.unit()) * pow2(rng.below(200) as i32 - 100);
+                let steps = rng.below(7) as i64 - 3;
+                let y = f64::from_bits(((x * b).to_bits() as i64 + steps) as u64);
+                let (sx, sy) = (rng.sign(), rng.sign());
+                swap(rng, sy * y, sx * x)
+            }
             2 => {
                 // |ratio| next to 1/16
                 let x = rng.sign() * (rng.unit() + 0.5) * pow2(rng.below(200) as i32 - 100);
@@ -956,6 +1043,59 @@ mod atan2_tests {
         assert!(same(atan2(1.0, 1.0), pi / 4.0));
         assert!(same(atan2(1e-300, 1e300), 0.0));
         assert!(same(atan2(-5e-324, 1.0), -5e-324));
+        // NaNs whose low word equals the low bits of the high word (the
+        // test is an `|`, not an `^`), against finite operands that would
+        // take a shortcut
+        let nan = f64::from_bits(0x7ff0_0001_0000_0001);
+        assert!(same(atan2(1e-300, nan), f64::NAN));
+        assert!(same(atan2(nan, 1e-300), f64::NAN));
+    }
+
+    /// The branch tests at their boundaries choose between two evaluations
+    /// that agree there, which makes `<` and `<=` equivalent (the mutants
+    /// that swap them survive for this reason). At a boundary the quotient
+    /// is exact, `du == 0`:
+    ///
+    /// - `ay < ax` (and `ax < ay`): equality means `u == 1` and `du == 0`;
+    /// - `u < 1/16`: `u == 1/16` only for an exact quotient. `u` is the
+    ///   rounded `q = ay / ax`, and a double `ay` other than `ax / 16`
+    ///   (a double: the operands are normal after the scalings) is at least
+    ///   one ulp of `ay` away from it, which puts `q` at least `2**-57`
+    ///   below `1/16` (where `pred(1/16) = 1/16 - 2**-57` is itself a
+    ///   double) or more than `2**-57` above it (half the ulp of `1/16`):
+    ///   `q` never rounds to `1/16`. Then `v = ax * u` is exact (a power of
+    ///   two), `vv = 0` and `du = 0`.
+    ///
+    /// The evaluations on either side of each boundary give the same bits
+    /// there (they differ for other `du`: the test would not hold with
+    /// `du = -2e-18`, which no operands give).
+    #[test]
+    fn branch_boundaries_agree() {
+        use super::{
+            atan_small, atan_table, hpi_minus_small, hpi_minus_table, hpi_plus_small, hpi_plus_table, pi_minus_small,
+            pi_minus_table,
+        };
+        assert!(same(atan_table(1.0, 0.0), hpi_minus_table(1.0, 0.0)));
+        assert!(same(hpi_plus_table(1.0, 0.0), pi_minus_table(1.0, 0.0)));
+        let pairs: [(fn(f64, f64) -> f64, fn(f64, f64) -> f64); 4] = [
+            (atan_small, atan_table),
+            (hpi_minus_small, hpi_minus_table),
+            (hpi_plus_small, hpi_plus_table),
+            (pi_minus_small, pi_minus_table),
+        ];
+        for (k, (small, table)) in pairs.into_iter().enumerate() {
+            assert!(same(small(0.0625, 0.0), table(0.0625, 0.0)), "pair {k}");
+        }
+        // u == 1/16 only from an exact quotient
+        let mut rng = Rng(7);
+        for _ in 0..100_000 {
+            let ax = (1.0 + rng.unit()) * pow2(rng.below(200) as i32 - 100);
+            let exact = ax * 0.0625;
+            for steps in [-2i64, -1, 1, 2] {
+                let ay = f64::from_bits((exact.to_bits() as i64 + steps) as u64);
+                assert!(ay / ax != 0.0625, "{ay:e} / {ax:e}");
+            }
+        }
     }
 
     /// The port against the platform's `atan2`, which is the oracle's own
