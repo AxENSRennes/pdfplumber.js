@@ -329,7 +329,7 @@ fn geometry_cases() {
             "get_bbox_overlap" => result(geometry::get_bbox_overlap(&bbox(&args[1]), &bbox(&args[2])), |b| {
                 b.map_or(Value::None, |b| bbox_v(&b))
             }),
-            "calculate_area" => result(geometry::calculate_area(&bbox(&args[1])), |v| to_value(&v)),
+            "calculate_area" => result(geometry::calculate_area(&py(&args[1])), |v| to_value(&v)),
             "clip_obj" => opt_obj(geometry::clip_obj(&obj(&args[1]), &bbox(&args[2]))),
             "intersects_bbox" => objs_v(geometry::intersects_bbox(&objs(&args[1]), &bbox(&args[2]))),
             "within_bbox" => objs_v(geometry::within_bbox(&objs(&args[1]), &bbox(&args[2]))),

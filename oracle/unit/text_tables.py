@@ -822,7 +822,9 @@ def geometry_cases():
         elif fn == "get_bbox_overlap":
             args = [rand_bbox(rng), rand_bbox(rng)]
         elif fn == "calculate_area":
-            args = [rand_bbox(rng)]
+            # the message prints the caller's list or tuple
+            b = rand_bbox(rng)
+            args = [rng.choice([b, list(b), list(b) + [1], b[:3]])]
         elif fn == "clip_obj":
             args = [rand_obj(rng), rand_bbox(rng)]
         elif fn in ("intersects_bbox", "within_bbox", "outside_bbox", "crop_to_bbox"):

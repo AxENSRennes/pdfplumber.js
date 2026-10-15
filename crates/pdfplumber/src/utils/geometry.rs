@@ -6,7 +6,7 @@
 
 use pycompat::{exc, PyResult};
 
-use crate::obj::{bbox_repr, Bbox, Hot, Obj, PyValue};
+use crate::obj::{bbox_from_value, Bbox, Hot, Obj, PyValue};
 use crate::utils::clustering::cluster_objects;
 
 /// `max(a, b)`: `b` only when `b > a`.
@@ -91,12 +91,14 @@ pub fn get_bbox_overlap(a: &Bbox, b: &Bbox) -> PyResult<Option<Bbox>> {
 }
 
 // pdfplumber/utils/geometry.py:69 calculate_area
-pub fn calculate_area(bbox: &Bbox) -> PyResult<PyValue> {
-    let [left, top, right, bottom] = bbox;
-    if left.gt(right)? || top.gt(bottom)? {
-        return Err(exc::ValueError(format!("{} has a negative width or height.", bbox_repr(bbox))));
+/// `bbox` is the caller's value, a `list` or a `tuple`: the error message
+/// prints it (`f"{bbox}"`).
+pub fn calculate_area(bbox: &PyValue) -> PyResult<PyValue> {
+    let [left, top, right, bottom] = bbox_from_value(bbox)?;
+    if left.gt(&right)? || top.gt(&bottom)? {
+        return Err(exc::ValueError(format!("{} has a negative width or height.", bbox.py_str())));
     }
-    right.sub(left)?.mul(&bottom.sub(top)?)
+    right.sub(&left)?.mul(&bottom.sub(&top)?)
 }
 
 // pdfplumber/utils/geometry.py:76 clip_obj

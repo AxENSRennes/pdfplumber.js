@@ -1017,11 +1017,6 @@ pub fn bbox_from_value(v: &PyValue) -> PyResult<Bbox> {
     }
 }
 
-/// `repr()` of a bbox tuple.
-pub fn bbox_repr(b: &Bbox) -> String {
-    bbox_value(b).repr()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
