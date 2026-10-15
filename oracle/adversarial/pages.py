@@ -41,6 +41,7 @@ def build(objects: dict[int, Any], catalog_extra: dict | None = None, root: Any 
         catalog["Pages"] = root
     catalog.update(catalog_extra or {})
     doc.add(1, catalog)
+    assert not {50, 51} & set(objects), "objects 50 and 51 are the content stream and the font"
     for num, value in sorted(objects.items()):
         if isinstance(value, Raw):
             doc.add_raw(num, b"%d 0 obj\n" % num + bytes(value) + b"\nendobj\n")
@@ -119,17 +120,23 @@ def cases_tree() -> list[Case]:
     out.append(("no-pages-scan", build({3: page(MediaBox=BOX), 4: page(MediaBox=[0, 0, 10, 10]), 5: {"Type": Name("Pages")}}, root=None), None))
     out.append(("pages-empty-scan", build({2: pages([]), 3: page(MediaBox=BOX)}), None))
     out.append(("pages-missing-object-scan", build({3: page(MediaBox=BOX)}, root=Ref(77)), None))
-    # deep trees: a chain of /Pages nodes, a page at each level
-    for depth in (40, 160, 400):
+    # deep trees: a chain of /Pages nodes, a page at each level (numbers
+    # from 1000, away from the objects build() adds)
+    # (a page right at the frame limit is left out: its outcome depends on the
+    # frames of the parser's own methods, not counted yet, see
+    # docs/architecture.md "Profondeur de récursion")
+    for depth in (40, 160, 400, 960):
         objs: dict[int, Any] = {}
+        node = [2] + [1000 + 2 * i for i in range(1, depth)]
         for i in range(depth):
-            num = 2 + 2 * i
-            kids = [Ref(num + 1)] + ([Ref(num + 2)] if i + 1 < depth else [])
-            objs[num] = pages(kids, Rotate=90 * (i % 4))
-            objs[num + 1] = page(MediaBox=[0, 0, 100 + i, 100])
+            kids = [Ref(node[i] + 1 if i else 1001)] + ([Ref(node[i + 1])] if i + 1 < depth else [])
+            objs[node[i]] = pages(kids, Rotate=90 * (i % 4))
+            objs[node[i] + 1 if i else 1001] = page(MediaBox=[0, 0, 100 + i, 100])
         out.append((f"tree-deep-{depth}", build(objs), None))
-    objs = {2 + i: pages([Ref(3 + i)]) for i in range(1100)}
-    objs[1102] = page(MediaBox=BOX)
+    # only /Pages nodes down to the page: RecursionError before any page
+    chain = [2] + [1000 + i for i in range(1, 1100)]
+    objs = {chain[i]: pages([Ref(chain[i + 1] if i + 1 < len(chain) else 5000)]) for i in range(len(chain))}
+    objs[5000] = page(MediaBox=BOX)
     out.append(("tree-deep-chain-1100", build(objs), None))
     return out
 
