@@ -48,6 +48,8 @@ GENERATORS: dict[str, tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]] = {
     "filters": (("meta.json", "corpus.json"), ((),)),
     "ccitt": (("meta.json",), ((),)),
     "ccitt_corpus": (("meta.json",), ((),)),
+    # generated cases (seconds), then the embedded CMaps of the real corpus (minutes)
+    "cmaps": (("meta.json", "synthetic.json", "corpus.json"), ((), ("--corpus",))),
 }
 
 

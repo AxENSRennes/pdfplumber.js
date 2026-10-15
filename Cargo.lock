@@ -165,6 +165,7 @@ dependencies = [
  "aes",
  "indexmap",
  "md-5",
+ "num-bigint",
  "pycompat",
  "rustc-hash",
  "sha2",

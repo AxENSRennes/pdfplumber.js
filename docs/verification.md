@@ -182,7 +182,13 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   `decompress_corrupted`, `PDFStream.get_data` sur des chaînes de filtres
   générées, références indirectes comprises, puis chaque flux de
   l'ensemble `all` : `corpus.bin` et
-  `corpus.json`).
+  `corpus.json`),
+  `cmaps.py` (`glyphlist`, `latin_enc`, `fontmetrics`,
+  `name2unicode`, `get_encoding`, scripts d'appels sur chaque classe de
+  `cmapdb`, toutes les CMaps prédéfinies lues par le fournisseur des
+  fichiers compacts de `oracle/codegen/cmaps.py`, `CMapParser` sur un corpus
+  adverse `--fuzz 3000` et, avec `--corpus`, sur chaque flux CMap embarqué de
+  l'ensemble `all`).
 
 ```sh
 export PDFPLUMBER_ROOT=/chemin/du/dépôt/principal   # .venv, corpus/, .cache/

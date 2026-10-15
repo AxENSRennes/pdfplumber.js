@@ -193,7 +193,14 @@ Les tables de pdfminer (`glyphlist.py`, `latin_enc.py`, `fontmetrics.py`,
 qui lit les modules Python : jamais recopiées à la main. Les CMaps prédéfinies
 (`pdfminer/cmap/*.json.gz`, ~8 Mo) ne sont pas embarquées : le cœur les demande
 par nom à un fournisseur (fichiers en natif et sous Node, `fetch` paresseux dans
-le navigateur), et seuls les documents qui en ont besoin les chargent.
+le navigateur), et seuls les documents qui en ont besoin les chargent. Tout
+point d'entrée qui charge des polices (points d'entrée natif et Wasm, tests
+d'étape pdffont/pdfinterp, exécuteurs de corpus multi-threads de `pdftrace`)
+installe ce fournisseur : `CMapDB::set_default_provider` une fois pour le
+processus, ou `CMapDB::set_provider` pour un thread (prioritaire ; `None` =
+installation sans les données, `CMapNotFound`). Sans aucun fournisseur, le
+chargement d'une CMap prédéfinie lève `RuntimeError` plutôt que
+`CMapNotFound`, que pdffont transformerait en silence en CMap vide.
 
 ## Frontière JavaScript (`crates/wasm`, `js/`)
 
