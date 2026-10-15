@@ -217,6 +217,16 @@ fn pow() {
     });
 }
 
+/// `math.atan2(y, x)`: CPython's `m_atan2`, then the port of glibc's
+/// `atan2` (`pycompat::libm`), on every target.
+#[test]
+fn atan2() {
+    replay("atan2", |a| {
+        let (y, x) = (num(&a[0]).to_f64(), num(&a[1]).to_f64());
+        result(y.and_then(|y| Ok((y, x?))), |(y, x)| Value::Float(pycompat::libm::math_atan2(y, x)))
+    });
+}
+
 #[test]
 fn compare() {
     replay("compare", |a| {

@@ -45,6 +45,7 @@ step "upstream file:line references (python -m oracle.upstream_refs)"
 
 step "generated tables are up to date"
 "$PY" oracle/codegen/libm_tables.py --check
+"$PY" oracle/codegen/atan2_tables.py --check
 "$PY" oracle/codegen/saslprep_tables.py --check
 "$PY" oracle/codegen/pdfminer_tables.py --check
 "$PY" oracle/codegen/ccitt_tables.py --check

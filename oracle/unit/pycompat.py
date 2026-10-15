@@ -291,6 +291,49 @@ def gen_pow(rng):
         yield ["**", a, b], call(BINOPS["**"], a, b)
 
 
+def atan2_operands(rng):
+    """Operands ``(y, x)`` of ``math.atan2`` reaching every branch of the C
+    library's atan2 (crates/pycompat/src/libm.rs)."""
+    r = rng.random()
+    sign = lambda: rng.choice([1.0, -1.0])  # noqa: E731
+    if r < 0.15:
+        return rand_float(rng), rand_float(rng)
+    if r < 0.3:  # |y/x| or |x/y| next to 1/16 (polynomial or table)
+        x = sign() * rng.uniform(0.5, 1.5) * 2.0 ** rng.randint(-100, 100)
+        t = x * 0.0625 * (1 + rng.uniform(-1, 1) * 2.0 ** -rng.randint(0, 53)) * sign()
+        return (t, x) if rng.random() < 0.5 else (x, t)
+    if r < 0.45:  # next to 1 (the octant boundary)
+        x = sign() * rng.uniform(0.5, 1.5) * 2.0 ** rng.randint(-100, 100)
+        return sign() * abs(x) * (1 + rng.uniform(-1, 1) * 2.0 ** -rng.randint(0, 54)), x
+    if r < 0.6:  # rows of the table: k/256
+        x = sign() * rng.uniform(0.5, 1.5)
+        t = x * rng.randint(16, 256) / 256 * (1 + rng.uniform(-1, 1) * 2.0 ** -rng.randint(0, 53))
+        return (t, sign() * x) if rng.random() < 0.5 else (sign() * x, t)
+    if r < 0.7:  # exponents about 57 apart (the shortcuts)
+        e = rng.randint(-800, 800)
+        a = sign() * rng.uniform(1, 2) * 2.0**e
+        b = sign() * rng.uniform(1, 2) * 2.0 ** (e - rng.randint(54, 61))
+        return (a, b) if rng.random() < 0.5 else (b, a)
+    if r < 0.8:  # around 2**-500 and 2**500 (the scalings)
+        e = rng.choice([-500, 500]) + rng.randint(-4, 4)
+        return sign() * rng.uniform(1, 2) * 2.0**e, sign() * rng.uniform(1, 2) * 2.0 ** (e + rng.randint(-20, 20))
+    if r < 0.9:  # matrix entries
+        entries = [0, 1, -1, 2, 0.5, 12, -12, 0.0, -0.0, 0.7071067811865476, 0.8660254037844386, 1e-3]
+        return rng.choice(entries), rng.choice(entries)
+    return sign() * rng.random() * 2.0**-1022, sign() * rng.random() * 2.0 ** rng.randint(-1074, -1000)
+
+
+def gen_atan2(rng):
+    """``math.atan2(y, x)``: CPython's ``m_atan2`` then glibc's atan2."""
+    specials = [0.0, -0.0, 1.0, -1.0, math.inf, -math.inf, math.nan, 5e-324, -5e-324, 1e308, 2, -3]
+    for y in specials:
+        for x in specials:
+            yield [y, x], call(math.atan2, y, x)
+    for _ in range(40000):
+        y, x = atan2_operands(rng)
+        yield [y, x], call(math.atan2, y, x)
+
+
 def gen_compare(rng):
     edge = [2**53, 2**53 + 1, 2**63, 2**63 - 1, -(2**63), 2**64, 10**400, -(10**400), 0, -1, 1]
     for _ in range(4000):
@@ -607,6 +650,7 @@ GENERATORS = {
     "int_to_float": gen_int_to_float,
     "binop": gen_binop,
     "pow": gen_pow,
+    "atan2": gen_atan2,
     "compare": gen_compare,
     "sum": gen_sum,
     "minmax": gen_minmax,

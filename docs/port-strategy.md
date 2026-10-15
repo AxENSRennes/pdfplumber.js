@@ -196,4 +196,4 @@ Lecture :
      `fetch`, `search` à la sémantique de `re`).
   Les questions ouvertes laissées par la vague 1 sont notées dans les
   en-têtes des modules et dans `architecture.md` (`search`, fournisseur de
-  CMaps, `atan2`).
+  CMaps ; `atan2` est porté depuis, vague 2).

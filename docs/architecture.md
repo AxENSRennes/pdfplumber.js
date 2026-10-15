@@ -177,7 +177,9 @@ Tout ce qui imite Python vit ici, une seule fois, testé contre CPython :
 `sum()` 3.12 (Neumaier, ints exacts), `min`/`max` (premier à égalité),
 `float ** float` avec le `pow` de la bibliothèque C de l'oracle (glibc 2.39,
 variante FMA choisie sur un processeur x86-64 qui a FMA et AVX2, portée dans
-`pycompat::libm` : `f64::powf` n'est pas cette fonction en Wasm), le `hash()`
+`pycompat::libm` : `f64::powf` n'est pas cette fonction en Wasm), `math.atan2`
+(`m_atan2` de CPython puis l'`atan2` de la même glibc, variante FMA, porté
+dans `pycompat::libm` : `f64::atan2` est celui de musl en Wasm), le `hash()`
 numérique et les nombres comme clés de dict (`NumKey` : `3` trouve `3.0`),
 `round()` (arrondi bancaire décimal exact), `float.__repr__`, `int()` (limite de
 4 300 chiffres), conversions `int`→`float` (OverflowError), division réelle et

@@ -164,7 +164,7 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   | Générateur (`oracle/unit/`) | Modules Rust vérifiés | Rejeu | Contenu |
   |---|---|---|---|
   | `canon.py` | `pdftrace::{canon, typed_json}` | `canon_unit.rs` | `canon` et JSON typé (ci-dessus), valeurs imbriquées sur 2·10^5 à 10^6 niveaux |
-  | `pycompat.py` | `pycompat` | `pycompat_unit.rs` | sémantique CPython, `pow` de la libm, `hash()` numérique, limites de récursion |
+  | `pycompat.py` | `pycompat` | `pycompat_unit.rs` | sémantique CPython, `pow` et `atan2` de la libm (`math.atan2`), `hash()` numérique, limites de récursion |
   | `exceptions.py` | `psexceptions`, `pdfexceptions`, `pycompat::err` | `exceptions_unit.rs` | classes d'exception de pdfminer et pdfplumber |
   | `pdftypes.py` | `pdftypes` | `pdftypes_unit.rs` | modèle d'objets, références, flux, déchiffrement, `uint_value`, objets imbriqués à la frontière des limites de récursion (`repr`/`str` en unités C, `resolve_all`/`decipher_all` en cadres) |
   | `psparser_base.py` | `psparser` | `psparser_base_unit.rs` | `PSStackParser` sur un fichier : `nexttoken`, `nextline`, `revreadlines`, `seek`, `pop` |
@@ -181,7 +181,7 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   | `text_tables_real.py` | les mêmes | `text_tables_unit.rs` (`pages_real`) | opérations de page sur les premières pages de l'ensemble `quick` et sur des documents riches en tables ; les pages dont un caractère est un surrogate isolé sont écartées et listées dans `meta.json` |
 
   Les tables générées (`oracle/codegen/`) sont vérifiées par `--check` dans
-  `scripts/check.sh` : `libm_tables.py`, `saslprep_tables.py`,
+  `scripts/check.sh` : `libm_tables.py`, `atan2_tables.py`, `saslprep_tables.py`,
   `pdfminer_tables.py` (`glyphlist`, `latin_enc`, `fontmetrics`),
   `ccitt_tables.py`. Les CMaps prédéfinies converties par
   `oracle/codegen/cmaps.py` ne sont pas versionnées : elles vivent dans

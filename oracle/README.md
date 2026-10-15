@@ -192,7 +192,7 @@ whose hashes fix their order in CPython's sets, see
 `docs/verification.md`).
 
 Generated Rust tables (`codegen/`, checked with `--check` by
-`scripts/check.sh`): `libm_tables.py`, `saslprep_tables.py`,
+`scripts/check.sh`): `libm_tables.py`, `atan2_tables.py`, `saslprep_tables.py`,
 `pdfminer_tables.py` (`glyphlist`, `latin_enc`, `fontmetrics`),
 `ccitt_tables.py`; `unicode_tables.py` is run by hand. `codegen/cmaps.py`
 converts pdfminer's predefined CMaps to the compact files the Rust

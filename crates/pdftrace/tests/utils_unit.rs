@@ -247,23 +247,9 @@ fn ctm_values(a: &[Value]) -> Vec<Value> {
     ]
 }
 
-/// Every property. Not on WebAssembly, where the C library's `atan2` is
-/// musl's, not the oracle's glibc (see `pdfplumber/src/ctm.rs`).
+/// Every property, on every target (`atan2` is the port of the oracle's,
+/// `pycompat::libm`).
 #[test]
-#[cfg_attr(target_family = "wasm", ignore = "atan2 is musl's on WebAssembly")]
 fn ctm() {
     replay("utils", "ctm", |a| Value::List(ctm_values(a)));
-}
-
-/// The properties that do not use `atan2`, on every target.
-#[test]
-fn ctm_scale_translation() {
-    let cases = pdftrace::unit::UnitData::open("utils").cases("ctm");
-    for (a, expected) in &cases {
-        let actual = ctm_values(a);
-        let Value::List(expected) = expected else { panic!() };
-        for i in [0, 1, 4, 5] {
-            assert!(matches(&actual[i], &expected[i]), "{a:?}: field {i}: {:?} != {:?}", actual[i], expected[i]);
-        }
-    }
 }
