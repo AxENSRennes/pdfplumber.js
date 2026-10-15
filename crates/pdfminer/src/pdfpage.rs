@@ -180,13 +180,11 @@ impl PDFPage {
         let doc = PDFDocument::new(parser, password, caching, true)?;
         // Check if the document allows text extraction.
         // If not, warn the user and proceed.
-        if !doc.is_extractable() {
-            if check_extractable {
-                let error_msg = format!("Text extraction is not allowed: {fp_repr}");
-                return Err(PyErr::new(ExcKind::PDFTextExtractionNotAllowed, error_msg));
-            }
-            // log.warning(warning_msg)
+        if !doc.is_extractable() && check_extractable {
+            let error_msg = format!("Text extraction is not allowed: {fp_repr}");
+            return Err(PyErr::new(ExcKind::PDFTextExtractionNotAllowed, error_msg));
         }
+        // else, when not extractable: log.warning(warning_msg)
         Ok(GetPages {
             pages: PDFPage::create_pages(&doc),
             pagenos: pagenos.cloned().filter(|p| !p.is_empty()),
@@ -204,12 +202,12 @@ fn parse_box(value: &PDFObject) -> PyResult<Rect4> {
     let items: Box<dyn Iterator<Item = PyResult<IterItem>>> = match resolve1_none(value)? {
         PDFObject::List(l) => Box::new(l.to_vec().into_iter().map(|v| Ok(IterItem::Obj(resolve1_none(&v)?)))),
         PDFObject::Dict(d) => Box::new(d.keys().into_iter().map(|k| Ok(IterItem::Str(k)))),
-        PDFObject::Bytes(b) => {
-            Box::new(b.to_vec().into_iter().map(|c| Ok(IterItem::Obj(PDFObject::Int(PyInt::Small(i64::from(c)))))))
-        }
+        PDFObject::Bytes(b) => Box::new(
+            (0..b.len()).map(move |i| b[i]).map(|c| Ok(IterItem::Obj(PDFObject::Int(PyInt::Small(i64::from(c)))))),
+        ),
         // the sequence protocol: stream[0] raises PDFKeyError
         stream @ PDFObject::Stream(_) => {
-            Box::new(std::iter::once(Err(stream.py_getitem_index0().err().expect("a stream has no attribute 0"))))
+            Box::new(std::iter::once(Err(stream.py_getitem_index0().expect_err("a stream has no attribute 0"))))
         }
         other => return Err(exc::TypeError(format!("'{}' object is not iterable", other.type_name()))),
     };
@@ -365,6 +363,9 @@ impl CreatePages {
 /// caller), which resumes each generator of the `yield from` chain: their
 /// frames are back on the stack while the walk goes on, and a generator
 /// that returns leaves it.
+// An ObjId never holds a list or a dict, the only values whose hash could
+// change (see pdftypes::ObjId): clippy only sees its RefCells.
+#[allow(clippy::mutable_key_type)]
 fn depth_first_search(
     doc: &Rc<PDFDocument>,
     stack: &mut Vec<Search>,

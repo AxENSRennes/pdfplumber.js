@@ -31,7 +31,7 @@ pub fn decode_text(s: TextArg<'_>) -> PyResult<String> {
         TextArg::Bytes(b) => {
             if let Some(body) = b.strip_prefix(b"\xfe\xff") {
                 // str(s[2:], "utf-16be", "ignore")
-                let units = body.chunks_exact(2).map(|p| u16::from_be_bytes([p[0], p[1]]));
+                let units = body.as_chunks::<2>().0.iter().map(|p| u16::from_be_bytes(*p));
                 return Ok(char::decode_utf16(units).filter_map(Result::ok).collect());
             }
             Ok(b.iter().map(|&c| doc_char(u32::from(c))).collect())

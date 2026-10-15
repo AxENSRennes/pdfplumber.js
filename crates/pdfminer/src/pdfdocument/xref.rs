@@ -409,7 +409,7 @@ impl PDFXRefStream {
             // (0, size): a tuple, iterated as such
             None => PyVal::Obj(PDFObject::List(vec![PDFObject::Int(PyInt::ZERO), size].into())),
         };
-        if index_array.len()? % 2 != 0 {
+        if index_array.py_len()? % 2 != 0 {
             return Err(exc::PDFSyntaxError("Invalid index number"));
         }
         let items = index_array.items(|t| format!("'{t}' object is not iterable"))?;

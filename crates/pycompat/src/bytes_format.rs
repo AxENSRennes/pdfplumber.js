@@ -131,7 +131,7 @@ pub fn bytes_mod_int(fmt: &[u8], arg: i64) -> PyResult<Vec<u8>> {
                         break;
                     }
                     if prec > (i64::from(i32::MAX) - i64::from(c - b'0')) / 10 {
-                        return Err(exc::ValueError("precision too big"));
+                        return Err(exc::ValueError("prec too big"));
                     }
                     prec = prec * 10 + i64::from(c - b'0');
                 }
@@ -161,7 +161,7 @@ pub fn bytes_mod_int(fmt: &[u8], arg: i64) -> PyResult<Vec<u8>> {
                     "%b requires a bytes-like object, or an object that implements __bytes__, not 'int'",
                 ))
             }
-            b'i' | b'd' | b'u' | b'o' | b'x' | b'X' => (format_long(v, flags & F_ALT != 0, prec, c), true),
+            b'i' | b'd' | b'u' | b'o' | b'x' | b'X' => (format_long(v, flags & F_ALT != 0, prec, c)?, true),
             b'e' | b'E' | b'f' | b'F' | b'g' | b'G' => (format_float(v as f64, flags & F_ALT != 0, prec, c), true),
             b'c' => {
                 if !(0..256).contains(&v) {
@@ -247,7 +247,10 @@ pub fn bytes_mod_int(fmt: &[u8], arg: i64) -> PyResult<Vec<u8>> {
 }
 
 /// `_PyUnicode_FormatLong(v, alt, prec, type)`
-fn format_long(v: i64, alt: bool, prec: i64, conv: u8) -> Vec<u8> {
+fn format_long(v: i64, alt: bool, prec: i64, conv: u8) -> PyResult<Vec<u8>> {
+    if prec > i64::from(i32::MAX) - 3 {
+        return Err(exc::OverflowError("precision too large"));
+    }
     let magnitude = i128::from(v).unsigned_abs();
     let (prefix, digits) = match conv {
         b'o' => ("0o", format!("{magnitude:o}")),
@@ -269,7 +272,7 @@ fn format_long(v: i64, alt: bool, prec: i64, conv: u8) -> Vec<u8> {
     if conv == b'X' {
         out = out.to_uppercase();
     }
-    out.into_bytes()
+    Ok(out.into_bytes())
 }
 
 /// `PyOS_double_to_string(x, type, prec, alt ? Py_DTSF_ALT : 0)` for a

@@ -70,7 +70,7 @@ pub fn _normalize_box(box_raw: &PDFObject, rotation: &PDFObject) -> PyResult<BBo
         // a dict iterates over its keys: str
         PDFObject::Dict(d) => d.is_empty(),
         PDFObject::Bytes(_) => true,
-        PDFObject::Stream(_) => return Err(box_raw.py_getitem_index0().err().expect("a stream has no attribute 0")),
+        PDFObject::Stream(_) => return Err(box_raw.py_getitem_index0().expect_err("a stream has no attribute 0")),
         other => return Err(exc::TypeError(format!("'{}' object is not iterable", other.type_name()))),
     };
     if !all_numbers {

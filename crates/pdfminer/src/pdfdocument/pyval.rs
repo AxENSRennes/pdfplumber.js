@@ -78,7 +78,7 @@ impl PyVal {
     }
 
     /// `len(self)`
-    pub fn len(&self) -> PyResult<usize> {
+    pub fn py_len(&self) -> PyResult<usize> {
         match self {
             PyVal::Obj(PDFObject::List(l)) => Ok(l.len()),
             PyVal::Obj(PDFObject::Bytes(b)) => Ok(b.len()),
@@ -219,7 +219,7 @@ pub fn entry_bounds(entlen: &PyVal, index: &PyVal) -> PyResult<(PyInt, PyInt)> {
             let Some(count) = count.as_i64() else {
                 return Err(exc::OverflowError("cannot fit 'int' into an index-sized integer"));
             };
-            let size = entlen.len()? as i64;
+            let size = entlen.py_len()? as i64;
             if count > 0 && size > i64::MAX / count {
                 return Err(match entlen {
                     PyVal::Obj(PDFObject::Bytes(_)) => exc::OverflowError("repeated bytes are too long"),
