@@ -1,12 +1,19 @@
 """Exception classes of pdfminer and pdfplumber, for pycompat::ExcKind.
 
-Writes ``<cache>/unit/exceptions/classes.jsonl`` (see
-``oracle/unit/_common.py``): one line per
-``Exception`` subclass defined in a pdfminer or pdfplumber module (nested
-classes included), ``{"in": [module, qualname], "out": [name, [[base module,
-base qualname], ...]]}`` in typed JSON. The Rust test
-(crates/pdftrace/tests/exceptions_unit.rs) checks that ExcKind lists every
-class with the same name and bases.
+Writes into ``<cache>/unit/exceptions/`` (see ``oracle/unit/_common.py``), in
+typed JSON:
+
+- ``classes.jsonl``: one line per ``Exception`` subclass defined in a pdfminer
+  or pdfplumber module (nested classes included), ``{"in": [module,
+  qualname], "out": [name, [[base module, base qualname], ...]]}``;
+- ``subclass.jsonl``: ``issubclass(a, b)`` for every pair of these classes and
+  the standard library ones of ``oracle.unit.pycompat.exc_classes`` (builtins,
+  ``struct.error``, ``zlib.error``...), ``{"in": [[module, qualname], [module,
+  qualname]], "out": bool}``.
+
+The Rust test (crates/pdftrace/tests/exceptions_unit.rs) checks that ExcKind
+lists every class with the same name and bases, and the same subclass
+relation (``except b:`` catching ``a``).
 
 Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.exceptions
 """
@@ -15,6 +22,7 @@ import importlib
 import pkgutil
 
 from ._common import require_oracle_python, write_cases, write_meta
+from .pycompat import exc_classes
 
 # Modules that are out of scope and pull optional dependencies.
 SKIP = {"pdfplumber.display", "pdfplumber.cli", "pdfminer.high_level", "pdfminer.image"}
@@ -46,8 +54,17 @@ def main():
         for (module, qualname), cls in sorted(found.items())
     )
     n = write_cases("exceptions", "classes", cases)
-    write_meta("exceptions", classes=n)
-    print(f"wrote {n} classes")
+    everything = dict(found)
+    for cls in exc_classes():
+        everything[(cls.__module__, cls.__qualname__)] = cls
+    pairs = (
+        ([list(a_key), list(b_key)], issubclass(a, b))
+        for a_key, a in sorted(everything.items())
+        for b_key, b in sorted(everything.items())
+    )
+    m = write_cases("exceptions", "subclass", pairs)
+    write_meta("exceptions", classes=n, subclass=m)
+    print(f"wrote {n} classes, {m} subclass pairs")
 
 if __name__ == "__main__":
     main()

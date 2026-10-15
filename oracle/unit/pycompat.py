@@ -342,6 +342,21 @@ def gen_sum(rng):
         rng.shuffle(tail)
         items = run + [big] + tail
         yield [items], call(sum, items)
+    # small floats whose compensation is not zero, then an int beyond a C
+    # long, then anything
+    for _ in range(1000):
+        items = [rng.choice([0.1, 0.2, 0.3, 1e16, -1e16, 1e-16, 3.3, round(rng.uniform(-10, 10), 7)])
+                 for _ in range(rng.randint(1, 6))]
+        items.append(rng.choice([1, -1]) * (2**63 + rng.randint(0, 2**40)))
+        items += [rng.choice([0.1, 2, 2**70, 0.5]) for _ in range(rng.randint(0, 3))]
+        yield [items], call(sum, items)
+    # the same with large floats, whose compensation (thousands) changes the
+    # rounding of the sum with the int
+    for _ in range(1000):
+        items = [rng.choice([1e20, -1e20, 3e19, 7.5e19])]
+        items += [float(rng.randint(-8000, 8000)) + rng.choice([0.0, 0.5, 0.25]) for _ in range(rng.randint(1, 4))]
+        items.append(rng.choice([1, -1]) * (2**63 + rng.randint(0, 2**20)))
+        yield [items], call(sum, items)
 
 
 def gen_minmax(rng):
@@ -350,6 +365,15 @@ def gen_minmax(rng):
         n = rng.randint(0, 6)
         items = [rng.choice(pool) if rng.random() < 0.8 else rand_num(rng) for _ in range(n)]
         yield [items], [call(min, items), call(max, items)]
+
+
+def gen_minmax_f64(rng):
+    """min(a, b) and max(a, b) of two floats (first argument kept on ties)."""
+    pool = [0.0, -0.0, 1.0, -1.0, 1.5, math.inf, -math.inf, math.nan, 5e-324]
+    for _ in range(3000):
+        a = rng.choice(pool) if rng.random() < 0.7 else rand_float(rng)
+        b = rng.choice(pool) if rng.random() < 0.7 else rand_float(rng)
+        yield [a, b], [min(a, b), max(a, b)]
 
 
 def gen_float_repr(rng):
@@ -586,6 +610,7 @@ GENERATORS = {
     "compare": gen_compare,
     "sum": gen_sum,
     "minmax": gen_minmax,
+    "minmax_f64": gen_minmax_f64,
     "float_repr": gen_float_repr,
     "round": gen_round,
     "float_parse": gen_float_parse,

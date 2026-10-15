@@ -6,26 +6,36 @@ Writes typed JSON lines (docs/verification.md) to
 case per line, ``{"in": [...], "out": ...}``; the Rust replay is
 crates/pdftrace/tests/pdftypes_unit.rs. In the inputs, ``{"ref": n}`` is a
 ``PDFObjRef`` to a document whose objects are given by the case (a list of
-``[objid, object]`` pairs; a missing id raises ``PDFObjectNotFound``).
+``[objid, object]`` pairs; a missing id raises ``PDFObjectNotFound``, except
+object 13, ``BROKEN_OBJID``, which raises ``PDFSyntaxError`` as a broken
+object does in ``PDFDocument.getobj``).
 
 - ``objects``: ``repr``, ``literal_name``, ``keyword_name``, ``bool``, the
   ``*_value`` accessors, ``"Predictor" in x`` and ``x[0]`` of random objects.
-- ``eq``: ``a == b`` for pairs of related objects.
+- ``eq``: ``a == b`` for pairs of related objects; references and streams
+  compare by identity (``"same"``: the object itself; ``"shallow"``:
+  ``list(x)``/``dict(x)``, a new container sharing the elements).
 - ``resolve``: ``resolve1``, ``resolve_all`` (which updates dicts in place:
   the case re-reads the object afterwards) and the accessors through
   references.
 - ``streams``: ``PDFStream`` ``repr``, ``get_filters``, ``get_data`` (filters
-  that need no unported decoder) and ``__getitem__``.
+  that need no unported decoder), ``s.data`` and ``__getitem__``;
+  ``DecodeParms`` may be a stream (an indirect object).
 - ``decipher``: ``decipher_all`` (lists rebuilt, dicts updated in place) and
   ``PDFStream.get_data`` with a decipher callback, the test callback
   ``test_decipher`` below (the Rust test implements the same function).
-- ``refs``: ``PDFObjRef.resolve`` without a document (``AssertionError``).
+- ``refs``: ``PDFObjRef.resolve`` without a document (``AssertionError``)
+  and with one (a missing or broken object), and ``doc``.
+- ``containers``: sequences of ``list``/``dict`` operations (append, item
+  assignment, pop, keys, copy, identity), the Python behavior ``PDFList`` and
+  ``PDFDict`` reproduce.
 - ``uint``: ``uint_value(x, n_bits)`` (two's complement, a ``True`` kept).
 - ``deep``: objects nested close to Python's recursion limits, called at a
   measured depth (``_common.at_depth``; the Rust test starts from the same
   depth): ``repr`` and ``literal_name`` (``str``) around the C recursion
   limit, for every kind of innermost object, and ``resolve_all`` and
-  ``decipher_all`` around the Python frame limit. Deep objects are given
+  ``decipher_all`` around the Python frame limit, and on self-referencing
+  lists (``RecursionError``). Deep objects are given
   as ``["deep", shape, n, leaf]`` (``deep_object``), results of
   ``resolve_all``/``decipher_all`` as the SHA-256 of their ``canon``.
 
@@ -38,6 +48,7 @@ import random
 import struct
 
 from pdfminer.pdfexceptions import PDFObjectNotFound
+from pdfminer.pdfparser import PDFSyntaxError
 from pdfminer.pdftypes import (
     PDFObjRef,
     PDFStream,
@@ -58,6 +69,10 @@ from ..canon import canon
 from ._common import at_depth, depth_here, require_oracle_python, write_cases, write_meta
 
 
+# An object whose parsing fails: PDFObjRef.resolve lets the error through.
+BROKEN_OBJID = 13
+
+
 class TableDoc:
     """A document whose getobj() reads a table."""
 
@@ -68,6 +83,8 @@ class TableDoc:
     def getobj(self, objid):
         if objid in self.table:
             return self.table[objid]
+        if objid == BROKEN_OBJID:
+            raise PDFSyntaxError(f"broken {objid}")
         raise PDFObjectNotFound(objid)
 
 
@@ -115,7 +132,7 @@ KEYWORDS = [b"BT", b"Tj", b"'", b'"', b"EI", b"\xff", b"T*"]
 FLOATS = [0.0, -0.0, 1.0, 0.1, 1.5, -2.5, 1e16, 1e-5, 123.456, math.inf, -math.inf, math.nan, 1e300]
 
 
-def rand_leaf(rng, refs):
+def rand_leaf(rng, refs, streams=False):
     r = rng.random()
     if r < 0.1:
         return ["v", None]
@@ -131,19 +148,32 @@ def rand_leaf(rng, refs):
         return ["lit", rng.choice(NAMES + BYTES_NAMES)]
     if r < 0.85:
         return ["kw", rng.choice(KEYWORDS)]
+    if streams and r < 0.9:
+        return ["stream", []]
     if refs:
         return ["ref", rng.choice(refs)]
     return ["v", 3]
 
 
-def rand_spec(rng, depth=0, refs=()):
+def rand_spec(rng, depth=0, refs=(), streams=False):
     r = rng.random()
     if depth < 3 and r < 0.2:
-        return ["list", [rand_spec(rng, depth + 1, refs) for _ in range(rng.randint(0, 4))]]
+        return ["list", [rand_spec(rng, depth + 1, refs, streams) for _ in range(rng.randint(0, 4))]]
     if depth < 3 and r < 0.4:
         keys = [rng.choice(NAMES) for _ in range(rng.randint(0, 4))]
-        return ["dict", [[k, rand_spec(rng, depth + 1, refs)] for k in keys]]
-    return rand_leaf(rng, refs)
+        return ["dict", [[k, rand_spec(rng, depth + 1, refs, streams)] for k in keys]]
+    return rand_leaf(rng, refs, streams)
+
+
+def contains_nan(spec):
+    kind = spec[0]
+    if kind == "v":
+        return isinstance(spec[1], float) and math.isnan(spec[1])
+    if kind == "list":
+        return any(contains_nan(x) for x in spec[1])
+    if kind in ("dict", "stream"):
+        return any(contains_nan(x) for _, x in spec[1])
+    return False
 
 
 # -- cases ----------------------------------------------------------------------
@@ -209,18 +239,36 @@ def gen_eq(rng):
         doc = TableDoc([])
         x, y = build(a, doc), build(b, doc)
         yield [spec_value(a), spec_value(b)], [x == y, y == x]
+    # references and streams compare by identity: two built from the same
+    # spec differ, the same object (shared by a shallow copy) is equal
+    for _ in range(1000):
+        a = rand_spec(rng, refs=[1, 2], streams=True)
+        doc = TableDoc([])
+        x, y = build(a, doc), build(a, doc)
+        yield [spec_value(a), spec_value(a)], [x == y, y == x]
     # one object compared with itself (identity shortcut of containers)
     for _ in range(300):
-        a = rand_spec(rng)
+        a = rand_spec(rng, refs=[1, 2], streams=True)
         x = build(a, TableDoc([]))
         yield [spec_value(a), "same"], [x == x, x == x]
+    # A shallow copy shares the elements: Python compares them by identity
+    # first. Floats have no identity in the port (they are values), so a NaN
+    # shared by two containers would compare unequal: the parser never
+    # produces NaN, and these cases leave it out.
+    for _ in range(1000):
+        a = rand_spec(rng, refs=[1, 2], streams=True)
+        if a[0] not in ("list", "dict") or contains_nan(a):
+            continue
+        x = build(a, TableDoc([]))
+        y = list(x) if isinstance(x, list) else dict(x)
+        yield [spec_value(a), "shallow"], [x == y, y == x]
 
 
 def gen_resolve(rng):
     for _ in range(3000):
         n = rng.randint(0, 5)
         ids = list(range(1, n + 1))
-        missing = [n + 1, 0]
+        missing = [n + 1, 0, BROKEN_OBJID]
         refs = ids + missing
         table_specs = [[i, rand_spec(rng, 1, refs=[j for j in refs if j > i or j not in ids])] for i in ids]
         if rng.random() < 0.3 and ids:
@@ -262,15 +310,21 @@ def gen_streams(rng):
             attrs["Length"] = rng.randint(0, 10)
         raw = bytes(rng.randint(0, 255) for _ in range(rng.randint(0, 6)))
         objid = rng.choice([None, 0, 7, 12345])
-        s = PDFStream(dict(attrs), raw)
+        # DecodeParms may be a stream (an indirect object): `in` and `[]`
+        # then read its attributes. It is added last, so attrs keep the order.
+        params_stream = rng.choice([1, 5, True, 0, -(2**70)]) if rng.random() < 0.1 else None
+        full_attrs = dict(attrs)
+        if params_stream is not None:
+            full_attrs["DecodeParms"] = PDFStream({"Predictor": params_stream}, b"")
+        s = PDFStream(full_attrs, raw)
         if objid is not None:
             s.set_objid(objid, 0)
         before = repr(s)
         filters = call(s.get_filters)
         data = call(s.get_data)
-        out = [before, filters, data, repr(s), s.get_rawdata(), call(lambda: s["Missing"]), call(lambda: s["Length"]),
-               s.get("Length", -1), s.get_any(["F", "Filter"], "none"), "Length" in s]
-        yield [attrs, raw, objid], out
+        out = [before, filters, data, repr(s), s.get_rawdata(), s.data, call(lambda: s["Missing"]),
+               call(lambda: s["Length"]), s.get("Length", -1), s.get_any(["F", "Filter"], "none"), "Length" in s]
+        yield [attrs, raw, objid, params_stream], out
 
 
 def test_decipher(objid, genno, data, attrs=None):
@@ -303,7 +357,85 @@ def gen_decipher(rng):
 def gen_refs(rng):
     for objid in [0, 1, 5, 2**70]:
         r = PDFObjRef(None, objid)
-        yield [objid], [repr(r), call(r.resolve), call(resolve1, r), call(resolve_all, [r])]
+        yield [objid], [repr(r), call(r.resolve), call(resolve1, r), call(resolve_all, [r]), r.doc is None]
+    for objid in [0, 5, BROKEN_OBJID]:
+        r = PDFObjRef(TableDoc([]), objid)
+        yield [objid, "bound"], [repr(r), call(r.resolve), call(r.resolve, 7), call(resolve1, r, 8), r.doc is None]
+
+
+def rand_scalar(rng):
+    return rng.choice([0, 1, -5, 2**64, 1.5, -0.0, b"", b"ab", None, True, LIT("F"), KWD(b"Tj")])
+
+
+def gen_containers(rng):
+    """Random operation sequences on a list and on a dict."""
+    for _ in range(1500):
+        lst, ops, out = [], [], []
+        alias = lst
+        for _ in range(rng.randint(1, 10)):
+            r = rng.random()
+            if r < 0.35:
+                v = rand_scalar(rng)
+                lst.append(v)
+                ops.append(["append", v])
+                out.append(None)
+            elif r < 0.5 and lst:
+                k = rng.randrange(len(lst))
+                v = rand_scalar(rng)
+                lst[k] = v
+                ops.append(["set", k, v])
+                out.append(None)
+            elif r < 0.6:
+                ops.append(["len"])
+                out.append(len(lst))
+            elif r < 0.7 and lst:
+                k = rng.randrange(len(lst))
+                ops.append(["get", k])
+                out.append(lst[k])
+            elif r < 0.8:
+                ops.append(["items"])
+                out.append(list(lst))
+            elif r < 0.9:
+                ops.append(["is_alias"])
+                out.append(alias is lst)
+            else:
+                ops.append(["is_copy"])
+                out.append(list(lst) is lst)
+        yield ["list", ops], out
+    for _ in range(1500):
+        d, ops, out = {}, [], []
+        alias = d
+        for _ in range(rng.randint(1, 10)):
+            r = rng.random()
+            k = rng.choice(["A", "B", "C", "Type"])
+            if r < 0.35:
+                v = rand_scalar(rng)
+                d[k] = v
+                ops.append(["set", k, v])
+                out.append(None)
+            elif r < 0.5:
+                ops.append(["pop", k])
+                out.append(d.pop(k, None))
+            elif r < 0.6:
+                ops.append(["keys"])
+                out.append(list(d.keys()))
+            elif r < 0.7:
+                ops.append(["len"])
+                out.append(len(d))
+            elif r < 0.8:
+                # a copy is a new dict: changing it leaves the original alone
+                c = d.copy()
+                v = rand_scalar(rng)
+                c[k] = v
+                ops.append(["copy_set", k, v])
+                out.append([list(c.items()), list(d.items()), c is d])
+            elif r < 0.9:
+                ops.append(["get", k])
+                out.append(d.get(k))
+            else:
+                ops.append(["is_alias"])
+                out.append(alias is d)
+        yield ["dict", ops], out
 
 
 def gen_uint(rng):
@@ -377,6 +509,16 @@ def gen_deep(rng):
                 yield ["resolve_all", depth, spec, table], canon_sha(out)
                 depth, out = at_depth(decipher_all, test_decipher, 1, 0, deep_object(shape, n, leaf, TableDoc([])))
                 yield ["decipher_all", depth, spec, []], canon_sha(out)
+    # a list holding itself: RecursionError, whatever the depth
+    for leaf in (["ref", 5], ["v", b"ab"]):
+        spec = ["deep", "cycle", 0, leaf]
+        doc = TableDoc(None)
+        for i, s in table:
+            doc.table[i] = build(s, doc)
+        depth, out = at_depth(resolve_all, deep_object("cycle", 0, leaf, doc))
+        yield ["resolve_all", depth, spec, table], canon_sha(out)
+        depth, out = at_depth(decipher_all, test_decipher, 1, 0, deep_object("cycle", 0, leaf, TableDoc([])))
+        yield ["decipher_all", depth, spec, []], canon_sha(out)
 
 
 GENERATORS = {
@@ -387,6 +529,7 @@ GENERATORS = {
     "decipher": gen_decipher,
     "refs": gen_refs,
     "uint": gen_uint,
+    "containers": gen_containers,
     "deep": gen_deep,
 }
 

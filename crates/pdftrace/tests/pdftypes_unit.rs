@@ -1,7 +1,8 @@
 //! Replays the cases of `oracle/unit/pdftypes.py` (pdfminer results)
 //! through `pdfminer::pdftypes` and `psparser::{literal_name, keyword_name}`.
 //!
-//! References resolve through a table document built from the case. As in
+//! References resolve through a table document built from the case; object
+//! 13 raises `PDFSyntaxError` like a broken object. As in
 //! the generator, results are converted to values only after every call of
 //! a case, so in-place updates (`resolve_all` on a dict) show through
 //! earlier results the way they do in Python.
@@ -11,8 +12,8 @@ use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
 use pdfminer::pdftypes::{
-    decipher_all, dict_value, float_value, int_value_obj, list_value, num_value, resolve1_none, resolve_all, str_value,
-    uint_value, DecipherCallable, PDFDict, PDFList, PDFObjRef, PDFObject, PDFResolver, PDFStream,
+    decipher_all, dict_value, float_value, int_value_obj, list_value, num_value, resolve1, resolve1_none, resolve_all,
+    str_value, uint_value, DecipherCallable, PDFDict, PDFList, PDFObjRef, PDFObject, PDFResolver, PDFStream,
 };
 use pdfminer::psparser::{keyword_name, literal_name, KeywordName, LIT_bytes, KWD, LIT};
 use pdftrace::canon::{canon_obj, sha256_hex};
@@ -20,6 +21,9 @@ use pdftrace::unit::UnitData;
 use pdftrace::value::{NameValue, Value};
 use pycompat::recursion;
 use pycompat::{exc, Num, PyInt, PyResult};
+
+/// The object number whose parsing fails (`BROKEN_OBJID` of the generator).
+const BROKEN_OBJID: i64 = 13;
 
 /// A document whose objects come from the case.
 #[derive(Default)]
@@ -31,7 +35,13 @@ impl PDFResolver for TableDoc {
     /// `TableDoc.getobj` of the generator: a Python method (one frame).
     fn getobj(&self, objid: &PyInt) -> PyResult<PDFObject> {
         let _frame = recursion::py_frame()?;
-        self.table.borrow().get(objid).cloned().ok_or_else(|| exc::PDFObjectNotFound(objid.to_string()))
+        if let Some(obj) = self.table.borrow().get(objid) {
+            return Ok(obj.clone());
+        }
+        if *objid == PyInt::Small(BROKEN_OBJID) {
+            return Err(exc::PDFSyntaxError(format!("broken {objid}")));
+        }
+        Err(exc::PDFObjectNotFound(objid.to_string()))
     }
 }
 
@@ -53,6 +63,17 @@ fn build(v: &Value, doc: &Weak<dyn PDFResolver>) -> PDFObject {
             (Rc::from(k), build(x, doc))
         }))),
         Value::Ref(objid) => PDFObject::Ref(PDFObjRef::new(Some(doc.clone()), objid.clone())),
+        Value::Stream(sv) => {
+            let PDFObject::Dict(attrs) = build(&Value::Dict(sv.attrs.clone()), doc) else { unreachable!() };
+            let (Value::Bytes(raw), Value::None) = (&sv.raw, &sv.data) else { panic!("a decoded stream: {sv:?}") };
+            let s = PDFStream::new(attrs, Rc::from(&raw[..]), None);
+            match (&sv.objid, &sv.genno) {
+                (Value::Int(objid), Value::Int(genno)) => s.set_objid(objid.clone(), genno.clone()),
+                (Value::None, Value::None) => {}
+                other => panic!("stream ids {other:?}"),
+            }
+            PDFObject::Stream(Rc::new(s))
+        }
         other => panic!("not a PDF object: {other:?}"),
     }
 }
@@ -175,7 +196,16 @@ fn eq() {
     let (_doc, weak) = doc();
     replay("eq", |a| {
         let x = build(&a[0], &weak);
-        let y = if matches!(&a[1], Value::Str(s) if s == "same") { x.clone() } else { build(&a[1], &weak) };
+        let y = match a[1].as_str() {
+            Some("same") => x.clone(),
+            // list(x) / dict(x): a new container sharing the elements
+            Some("shallow") => match &x {
+                PDFObject::List(l) => PDFObject::List(PDFList::new(l.to_vec())),
+                PDFObject::Dict(d) => PDFObject::Dict(d.copy()),
+                other => panic!("shallow copy of {other:?}"),
+            },
+            _ => build(&a[1], &weak),
+        };
         Value::List(vec![Value::Bool(x == y), Value::Bool(y == x)])
     });
 }
@@ -221,6 +251,12 @@ fn streams() {
     replay("streams", |a| {
         let PDFObject::Dict(attrs) = build(&a[0], &weak) else { panic!() };
         let Value::Bytes(raw) = &a[1] else { panic!() };
+        // DecodeParms given as a stream, added last
+        if !matches!(a[3], Value::None) {
+            let params = PDFDict::from_pairs([(Rc::from("Predictor"), build(&a[3], &weak))]);
+            let params = PDFStream::new(params, Rc::from(&b""[..]), None);
+            attrs.insert("DecodeParms".into(), PDFObject::Stream(Rc::new(params)));
+        }
         let s = Rc::new(PDFStream::new(attrs, Rc::from(&raw[..]), None));
         if let Value::Int(objid) = &a[2] {
             s.set_objid(objid.clone(), PyInt::ZERO);
@@ -247,6 +283,7 @@ fn streams() {
             Out::V(data),
             Out::V(text(s.repr())),
             Out::V(s.get_rawdata().map_or(Value::None, |r| Value::Bytes(r.to_vec()))),
+            Out::V(s.data().map_or(Value::None, |d| Value::Bytes(d.to_vec()))),
             obj(s.getitem("Missing")),
             obj(s.getitem("Length")),
             Out::Obj(s.get("Length", &PDFObject::Int(PyInt::Small(-1)))),
@@ -302,17 +339,114 @@ fn decipher() {
 }
 
 #[test]
-fn refs_without_document() {
+fn refs() {
+    let (_doc, weak) = doc();
     replay("refs", |a| {
         let Value::Int(objid) = &a[0] else { panic!() };
-        let r = PDFObjRef::new(None, objid.clone());
+        if a.len() == 1 {
+            // PDFObjRef(None, objid)
+            let r = PDFObjRef::new(None, objid.clone());
+            let x = PDFObject::Ref(r.clone());
+            return finish(vec![
+                Out::V(text(x.repr())),
+                obj(r.resolve(&PDFObject::Null)),
+                obj(resolve1_none(&x)),
+                obj(resolve_all(&PDFObject::List(PDFList::new(vec![x.clone()])), &PDFObject::Null)),
+                Out::V(Value::Bool(r.doc().is_none())),
+            ]);
+        }
+        // PDFObjRef(empty document, objid)
+        assert_eq!(a[1].as_str(), Some("bound"));
+        let r = PDFObjRef::new(Some(weak.clone()), objid.clone());
         let x = PDFObject::Ref(r.clone());
         finish(vec![
-            Out::V(text(PDFObject::Ref(r.clone()).repr())),
+            Out::V(text(x.repr())),
             obj(r.resolve(&PDFObject::Null)),
-            obj(resolve1_none(&x)),
-            obj(resolve_all(&PDFObject::List(PDFList::new(vec![x.clone()])), &PDFObject::Null)),
+            obj(r.resolve(&PDFObject::Int(PyInt::Small(7)))),
+            obj(resolve1(&x, &PDFObject::Int(PyInt::Small(8)))),
+            Out::V(Value::Bool(r.doc().is_none())),
         ])
+    });
+}
+
+fn str_arg(v: &Value) -> &str {
+    v.as_str().unwrap_or_else(|| panic!("not a str: {v:?}"))
+}
+
+fn index_arg(v: &Value) -> usize {
+    match v {
+        Value::Int(i) => usize::try_from(i.as_i64().expect("small")).expect("an index"),
+        other => panic!("not an index: {other:?}"),
+    }
+}
+
+/// Python list and dict operations through `PDFList` and `PDFDict`.
+#[test]
+fn containers() {
+    let (_doc, weak) = doc();
+    replay("containers", |a| {
+        let Value::List(ops) = &a[1] else { panic!() };
+        let mut out = Vec::new();
+        match str_arg(&a[0]) {
+            "list" => {
+                let lst = PDFList::default();
+                let alias = lst.clone();
+                for op in ops {
+                    let Value::List(op) = op else { panic!() };
+                    out.push(match str_arg(&op[0]) {
+                        "append" => {
+                            lst.push(build(&op[1], &weak));
+                            Out::V(Value::None)
+                        }
+                        "set" => {
+                            lst.set(index_arg(&op[1]), build(&op[2], &weak));
+                            Out::V(Value::None)
+                        }
+                        "len" => Out::V(Value::Int(PyInt::from(lst.len()))),
+                        "get" => Out::Obj(lst.get(index_arg(&op[1])).expect("a valid index")),
+                        "items" => Out::Obj(PDFObject::List(PDFList::from(lst.to_vec()))),
+                        "is_alias" => Out::V(Value::Bool(alias.ptr_eq(&lst))),
+                        "is_copy" => Out::V(Value::Bool(PDFList::from(lst.to_vec()).ptr_eq(&lst))),
+                        other => panic!("{other}"),
+                    });
+                }
+            }
+            "dict" => {
+                let d = PDFDict::new();
+                let alias = d.clone();
+                let items = |d: &PDFDict| {
+                    Value::List(
+                        d.items()
+                            .iter()
+                            .map(|(k, v)| Value::Tuple(vec![Value::str(k.to_string()), Value::from(v)]))
+                            .collect(),
+                    )
+                };
+                for op in ops {
+                    let Value::List(op) = op else { panic!() };
+                    let key = || str_arg(&op[1]);
+                    out.push(match str_arg(&op[0]) {
+                        "set" => {
+                            d.insert(key().into(), build(&op[2], &weak));
+                            Out::V(Value::None)
+                        }
+                        "pop" => Out::Obj(d.remove(key()).unwrap_or(PDFObject::Null)),
+                        "keys" => Out::V(Value::List(d.keys().iter().map(|k| Value::str(k.to_string())).collect())),
+                        "len" => Out::V(Value::Int(PyInt::from(d.len()))),
+                        "copy_set" => {
+                            let c = d.copy();
+                            c.insert(key().into(), build(&op[2], &weak));
+                            Out::V(Value::List(vec![items(&c), items(&d), Value::Bool(c.ptr_eq(&d))]))
+                        }
+                        "get" => Out::Obj(d.get(key()).unwrap_or(PDFObject::Null)),
+                        "is_alias" => Out::V(Value::Bool(alias.ptr_eq(&d))),
+                        other => panic!("{other}"),
+                    });
+                }
+            }
+            other => panic!("{other}"),
+        }
+        finish(out)
     });
 }
 

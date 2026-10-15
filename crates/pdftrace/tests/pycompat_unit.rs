@@ -6,7 +6,7 @@
 
 use pdftrace::unit::UnitData;
 use pdftrace::value::Value;
-use pycompat::builtins::{py_max, py_min, py_round, py_round_ndigits, py_sum};
+use pycompat::builtins::{self, py_max, py_min, py_round, py_round_ndigits, py_sum};
 use pycompat::float::{float_from_bytes, float_from_str};
 use pycompat::io::BytesIO;
 use pycompat::repr::{bytes_repr, float_repr, json_dumps_str, str_repr};
@@ -246,6 +246,14 @@ fn minmax() {
         let Value::List(items) = &a[0] else { panic!() };
         let items: Vec<Num> = items.iter().map(num).collect();
         Value::List(vec![result(py_min(items.clone()), num_value), result(py_max(items), num_value)])
+    });
+}
+
+#[test]
+fn minmax_f64() {
+    replay("minmax_f64", |a| {
+        let (Value::Float(x), Value::Float(y)) = (&a[0], &a[1]) else { panic!("{a:?}") };
+        Value::List(vec![Value::Float(builtins::min_f64(*x, *y)), Value::Float(builtins::max_f64(*x, *y))])
     });
 }
 
