@@ -339,6 +339,7 @@ fn geometry_cases() {
             "rect_to_edges" => objs_v(geometry::rect_to_edges(&obj(&args[1]))),
             "line_to_edge" => result(geometry::line_to_edge(&obj(&args[1])), |o| to_value(&PyValue::Dict(o))),
             "obj_to_edges" => objs_v(geometry::obj_to_edges(&obj(&args[1]))),
+            "snap_edges" => objs_v(pdfplumber::table::snap_edges(&objs(&args[1]), &py(&args[2]), &py(&args[3]))),
             "filter_edges" => {
                 let edge_type = py(&args[3]);
                 objs_v(geometry::filter_edges(

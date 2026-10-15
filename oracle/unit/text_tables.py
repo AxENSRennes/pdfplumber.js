@@ -43,6 +43,7 @@ import sys
 
 from pdfminer.pdftypes import PDFObjRef
 from pdfminer.psparser import KWD, LIT
+from pdfplumber import table
 from pdfplumber.table import TableSettings
 from pdfplumber.utils import clustering, geometry
 from pdfplumber.utils import text as ptext
@@ -703,6 +704,15 @@ def geometry_cases():
                 e["object_type"] = rng.choice(["line", "rect_edge", "curve_edge"])
             args = [edges, rng.choice(["v", "h", None, None, "x"]), rng.choice([None, "line", "rect_edge"]), rng.choice([0, 1, 3, 2.5])]
         yield [fn, *args], guarded(getattr(geometry, fn), *args)
+    # table.snap_edges on edges of any orientation (TableFinder only gives it
+    # "v" and "h" edges)
+    for i in range(300):
+        edges = [rand_obj(rng, "rect_edge") for _ in range(rng.randint(0, 6))]
+        for e in edges:
+            if rng.random() < 0.15:
+                e["orientation"] = rng.choice([None, "x", ["v"], ("h",)])
+        args = [edges, rng.choice([0, 1, 2.5]), rng.choice([0, 1, 2.5])]
+        yield ["snap_edges", *args], guarded(table.snap_edges, *args)
 
 
 def textline_cases():
