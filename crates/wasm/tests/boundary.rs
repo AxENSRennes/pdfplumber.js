@@ -553,7 +553,7 @@ fn the_abi_hands_buffers_over_without_leaks() {
     assert_eq!(abi::pp_buffers(), 0, "the data is taken");
     let r = abi::last_response();
     assert_eq!(abi::pp_result_len(), r.len());
-    assert_ne!(abi::pp_result_ptr(), 0);
+    assert_eq!((abi::pp_result_ptr(), abi::pp_result_len()), abi::last_response_place());
     assert_eq!(response(&r).value, Js::Null);
     let req = abi::put(&request("nope", 0, &PyValue::None, 0));
     assert_eq!(abi::pp_call(req, 0), 1);

@@ -102,3 +102,8 @@ pub fn put(bytes: &[u8]) -> usize {
 pub fn last_response() -> Vec<u8> {
     RESULT.with(|r| r.borrow().clone())
 }
+
+/// The address and length of the last response, where JavaScript reads it.
+pub fn last_response_place() -> (usize, usize) {
+    RESULT.with(|r| (r.borrow().as_ptr() as usize, r.borrow().len()))
+}

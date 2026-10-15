@@ -51,6 +51,7 @@ impl<T> Handles<T> {
         };
         let slot = &mut self.slots[index as usize];
         slot.value = Some(value);
+        // (`|` and `^` are the same here: the fields do not overlap)
         Some((slot.generation << INDEX_BITS) | index)
     }
 
@@ -97,6 +98,7 @@ mod tests {
         let mut h = Handles::new();
         assert!(h.is_empty());
         let a = h.insert("a").unwrap();
+        assert!(!h.is_empty());
         let b = h.insert("b").unwrap();
         assert_ne!(a, 0);
         assert_ne!(a, b);
@@ -119,16 +121,28 @@ mod tests {
     }
 
     #[test]
-    fn generations_wrap() {
+    fn generations_wrap_after_4096_uses_of_a_slot() {
         let mut h = Handles::new();
         let first = h.insert(0).unwrap();
         h.remove(first);
-        let mut last = 0;
-        for i in 0..GEN_MASK {
-            last = h.insert(i).unwrap();
-            h.remove(last);
+        for i in 1..4096 {
+            let h_i = h.insert(i).unwrap();
+            assert_eq!(h_i, (i << 20) | 1);
+            h.remove(h_i);
         }
-        assert_eq!(last >> INDEX_BITS, GEN_MASK);
         assert_eq!(h.insert(7).unwrap(), first);
+    }
+
+    #[test]
+    fn the_table_holds_max_handles_objects() {
+        let mut h = Handles::new();
+        for i in 1..=MAX_HANDLES as u32 {
+            assert_eq!(h.insert(()), Some(i));
+        }
+        assert_eq!(h.len(), MAX_HANDLES);
+        assert_eq!(MAX_HANDLES, (1 << 20) - 1);
+        assert_eq!(h.insert(()), None);
+        h.remove(5);
+        assert_eq!(h.insert(()), Some((1 << 20) | 5));
     }
 }
