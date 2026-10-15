@@ -436,7 +436,7 @@ def sort_cases():
 
 OP_VALUES = [
     None, True, False, 0, 1, -1, 3, 2**70, 0.0, -0.0, 1.0, 1.5, -2.5, 3.0, float("inf"), float("nan"),
-    "", "a", "ab", "b", b"x", (), (1,), (1, 2), (1.0, 2.5), (1, None), [1], [1, 2], {}, {"a": 1},
+    "", "a", "ab", "b", b"x", (), (1,), (1, 2), (1.0, 2.5), (1, None), [1], [1, 2], [], {}, {"a": 1}, {"a": 1, "b": (2,)},
     # pdfminer objects found in pdfplumber dicts (pattern color names, ...)
     LIT("F1"), KWD(b"BT"), PDFObjRef(None, 7),
 ]

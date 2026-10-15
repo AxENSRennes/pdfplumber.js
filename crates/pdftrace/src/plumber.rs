@@ -71,7 +71,7 @@ fn obj_from_items(items: &[(Value, Value)]) -> Result<Obj, String> {
 }
 
 /// A PDF object from a value (references have no document).
-fn pdf_object(v: &Value) -> Result<PDFObject, String> {
+pub fn pdf_object(v: &Value) -> Result<PDFObject, String> {
     Ok(match v {
         Value::None => PDFObject::Null,
         Value::Bool(b) => PDFObject::Bool(*b),

@@ -178,7 +178,19 @@ fn ops_cases() {
             "neg" => v(a.neg()),
             "abs" => v(a.abs()),
             "repr" => v(Ok(PyValue::from(a.repr()))),
-            "bool" => v(Ok(PyValue::Bool(a.truthy()))),
+            "bool" => {
+                // the same value as a PDF object (a PDF list or dict is a
+                // Python list or dict) has the same truth value
+                if let Ok(o) = pdftrace::plumber::pdf_object(&args[1]) {
+                    let as_pdf = PyValue::Pdf(o);
+                    c.check(
+                        || format!("case {i}: bool of {as_pdf:?} as a PDF object"),
+                        &to_value(&PyValue::Bool(as_pdf.truthy())),
+                        &out,
+                    );
+                }
+                v(Ok(PyValue::Bool(a.truthy())))
+            }
             "min" => v(pdfplumber::obj::py_min([&a, &b])),
             "max" => v(pdfplumber::obj::py_max([&a, &b])),
             "sum" => v(pdfplumber::obj::py_sum([&a, &b])),
