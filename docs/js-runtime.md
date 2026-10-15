@@ -84,13 +84,27 @@ objets JS. Médianes de 5 passes, en ms, `dist/pdfplumber.wasm` optimisé
 tournent) : les écarts d'un run à l'autre atteignent ±30 %, les rapports entre
 formats sont stables.
 
-MESURES_ICI
+Un appel par page (215 appels) :
 
-Taille des charges : binaire 52,2 Mo, JSON 122,5 Mo (≈ 227 et 534 octets
-par caractère).
+| Moteur | PJB1 cœur | PJB1 décodage | **PJB1 total** | JSON cœur | JSON décodage | **JSON total** |
+|---|---|---|---|---|---|---|
+| Node 26.11 | 579 | 394 | **973** | 2 712 | 2 575 | **5 287** |
+| Chromium 148 | 529 | 498 | **1 027** | 1 981 | 1 214 | **3 195** |
+| Firefox 158 (système) | 939 | 553 | **1 492** | 2 408 | 1 836 | **4 244** |
+| Firefox 150 (Nightly de Playwright) | 1 622 | 1 269 | **2 891** | 15 786 | 5 632 | **21 418** |
+| WebKit 26.4 | 1 113 | 509 | **1 622** | 3 909 | 3 006 | **6 915** |
 
-**Décision : PJB1.** Il est 2 à 4 fois plus rapide de bout en bout dans tous
-les moteurs, 2,3 fois plus petit, et son décodeur est itératif (une valeur
+Tout le corpus en un appel (total) : PJB1 1 425 / 1 026 / 1 557 / 2 517 /
+1 939 ms, JSON 5 985 / 3 186 / 4 679 / 19 069 / 5 798 ms (même ordre).
+Chaque moteur a décodé les 215 pages en objets identiques dans les deux
+formats. Le « cœur » du JSON est surtout l'écriture des flottants au plus
+court ; son décodage, `JSON.parse` des clés répétées de chaque objet.
+
+Taille des charges : binaire 52,2 Mo, JSON 122,5 Mo (≈ 194 et 456 octets
+par objet).
+
+**Décision : PJB1.** Il est 2,8 à 7 fois plus rapide de bout en bout selon
+le moteur (3 à 5 fois hors Nightly), 2,3 fois plus petit, et son décodeur est itératif (une valeur
 imbriquée sur 10^5 niveaux passe partout). Le JSON reste disponible
 (`set_format`, benchmark, débogage) et testé.
 
