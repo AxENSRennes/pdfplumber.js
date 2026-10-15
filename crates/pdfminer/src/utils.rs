@@ -69,6 +69,22 @@ fn list_index_error() -> PyErr {
     exc::IndexError("list index out of range")
 }
 
+/// The `IndexError` of `list[i - bpp]` past the end: an index that does
+/// not fit in a `Py_ssize_t` fails before the bound check.
+fn list_index_error_at(i: i64, bpp: &PyInt) -> PyErr {
+    if PyInt::Small(i).sub(bpp).as_i64().is_none() {
+        exc::IndexError("cannot fit 'int' into an index-sized integer")
+    } else {
+        list_index_error()
+    }
+}
+
+/// x86-64 user space is 2**47 bytes: an allocation at least that large
+/// fails on every machine (`MemoryError`). Smaller ones that exceed the
+/// memory of the machine also fail in Python; the port does not allocate
+/// them (see above) and goes on.
+const ADDRESS_SPACE: i64 = 1 << 47;
+
 /// The `ValueError` of `range(start, stop, 0)`.
 fn range_step_zero() -> PyErr {
     exc::ValueError("range() arg 3 must not be zero")
@@ -114,9 +130,10 @@ pub fn apply_tiff_predictor(
         return Err(range_step_zero());
     }
     let len = data.len() as i64;
+    let bpp_int = bpp;
     // past the data, a row fails or the loop ends: clamping is exact
     let nbytes = clamp(&nbytes, -1, len + 1);
-    let bpp = clamp(&bpp, -1, len + 1);
+    let bpp = clamp(&bpp_int, -1, len + 1);
     let mut buf: Vec<u8> = Vec::with_capacity(data.len());
     if nbytes < 0 {
         return Ok(buf); // an empty range
@@ -132,7 +149,7 @@ pub fn apply_tiff_predictor(
             if i >= bpp {
                 // raw[i - bpp]: i - bpp >= 0, and < len(raw) == i only if bpp > 0
                 let Some(&r) = raw.get((i - bpp) as usize) else {
-                    return Err(list_index_error());
+                    return Err(list_index_error_at(i, &bpp_int));
                 };
                 new_value += i64::from(r);
                 new_value %= 256;
@@ -169,6 +186,9 @@ pub fn apply_png_predictor(
     let Some(columns) = columns.as_i64() else {
         return Err(exc::OverflowError("cannot fit 'int' into an index-sized integer"));
     };
+    if columns >= ADDRESS_SPACE {
+        return Err(exc::MemoryError(""));
+    }
     let len = data.len() as i64;
     let mut line_above: Vec<u8> = vec![0; columns.clamp(0, len) as usize];
     let step = nbytes.add(&PyInt::Small(1));
@@ -177,7 +197,8 @@ pub fn apply_png_predictor(
     }
     let step = clamp(&step, -1, len + 1);
     let nbytes = clamp(&nbytes, -1, len + 1);
-    let bpp = clamp(&bpp, -(len + 1), len + 1);
+    let bpp_int = bpp;
+    let bpp = clamp(&bpp_int, -(len + 1), len + 1);
     let mut buf: Vec<u8> = Vec::with_capacity(data.len());
     if step < 0 {
         return Ok(buf); // an empty range
@@ -193,11 +214,19 @@ pub fn apply_png_predictor(
             if j - bpp < 0 {
                 Ok(0)
             } else {
-                raw.get((j - bpp) as usize).map(|&r| i64::from(r)).ok_or_else(list_index_error)
+                raw.get((j - bpp) as usize).map(|&r| i64::from(r)).ok_or_else(|| list_index_error_at(j, &bpp_int))
             }
         };
-        let above = |line_above: &[u8], k: i64| -> PyResult<i64> {
-            line_above.get(k as usize).map(|&r| i64::from(r)).ok_or_else(list_index_error)
+        // line_above[j] and line_above[j - bpp] (j - bpp >= 0)
+        let above = |line_above: &[u8], j: i64, minus_bpp: bool| -> PyResult<i64> {
+            let k = if minus_bpp { j - bpp } else { j };
+            line_above.get(k as usize).map(|&r| i64::from(r)).ok_or_else(|| {
+                if minus_bpp {
+                    list_index_error_at(j, &bpp_int)
+                } else {
+                    list_index_error()
+                }
+            })
         };
         match filter_type {
             // Filter type 0: None
@@ -219,7 +248,7 @@ pub fn apply_png_predictor(
             3 => {
                 for (j, &average_x) in line_encoded.iter().enumerate() {
                     let raw_x_bpp = raw_x_bpp(&raw, j as i64)?;
-                    let prior_x = above(&line_above, j as i64)?;
+                    let prior_x = above(&line_above, j as i64, false)?;
                     raw.push(((i64::from(average_x) + (raw_x_bpp + prior_x) / 2) & 255) as u8);
                 }
             }
@@ -230,9 +259,9 @@ pub fn apply_png_predictor(
                     let (raw_x_bpp, prior_x_bpp) = if j - bpp < 0 {
                         (0, 0)
                     } else {
-                        (raw_x_bpp(&raw, j)?, above(&line_above, j - bpp)?)
+                        (raw_x_bpp(&raw, j)?, above(&line_above, j, true)?)
                     };
-                    let prior_x = above(&line_above, j)?;
+                    let prior_x = above(&line_above, j, false)?;
                     let paeth = paeth_predictor(raw_x_bpp, prior_x, prior_x_bpp);
                     raw.push(((i64::from(paeth_x) + paeth) & 255) as u8);
                 }
