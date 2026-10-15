@@ -270,8 +270,8 @@ SASL_POOLS = {
 
 
 def gen_saslprep(rng):
-    fixed = ["", "­", "I­X", "user", "Ⅸ", "\u0007", "ا1", "ا1ب",
-             "اaب", "aا", "ȡ", "ª", "x y", "א", "\U0001f600", "ﬁ", "̀"]
+    fixed = ["", "\xad", "I\xadX", "user", "\u2168", "\u0007", "\u06271", "\u06271\u0628",
+             "\u0627a\u0628", "a\u0627", "\u0221", "\xaa", "x\xa0y", "\u05d0", "\U0001f600", "\ufb01", "\u0340"]
     for s in fixed:
         for flag in (True, False):
             yield [s, flag], call(saslprep, s, flag)
@@ -335,7 +335,7 @@ def aes_cbc(key, iv, data, encrypt=True):
 
 
 def pdf_string_password(rng):
-    return rng.choice(["user", "owner", "", "secret", "æøå", "x" * 40, "\xff\x00", "pw "])
+    return rng.choice(["user", "owner", "", "secret", "\xe6\xf8\xe5", "x" * 40, "\xff\x00", "pw\xa0"])
 
 
 def build_r234(rng, r, v, length, user, owner, docid, p, encrypt_metadata, cf_kind):
@@ -592,9 +592,9 @@ def gen_handlers(rng):
         v, r = rng.choice(combos)
         p = rng.choice([-4, -1, -3904, -44, 0xFFFFFFFC - 2**32, 2**31 - 1, rng.randint(-(2**31), -1)])
         if v >= 5:
-            user = rng.choice(["user", "", "usersecret", "Ⅸ", "I­X", "æøå", "\U0001f600x", "אב",
-                               "x" * 130, "é" * 70, "اaب"])
-            owner = rng.choice(["owner", "", "Ａ", "user", "o" * 200])
+            user = rng.choice(["user", "", "usersecret", "\u2168", "I\xadX", "\xe6\xf8\xe5", "\U0001f600x", "\u05d0\u05d1",
+                               "x" * 130, "\xe9" * 70, "\u0627a\u0628"])
+            owner = rng.choice(["owner", "", "\uff21", "user", "o" * 200])
             try:
                 param = build_r56(rng, r, user, owner, p, rng.choice([None, True, False]))
             except Exception:
@@ -615,8 +615,9 @@ def gen_handlers(rng):
                                rng.choice([None, True, False]), cf_kind)
         table = {}
         param, docid = mutate(rng, param, docid, table)
-        passwords = [user, owner, "", "wrong", rng.choice(["€", "a€€b", "\U0001f600", "\xff",
-                                                           "­", "\u0007x"])]
+        passwords = [user, owner, "", "wrong", rng.choice(["\u20ac", "a\u20ac\u20acb", "\U0001f600", "\xff",
+                                                           "\xad", "\u0007x", "x\u20ac", "\u20ac\xff",
+                                                           "ab\U0001f600c", "\u0100\u20acx"])]
         doc = TableDoc({})
         doc.table = {k: bind_refs(val, doc) for k, val in table.items()}
         factory = factory_of(bind_refs(param, doc))

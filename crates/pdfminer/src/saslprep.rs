@@ -208,6 +208,17 @@ fn compose(first: u32, last: u32) -> Option<u32> {
     tables::COMPOSITION.binary_search_by(|&(a, b, _)| (a, b).cmp(&(first, last))).ok().map(|i| tables::COMPOSITION[i].2)
 }
 
+/// CPython's `Py_UCS4 stack[20]` of `nfd_nfkd` ("Longest decomposition in
+/// Unicode 3.2: U+FDFA"): the decomposition stack never holds more.
+const STACK_SIZE: usize = 20;
+
+/// `buffer[o++] = code` into a buffer of `size` code points (CPython's fixed
+/// buffers): a bug that would write past it panics instead of growing.
+fn put(buffer: &mut Vec<u32>, size: usize, code: u32) {
+    assert!(buffer.len() < size, "normalization buffer overflow");
+    buffer.push(code);
+}
+
 /// `nfd_nfkd(ucd_3_2_0, input, k=1)`: decomposition, then canonical
 /// ordering.
 fn nfd_nfkd(input: &[u32]) -> Vec<u32> {
@@ -229,7 +240,7 @@ fn nfd_nfkd(input: &[u32]) -> Vec<u32> {
             }
             // normalization changes
             if let Some(value) = normalization_correction(code) {
-                stack.push(value);
+                put(&mut stack, STACK_SIZE, value);
                 continue;
             }
             // Other decompositions.
@@ -238,7 +249,11 @@ fn nfd_nfkd(input: &[u32]) -> Vec<u32> {
                 // compatibility decomposition, but we do NFD: never here).
                 None => output.push(code),
                 // Copy decomposition onto the stack, in reverse order.
-                Some(codes) => stack.extend(codes.iter().rev()),
+                Some(codes) => {
+                    for &code in codes.iter().rev() {
+                        put(&mut stack, STACK_SIZE, code);
+                    }
+                }
             }
         }
     }
@@ -302,7 +317,7 @@ fn nfc_nfkc(input: &[u32]) -> Vec<u32> {
                 code += data[i] - T_BASE;
                 i += 1;
             }
-            output.push(code);
+            put(&mut output, len, code);
             continue;
         }
         // code is still input[i] here. CPython outputs it at once when it is
@@ -347,7 +362,7 @@ fn nfc_nfkc(input: &[u32]) -> Vec<u32> {
             // no pair: going on composes nothing more.
         }
         // Output character was already written. Just advance the indices.
-        output.push(current);
+        put(&mut output, len, current);
         i += 1;
     }
     output
