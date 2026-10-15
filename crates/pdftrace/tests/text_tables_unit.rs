@@ -808,3 +808,15 @@ fn sequence_operations_are_not_ported() {
     let e = PyValue::from(2.0).mul(&t).unwrap_err();
     assert_eq!(e.message, "can't multiply sequence by non-int of type 'float'");
 }
+
+/// `{:?}` of a value or a dict is its Python `repr` (the replay's mismatch
+/// messages and the port's panics print it); the reprs themselves are
+/// oracle cases (`ops`).
+#[test]
+fn debug_is_repr() {
+    let v = PyValue::tuple([PyValue::from(1i64), PyValue::from(0.5), PyValue::str("a")]);
+    assert_eq!(format!("{v:?}"), v.repr());
+    let o = Obj::from_pairs([("x0", PyValue::from(1.0)), ("k", v.clone())]);
+    assert_eq!(format!("{o:?}"), PyValue::Dict(o.clone()).repr());
+    assert_eq!(format!("{o:?}"), "{'x0': 1.0, 'k': (1, 0.5, 'a')}");
+}
