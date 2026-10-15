@@ -833,16 +833,14 @@ fn bits_text(bits: &[i8]) -> String {
     bits.iter().map(|b| b.to_string()).collect()
 }
 
-/// `int(c)` for a character of an `UNCOMPRESSED` code (`'0'` or `'1'`, an
-/// ASCII digit or letter in direct calls); `None` is `bits[1]` past the end
-/// of the code.
+/// `int(c)` for a character of an `UNCOMPRESSED` code (`'0'` or `'1'`; an
+/// ASCII digit or letter in direct calls: the `ValueError` message quotes
+/// the character as `repr` does for those); `None` is `bits[1]` past the
+/// end of the code.
 fn py_int_digit(c: Option<char>) -> PyResult<i64> {
     match c {
         Some(c) if c.is_ascii_digit() => Ok(i64::from(u32::from(c) - u32::from('0'))),
-        Some(c) if c.is_ascii_alphabetic() => {
-            Err(exc::ValueError(format!("invalid literal for int() with base 10: '{c}'")))
-        }
-        Some(c) => unreachable!("int({c:?}): the codes are made of digits"),
+        Some(c) => Err(exc::ValueError(format!("invalid literal for int() with base 10: '{c}'"))),
         None => Err(exc::IndexError("string index out of range")),
     }
 }

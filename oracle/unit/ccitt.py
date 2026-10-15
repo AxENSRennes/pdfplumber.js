@@ -52,6 +52,7 @@ import array
 import contextlib
 import hashlib
 import io
+import itertools
 import random
 import sys
 
@@ -244,6 +245,21 @@ def random_bits(rng, n):
 def gen_ops(rng):
     for case in upstream_vectors():
         yield case, run_ops(*case)
+    # pass, vertical and horizontal codes from every position (negative ones
+    # included: Python indexes from the end), reference line and color
+    for width in range(1, 5):
+        for ref in itertools.product("01", repeat=width):
+            for curpos in range(-3, width + 1):
+                for color in (0, 1):
+                    for op in (["pass"], ["vertical", 0], ["vertical", -1], ["vertical", 2], ["horizontal", 1, 2]):
+                        case = [width, False, [["setcurline", "".join(ref)], ["reset_line"], ["set", "_curpos", curpos],
+                                               ["set", "_color", color], op, ["state"]]]
+                        yield case, run_ops(*case)
+    # colors an array('b') cannot hold
+    for color in (127, 128, -128, -129, 200, -200):
+        for op in (["pass"], ["vertical", 1], ["horizontal", 1, 1], ["horizontal", 0, 1]):
+            case = [4, False, [["setcurline", "0110"], ["reset_line"], ["set", "_color", color], op, ["state"]]]
+            yield case, run_ops(*case)
     mode_values = [0, 1, -1, 2, -2, 3, -3, 9, -9, 100, -100, "p", "h", "u", "e", "x1", "x7", "zz", None]
     unc_values = ["1", "01", "001", "0001", "00001", "00000", "T00", "T10", "T000", "T100", "T0000", "T1000", "T00000",
                   "T10000", "", None, "T", "T1", "T2", "Tx", "0x", "0120"]
