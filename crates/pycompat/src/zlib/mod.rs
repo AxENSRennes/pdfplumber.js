@@ -30,7 +30,9 @@ pub mod inflate;
 pub mod inftrees;
 
 use crate::err::{exc, PyErr, PyResult};
-use inflate::{inflate, inflate_init2, Flush, ZStream, Z_BUF_ERROR, Z_DATA_ERROR, Z_NEED_DICT, Z_OK, Z_STREAM_END, Z_STREAM_ERROR};
+use inflate::{
+    inflate, inflate_init2, Flush, ZStream, Z_BUF_ERROR, Z_DATA_ERROR, Z_NEED_DICT, Z_OK, Z_STREAM_END, Z_STREAM_ERROR,
+};
 
 /// `zlib.MAX_WBITS`
 pub const MAX_WBITS: i32 = 15;
@@ -40,8 +42,25 @@ pub const DEF_BUF_SIZE: usize = 16 * 1024;
 const KB: usize = 1024;
 const MB: usize = 1024 * 1024;
 /// The block size sequence of `_BlocksOutputBuffer`.
-const BUFFER_BLOCK_SIZE: [usize; 17] =
-    [32 * KB, 64 * KB, 256 * KB, MB, 4 * MB, 8 * MB, 16 * MB, 16 * MB, 32 * MB, 32 * MB, 32 * MB, 32 * MB, 64 * MB, 64 * MB, 128 * MB, 128 * MB, 256 * MB];
+const BUFFER_BLOCK_SIZE: [usize; 17] = [
+    32 * KB,
+    64 * KB,
+    256 * KB,
+    MB,
+    4 * MB,
+    8 * MB,
+    16 * MB,
+    16 * MB,
+    32 * MB,
+    32 * MB,
+    32 * MB,
+    32 * MB,
+    64 * MB,
+    64 * MB,
+    128 * MB,
+    128 * MB,
+    256 * MB,
+];
 
 // cpython-3.12.3/Modules/zlibmodule.c:200 zlib_error
 /// The `zlib.error` raised for the return code `err` of a zlib call.
@@ -136,7 +155,11 @@ pub fn decompress_with(data: &[u8], wbits: i32, bufsize: isize) -> PyResult<Vec<
         Ok(Some(zst)) => zst,
         Ok(None) => return Err(gzip_not_ported()),
         // inflateInit2 sets msg to NULL before failing
-        Err(err) => return Err(exc::ZlibError(format!("Error {err} while preparing to decompress data: inconsistent stream state"))),
+        Err(err) => {
+            return Err(exc::ZlibError(format!(
+                "Error {err} while preparing to decompress data: inconsistent stream state"
+            )))
+        }
     };
     zst.avail_out = first as u32;
     let mut output = Vec::new();

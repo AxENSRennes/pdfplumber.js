@@ -7,12 +7,14 @@ use crate::err::{exc, PyResult};
 /// `binascii.unhexlify(hexstr)`: raises `binascii.Error` for an odd length
 /// (checked first) or a character that is not a hexadecimal digit.
 pub fn unhexlify(hexstr: &[u8]) -> PyResult<Vec<u8>> {
-    if hexstr.len() % 2 != 0 {
+    if !hexstr.len().is_multiple_of(2) {
         return Err(exc::BinasciiError("Odd-length string"));
     }
     let digit = |c: u8| (c as char).to_digit(16);
     hexstr
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| match (digit(pair[0]), digit(pair[1])) {
             (Some(top), Some(bot)) => Ok(((top << 4) + bot) as u8),
             _ => Err(exc::BinasciiError("Non-hexadecimal digit found")),

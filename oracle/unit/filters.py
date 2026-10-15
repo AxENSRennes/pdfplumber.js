@@ -49,7 +49,8 @@ with the document's own ``decipher`` for encrypted documents (decryption is
 not what is tested here). Python's ``get_data()`` of a new
 ``PDFStream(filter entries, raw data)`` is recorded. Streams already
 decoded by pdfminer (object streams), pass-through-only streams above 4 KB
-and raw data above ``MAX_RAW`` are skipped; identical cases are kept once.
+and raw data above ``MAX_RAW`` are skipped, a file stops after
+``MAX_FILE_RAW`` bytes of raw data; identical cases are kept once.
 ``corpus.bin``: little-endian ``b"FLT1" u32 n``, then per case ``u32 len``
 + typed JSON of ``attrs`` and ``u32 len`` + raw bytes. ``corpus.json``:
 ``{"sources", "records": [{"id", "out"}]}``, ``out`` typed JSON of the result
@@ -87,6 +88,7 @@ from ._common import oracle_sources, require_oracle_python, unit_dir, write_case
 
 BLOB_MAX = 2048
 MAX_RAW = 4 * 1024 * 1024
+MAX_FILE_RAW = 48 * 1024 * 1024
 FILE_TIMEOUT_S = 300
 
 
@@ -568,8 +570,12 @@ def process_file(args):
     signal.alarm(FILE_TIMEOUT_S)
     out = []
     status = None
+    budget = MAX_FILE_RAW
     try:
         for objid, attrs, raw in collect(path, password):
+            budget -= len(raw)
+            if budget < 0:
+                break
             a = dumps(attrs).encode("ascii")
             key = hashlib.sha256(struct.pack("<I", len(a)) + a + raw).hexdigest()
             try:

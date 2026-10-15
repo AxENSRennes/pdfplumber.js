@@ -116,7 +116,8 @@ pub(super) fn inflate_fast(strm: &mut ZStream, input: &[u8], output: &mut Vec<u8
                                     // some from window
                                     len -= op;
                                     copy(output, &state.window, &mut from, op);
-                                    from = From::Output(output.len() - dist as usize); // rest from output
+                                    from = From::Output(output.len() - dist as usize);
+                                    // rest from output
                                 }
                             } else if wnext < op_ {
                                 // wrap around window
@@ -132,7 +133,8 @@ pub(super) fn inflate_fast(strm: &mut ZStream, input: &[u8], output: &mut Vec<u8
                                         op = wnext as u32;
                                         len -= op;
                                         copy(output, &state.window, &mut from, op);
-                                        from = From::Output(output.len() - dist as usize); // rest from output
+                                        from = From::Output(output.len() - dist as usize);
+                                        // rest from output
                                     }
                                 }
                             } else {
@@ -142,7 +144,8 @@ pub(super) fn inflate_fast(strm: &mut ZStream, input: &[u8], output: &mut Vec<u8
                                     // some from window
                                     len -= op;
                                     copy(output, &state.window, &mut from, op);
-                                    from = From::Output(output.len() - dist as usize); // rest from output
+                                    from = From::Output(output.len() - dist as usize);
+                                    // rest from output
                                 }
                             }
                         } else {

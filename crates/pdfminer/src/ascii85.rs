@@ -62,7 +62,7 @@ pub fn ascii85decode(data: &[u8]) -> PyResult<Vec<u8>> {
     a85decode(data)
 }
 
-// pdfminer/ascii85.py:37 asciihexdecode
+// pdfminer/ascii85.py:33 asciihexdecode
 /// ASCIIHexDecode filter: whitespace ignored, `>` ends the data (an odd
 /// number of digits before it gets a `0`), `binascii.unhexlify` decodes
 /// (`binascii.Error` on an odd length or a non-hexadecimal digit).

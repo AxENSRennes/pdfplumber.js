@@ -99,11 +99,17 @@ fn check(name: &str, min_cases: usize, run: impl Fn(&[Value]) -> Option<Value>) 
     for (k, (args, expected)) in cases.iter().enumerate() {
         match run(args) {
             None => skipped += 1,
-            Some(got) if !got.same(expected) => differ.push(format!("#{k} {args:?}\n  expected {expected:?}\n       got {got:?}")),
+            Some(got) if !got.same(expected) => {
+                differ.push(format!("#{k} {args:?}\n  expected {expected:?}\n       got {got:?}"))
+            }
             Some(_) => {}
         }
     }
-    println!("{name}: {}/{} identical, {skipped} skipped (not ported)", cases.len() - differ.len() - skipped, cases.len());
+    println!(
+        "{name}: {}/{} identical, {skipped} skipped (not ported)",
+        cases.len() - differ.len() - skipped,
+        cases.len()
+    );
     assert!(
         differ.is_empty(),
         "{name}: {} differ:\n{}",
@@ -163,9 +169,9 @@ fn streams() {
         let PDFObject::Dict(attrs) = build(&a[0]) else { panic!("attrs") };
         let s = PDFStream::new(attrs, Rc::from(bytes(&a[1])), None);
         let filters = match s.get_filters() {
-            Ok(pairs) => Value::List(
-                pairs.iter().map(|(f, p)| Value::Tuple(vec![Value::from(f), Value::from(p)])).collect(),
-            ),
+            Ok(pairs) => {
+                Value::List(pairs.iter().map(|(f, p)| Value::Tuple(vec![Value::from(f), Value::from(p)])).collect())
+            }
             Err(e) => err(&e)?,
         };
         let data = result(s.get_data())?;
@@ -225,5 +231,10 @@ fn real_corpus() {
         records.len(),
         total as f64 / 1e6
     );
-    assert!(differ.is_empty(), "{} differ:\n{}", differ.len(), differ.iter().take(20).cloned().collect::<Vec<_>>().join("\n"));
+    assert!(
+        differ.is_empty(),
+        "{} differ:\n{}",
+        differ.len(),
+        differ.iter().take(20).cloned().collect::<Vec<_>>().join("\n")
+    );
 }

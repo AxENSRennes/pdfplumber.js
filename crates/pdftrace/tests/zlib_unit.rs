@@ -54,7 +54,12 @@ fn check(name: &str, min_cases: usize, run: impl Fn(&[Value]) -> Value) {
         }
     }
     println!("{name}: {}/{} identical", cases.len() - differ.len(), cases.len());
-    assert!(differ.is_empty(), "{name}: {} differ:\n{}", differ.len(), differ.iter().take(10).cloned().collect::<Vec<_>>().join("\n"));
+    assert!(
+        differ.is_empty(),
+        "{name}: {} differ:\n{}",
+        differ.len(),
+        differ.iter().take(10).cloned().collect::<Vec<_>>().join("\n")
+    );
 }
 
 #[test]
@@ -71,14 +76,19 @@ fn feed(data: &[u8], wbits: i32, calls: &[Value]) -> Value {
         Ok(d) => d,
         Err(e) => {
             return Value::List(vec![
-                Value::List(vec![Value::from(&e)]),
+                Value::Int(PyInt::Small(0)),
+                Value::Bytes(Vec::new()),
+                Value::str(""),
+                Value::from(&e),
                 Value::Bytes(Vec::new()),
                 Value::Bytes(Vec::new()),
                 Value::Bool(false),
             ])
         }
     };
-    let mut results = Vec::new();
+    let mut output = Vec::new();
+    let mut lengths = Vec::new();
+    let mut exc = Value::None;
     let mut pos = 0usize;
     'calls: for c in calls {
         let Value::List(c) = c else { panic!("a call") };
@@ -87,15 +97,27 @@ fn feed(data: &[u8], wbits: i32, calls: &[Value]) -> Value {
             let mut chunk = d.unconsumed_tail.clone();
             chunk.extend_from_slice(&data[pos.min(data.len())..(pos + n).min(data.len())]);
             pos += n;
-            let r = d.decompress_max(&chunk, int(&c[1]) as isize);
-            let failed = r.is_err();
-            results.push(result(r));
-            if failed {
-                break 'calls;
+            match d.decompress_max(&chunk, int(&c[1]) as isize) {
+                Ok(out) => {
+                    lengths.push(out.len().to_string());
+                    output.extend_from_slice(&out);
+                }
+                Err(e) => {
+                    exc = Value::from(&e);
+                    break 'calls;
+                }
             }
         }
     }
-    Value::List(vec![Value::List(results), blob(&d.unused_data), blob(&d.unconsumed_tail), Value::Bool(d.eof)])
+    Value::List(vec![
+        Value::Int(PyInt::from(lengths.len() as u64)),
+        blob(&output),
+        Value::str(sha256_hex(lengths.join(",").as_bytes())),
+        exc,
+        blob(&d.unused_data),
+        blob(&d.unconsumed_tail),
+        Value::Bool(d.eof),
+    ])
 }
 
 #[test]

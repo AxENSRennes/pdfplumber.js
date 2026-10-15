@@ -12,9 +12,11 @@ the Rust replay is crates/pdftrace/tests/zlib_unit.rs. A result of more than
   ``d = zlib.decompressobj(wbits)`` gets the calls of the feed, a list of
   ``[n, max_length, repeat]``: ``repeat`` calls each passing
   ``d.unconsumed_tail + data[pos:pos + n]`` (``pos`` advancing by ``n``)
-  and ``max_length``; ``out``: per feed, ``[results, unused_data,
-  unconsumed_tail, eof]``, ``results`` holding each call's output up to the
-  first exception (included, then no more calls).
+  and ``max_length``, until the first exception; ``out``: per feed,
+  ``[calls, output, lengths, exception, unused_data, unconsumed_tail,
+  eof]``: the number of calls that returned, their outputs joined, the
+  SHA-256 of their lengths (``"12,0,3"``), the exception that stopped the
+  feed or ``None``.
 
 Inputs (seed fixed):
 
@@ -79,19 +81,28 @@ def feed(data, wbits, calls):
     try:
         d = zlib.decompressobj(wbits)
     except Exception as e:  # noqa: BLE001
-        return [[e], b"", b"", False]
-    results = []
+        return [0, b"", "", e, b"", b"", False]
+    outputs = []
+    exc = None
     pos = 0
     for n, max_length, repeat in calls:
         for _ in range(repeat):
             chunk = d.unconsumed_tail + data[pos : pos + n]
             pos += n
             try:
-                results.append(blob(d.decompress(chunk, max_length)))
+                outputs.append(d.decompress(chunk, max_length))
             except Exception as e:  # noqa: BLE001
-                results.append(e)
-                return [results, blob(d.unused_data), blob(d.unconsumed_tail), d.eof]
-    return [results, blob(d.unused_data), blob(d.unconsumed_tail), d.eof]
+                exc = e
+                break
+        if exc is not None:
+            break
+    return [len(outputs), blob(b"".join(outputs)), lengths_digest(outputs), exc, blob(d.unused_data),
+            blob(d.unconsumed_tail), d.eof]
+
+
+def lengths_digest(outputs):
+    """SHA-256 of the output lengths of the calls, ``"12,0,3"``."""
+    return hashlib.sha256(",".join(str(len(o)) for o in outputs).encode()).hexdigest()
 
 
 def run_decompressobj(data, wbits, feeds):
@@ -107,7 +118,7 @@ def feedings(rng, data):
         out.append([[1, 0, n], [0, 0, 1]])
     calls, left = [], n
     while left > 0:
-        k = rng.choice([1, 2, 3, 5, 7, 64, 300, 5000, 40000])
+        k = rng.choice([1, 2, 3, 5, 7, 64, 300, 5000, 40000] if n <= 2000 or rng.random() < 0.02 else [64, 300, 5000, 40000])
         calls.append([k, 0, 1])
         left -= k
     out.append(calls)

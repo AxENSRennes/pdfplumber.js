@@ -442,7 +442,7 @@ pub fn inflate(strm: &mut ZStream, input: &[u8], output: &mut Vec<u8>, flush: Fl
                     continue;
                 }
                 needbits!('leave, 16);
-                if state.wrap & 1 == 0 || ((bits_!(8) << 8) + (hold >> 8) as u32) % 31 != 0 {
+                if state.wrap & 1 == 0 || !((bits_!(8) << 8) + (hold >> 8) as u32).is_multiple_of(31) {
                     bad!(state, "incorrect header check");
                     continue;
                 }

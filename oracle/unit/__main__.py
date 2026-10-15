@@ -39,6 +39,9 @@ GENERATORS: dict[str, tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]] = {
     "psparser_base": (("meta.json",), ((),)),
     # the adversarial corpus (seconds), then the real one (minutes: every PDF)
     "psparser": (("meta.json", "fuzz.json", "corpus.json"), (("--fuzz", "4000"), ())),
+    "zlib": (("meta.json",), ((),)),
+    # generated cases, then every stream of the real corpus (minutes)
+    "filters": (("meta.json", "corpus.json"), ((),)),
 }
 
 

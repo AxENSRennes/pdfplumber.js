@@ -256,11 +256,8 @@ pub fn apply_png_predictor(
             4 => {
                 for (j, &paeth_x) in line_encoded.iter().enumerate() {
                     let j = j as i64;
-                    let (raw_x_bpp, prior_x_bpp) = if j - bpp < 0 {
-                        (0, 0)
-                    } else {
-                        (raw_x_bpp(&raw, j)?, above(&line_above, j, true)?)
-                    };
+                    let (raw_x_bpp, prior_x_bpp) =
+                        if j - bpp < 0 { (0, 0) } else { (raw_x_bpp(&raw, j)?, above(&line_above, j, true)?) };
                     let prior_x = above(&line_above, j, false)?;
                     let paeth = paeth_predictor(raw_x_bpp, prior_x, prior_x_bpp);
                     raw.push(((i64::from(paeth_x) + paeth) & 255) as u8);

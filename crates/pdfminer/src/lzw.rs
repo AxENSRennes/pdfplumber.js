@@ -125,12 +125,12 @@ impl<'a> LZWDecoder<'a> {
         Ok(Some(x))
     }
 
-    // pdfminer/lzw.py:84 LZWDecoder.run
+    // pdfminer/lzw.py:81 LZWDecoder.run
     /// The concatenation of what the generator yields (`b"".join(...)`).
     pub fn run(&mut self) -> PyResult<Vec<u8>> {
         let mut out = Vec::new();
-        loop {
-            let Ok(code) = self.readbits(self.nbits) else { break };
+        // (readbits raises PDFEOFError at the end, caught as EOFError)
+        while let Ok(code) = self.readbits(self.nbits) {
             match self.feed(code as usize)? {
                 // just ignore corrupt data and stop yielding there
                 None => break,
@@ -141,7 +141,7 @@ impl<'a> LZWDecoder<'a> {
     }
 }
 
-// pdfminer/lzw.py:104 lzwdecode
+// pdfminer/lzw.py:103 lzwdecode
 pub fn lzwdecode(data: &[u8]) -> PyResult<Vec<u8>> {
     LZWDecoder::new(data).run()
 }
