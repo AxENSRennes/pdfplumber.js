@@ -101,6 +101,7 @@ from pdfminer.psparser import LIT
 from ..canon import Named, canon
 from ..corpus import load_set
 from ..stages._common import open_document
+from ..typed_json import dumps, loads
 from ._common import at_depth, require_oracle_python, write_cases, write_meta
 
 MAX_CHARS = 6000
@@ -309,7 +310,9 @@ def process_file(args):
                 raw = dump_raw(layout)
                 check_dump(raw)
                 runs, outs = analyze_runs(raw, CONFIGS)
-                out.append(([f"{rel}#{pageno}", raw, runs], outs))
+                # sent back as typed JSON: the objects hold references to the
+                # document, which do not pickle
+                out.append(dumps([[f"{rel}#{pageno}", raw, runs], outs]))
     except Timeout:
         pass
     except Exception:
@@ -324,7 +327,9 @@ def gen_real(max_pages, jobs):
     files += [(str(f.path), f.rel, f.password, 1) for f in load_set("real")]
     with multiprocessing.Pool(jobs) as pool:
         for cases in pool.imap(process_file, files):
-            yield from cases
+            for text in cases:
+                args, outs = loads(text)
+                yield args, outs
 
 
 # -- generated pages ------------------------------------------------------------
@@ -591,6 +596,19 @@ def gen_objects(rng):
         c1, c2 = LTComponent(a), LTComponent(b)
         yield ["component", a, b], [c1.is_empty(), c1.is_hoverlap(c2), call(c1.hdistance, c2), call(c1.hoverlap, c2),
                                     c1.is_voverlap(c2), call(c1.vdistance, c2), call(c1.voverlap, c2)]
+    for _ in range(300):
+        pts = [(rand_num(rng), rand_num(rng)) for _ in range(rng.randint(0, 4))]
+        yield ["get_pts", pts], call(LTCurve(1, pts).get_pts)
+    # the __dict__ keys of every class, in the order pdfplumber reads them
+    stream = PDFStream({}, b"")
+    samples = [char_at(1.0, 2.0), LTCurve(1, [(0, 0)]), LTLine(1, (0, 0), (1, 1)), LTRect(1, (0, 0, 1, 1)),
+               LTImage("I", stream, (0, 0, 1, 1)), LTFigure("F", (0, 0, 1, 1), (1, 0, 0, 1, 0, 0)), LTPage(1, (0, 0, 1, 1)),
+               LTAnno(" "), LTTextLineHorizontal(0.1), LTTextLineVertical(0.1), LTTextBoxHorizontal(), LTTextBoxVertical(),
+               LTTextGroupLRTB([]), LTTextGroupTBRL([])]
+    for obj in samples:
+        yield ["dict_keys", type(obj).__name__], list(obj.__dict__)
+    for box in (LTTextBoxHorizontal(), LTTextBoxVertical()):
+        yield ["writing_mode", type(box).__name__], box.get_writing_mode()
 
 
 def gen_textline(rng):

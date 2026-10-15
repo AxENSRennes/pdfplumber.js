@@ -111,23 +111,23 @@ fn leaf_frame() -> PyResult<()> {
 /// which holds for every longer list the layout sorts (box lines by `-y1`,
 /// boxes by index or by their coordinates: never NaN, see
 /// `LTExpandableContainer.add`).
-fn list_sort<T, K>(items: &mut Vec<T>, mut keys: Vec<K>, lt: impl Fn(&K, &K) -> PyResult<bool>) -> PyResult<()> {
+fn list_sort<T, K>(items: &mut Vec<T>, mut keys: Vec<K>, lt: impl Fn(&K, &K) -> bool) {
     let n = items.len();
     if n < 2 {
-        return Ok(());
+        return;
     }
     let mut order: Vec<usize> = (0..n).collect();
     if n < 64 {
         // count_run
         let mut run = 2;
-        if lt(&keys[1], &keys[0])? {
-            while run < n && lt(&keys[run], &keys[run - 1])? {
+        if lt(&keys[1], &keys[0]) {
+            while run < n && lt(&keys[run], &keys[run - 1]) {
                 run += 1;
             }
             keys[..run].reverse();
             order[..run].reverse();
         } else {
-            while run < n && !lt(&keys[run], &keys[run - 1])? {
+            while run < n && !lt(&keys[run], &keys[run - 1]) {
                 run += 1;
             }
         }
@@ -136,7 +136,7 @@ fn list_sort<T, K>(items: &mut Vec<T>, mut keys: Vec<K>, lt: impl Fn(&K, &K) -> 
             let (mut l, mut r) = (0, start);
             while l < r {
                 let p = l + ((r - l) >> 1);
-                if lt(&keys[start], &keys[p])? {
+                if lt(&keys[start], &keys[p]) {
                     r = p;
                 } else {
                     l = p + 1;
@@ -146,28 +146,18 @@ fn list_sort<T, K>(items: &mut Vec<T>, mut keys: Vec<K>, lt: impl Fn(&K, &K) -> 
             order[l..=start].rotate_right(1);
         }
     } else {
-        let mut err = None;
         order.sort_by(|&i, &j| {
-            if err.is_some() {
-                return std::cmp::Ordering::Equal;
-            }
-            match (lt(&keys[i], &keys[j]), lt(&keys[j], &keys[i])) {
-                (Ok(true), _) => std::cmp::Ordering::Less,
-                (Ok(false), Ok(true)) => std::cmp::Ordering::Greater,
-                (Ok(false), Ok(false)) => std::cmp::Ordering::Equal,
-                (Err(e), _) | (_, Err(e)) => {
-                    err = Some(e);
-                    std::cmp::Ordering::Equal
-                }
+            if lt(&keys[i], &keys[j]) {
+                std::cmp::Ordering::Less
+            } else if lt(&keys[j], &keys[i]) {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Equal
             }
         });
-        if let Some(e) = err {
-            return Err(e);
-        }
     }
     let mut slots: Vec<Option<T>> = items.drain(..).map(Some).collect();
     items.extend(order.into_iter().map(|i| slots[i].take().expect("each index once")));
-    Ok(())
 }
 
 /// Python's `<` on two tuples of numbers (the first differing pair decides;
@@ -179,7 +169,8 @@ fn tuple_lt(a: &[Num], b: &[Num]) -> bool {
             return x.py_lt(y);
         }
     }
-    a.len() < b.len()
+    // equal tuples (the keys all have the same length)
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -1009,7 +1000,8 @@ impl<P: LTPayload> LTTextBox<P> {
             let l = line.borrow();
             keys.push(if self.vertical { l.comp.x1.neg() } else { l.comp.y1.neg() });
         }
-        list_sort(&mut self._objs, keys, |a, b| Ok(a.py_lt(b)))
+        list_sort(&mut self._objs, keys, |a, b| a.py_lt(b));
+        Ok(())
     }
 }
 
@@ -1162,7 +1154,8 @@ impl<P: LTPayload> LTTextGroup<P> {
                 one.sub(boxes_flow)?.mul(&o.x0)?.sub(&one.add(boxes_flow)?.mul(&o.y0.add(&o.y1)?)?)?
             });
         }
-        list_sort(&mut self._objs, keys, |a, b| Ok(a.py_lt(b)))
+        list_sort(&mut self._objs, keys, |a, b| a.py_lt(b));
+        Ok(())
     }
 }
 
@@ -1311,53 +1304,48 @@ struct HeapEntry<P: LTPayload> {
 }
 
 impl<P: LTPayload> HeapEntry<P> {
-    /// Python's `<` on the tuples: the first unequal field decides; two
-    /// different layout objects compared raise `PDFValueError` (their `<`
-    /// is disabled), which unique ids never let happen.
-    fn lt(&self, other: &HeapEntry<P>) -> PyResult<bool> {
+    /// Python's `<` on the tuples: the first unequal field decides. Two
+    /// entries never have the same pair of ids (each pair of objects is
+    /// pushed once, or popped and pushed again), so the objects themselves,
+    /// whose `<` raises `PDFValueError`, are never compared.
+    fn lt(&self, other: &HeapEntry<P>) -> bool {
         if self.skip_isany != other.skip_isany {
-            return Ok(!self.skip_isany);
+            return !self.skip_isany;
         }
         if !self.d.py_eq(&other.d) {
-            return Ok(self.d.py_lt(&other.d));
+            return self.d.py_lt(&other.d);
         }
         if self.id1 != other.id1 {
-            return Ok(self.id1 < other.id1);
+            return self.id1 < other.id1;
         }
-        if self.id2 != other.id2 {
-            return Ok(self.id2 < other.id2);
-        }
-        if self.obj1.ptr_eq(&other.obj1) && self.obj2.ptr_eq(&other.obj2) {
-            return Ok(false);
-        }
-        Err(exc::PDFValueError(""))
+        debug_assert!(self.id2 != other.id2 || (self.obj1.ptr_eq(&other.obj1) && self.obj2.ptr_eq(&other.obj2)));
+        self.id2 < other.id2
     }
 }
 
 // The heap functions of CPython's _heapq module (the same algorithm as
-// heapq.py), with a fallible `<`.
+// heapq.py).
 
 /// `_siftdown(heap, startpos, pos)`
-fn heap_siftdown<P: LTPayload>(heap: &mut [HeapEntry<P>], startpos: usize, mut pos: usize) -> PyResult<()> {
+fn heap_siftdown<P: LTPayload>(heap: &mut [HeapEntry<P>], startpos: usize, mut pos: usize) {
     while pos > startpos {
         let parentpos = (pos - 1) >> 1;
-        if !heap[pos].lt(&heap[parentpos])? {
+        if !heap[pos].lt(&heap[parentpos]) {
             break;
         }
         heap.swap(pos, parentpos);
         pos = parentpos;
     }
-    Ok(())
 }
 
 /// `_siftup(heap, pos)`
-fn heap_siftup<P: LTPayload>(heap: &mut [HeapEntry<P>], mut pos: usize) -> PyResult<()> {
+fn heap_siftup<P: LTPayload>(heap: &mut [HeapEntry<P>], mut pos: usize) {
     let endpos = heap.len();
     let startpos = pos;
     let limit = endpos >> 1;
     while pos < limit {
         let mut childpos = 2 * pos + 1;
-        if childpos + 1 < endpos && !heap[childpos].lt(&heap[childpos + 1])? {
+        if childpos + 1 < endpos && !heap[childpos].lt(&heap[childpos + 1]) {
             childpos += 1;
         }
         heap.swap(pos, childpos);
@@ -1367,29 +1355,28 @@ fn heap_siftup<P: LTPayload>(heap: &mut [HeapEntry<P>], mut pos: usize) -> PyRes
 }
 
 /// `heapq.heapify`
-fn heapify<P: LTPayload>(heap: &mut [HeapEntry<P>]) -> PyResult<()> {
+fn heapify<P: LTPayload>(heap: &mut [HeapEntry<P>]) {
     for i in (0..heap.len() / 2).rev() {
-        heap_siftup(heap, i)?;
+        heap_siftup(heap, i);
     }
-    Ok(())
 }
 
 /// `heapq.heappush`
-fn heappush<P: LTPayload>(heap: &mut Vec<HeapEntry<P>>, item: HeapEntry<P>) -> PyResult<()> {
+fn heappush<P: LTPayload>(heap: &mut Vec<HeapEntry<P>>, item: HeapEntry<P>) {
     heap.push(item);
     let last = heap.len() - 1;
     heap_siftdown(heap, 0, last)
 }
 
 /// `heapq.heappop` (of a non-empty heap)
-fn heappop<P: LTPayload>(heap: &mut Vec<HeapEntry<P>>) -> PyResult<HeapEntry<P>> {
+fn heappop<P: LTPayload>(heap: &mut Vec<HeapEntry<P>>) -> HeapEntry<P> {
     let lastelt = heap.pop().expect("a non-empty heap");
     if heap.is_empty() {
-        return Ok(lastelt);
+        return lastelt;
     }
     let returnitem = std::mem::replace(&mut heap[0], lastelt);
-    heap_siftup(heap, 0)?;
-    Ok(returnitem)
+    heap_siftup(heap, 0);
+    returnitem
 }
 
 /// `dist(obj1, obj2)` of `group_textboxes`: the area of the bounding
@@ -1553,16 +1540,16 @@ impl<P: LTPayload> LTLayoutContainer<P> {
                 dists.push(HeapEntry { skip_isany: false, d, id1, id2, obj1: box1.clone(), obj2: box2.clone() });
             }
         }
-        heapify(&mut dists)?;
+        heapify(&mut dists);
 
         plane.extend(&boxes)?;
         let mut done: FxHashSet<u64> = FxHashSet::default();
         while !dists.is_empty() {
-            let HeapEntry { skip_isany, d, id1, id2, obj1, obj2 } = heappop(&mut dists)?;
+            let HeapEntry { skip_isany, d, id1, id2, obj1, obj2 } = heappop(&mut dists);
             // Skip objects that are already merged
             if !done.contains(&id1) && !done.contains(&id2) {
                 if !skip_isany && isany(&plane, &obj1, &obj2)? {
-                    heappush(&mut dists, HeapEntry { skip_isany: true, d, id1, id2, obj1, obj2 })?;
+                    heappush(&mut dists, HeapEntry { skip_isany: true, d, id1, id2, obj1, obj2 });
                     continue;
                 }
                 let tbrl = obj1.is_tbrl() || obj2.is_tbrl();
@@ -1581,7 +1568,7 @@ impl<P: LTPayload> LTLayoutContainer<P> {
                     heappush(
                         &mut dists,
                         HeapEntry { skip_isany: false, d, id1: gid, id2: oid, obj1: group.clone(), obj2: other },
-                    )?;
+                    );
                 }
                 plane.add(&group)?;
             }
@@ -1657,7 +1644,7 @@ impl<P: LTPayload> LTLayoutContainer<P> {
                     [int(1), b.comp.y0.neg(), b.comp.x0.clone()]
                 });
             }
-            list_sort(&mut textboxes, keys, |a, b| Ok(tuple_lt(a, b)))?;
+            list_sort(&mut textboxes, keys, |a, b| tuple_lt(a, b));
         } else {
             let groups = self.group_textboxes(laparams, &textboxes, ids)?;
             self.groups = Some(groups.clone());
@@ -1671,7 +1658,7 @@ impl<P: LTPayload> LTLayoutContainer<P> {
                 let _key = c_called_frame()?;
                 keys.push(b.borrow().index);
             }
-            list_sort(&mut textboxes, keys, |a, b| Ok(a < b))?;
+            list_sort(&mut textboxes, keys, |a, b| a < b);
         }
         let mut objs: Vec<LTItem<P>> = textboxes.into_iter().map(LTItem::TextBox).collect();
         objs.extend(otherobjs);
@@ -1704,12 +1691,8 @@ impl<P: LTPayload> LTFigure<P> {
     }
 
     // pdfminer/layout.py:968 LTFigure.analyze
-    /// Analyzes the figure's contents only with `all_texts`.
-    pub fn analyze(&mut self, laparams: &LAParams) -> PyResult<()> {
-        self.analyze_with_ids(laparams, &mut CreationOrder::default())
-    }
-
-    /// [`Self::analyze`] with the ids of an [`IdSource`].
+    /// Analyzes the figure's contents only with `all_texts`, with the ids of
+    /// the page's analysis (the figure is analyzed as part of its page).
     pub fn analyze_with_ids(&mut self, laparams: &LAParams, ids: &mut dyn IdSource<P>) -> PyResult<()> {
         let _frame = py_frame()?;
         if !laparams.all_texts {

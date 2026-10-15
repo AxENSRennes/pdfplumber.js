@@ -14,12 +14,13 @@ use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
 use pdfminer::layout::{
-    CharDisp, CurveKind, IdSource, LAParams, LTChar, LTCharFont, LTComponent, LTCurve, LTFigure, LTImage, LTItem,
-    LTLayoutContainer, LTPage, LTPayload, LTTextBox, LTTextLine, TextGroupElement, TextLineElement, TextLineKind,
+    CharDisp, CreationOrder, CurveKind, IdSource, LAParams, LTAnno, LTChar, LTCharFont, LTComponent, LTCurve, LTFigure,
+    LTImage, LTItem, LTLayoutContainer, LTPage, LTPayload, LTTextBox, LTTextGroup, LTTextLine, TextGroupElement,
+    TextLineElement, TextLineKind,
 };
 use pdfminer::pdfcolor::PDFColorSpace;
-use pdfminer::utils::PlaneItem;
 use pdfminer::pdftypes::{PDFObject, PDFResolver, PDFStream};
+use pdfminer::utils::PlaneItem;
 use pdftrace::canon::{canon, canon_exc};
 use pdftrace::unit::UnitData;
 use pdftrace::value::{PyStr, Value};
@@ -561,6 +562,20 @@ fn replay_layout(name: &str) {
             if actual != expected {
                 failures.push(format!("{case} {:?}: {}", run[0], first_difference(expected, &actual)));
             }
+            if lp.boxes_flow.is_none() {
+                // no heap, so no id: LTPage.analyze with the default ids
+                let mut b = Builder { weak: weak.clone(), order: Vec::new() };
+                let mut page = b.page(&args[1]);
+                let index: HashMap<usize, i64> = b.order.iter().enumerate().map(|(i, p)| (*p, i as i64)).collect();
+                let out = recursion::with_depth(depth(&run[1]), || page.analyze(&lp));
+                let actual = match out {
+                    Ok(()) => canon(&TreeDumper { index: &index }.page(&page)),
+                    Err(e) => canon_exc(&e),
+                };
+                if actual != expected {
+                    failures.push(format!("{case} {:?} (analyze): {}", run[0], first_difference(expected, &actual)));
+                }
+            }
         }
     }
     assert!(
@@ -704,6 +719,31 @@ fn objects() {
             // the value given back as it was given (a bool stays a bool)
             result(lp, |_| a[1].clone())
         }
+        "get_pts" => {
+            let pts = items(&a[1]).iter().map(nums).collect();
+            let c = LTCurve::<TP>::new(int(1), pts, false, false, false, None, None, None, None).expect("a curve");
+            result(c.get_pts(), Value::str)
+        }
+        "dict_keys" => {
+            let keys: &[&str] = match str_arg(&a[1]) {
+                "LTChar" => &LTChar::<TP>::DICT_KEYS,
+                "LTCurve" | "LTLine" | "LTRect" => &LTCurve::<TP>::DICT_KEYS,
+                "LTImage" => &LTImage::DICT_KEYS,
+                "LTFigure" => &LTFigure::<TP>::DICT_KEYS,
+                "LTPage" => &LTPage::<TP>::DICT_KEYS,
+                "LTAnno" => &LTAnno::DICT_KEYS,
+                "LTTextLineHorizontal" => &LTTextLine::<TP>::DICT_KEYS_HORIZONTAL,
+                "LTTextLineVertical" => &LTTextLine::<TP>::DICT_KEYS_VERTICAL,
+                "LTTextBoxHorizontal" | "LTTextBoxVertical" => &LTTextBox::<TP>::DICT_KEYS,
+                "LTTextGroupLRTB" | "LTTextGroupTBRL" => &LTTextGroup::<TP>::DICT_KEYS,
+                other => panic!("{other}"),
+            };
+            Value::List(keys.iter().map(|k| Value::str(*k)).collect())
+        }
+        "writing_mode" => {
+            let b = LTTextBox::<TP>::new(str_arg(&a[1]) == "LTTextBoxVertical").expect("a box");
+            Value::str(b.get_writing_mode())
+        }
         "component" => {
             let c1 = LTComponent::new(nums(&a[1])).expect("a component");
             let c2 = LTComponent::new(nums(&a[2])).expect("a component");
@@ -748,4 +788,15 @@ fn textline() {
 
 fn int(v: i64) -> Num {
     Num::Int(PyInt::Small(v))
+}
+
+/// The default ids: increasing in the order objects are first seen, the
+/// same for the same object.
+#[test]
+fn creation_order() {
+    let boxes: Vec<TextGroupElement<TP>> =
+        (0..3).map(|_| TextGroupElement::Box(Rc::new(RefCell::new(LTTextBox::new(false).expect("a box"))))).collect();
+    let mut ids = CreationOrder::default();
+    let first: Vec<u64> = [2, 0, 2, 1, 0].iter().map(|&i| IdSource::<TP>::id(&mut ids, &boxes[i])).collect();
+    assert_eq!(first, [0, 1, 0, 2, 1]);
 }
