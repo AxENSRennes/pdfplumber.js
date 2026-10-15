@@ -334,6 +334,10 @@ def gen_plane(rng):
     for bbox in [(0, 0, math.inf, 10), (math.nan, 0, 10, 10), (0, 0, 10**30, 10), (-math.inf, -math.inf, 5, 5)]:
         ops = [["add", 0, (1, 1, 2, 2)], ["find", (0, 0, 3, 3)], ["iter"]]
         yield [bbox, 50, ops], run_plane(bbox, 50, ops)
+    # len and bool of an empty plane (the random jobs add a box whenever
+    # none is left)
+    ops = [["len"], ["add", 0, (1, 1, 2, 2)], ["len"], ["remove", 0], ["len"], ["iter"]]
+    yield [(0, 0, 100, 100), 50, ops], run_plane((0, 0, 100, 100), 50, ops)
 
 
 # -- NumberTree -------------------------------------------------------------------
