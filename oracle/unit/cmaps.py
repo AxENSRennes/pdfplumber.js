@@ -150,6 +150,10 @@ def table_cases():
         props, widths = entry
         yield ["FONT_METRICS", name], [[[k, v] for k, v in props.items()], [[k, v] for k, v in widths.items()], ids.setdefault(id(entry), name)]
     yield ["FONT_METRICS"], list(FONT_METRICS)
+    # EncodingDB.encodings: which class dict each name gives
+    tables = {"std": EncodingDB.std2unicode, "mac": EncodingDB.mac2unicode, "win": EncodingDB.win2unicode, "pdf": EncodingDB.pdf2unicode}
+    found = [[name, next((k for k, t in tables.items() if EncodingDB.encodings.get(name) is t), None)] for name in ENCODING_NAMES]
+    yield ["encodings", ENCODING_NAMES], found
 
 
 # -- name2unicode ---------------------------------------------------------------

@@ -82,18 +82,16 @@ use crate::utils::choplist;
 // ---------------------------------------------------------------------------
 // Values
 
-/// A Python `str` held by a unicode map: text, or its code points when it
-/// holds a lone surrogate (`chr(0xd800)`), which UTF-8 cannot carry. The
-/// representation is unique: `CodePoints` always holds a surrogate.
+/// A Python `str` held by a unicode map: text, or a lone surrogate, which
+/// UTF-8 cannot carry. A surrogate only comes from `chr()` of one code point
+/// (`IdentityUnicodeMap.get_unichr`, an integer in a `beginbfrange` array):
+/// `name2unicode` rejects them, the UTF-16 decoder skips them and the
+/// predefined maps hold none (`oracle/codegen/cmaps.py` checks).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Unichr {
     Text(Rc<str>),
-    CodePoints(Rc<[u32]>),
-}
-
-/// A UTF-16 surrogate code point (U+D800..U+DFFF).
-fn is_surrogate(c: u32) -> bool {
-    (0xd800..0xe000).contains(&c)
+    /// `chr(c)` for a surrogate code point `c` (U+D800..U+DFFF).
+    Surrogate(u32),
 }
 
 impl Unichr {
@@ -101,54 +99,23 @@ impl Unichr {
     pub fn from_code_point(c: u32) -> Unichr {
         match char::from_u32(c) {
             Some(ch) => Unichr::Text(ch.to_string().into()),
-            None => Unichr::CodePoints(Rc::from([c].as_slice())),
+            None => Unichr::Surrogate(c),
         }
     }
 
-    /// The text, when it holds no surrogate.
+    /// The text, when it is not a surrogate.
     pub fn as_str(&self) -> Option<&str> {
         match self {
             Unichr::Text(s) => Some(s),
-            Unichr::CodePoints(_) => None,
+            Unichr::Surrogate(_) => None,
         }
     }
 
-    /// The code points (`[ord(c) for c in s]`).
-    pub fn code_points(&self) -> Vec<u32> {
-        match self {
-            Unichr::Text(s) => s.chars().map(u32::from).collect(),
-            Unichr::CodePoints(c) => c.to_vec(),
-        }
-    }
-
-    /// `repr(s)`.
+    /// `repr(s)` (a surrogate is not printable: `'\udxxx'`).
     pub fn repr(&self) -> String {
         match self {
             Unichr::Text(s) => str_repr(s),
-            Unichr::CodePoints(cps) => {
-                let has = |q: u32| cps.contains(&q);
-                let quote = if has(u32::from('\'')) && !has(u32::from('"')) { '"' } else { '\'' };
-                let mut out = String::new();
-                out.push(quote);
-                for &c in cps.iter() {
-                    match char::from_u32(c) {
-                        None => {
-                            let _ = write!(out, "\\u{c:04x}");
-                        }
-                        Some(ch) if ch == quote || ch == '\\' => {
-                            out.push('\\');
-                            out.push(ch);
-                        }
-                        Some(ch) => {
-                            // the repr of the character alone, without its quotes
-                            let r = str_repr(&ch.to_string());
-                            out.push_str(&r[1..r.len() - 1]);
-                        }
-                    }
-                }
-                out.push(quote);
-                out
-            }
+            Unichr::Surrogate(c) => format!("'\\u{c:04x}'"),
         }
     }
 }
@@ -218,9 +185,14 @@ fn nunpack(s: &[u8]) -> PyInt {
         return PyInt::ZERO;
     }
     if s.len() <= 7 {
-        return PyInt::Small(s.iter().fold(0i64, |acc, &b| (acc << 8) | i64::from(b)));
+        return PyInt::Small(s.iter().fold(0i64, |acc, &b| (acc << 8) + i64::from(b)));
     }
     PyInt::from(num_bigint::BigInt::from(BigUint::from_bytes_be(s)))
+}
+
+/// A UTF-16 surrogate code point (U+D800..U+DFFF).
+fn is_surrogate(c: u32) -> bool {
+    (0xd800..0xe000).contains(&c)
 }
 
 /// `bytes.decode("UTF-16BE", "ignore")`: CPython's UTF-16 decoder

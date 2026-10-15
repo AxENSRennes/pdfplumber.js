@@ -112,7 +112,7 @@ fn list(v: &Value) -> &[Value] {
 fn unichr(u: &Unichr) -> Value {
     match u {
         Unichr::Text(s) => Value::str(s.to_string()),
-        Unichr::CodePoints(c) => Value::Str(PyStr::from_code_points(c.to_vec()).expect("code points")),
+        Unichr::Surrogate(c) => Value::Str(PyStr::from_code_points(vec![*c]).expect("a surrogate")),
     }
 }
 
@@ -317,7 +317,7 @@ fn tables() {
         FontMetricValue::FloatTuple(t) => Value::Tuple(t.iter().map(|f| Value::Float(*f)).collect()),
     };
     let opt = |v: Option<i64>| v.map_or(Value::None, |v| Value::Int(PyInt::Small(v)));
-    replay(&data, "tables", 4, |a| match (text(&a[0]), a.get(1)) {
+    replay(&data, "tables", 5, |a| match (text(&a[0]), a.get(1)) {
         ("glyphname2unicode", None) => Value::List(
             GLYPHNAME2UNICODE.iter().map(|(k, v)| Value::List(vec![Value::str(*k), Value::str(*v)])).collect(),
         ),
@@ -328,6 +328,26 @@ fn tables() {
                 .collect(),
         ),
         ("FONT_METRICS", None) => Value::List(FONT_METRICS.iter().map(|(n, _)| Value::str(*n)).collect()),
+        ("encodings", Some(names)) => {
+            let db = EncodingDB::get();
+            let tables = [
+                ("std", &db.std2unicode),
+                ("mac", &db.mac2unicode),
+                ("win", &db.win2unicode),
+                ("pdf", &db.pdf2unicode),
+            ];
+            Value::List(
+                list(names)
+                    .iter()
+                    .map(|name| {
+                        let found = EncodingDB::encodings(text(name))
+                            .and_then(|e| tables.iter().find(|(_, t)| std::ptr::eq(*t, e)))
+                            .map_or(Value::None, |(k, _)| Value::str(*k));
+                        Value::List(vec![name.clone(), found])
+                    })
+                    .collect(),
+            )
+        }
         ("FONT_METRICS", Some(name)) => {
             let m = pdfminer::fontmetrics::get(text(name)).expect("a font");
             let first = FONT_METRICS.iter().find(|(_, x)| std::ptr::eq(*x, m)).expect("listed").0;
