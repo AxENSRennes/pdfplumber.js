@@ -65,15 +65,16 @@ use pycompat::{exc, ExcKind, PyErr, PyInt, PyResult};
 use sha2::{Sha256, Sha384, Sha512};
 
 use crate::arcfour::Arcfour;
-use crate::pdftypes::{dict_value, int_value_obj, str_value, uint_value, DecipherCallable, PDFDict, PDFObject, PyBytes};
+use crate::pdftypes::{
+    dict_value, int_value_obj, str_value, uint_value, DecipherCallable, PDFDict, PDFObject, PyBytes,
+};
 use crate::psparser::literal_name;
 use crate::saslprep::saslprep;
 use crate::utils::unpad_aes;
 
 // pdfminer/pdfdocument.py:336 PDFStandardSecurityHandler.PASSWORD_PADDING
 /// `PDFStandardSecurityHandler.PASSWORD_PADDING`
-pub const PASSWORD_PADDING: &[u8; 32] =
-    b"(\xbfN^Nu\x8aAd\x00NV\xff\xfa\x01\x08..\x00\xb6\xd0h>\x80/\x0c\xa9\xfedSiz";
+pub const PASSWORD_PADDING: &[u8; 32] = b"(\xbfN^Nu\x8aAd\x00NV\xff\xfa\x01\x08..\x00\xb6\xd0h>\x80/\x0c\xa9\xfedSiz";
 
 /// Which of the three Python classes a handler is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -282,10 +283,7 @@ fn encode_latin1(s: &str) -> PyResult<Vec<u8>> {
         let shown = if c <= 0xffff { format!("\\u{c:04x}") } else { format!("\\U{c:08x}") };
         format!("'latin-1' codec can't encode character '{shown}' in position {start}: ordinal not in range(256)")
     } else {
-        format!(
-            "'latin-1' codec can't encode characters in position {start}-{}: ordinal not in range(256)",
-            end - 1
-        )
+        format!("'latin-1' codec can't encode characters in position {start}-{}: ordinal not in range(256)", end - 1)
     };
     Err(PyErr::new(ExcKind::UnicodeEncodeError, message))
 }
@@ -427,12 +425,24 @@ impl PDFStandardSecurityHandler {
         password: &str,
     ) -> PyResult<PDFStandardSecurityHandler> {
         let _frame = recursion::py_frame()?;
+        let mut handler = PDFStandardSecurityHandler::bare(class);
+        handler.docid = docid;
+        handler.param = param;
+        handler.password = password.to_owned();
+        handler.init()?;
+        Ok(handler)
+    }
+
+    /// `cls.__new__(cls)`: a handler whose attributes are not set yet
+    /// (here: 0, empty, `None`), for code that sets them itself (the unit
+    /// tests call the methods on chosen attributes).
+    pub fn bare(class: SecurityHandlerClass) -> PDFStandardSecurityHandler {
         let zero = PDFObject::Int(PyInt::ZERO);
-        let mut handler = PDFStandardSecurityHandler {
+        PDFStandardSecurityHandler {
             class,
-            docid,
-            param,
-            password: password.to_owned(),
+            docid: Vec::new(),
+            param: PDFDict::new(),
+            password: String::new(),
             v: zero.clone(),
             r: zero.clone(),
             length: zero.clone(),
@@ -453,9 +463,7 @@ impl PDFStandardSecurityHandler {
             u_hash: None,
             u_validation_salt: None,
             u_key_salt: None,
-        };
-        handler.init()?;
-        Ok(handler)
+        }
     }
 
     /// The document's decryption callback: `self.decrypt`.
@@ -472,10 +480,7 @@ impl PDFStandardSecurityHandler {
         self.init_params()?;
         let r = int_of(&self.r);
         if !self.class.supported_revisions().iter().any(|&s| r == PyInt::Small(s)) {
-            return Err(PyErr::new(
-                ExcKind::PDFEncryptionError,
-                param_message("Unsupported revision", &self.param)?,
-            ));
+            return Err(PyErr::new(ExcKind::PDFEncryptionError, param_message("Unsupported revision", &self.param)?));
         }
         self.init_key()
     }
@@ -535,10 +540,7 @@ impl PDFStandardSecurityHandler {
         }
         self.cfm.insert("Identity".to_owned(), CryptFilterMethod::DecryptIdentity);
         if !self.cfm.contains_key(&strf) {
-            return Err(PyErr::new(
-                ExcKind::PDFEncryptionError,
-                param_message("Undefined crypt filter", &self.param)?,
-            ));
+            return Err(PyErr::new(ExcKind::PDFEncryptionError, param_message("Undefined crypt filter", &self.param)?));
         }
         Ok(())
     }
@@ -668,7 +670,7 @@ impl PDFStandardSecurityHandler {
         let mut hash = Md5::new(); // 2
         hash.update(&padded);
         hash.update(&self.o); // 3
-        // See https://github.com/pdfminer/pdfminer.six/issues/186
+                              // See https://github.com/pdfminer/pdfminer.six/issues/186
         hash.update(pack_l(&int_of(&self.p))?); // 4
         hash.update(&*buffer(&self.docid0()?)?); // 5
         let r = int_of(&self.r);
@@ -780,7 +782,8 @@ impl PDFStandardSecurityHandler {
 
     // pdfminer/pdfdocument.py:508 PDFStandardSecurityHandlerV4.decrypt
     /// `PDFStandardSecurityHandlerV4.decrypt(objid, genno, data, attrs,
-    /// name)`: `name` (default `self.strf`) picks the crypt filter.
+    /// name)` (on a V4 or V5 handler): `name` (default `self.strf`) picks
+    /// the crypt filter.
     pub fn decrypt_v4(
         &self,
         objid: &PyInt,

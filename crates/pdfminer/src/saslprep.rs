@@ -195,9 +195,10 @@ fn decomposition(code: u32) -> Option<(bool, &'static [u32])> {
 
 /// `PreviousDBVersion.normalization(code)` of UCD 3.2.0 (0: none).
 fn normalization_correction(code: u32) -> Option<u32> {
-    tables::NORMALIZATION_CORRECTIONS.binary_search_by_key(&code, |&(c, _)| c).ok().map(|i| {
-        tables::NORMALIZATION_CORRECTIONS[i].1
-    })
+    tables::NORMALIZATION_CORRECTIONS
+        .binary_search_by_key(&code, |&(c, _)| c)
+        .ok()
+        .map(|i| tables::NORMALIZATION_CORRECTIONS[i].1)
 }
 
 /// `find_nfc_index(nfc_first, code) != -1`
@@ -213,9 +214,7 @@ fn is_comp_last(code: u32) -> bool {
 
 /// `comp_data[...]` of the pair, or `None` (0).
 fn compose(first: u32, last: u32) -> Option<u32> {
-    tables::COMPOSITION.binary_search_by(|&(a, b, _)| (a, b).cmp(&(first, last))).ok().map(|i| {
-        tables::COMPOSITION[i].2
-    })
+    tables::COMPOSITION.binary_search_by(|&(a, b, _)| (a, b).cmp(&(first, last))).ok().map(|i| tables::COMPOSITION[i].2)
 }
 
 /// `nfd_nfkd(ucd_3_2_0, input, k)`: decomposition, then canonical ordering.
