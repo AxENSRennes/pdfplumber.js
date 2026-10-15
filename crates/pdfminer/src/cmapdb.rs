@@ -39,10 +39,16 @@
 //! (`oracle/codegen/cmaps.py` converts every pdfminer file and documents
 //! the format; [`DirCMapProvider`] reads the converted files from a
 //! directory, natively and under WASI; the JavaScript side will provide
-//! them by `fetch`). The provider is per thread, like the caches
+//! them by `fetch`). A process-wide default provider
+//! ([`CMapDB::set_default_provider`]) serves every thread that has not set
+//! its own ([`CMapDB::set_provider`]); the caches are per thread
 //! (`CMapDB._cmap_cache`, `_umap_cache`: class attributes in Python, so
-//! process-wide and never emptied). Without a provider, every name is
-//! missing (`CMapNotFound`), as with an installation without the data.
+//! process-wide and never emptied). A thread whose provider is `None` finds
+//! no name (`CMapNotFound`), as with an installation without the data. A
+//! thread with neither its own provider nor a default gets a `RuntimeError`
+//! (no Python counterpart) when it needs a predefined CMap: forgetting to
+//! install a provider must not look like that installation, since pdffont
+//! turns `CMapNotFound` into an empty CMap and a font without text.
 //!
 //! `CMapDB._load_data` looks for the file in `$CMAP_PATH` (default
 //! `/usr/share/pdfminer/`) then in the package's `cmap` directory, after
@@ -65,7 +71,7 @@ use std::cell::RefCell;
 use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, PoisonError, RwLock};
 
 use indexmap::IndexMap;
 use num_bigint::BigUint;
@@ -703,9 +709,17 @@ pub struct CMapModule {
 }
 
 impl CMapModule {
-    /// The `AttributeError` of reading a missing attribute.
+    /// The `AttributeError` of reading a missing attribute of the class:
+    /// `type_getattro` (Objects/typeobject.c) formats it with
+    /// `"type object '%.100s' has no attribute '%U'"`. The class name is not
+    /// quoted by `repr`; `%.100s` keeps its first 100 UTF-8 bytes and decodes
+    /// them with the `replace` handler, so a character cut in the middle
+    /// becomes one U+FFFD (as `from_utf8_lossy` does with a truncated
+    /// sequence at the end).
     fn missing(&self, attr: &str) -> PyErr {
-        exc::AttributeError(format!("type object {} has no attribute '{attr}'", str_repr(&self.name)))
+        let name = self.name.as_bytes();
+        let name = String::from_utf8_lossy(&name[..name.len().min(100)]);
+        exc::AttributeError(format!("type object '{name}' has no attribute '{attr}'"))
     }
 
     /// Reads the compact form written by `oracle/codegen/cmaps.py` (see its
@@ -889,8 +903,25 @@ pub fn resolve_cmap_name(name: &str) -> Option<String> {
     }
 }
 
+/// A provider shared by the threads of the process.
+pub type SharedCMapProvider = Arc<dyn CMapProvider + Send + Sync>;
+
+/// The process-wide default provider ([`CMapDB::set_default_provider`]).
+static DEFAULT_PROVIDER: RwLock<Option<SharedCMapProvider>> = RwLock::new(None);
+
+/// The process-wide default provider, as a provider of this thread.
+struct DefaultProvider(SharedCMapProvider);
+
+impl CMapProvider for DefaultProvider {
+    fn load(&self, name: &str) -> Option<Vec<u8>> {
+        self.0.load(name)
+    }
+}
+
 thread_local! {
-    static PROVIDER: RefCell<Option<Rc<dyn CMapProvider>>> = const { RefCell::new(None) };
+    /// The choice of this thread: `None` (no choice) uses the process
+    /// default; `Some(None)` is an installation without the data.
+    static PROVIDER: RefCell<Option<Option<Rc<dyn CMapProvider>>>> = const { RefCell::new(None) };
     /// `CMapDB._cmap_cache`
     static CMAP_CACHE: RefCell<FxHashMap<String, Rc<CMap>>> = RefCell::new(FxHashMap::default());
     /// `CMapDB._umap_cache`
@@ -902,17 +933,47 @@ thread_local! {
 pub struct CMapDB;
 
 impl CMapDB {
-    /// Sets the provider of this thread (`None`: every CMap is missing).
-    /// The caches are kept, as Python's are.
+    /// Sets the provider of the whole process, used by every thread that
+    /// has not chosen its own with [`CMapDB::set_provider`] (`None`: no
+    /// default). The caches are kept, as Python's are.
+    pub fn set_default_provider(provider: Option<SharedCMapProvider>) {
+        *DEFAULT_PROVIDER.write().unwrap_or_else(PoisonError::into_inner) = provider;
+    }
+
+    /// Sets the provider of this thread, which overrides the process
+    /// default (`None`: every CMap is missing, as with an installation
+    /// without the data). The caches are kept, as Python's are.
     pub fn set_provider(provider: Option<Rc<dyn CMapProvider>>) {
-        PROVIDER.with(|p| *p.borrow_mut() = provider);
+        PROVIDER.with(|p| *p.borrow_mut() = Some(provider));
+    }
+
+    /// Makes this thread use the process default again.
+    pub fn clear_provider() {
+        PROVIDER.with(|p| *p.borrow_mut() = None);
+    }
+
+    /// The provider of this thread, else the process default. With
+    /// neither, the core is misconfigured: a `RuntimeError` (no Python
+    /// counterpart) rather than `CMapNotFound`, which pdffont would silently
+    /// turn into an empty CMap or no unicode map.
+    fn provider() -> PyResult<Option<Rc<dyn CMapProvider>>> {
+        if let Some(choice) = PROVIDER.with(|p| p.borrow().clone()) {
+            return Ok(choice);
+        }
+        match DEFAULT_PROVIDER.read().unwrap_or_else(PoisonError::into_inner).clone() {
+            Some(provider) => Ok(Some(Rc::new(DefaultProvider(provider)))),
+            None => Err(PyErr::new(
+                ExcKind::RuntimeError,
+                "no CMap provider installed: call CMapDB::set_default_provider or CMapDB::set_provider",
+            )),
+        }
     }
 
     // pdfminer/cmapdb.py:249 CMapDB._load_data
     /// The data of the predefined CMap `name`, or `CMapNotFound(name)`.
     pub fn load_data(name: &str) -> PyResult<CMapModule> {
         let name = name.replace('\0', "");
-        let provider = PROVIDER.with(|p| p.borrow().clone());
+        let provider = CMapDB::provider()?;
         if let (Some(provider), Some(stem)) = (provider, resolve_cmap_name(&name)) {
             if let Some(data) = provider.load(&stem) {
                 return CMapModule::parse(&name, &data)

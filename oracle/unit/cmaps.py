@@ -417,12 +417,27 @@ PATH_NAMES = [
     "../../pdfminer/cmap/H", "../H", "a/b/../../H", "H/", "H/.", "..", ".", "cmap/H", "../cmap/../cmap/V", "./../cmap/./78-H",
     "../../../H", "h", "README.txt", "README", "to-unicode-Adobe-Japan1", "identity-h", "Identity-H ", "UniJIS-UCS2-H",
     "x" * 60 + "/../to-unicode-Adobe-GB1", "\u00e9" * 25 + "/../to-unicode-Adobe-GB1",
+    # the AttributeError message of a class read as the wrong kind: "type object '%.100s' has no attribute '%U'"
+    # (the class name unquoted, cut to 100 UTF-8 bytes, a cut character decoded as one U+FFFD)
+    "it's/../to-unicode-Adobe-GB1", 'a"b/../to-unicode-Adobe-GB1', "a'\"b/../to-unicode-Adobe-GB1",
+    "a\\b/../to-unicode-Adobe-GB1", "a\nb\tc\x7f/../to-unicode-Adobe-GB1", "\u00e9\u20ac\U0001F600/../to-unicode-Adobe-GB1",
+    "x" * 200 + "/../to-unicode-Adobe-GB1", "x" * 76 + "/../to-unicode-Adobe-GB1", "x" * 77 + "/../to-unicode-Adobe-GB1",
+    "x" * 99 + "\u00e9/../to-unicode-Adobe-GB1", "x" * 98 + "\u00e9/../to-unicode-Adobe-GB1",
+    "x" * 98 + "\u20ac/../to-unicode-Adobe-GB1", "x" * 99 + "\u20ac/../to-unicode-Adobe-GB1",
+    "x" * 97 + "\U0001F600/../to-unicode-Adobe-GB1", "x" * 96 + "\U0001F600/../to-unicode-Adobe-GB1",
+    "x" * 99 + "\U0001F600/../to-unicode-Adobe-GB1", "\u20ac" * 40 + "/../to-unicode-Adobe-GB1",
 ]
 UMAP_NAMES = ["Adobe-Japan1", "Adobe-GB1", "Adobe-CNS1", "Adobe-Korea1", "Adobe-Identity", "Adobe-UCS", "Unknown",
               "x/../../cmap/H", "x/../Adobe-Korea1", "../cmap/to-unicode-Adobe-GB1", "Adobe-Japan1\0", "",
-              # AttributeError messages cut the class name to 50 bytes ("%.50s")
+              # AttributeError messages show the class name "to-unicode-<name>" unquoted, cut to 100 UTF-8 bytes
+              # ("%.100s"), a cut character decoded as one U+FFFD
               "x" * 60 + "/../../cmap/V", "x" * 34 + "\u00e9/../../cmap/V", "x" * 35 + "\u00e9/../../cmap/V",
-              "x" * 34 + "\u20ac/../../cmap/V", "\u00e9" * 30 + "/../../cmap/V"]
+              "x" * 34 + "\u20ac/../../cmap/V", "\u00e9" * 30 + "/../../cmap/V",
+              "it's/../../cmap/V", 'a"b/../../cmap/V', "a\\b/../../cmap/V", "a\nb\r/../../cmap/V",
+              "x" * 200 + "/../../cmap/V", "x" * 76 + "/../../cmap/V", "x" * 77 + "/../../cmap/V",
+              "x" * 88 + "\u00e9/../../cmap/V", "x" * 87 + "\u00e9/../../cmap/V", "x" * 87 + "\u20ac/../../cmap/V",
+              "x" * 88 + "\u20ac/../../cmap/V", "x" * 86 + "\U0001F600/../../cmap/V", "x" * 88 + "\U0001F600/../../cmap/V",
+              "\u20ac" * 40 + "/../../cmap/V"]
 
 
 def predefined_cases(rng):
@@ -653,6 +668,12 @@ FIXED = [
     b"[1 2] [3 4] /K def /x [5] def", b"1 2 3 begincodespacerange 4 endcodespacerange 5",
     # usecmap of a unicode map file: AttributeError, not CMapNotFound
     b"/to-unicode-Adobe-GB1 usecmap", b"/..#2Fcmap#2Fto-unicode-Adobe-CNS1 usecmap",
+    # ... whose message shows the class name unquoted, cut to 100 UTF-8 bytes ("%.100s")
+    b"/it#27s#2F..#2Fto-unicode-Adobe-GB1 usecmap", b"/a#5Cb#2F..#2Fto-unicode-Adobe-GB1 usecmap",
+    b"/a#0Ab#22#2F..#2Fto-unicode-Adobe-GB1 usecmap", b"/" + b"x" * 200 + b"#2F..#2Fto-unicode-Adobe-GB1 usecmap",
+    b"/" + b"x" * 99 + b"#C3#A9#2F..#2Fto-unicode-Adobe-GB1 usecmap",
+    b"/" + b"x" * 98 + b"#E2#82#AC#2F..#2Fto-unicode-Adobe-GB1 usecmap",
+    b"/" + b"x" * 97 + b"#F0#9F#98#80#2F..#2Fto-unicode-Adobe-GB1 usecmap",
     # each "begin..."/"end..." empties the stack: what def pops next shows it
     b"1 beginnotdefrange <00> <1F> 1 endnotdefrange /CMapName def",
     b"1 beginnotdefrange <00> <1F> 1 /CMapName def", b"<00> <1F> 1 endnotdefrange /CMapName def",

@@ -26,6 +26,7 @@
 
 use std::fs;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use pdfminer::cmapdb::{
     AttrValue, Attrs, CMap, CMapBase, CMapDB, CMapParser, Code2Cid, Code2CidValue, DirCMapProvider, IdentityCMap,
@@ -707,10 +708,41 @@ fn providers() {
             (name == "Corrupt").then(|| self.0.clone())
         }
     }
-    CMapDB::set_provider(None);
     // (load_data: get_cmap may have "H" in its cache, from another test of this thread)
-    let err = CMapDB::load_data("H").expect_err("no provider: not found");
-    assert_eq!((err.kind.name(), err.message.as_str()), ("CMapNotFound", "H"));
+    let load = |name: &str| match CMapDB::load_data(name) {
+        Ok(_) => ("loaded".to_owned(), String::new()),
+        Err(e) => (e.kind.name().to_owned(), e.message.clone()),
+    };
+    let not_found = |name: &str| ("CMapNotFound".to_owned(), name.to_owned());
+    let corrupt = ("ValueError".to_owned(), "corrupt compact CMap \"Corrupt\": truncated data".to_owned());
+    // No provider installed at all is a misconfiguration, never mistaken for an installation without
+    // the data: pdffont turns CMapNotFound into an empty CMap. (Only this test touches the process
+    // default; every other test installs its own thread provider with open().)
+    CMapDB::clear_provider();
+    CMapDB::set_default_provider(None);
+    let unset = (
+        "RuntimeError".to_owned(),
+        "no CMap provider installed: call CMapDB::set_default_provider or CMapDB::set_provider".to_owned(),
+    );
+    assert_eq!(load("H"), unset);
+    assert_eq!(load("../../H"), unset);
+    assert!(CMapDB::get_cmap("Identity-H").is_ok());
+    // the process default serves a thread without its own provider
+    CMapDB::set_default_provider(Some(Arc::new(Fixed(b"PMCM".to_vec()))));
+    assert_eq!((load("Corrupt"), load("H")), (corrupt.clone(), not_found("H")));
+    // a thread provider overrides it; None: an installation without the data
+    CMapDB::set_provider(None);
+    assert_eq!((load("Corrupt"), load("H")), (not_found("Corrupt"), not_found("H")));
+    CMapDB::set_provider(Some(Rc::new(Fixed(b"PMCMx".to_vec()))));
+    assert_eq!(
+        load("Corrupt"),
+        ("ValueError".to_owned(), "corrupt compact CMap \"Corrupt\": not a version 1 compact CMap".to_owned())
+    );
+    // and clearing it goes back to the default
+    CMapDB::clear_provider();
+    assert_eq!(load("Corrupt"), corrupt);
+    CMapDB::set_default_provider(None);
+    assert_eq!(load("Corrupt"), unset);
     CMapDB::set_provider(Some(Rc::new(Fixed(b"PMCM".to_vec()))));
     let err = CMapDB::get_cmap("Corrupt").err().expect("corrupt data");
     assert_eq!(err.message, "corrupt compact CMap \"Corrupt\": truncated data");
