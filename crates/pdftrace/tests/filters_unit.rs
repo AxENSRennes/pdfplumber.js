@@ -90,6 +90,11 @@ fn dict(items: &[(Value, Value)]) -> PDFDict {
     PDFDict::from_pairs(items.iter().map(|(k, x)| (Rc::from(k.as_str().expect("a str key")), build(x))))
 }
 
+/// Whether the filter entries name `/CCITTFaxDecode` (or `/CCF`).
+fn uses_ccitt(text: &str) -> bool {
+    text.contains("CCITTFaxDecode") || text.contains("\"CCF\"")
+}
+
 /// Replays `<name>.jsonl`; `run` returns `None` for a skipped case.
 fn check(name: &str, min_cases: usize, run: impl Fn(&[Value]) -> Option<Value>) {
     let cases = UnitData::open("filters").cases(name);
@@ -98,7 +103,11 @@ fn check(name: &str, min_cases: usize, run: impl Fn(&[Value]) -> Option<Value>) 
     let mut skipped = 0;
     for (k, (args, expected)) in cases.iter().enumerate() {
         match run(args) {
-            None => skipped += 1,
+            None => {
+                // only /CCITTFaxDecode (ported separately) may be missing
+                assert!(uses_ccitt(&format!("{args:?}")), "{name} #{k}: NotPorted without /CCITTFaxDecode: {args:?}");
+                skipped += 1;
+            }
             Some(got) if !got.same(expected) => {
                 differ.push(format!("#{k} {args:?}\n  expected {expected:?}\n       got {got:?}"))
             }
@@ -217,7 +226,10 @@ fn real_corpus() {
             Err(e) => err(&e),
         };
         match got {
-            None => skipped += 1,
+            None => {
+                assert!(uses_ccitt(attrs_json), "NotPorted without /CCITTFaxDecode: {:?}", rec.get("id"));
+                skipped += 1;
+            }
             Some(got) if !got.same(&expected) => {
                 differ.push(format!("{:?}: expected {expected:?}, got {got:?}", rec.get("id")));
             }
