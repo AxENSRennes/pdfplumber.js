@@ -561,7 +561,7 @@ def gen_decompress(rng):
     # 1000 bytes back starting just after a block boundary of CPython's
     # output buffer: a match reaching back across a boundary fails, so the
     # boundaries are seen (block sizes up to 16 MiB)
-    for stream in far_block_streams(rng, 16384, 8):
+    for stream in far_block_streams(rng, 16384, 9):
         yield run_decompress(stream, 0)
     # wbits and bufsize arguments
     ok = zlib.compress(b"abc" * 100)
@@ -571,21 +571,30 @@ def gen_decompress(rng):
         yield run_decompress(ok, 15, bufsize)
 
 
+BLOCK_SIZES = [64 << 10, 256 << 10, 1 << 20, 4 << 20, 8 << 20, 16 << 20, 16 << 20, 32 << 20]
+
+
+def small_window_stream(rng, start, span):
+    """A stream with a 256-byte window (CINFO 0): ``start`` bytes whose
+    matches are 100 bytes back (which never fail, and keep the stream
+    small), then ``span`` bytes with matches 1000 bytes back, which fail if
+    they reach back across the start of an output block of CPython."""
+    unit = rng.randbytes(1000)
+    data = (rng.randbytes(100) * (start // 100 + 3))[:start] + (unit * (span // 1000 + 1))[:span]
+    raw, _ = compress(rng, data, wbits=-15, level=6, strategy=zlib.Z_DEFAULT_STRATEGY)
+    return zlib_header(0) + raw + zlib.adler32(data).to_bytes(4, "big")
+
+
 def far_block_streams(rng, first, n):
-    """For each of the first ``n`` output blocks of CPython (first block
-    ``first``, then ``BUFFER_BLOCK_SIZE[1:]``), a stream with a 256-byte
-    window (CINFO 0) whose output has, from the start of that block to 90 %
-    of it, matches 1000 bytes back: Python decodes it, a shorter block makes
-    a match reach back across a boundary and fail. Before the block, only
-    matches 100 bytes back (which never fail): the streams stay small."""
-    sizes = [first, 64 << 10, 256 << 10, 1 << 20, 4 << 20, 8 << 20, 16 << 20, 16 << 20]
+    """Streams that make the first ``n`` output blocks of one call (first
+    block ``first``, then ``BLOCK_SIZES``) observable: for each block, the
+    far matches cover 90 % of it from its start (Python decodes; a shorter
+    block fails), then they cross its end (Python fails there; a block
+    ending elsewhere does not)."""
     start = 0
-    for size in sizes[:n]:
-        unit = rng.randbytes(1000)
-        span = size * 9 // 10
-        data = (rng.randbytes(100) * (start // 100 + 3))[: start + 300] + (unit * (span // 1000 + 1))[:span]
-        raw, _ = compress(rng, data, wbits=-15, level=6, strategy=zlib.Z_DEFAULT_STRATEGY)
-        yield zlib_header(0) + raw + zlib.adler32(data).to_bytes(4, "big")
+    for size in ([first] + BLOCK_SIZES)[:n]:
+        yield small_window_stream(rng, start + 300, size * 9 // 10)
+        yield small_window_stream(rng, start + size - 6000, 12000)
         start += size
 
 
@@ -593,7 +602,8 @@ def gen_decompressobj(rng):
     # the output blocks of one decompress() call (32 KiB first)
     for stream in far_block_streams(rng, 32 << 10, 5):
         yield run_decompressobj(stream, 0, [[[len(stream), 0, 1]], [[len(stream), 40000, 1], [0, 40000, 3]],
-                                            [[len(stream), 50000, 1], [0, 50000, 3]]])
+                                            [[len(stream), 50000, 1], [0, 50000, 3]],
+                                            [[len(stream), 120000, 1], [0, 120000, 3]]])
     for stream, wbits in real_streams(rng):
         if len(stream) > 20000 and rng.random() < 0.8:
             continue
