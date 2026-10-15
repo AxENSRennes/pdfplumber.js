@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use pdfminer::casting::{safe_cmyk, safe_float, safe_int, safe_matrix, safe_rect, safe_rect_list, safe_rgb};
 use pdfminer::data_structures::NumberTree;
-use pdfminer::pdfcolor::predefined_colorspaces;
+use pdfminer::pdfcolor::{predefined_colorspace, predefined_colorspaces};
 use pdfminer::pdftypes::PDFObject;
 use pdfminer::utils::{
     apply_matrix_norm, apply_matrix_pt, apply_matrix_rect, bbox2str, decode_text, drange, format_int_alpha,
@@ -225,6 +225,9 @@ fn pdfcolor() {
         let cs = &spaces[i];
         i += 1;
         assert_eq!(cs.name, str_arg(&a[0]));
+        // PREDEFINED_COLORSPACE[name] is the shared instance
+        let by_name = predefined_colorspace(&cs.name).expect("a predefined color space");
+        assert!(Rc::ptr_eq(&by_name, cs));
         Value::List(vec![Value::str(cs.name.clone()), Value::from(&cs.ncomponents), result(cs.repr(), Value::str)])
     });
     assert_eq!(i, spaces.len());

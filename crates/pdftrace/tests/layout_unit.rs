@@ -74,7 +74,7 @@ fn text(v: &Value) -> String {
     str_arg(v).to_owned()
 }
 
-fn path_segments(v: &Value) -> Option<Vec<(char, Vec<Num>)>> {
+fn path_segments(v: &Value) -> Option<Vec<(char, Vec<[Num; 2]>)>> {
     match v {
         Value::None => None,
         v => Some(
@@ -83,7 +83,7 @@ fn path_segments(v: &Value) -> Option<Vec<(char, Vec<Num>)>> {
                 .map(|seg| {
                     let seg = items(seg);
                     let op = str_arg(&seg[0]).chars().next().expect("an operator");
-                    (op, seg[1..].iter().map(num).collect())
+                    (op, seg[1..].iter().map(nums).collect())
                 })
                 .collect(),
         ),
@@ -268,7 +268,7 @@ fn raw_curve(c: &LTCurve<TP>) -> Value {
                 path.iter()
                     .map(|(op, args)| {
                         let mut t = vec![Value::str(op.to_string())];
-                        t.extend(args.iter().map(num_value));
+                        t.extend(args.iter().map(|p| tuple(p)));
                         Value::Tuple(t)
                     })
                     .collect(),
@@ -516,13 +516,31 @@ fn first_difference(a: &str, b: &str) -> String {
     )
 }
 
+/// Calls `f` with the arguments and the result of each case of
+/// `layout/<name>.jsonl`, read one line at a time (the corpus is large).
+fn for_each_case(name: &str, mut f: impl FnMut(&[Value], &Value)) {
+    use std::io::BufRead;
+    let path = UnitData::open("layout").path(&format!("{name}.jsonl"));
+    let file = std::fs::File::open(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    for line in std::io::BufReader::new(file).lines() {
+        let json = pdftrace::typed_json::parse_json(&line.expect("a line")).expect("JSON");
+        let mut input = pdftrace::typed_json::from_json(json.get("in").expect("in")).expect("typed in");
+        let args = match &mut input {
+            Value::List(args) => std::mem::take(args),
+            other => panic!("\"in\" is not a list: {other:?}"),
+        };
+        let out = pdftrace::typed_json::from_json(json.get("out").expect("out")).expect("typed out");
+        f(&args, &out);
+    }
+}
+
 /// Replays the layout cases of `name`.
 fn replay_layout(name: &str) {
-    let cases = UnitData::open("layout").cases(name);
-    assert!(!cases.is_empty());
     let mut failures = Vec::new();
     let mut runs_total = 0;
-    for (args, expected) in &cases {
+    let mut ncases = 0;
+    for_each_case(name, |args, expected| {
+        ncases += 1;
         let case = str_arg(&args[0]);
         let (_doc, weak) = doc();
         // the dump of the raw page rebuilds identically
@@ -533,7 +551,7 @@ fn replay_layout(name: &str) {
             let orig = canon(&args[1]);
             if again != orig {
                 failures.push(format!("{case}: raw page {}", first_difference(&orig, &again)));
-                continue;
+                return;
             }
         }
         let runs = items(&args[2]);
@@ -577,7 +595,8 @@ fn replay_layout(name: &str) {
                 }
             }
         }
-    }
+    });
+    assert!(ncases > 0, "{name}: no case");
     assert!(
         failures.is_empty(),
         "{name}: {} of {runs_total} runs differ; first ones:\n{}",

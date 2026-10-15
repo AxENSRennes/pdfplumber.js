@@ -37,8 +37,10 @@ exception.
 - ``real``: the first ``--max-pages`` pages of every PDF of the corpus set
   ``upstream`` and the first page of every PDF of ``real`` (pages of more
   than ``MAX_CHARS`` objects are skipped), with every configuration of
-  ``CONFIGS`` (but ``ZERO``, which makes a box of each char, so ``n**2``
-  heap entries, only on pages of at most ``ZERO_MAX_CHARS`` objects).
+  ``CONFIGS`` on pages of at most ``SMALL`` objects (but ``ZERO``, which
+  makes a box of each char, so ``n**2`` heap entries, only up to
+  ``ZERO_MAX_CHARS``), and ``BIG_CONFIGS`` on larger pages (the data stays
+  around 150 MB).
 - ``adversarial``: generated pages (``adversarial_pages``): chars on exact
   margin boundaries (``char_margin``, ``line_overlap``, ``word_margin``,
   ``line_margin``), overlapping and duplicated chars, vertical text, blank
@@ -105,7 +107,8 @@ from ..stages._common import open_document
 from ..typed_json import dumps, loads
 from ._common import at_depth, require_oracle_python, write_cases, write_meta
 
-MAX_CHARS = 5000
+MAX_CHARS = 1500
+SMALL = 800
 ZERO_MAX_CHARS = 600
 FILE_TIMEOUT_S = 300
 
@@ -120,6 +123,9 @@ CONFIGS = [
     {"line_overlap": 1, "char_margin": 3, "line_margin": 1, "word_margin": 1, "boxes_flow": -1},
     {"boxes_flow": None, "detect_vertical": True, "all_texts": True, "word_margin": 0.5},
 ]
+
+#: The configurations of the real pages of more than SMALL objects.
+BIG_CONFIGS = [CONFIGS[0], CONFIGS[1], CONFIGS[2]]
 
 CLASSES = {
     c.__name__: c
@@ -312,7 +318,10 @@ def process_file(args):
                     continue
                 raw = dump_raw(layout)
                 check_dump(raw)
-                configs = [c for c in CONFIGS if c is not ZERO or nobjs <= ZERO_MAX_CHARS]
+                if nobjs > SMALL:
+                    configs = BIG_CONFIGS
+                else:
+                    configs = [c for c in CONFIGS if c is not ZERO or nobjs <= ZERO_MAX_CHARS]
                 runs, outs = analyze_runs(raw, configs)
                 # sent back as typed JSON: the objects hold references to the
                 # document, which do not pickle
@@ -389,7 +398,7 @@ def curve_objs(rng):
         x, y = rng.uniform(0, 600), rng.uniform(0, 780)
         kind = rng.random()
         if kind < 0.3:
-            out.append(LTLine(1.0, (x, y), (x + 50, y), True, False, False, (0.0,), None, [("m", x, y), ("l", x + 50, y)], None))
+            out.append(LTLine(1.0, (x, y), (x + 50, y), True, False, False, (0.0,), None, [("m", (x, y)), ("l", (x + 50, y))], None))
         elif kind < 0.6:
             out.append(LTRect(0.5, (x, y, x + 20, y + 10), True, True, False, None, (1.0, 0.0, 0.0), None, ([3], 0)))
         elif kind < 0.8:

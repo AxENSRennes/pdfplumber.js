@@ -68,8 +68,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::pdfcolor::PDFColorSpace;
 use crate::pdftypes::{PDFList, PDFObject, PDFStream};
 use crate::utils::{
-    apply_matrix_rect, format_fixed, fsplit, get_bound, inf, neg_inf, py_max2, py_min2, uniq, Matrix, PathSegment,
-    Plane, PlaneItem, Point, Rect,
+    apply_matrix_rect, format_fixed, fsplit, get_bound, inf, neg_inf, py_max2, py_min2, uniq, Matrix, Plane, PlaneItem,
+    Point, Rect,
 };
 
 // ---------------------------------------------------------------------------
@@ -384,6 +384,12 @@ impl LTComponent {
 // ---------------------------------------------------------------------------
 // Leaf objects
 
+/// An element of `LTCurve.original_path`: the operator and its points
+/// mapped through the CTM, the tuple `(op, (x1, y1), ...)` that
+/// `PDFLayoutAnalyzer.paint_path` builds (not the `utils.PathSegment` of the
+/// interpreter's path, whose coordinates are flat).
+pub type OriginalPathSegment = (char, Vec<Point>);
+
 /// pdfminer/layout.py:206 `LTCurve`, :242 `LTLine`, :275 `LTRect`: which
 /// class a [`LTCurve`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -407,7 +413,7 @@ pub struct LTCurve<P: LTPayload> {
     pub evenodd: bool,
     pub stroking_color: Option<P::Color>,
     pub non_stroking_color: Option<P::Color>,
-    pub original_path: Option<Vec<PathSegment>>,
+    pub original_path: Option<Vec<OriginalPathSegment>>,
     /// `(dash, phase)`, the raw operands of `d`.
     pub dashing_style: Option<(PDFObject, PDFObject)>,
 }
@@ -442,7 +448,7 @@ impl<P: LTPayload> LTCurve<P> {
         evenodd: bool,
         stroking_color: Option<P::Color>,
         non_stroking_color: Option<P::Color>,
-        original_path: Option<Vec<PathSegment>>,
+        original_path: Option<Vec<OriginalPathSegment>>,
         dashing_style: Option<(PDFObject, PDFObject)>,
     ) -> PyResult<LTCurve<P>> {
         let comp = LTComponent::new(get_bound(&pts))?;
@@ -471,7 +477,7 @@ impl<P: LTPayload> LTCurve<P> {
         evenodd: bool,
         stroking_color: Option<P::Color>,
         non_stroking_color: Option<P::Color>,
-        original_path: Option<Vec<PathSegment>>,
+        original_path: Option<Vec<OriginalPathSegment>>,
         dashing_style: Option<(PDFObject, PDFObject)>,
     ) -> PyResult<LTCurve<P>> {
         let mut curve = LTCurve::new(
@@ -498,7 +504,7 @@ impl<P: LTPayload> LTCurve<P> {
         evenodd: bool,
         stroking_color: Option<P::Color>,
         non_stroking_color: Option<P::Color>,
-        original_path: Option<Vec<PathSegment>>,
+        original_path: Option<Vec<OriginalPathSegment>>,
         dashing_style: Option<(PDFObject, PDFObject)>,
     ) -> PyResult<LTCurve<P>> {
         let [x0, y0, x1, y1] = bbox;
