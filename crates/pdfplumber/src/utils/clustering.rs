@@ -90,22 +90,19 @@ fn cluster_indices(xs: &[PyValue], tolerance: &PyValue) -> PyResult<Vec<Vec<usiz
     Ok(groups)
 }
 
-/// The value -> cluster index map of [`make_cluster_dict`].
-pub type ClusterDict = HashMap<HashKey, usize>;
-
-/// The clusters of `make_cluster_dict(values, tolerance)`: the dict, which
-/// finds a value equal to itself by `==`, and the cluster index of each
-/// value that is not (NaN), by position in `values` (found through its
-/// identity only).
-struct Clusters {
-    dict: ClusterDict,
-    own: Vec<Option<usize>>,
+/// `cluster_list(list(set(values)), tolerance)` (see the module
+/// documentation): the distinct values, those equal to themselves first
+/// (`n_equal` of them), then the others (NaN) at `positions` in `values`
+/// (`n` values in all), and the clusters as indices into `unique`.
+struct SetClusters {
+    unique: Vec<PyValue>,
+    n_equal: usize,
+    positions: Vec<usize>,
+    n: usize,
+    groups: Vec<Vec<usize>>,
 }
 
-// pdfplumber/utils/clustering.py:29 make_cluster_dict
-fn clusters(values: impl IntoIterator<Item = PyResult<PyValue>>, tolerance: &PyValue) -> PyResult<Clusters> {
-    // list(set(values)), see the module documentation: (value, position of
-    // a value not equal to itself)
+fn set_clusters(values: impl IntoIterator<Item = PyResult<PyValue>>, tolerance: &PyValue) -> PyResult<SetClusters> {
     let mut seen: HashSet<HashKey> = HashSet::default();
     let mut unique: Vec<PyValue> = Vec::new();
     let mut unequal: Vec<(PyValue, usize)> = Vec::new();
@@ -127,31 +124,51 @@ fn clusters(values: impl IntoIterator<Item = PyResult<PyValue>>, tolerance: &PyV
         positions.push(i);
     }
     let groups = cluster_indices(&unique, tolerance)?;
-    let mut dict = ClusterDict::with_capacity_and_hasher(n_equal, Default::default());
-    let mut own = vec![None; n];
-    let mut slots: Vec<Option<PyValue>> = unique.into_iter().map(Some).collect();
-    for (i, value_cluster) in groups.into_iter().enumerate() {
+    Ok(SetClusters { unique, n_equal, positions, n, groups })
+}
+
+// pdfplumber/utils/clustering.py:29 make_cluster_dict
+/// The items of the dict, in its order: cluster by cluster, each in sorted
+/// order. A NaN key is in the dict too, where only its own object finds it.
+pub fn make_cluster_dict(
+    values: impl IntoIterator<Item = PyResult<PyValue>>,
+    tolerance: &PyValue,
+) -> PyResult<Vec<(PyValue, usize)>> {
+    let s = set_clusters(values, tolerance)?;
+    let mut slots: Vec<Option<PyValue>> = s.unique.into_iter().map(Some).collect();
+    let mut items = Vec::with_capacity(slots.len());
+    for (i, value_cluster) in s.groups.into_iter().enumerate() {
         for u in value_cluster {
-            if u < n_equal {
-                // dict(chain(...)): a later equal key keeps the first key and
-                // takes the later value (values are distinct here).
+            items.push((slots[u].take().expect("each value once"), i));
+        }
+    }
+    Ok(items)
+}
+
+/// `make_cluster_dict(values, tolerance)` as `cluster_objects` looks it up:
+/// the values equal to themselves by `==` (`dict`), the others by their
+/// position in `values` (`own`: a NaN is found through its identity only).
+struct Clusters {
+    dict: HashMap<HashKey, usize>,
+    own: Vec<Option<usize>>,
+}
+
+fn clusters(values: impl IntoIterator<Item = PyResult<PyValue>>, tolerance: &PyValue) -> PyResult<Clusters> {
+    let s = set_clusters(values, tolerance)?;
+    let mut dict = HashMap::with_capacity_and_hasher(s.n_equal, Default::default());
+    let mut own = vec![None; s.n];
+    let mut slots: Vec<Option<PyValue>> = s.unique.into_iter().map(Some).collect();
+    for (i, value_cluster) in s.groups.into_iter().enumerate() {
+        for u in value_cluster {
+            if u < s.n_equal {
+                // dict(chain(...)): the values are distinct
                 dict.insert(HashKey(slots[u].take().expect("each value once")), i);
             } else {
-                own[positions[u - n_equal]] = Some(i);
+                own[s.positions[u - s.n_equal]] = Some(i);
             }
         }
     }
     Ok(Clusters { dict, own })
-}
-
-// pdfplumber/utils/clustering.py:29 make_cluster_dict
-/// A NaN key is in Python's dict too, but only its own object finds it:
-/// the returned map holds the values equal to themselves.
-pub fn make_cluster_dict(
-    values: impl IntoIterator<Item = PyResult<PyValue>>,
-    tolerance: &PyValue,
-) -> PyResult<ClusterDict> {
-    Ok(clusters(values, tolerance)?.dict)
 }
 
 /// `a < b` for the cluster indices `cluster_dict.get(...)` returns (an

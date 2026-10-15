@@ -932,7 +932,8 @@ def cluster_cases():
 
 
 def nan_cluster_cases():
-    """NaN keys. ``cluster_list`` sorts its list as given. ``cluster_objects``
+    """NaN keys. ``cluster_list`` sorts its list as given. ``make_cluster_dict``
+    (its items in order) and ``cluster_objects``
     with the key ``"v"`` (``itemgetter``: the lookup gets the stored object,
     so a NaN finds its own cluster): ``NanPool`` NaNs, a case kept only when
     CPython's set lists them as the port does (``SetOrderCheck``). With the
@@ -964,6 +965,16 @@ def nan_cluster_cases():
             if not check.ok:
                 continue
             yield ["cluster_objects", objs, tol, preserve], out
+        elif kind < 0.82:
+            pool = NanPool()
+            m = rng.randint(0, min(4, n))
+            for rank, k in enumerate(sorted(rng.sample(range(n), m))):
+                xs[k] = pool.take(rank, m, 0)
+            with SetOrderCheck() as check:
+                out = guarded(lambda: list(clustering.make_cluster_dict(xs, tol).items()))
+            if not check.ok:
+                continue
+            yield ["make_cluster_dict", xs, tol], out
         else:
             form = rng.choice(["all", "one", "first"])
             if form == "all":

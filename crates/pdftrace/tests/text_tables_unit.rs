@@ -25,7 +25,7 @@ use pdfplumber::obj::{bbox_from_value, bbox_value, Bbox, Obj, PyValue};
 use pdfplumber::table::{
     self, cells_to_tables, CellGroup, Intersections, Table, TableFinder, TablePage, TableSettings,
 };
-use pdfplumber::utils::clustering::{cluster_list, cluster_objects, KeyKind};
+use pdfplumber::utils::clustering::{cluster_list, cluster_objects, make_cluster_dict, KeyKind};
 use pdfplumber::utils::geometry::{self, Axis, SnapAttr};
 use pdfplumber::utils::text::{
     chars_to_textmap, dedupe_chars, extract_text_kwargs, extract_text_simple, extract_words_kwargs, text_line_matches,
@@ -296,6 +296,21 @@ fn cluster_cases() {
                     cluster_objects(&xs, |o| o.item("v")?.neg(), KeyKind::Computed, &py(&args[2]), preserve)
                 };
                 result(r, |groups| Value::List(groups.into_iter().map(list_of_objs).collect()))
+            }
+            // list(make_cluster_dict(values, tolerance).items())
+            "make_cluster_dict" => {
+                let values = match &args[1] {
+                    Value::List(items) => items.iter().map(py).collect::<Vec<_>>(),
+                    other => panic!("{other:?}"),
+                };
+                result(make_cluster_dict(values.into_iter().map(Ok), &py(&args[2])), |items| {
+                    Value::List(
+                        items
+                            .iter()
+                            .map(|(v, i)| Value::Tuple(vec![to_value(v), to_value(&PyValue::from(*i as i64))]))
+                            .collect(),
+                    )
+                })
             }
             other => panic!("{other}"),
         };

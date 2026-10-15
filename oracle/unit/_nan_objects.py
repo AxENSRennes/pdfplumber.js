@@ -22,8 +22,9 @@ order, for any value of the hash bits not chosen.
   hash is odd). ``salt`` (0-15) tells apart the coordinates of one item,
   which never share a set.
 - ``SetOrderCheck``: a profiler (``sys.setprofile``, observation only) that
-  sees each ``cluster_list`` call made by ``make_cluster_dict`` from
-  ``cluster_objects``, recomputes the keys of that ``cluster_objects`` call,
+  sees each ``cluster_list`` call made by ``make_cluster_dict`` (from
+  ``cluster_objects``, or directly on a list), recomputes the keys of that
+  ``cluster_objects`` call,
   and replays the set insertions (``set_order``, a transcription of
   ``set_add_entry``, ``set_table_resize`` and ``set_insert_clean`` of
   CPython 3.12). ``ok`` stays true when every set without NaN is any order,
@@ -203,11 +204,15 @@ class SetOrderCheck:
         if parent is None or parent.f_code is not clustering.make_cluster_dict.__code__:
             return
         caller = parent.f_back
-        if caller is None or caller.f_code is not clustering.cluster_objects.__code__:
-            raise RuntimeError("make_cluster_dict called from outside cluster_objects")
+        if caller is not None and caller.f_code is clustering.cluster_objects.__code__:
+            key_fn, xs = caller.f_locals["key_fn"], caller.f_locals["xs"]
+        else:
+            # make_cluster_dict(values, tolerance) called directly, on a list
+            key_fn, xs = (lambda v: v), parent.f_locals["values"]
+            if not isinstance(xs, list):
+                raise RuntimeError("make_cluster_dict called on an iterator: its values are gone")
         self.sets += 1
         listed = list(frame.f_locals["xs"])
-        key_fn, xs = caller.f_locals["key_fn"], caller.f_locals["xs"]
         values = [key_fn(x) for x in xs]
         if not any(_is_nan(v) for v in values):
             return
