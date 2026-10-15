@@ -18,7 +18,10 @@ lines ``{"in": [...], "out": ...}``, see ``oracle/unit/_common.py``):
   ``BitParser``, ``_get_bits``, ``_get_refline``), see ``run_ops``. Includes
   the cases of upstream ``tests/test_pdfminer_ccitt.py`` (with an
   ``array('b')`` reference line where the tests use a ``list``: the same
-  values, the type only changes the text of an ``IndexError``).
+  values, the type only changes the text of an ``IndexError``), colors an
+  ``array('b')`` cannot hold painted inside and outside the line, and
+  uncompressed codes of any character (``int(c)``: Unicode digits, quotes,
+  backslashes, whitespace and control characters).
 - ``decode.jsonl``: ``[data, params]`` -> ``ccittfaxdecode(data, params)``
   (``output``): G4 streams of random bitmaps from a small T.6 encoder
   (``g4_encode``, test generation only: plain and byte-aligned lines,
@@ -34,8 +37,12 @@ lines ``{"in": [...], "out": ...}``, see ``oracle/unit/_common.py``):
   whose ``get`` reads its attributes).
 - ``deep.jsonl``: ``[depth, kind, data, params]`` -> ``output``, called
   at a measured depth (``call_at``, like ``_common.at_depth``) up to
-  Python's frame limit:
-  ``kind`` is ``dict`` or ``obj``.
+  Python's frame limit, and with 0 to 5 C recursion units left
+  (``c_job_cases``: from the ``__eq__`` of two nested lists' innermost
+  items, each job in a fresh interpreter warmed up on it alone):
+  ``kind`` is ``dict`` or ``obj`` (``ccittfaxdecode``), ``g4init`` or
+  ``faxinit`` (the class called with ``params`` as width: ``None`` once
+  made).
 
 The cases of the real corpus are written by ``oracle/unit/ccitt_corpus.py``
 (a separate generator: it takes minutes, this one seconds).
@@ -53,16 +60,20 @@ import contextlib
 import hashlib
 import io
 import itertools
+import os
+import pickle
 import random
+import subprocess
 import sys
 
 from PIL import Image
 
-from pdfminer.ccitt import BitParser, CCITTG4Parser, ccittfaxdecode
+from pdfminer.ccitt import BitParser, CCITTFaxDecoder, CCITTG4Parser, ccittfaxdecode
 from pdfminer.pdftypes import PDFObjRef, PDFStream
 from pdfminer.psparser import KWD, LIT
 
-from ._common import depth_here, require_oracle_python, write_cases, write_meta
+from ..corpus import REPO_DIR
+from ._common import depth_here, nested_list, require_oracle_python, write_cases, write_meta
 
 MODULE = "ccitt"
 TREES = {"MODE": CCITTG4Parser.MODE, "WHITE": CCITTG4Parser.WHITE, "BLACK": CCITTG4Parser.BLACK,
@@ -260,6 +271,25 @@ def gen_ops(rng):
         for op in (["pass"], ["vertical", 1], ["horizontal", 1, 1], ["horizontal", 0, 1]):
             case = [4, False, [["setcurline", "0110"], ["reset_line"], ["set", "_color", color], op, ["state"]]]
             yield case, run_ops(*case)
+    # ... painting outside the line too: the index is checked first
+    for width in (2, 4):
+        for ref in ("000000", "0101010", "11111111"):
+            for curpos in range(width - 1, width + 4):
+                for color in (0, 1, 127, 128, -129, 200):
+                    for op in (["pass"], ["vertical", 0], ["vertical", -2], ["vertical", 1]):
+                        case = [width, False, [["setrefline", ref], ["set", "_curpos", curpos], ["set", "_color", color],
+                                               op, ["state"]]]
+                        yield case, run_ops(*case)
+    # int(c) of any character: Unicode decimal digits, whitespace, quotes,
+    # backslashes and control characters (the ValueError quotes repr(c))
+    chars = ["0", "1", "9", "٣", "１", "\U0001d7d7", "²", "Ⅷ", " ", "\t", " ", "\x00", "\x7f",
+             "\x85", "\xa0", "'", '"', "\\", "_", "+", "-", "e", "é", "\U0001f600", "퟿", ""]
+    for c in chars:
+        for width in (1, 4):
+            for op in (["uncompressed", c], ["uncompressed", "1" + c + "0"], ["uncomp", c], ["uncomp", "T" + c],
+                       ["uncomp", "T" + c + "1"], ["uncomp", "T1" + c]):
+                case = [width, False, [op, ["state"]]]
+                yield case, run_ops(*case)
     mode_values = [0, 1, -1, 2, -2, 3, -3, 9, -9, 100, -100, "p", "h", "u", "e", "x1", "x7", "zz", None]
     unc_values = ["1", "01", "001", "0001", "00001", "00000", "T00", "T10", "T000", "T100", "T0000", "T1000", "T00000",
                   "T10000", "", None, "T", "T1", "T2", "Tx", "0x", "0120"]
@@ -634,6 +664,98 @@ def gen_deep(rng):
             depth, out = call_at(top - base - 1, here["c_left"], ccittfaxdecode, data, params)
             assert depth["py"] == top - 1, (depth, top)
             yield [depth, kind, data, params], (bytes_result(out) if isinstance(out, bytes) else out)
+    # with few C recursion units left
+    for i in range(len(c_jobs())):
+        yield from c_job_cases(i)
+
+
+def c_jobs():
+    """The calls ``c_job_cases`` makes with 0 to 5 C units left: ``[kind,
+    data, params]``, ``kind`` ``dict``/``obj`` (``ccittfaxdecode(data,
+    params)``), ``g4init``/``faxinit`` (``CCITTG4Parser(params)``,
+    ``CCITTFaxDecoder(params)``: ``None`` once made)."""
+    v0 = {"K": -1, "Columns": 8}
+    jobs = [["dict", b"\x80", v0], ["dict", b"", v0], ["dict", b"\x02\x00", v0], ["dict", pack(EOFB), v0],
+            ["dict", b"\x80", {"K": -1, "Columns": 8, "EncodedByteAlign": True, "BlackIs1": True}],
+            ["dict", b"\x80", {"K": -1, "Columns": None}], ["dict", b"\x80", {"K": -1, "Columns": 1.5}],
+            ["dict", b"\x80", {"K": -1, "Columns": -1}], ["dict", b"\x80", {"K": -1, "Columns": 2**60}],
+            ["dict", b"\x80", {"K": -1, "Columns": 2**70}], ["dict", b"\x80", {"K": -1}], ["dict", b"\x80", {}]]
+    for k in [-1.0, True, False, 0, 1, -2, 2**30 - 1, 2**30, -(2**30) + 1, -(2**30), 2**40, 2**70, None, 1.5,
+              LIT("K"), b"-1", [-1], {"K": -1}, PDFObjRef(None, 1)]:
+        jobs.append(["dict", b"\x80", {"K": k, "Columns": 8}])
+    for params in [PDFStream(v0, b""), PDFStream({"K": 1}, b""), PDFStream({"K": -1.0, "Columns": 8}, b""),
+                   PDFStream({"K": -1}, b""), PDFStream({}, b""), None, [], 0, LIT("P")]:
+        jobs.append(["obj", b"\x80", params])
+    for width in [8, 0, None, 2**60, 2**70, 1.5]:
+        jobs += [["g4init", b"", width], ["faxinit", b"", width]]
+    return jobs
+
+
+class _CProbe:
+    """Compared at the bottom of two nested lists (``c_job_cases``): calls
+    ``f`` from ``__eq__`` and records the depth it was called at and its
+    result."""
+
+    def __init__(self, f, found):
+        self.f, self.found = f, found
+
+    def __eq__(self, other):
+        depth = depth_here()
+        try:
+            out = self.f()
+        except Exception as e:  # the exception is the result (formatted later, at a normal depth)
+            out = e
+        self.found.setdefault(depth["c_left"], (depth, out))
+        return True
+
+    __hash__ = None
+
+
+def c_job_cases(i):
+    """The cases of ``c_jobs()[i]`` with 0 to 5 C units left, computed by a
+    fresh interpreter (``_c_job_main``): one whose bytecode was specialized
+    on this job alone, so that the result does not depend on the jobs run
+    before (a call site that saw other types may take a unit more)."""
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join([str(REPO_DIR), os.environ.get("PYTHONPATH", "")]))
+    run = subprocess.run([sys.executable, "-m", "oracle.unit.ccitt", "--c-job", str(i)], cwd=REPO_DIR, env=env,
+                         capture_output=True, check=True, timeout=600)
+    kind, data, params = c_jobs()[i]
+    found = pickle.loads(run.stdout)
+    assert sorted(found) == list(range(6)), (i, sorted(found))
+    for c_left in range(6):
+        depth, out = found[c_left]
+        if not isinstance(out, BaseException):
+            out = bytes_result(out) if kind in ("dict", "obj") else None
+        yield [depth, kind, data, params], out
+
+
+def _c_job_main(i):
+    kind, data, params = c_jobs()[i]
+    if kind == "g4init":
+        def f():
+            return CCITTG4Parser(params)
+    elif kind == "faxinit":
+        def f():
+            return CCITTFaxDecoder(params)
+    else:
+        def f():
+            return ccittfaxdecode(data, params)
+    for _ in range(50):  # specialize the bytecode on this job
+        try:
+            f()
+        except Exception:  # noqa: S110 (only the warm-up)
+            pass
+    found = {}
+    top = depth_here()["c_left"]
+    for n in range(top - 16, top + 2):
+        a, b = nested_list(n, _CProbe(f, found)), nested_list(n, _CProbe(f, found))
+        try:
+            a == b  # noqa: B015
+        except RecursionError:
+            pass
+    found = {c: r if not isinstance(r[1], CCITTFaxDecoder | CCITTG4Parser) else (r[0], None)
+             for c, r in found.items() if c <= 5}
+    sys.stdout.buffer.write(pickle.dumps(found))
 
 
 def main():
@@ -651,4 +773,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:2] == ["--c-job"]:
+        _c_job_main(int(sys.argv[2]))
+    else:
+        main()

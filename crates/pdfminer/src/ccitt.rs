@@ -46,12 +46,31 @@
 //! including `typing.cast` (a Python function), `PDFStream.get` and the
 //! `get_bytes` generator, whose creation and every resumption run a frame
 //! one level below `feedbytes` (`oracle/unit/ccitt.py` checks the depths
-//! around the limit). C recursion units are not counted: the builtins
-//! called here (`len`, `min`, `max`, `int`, `isinstance`...) take one unit
-//! each, never nested, and no caller of this module can be within one unit
-//! of the C limit while it still has the Python frames this module needs
-//! (the deepest recursion of pdfminer, `do_Do` → `render_contents`, uses
-//! fewer than 10 C units per Python frame).
+//! around the frame limit).
+//!
+//! C recursion units are taken where CPython 3.12 takes them before the
+//! decoder runs, as `oracle/unit/ccitt.py` measures them (`deep` cases with
+//! 0 to 5 units left, each job in a fresh interpreter warmed up on it):
+//!
+//! - instantiating `CCITTG4Parser` or `CCITTFaxDecoder` calls a class (one
+//!   unit, `" while calling a Python object"`, held during the call), whose
+//!   `__init__` is entered from C (two units, `recursion::eval_entry`);
+//!   inside, each `array.array(...)` is a class call too (one unit);
+//! - `K == -1` takes one unit (`" in comparison"`) unless `K` is a compact
+//!   int (`|K| < 2^30`), which the specialized comparison handles without;
+//! - creating the instance of an exception raised by C code (`TypeError`,
+//!   `OverflowError`, `AttributeError`) or by `raise PDFValueError(K)` calls
+//!   its class: one unit (`MemoryError` is preallocated: none). The text of
+//!   `PDFValueError(K)`, `str(K)`, is only computed by whoever prints the
+//!   exception, so the port computes it at the top of a fresh stack, not at
+//!   the depth of the call.
+//!
+//! This models warm, specialized bytecode (`dict.get` and the comparison of
+//! compact ints run without a unit): the first runs of a function, or a
+//! call site that saw other types, may take one more in CPython. Once the
+//! decoder exists, at least four units are free, more than anything later
+//! takes (the builtins called while decoding take at most two, never
+//! nested), so the decoding methods count frames only.
 //!
 //! # Memory
 //!
@@ -65,7 +84,7 @@
 use std::borrow::Cow;
 use std::sync::LazyLock;
 
-use pycompat::recursion::py_frame;
+use pycompat::recursion::{self, py_frame, Guard};
 use pycompat::{exc, ExcKind, PyErr, PyInt, PyResult};
 
 use crate::pdftypes::{PDFDict, PDFObject};
@@ -256,11 +275,13 @@ pub fn array_get(a: &[i8], i: i64) -> PyResult<i8> {
     py_index(a.len(), i).map(|i| a[i]).ok_or_else(|| exc::IndexError("array index out of range"))
 }
 
-/// `a[i] = v` on an `array('b')`, with Python's negative indexes.
-pub fn array_set(a: &mut [i8], i: i64, v: i8) -> PyResult<()> {
+/// `a[i] = v` on an `array('b')`, with Python's negative indexes: the
+/// index is checked first (`array_ass_item`), then `v` converted to a
+/// signed char.
+pub fn array_set(a: &mut [i8], i: i64, v: i64) -> PyResult<()> {
     match py_index(a.len(), i) {
         Some(i) => {
-            a[i] = v;
+            a[i] = signed_char(v)?;
             Ok(())
         }
         None => Err(exc::IndexError("array assignment index out of range")),
@@ -308,6 +329,35 @@ fn fill_ones(v: &mut Vec<i8>, n: i64) -> PyResult<()> {
 
 fn ccitt_exc(kind: ExcKind, message: impl Into<String>) -> PyErr {
     PyErr::new(kind, message)
+}
+
+const WHILE_CALLING: &str = " while calling a Python object";
+
+/// `e`, an exception raised by C code (`PyErr_Format`): creating its
+/// instance calls its class, which takes a C unit; without one, the
+/// `RecursionError` is raised instead.
+fn raised_by_c(e: PyErr) -> PyErr {
+    match recursion::c_call(WHILE_CALLING) {
+        Ok(_unit) => e,
+        Err(recursion_error) => recursion_error,
+    }
+}
+
+/// A Python class called by Python code (`CCITTFaxDecoder(...)`): the call
+/// of the class (one C unit), then its `__init__`, entered from C
+/// (`slot_tp_init`: two units), both held until the instance is made. The
+/// `__init__` takes its frame after these.
+fn class_call() -> PyResult<(Guard, Guard)> {
+    let call = recursion::c_call(WHILE_CALLING)?;
+    Ok((call, recursion::eval_entry()?))
+}
+
+/// `array.array("b", [1] * width)` into `v`: `[1] * width` first, then the
+/// call of the class `array.array` (one C unit).
+fn array_of_ones(v: &mut Vec<i8>, width: i64) -> PyResult<()> {
+    fill_ones(v, width)?;
+    drop(recursion::c_call(WHILE_CALLING)?);
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -404,6 +454,7 @@ impl CCITTG4Parser<PrintLines> {
     /// `CCITTG4Parser(width, bytealign)`: `width` is any object (`[1] *
     /// width` raises for a non-`int`), `bytealign` its truth value.
     pub fn new(width: &PDFObject, bytealign: bool) -> PyResult<Self> {
+        let _call = class_call()?;
         let _frame = py_frame()?;
         CCITTG4Parser::init(width, bytealign, PrintLines::default())
     }
@@ -414,6 +465,7 @@ impl CCITTFaxDecoder {
     /// `CCITTFaxDecoder(width, bytealign, reversed)` (see
     /// [`CCITTG4Parser::new`]).
     pub fn new(width: &PDFObject, bytealign: bool, reversed: bool) -> PyResult<Self> {
+        let _call = class_call()?;
         let _frame = py_frame()?;
         let mut parser = {
             // CCITTG4Parser.__init__(self, width, bytealign=bytealign)
@@ -459,7 +511,7 @@ impl<X: CCITTG4ParserExt> CCITTG4Parser<X> {
         };
         // self.reset(), whose `[1] * self.width` is where a bad width raises
         let _frame = py_frame()?;
-        p.width = sequence_repeat_count(width)?;
+        p.width = sequence_repeat_count(width).map_err(raised_by_c)?;
         p.reset_body()?;
         Ok(p)
     }
@@ -632,7 +684,9 @@ impl<X: CCITTG4ParserExt> CCITTG4Parser<X> {
         if let Some(rest) = bits.strip_prefix('T') {
             self._accept = Accept::ParseMode;
             let mut chars = rest.chars();
-            self._color = py_int_digit(chars.next())?;
+            // int(bits[1])
+            let Some(c) = chars.next() else { return Err(exc::IndexError("string index out of range")) };
+            self._color = int_of_char(c)?;
             self._do_uncompressed(chars.as_str())?;
             Ok(&MODE)
         } else {
@@ -678,7 +732,7 @@ impl<X: CCITTG4ParserExt> CCITTG4Parser<X> {
 
     fn reset_body(&mut self) -> PyResult<()> {
         self._y = 0;
-        fill_ones(&mut self._curline, self.width)?;
+        array_of_ones(&mut self._curline, self.width)?;
         self._reset_line()?;
         self._accept = Accept::ParseMode;
         self._state = State::root(&MODE);
@@ -691,7 +745,7 @@ impl<X: CCITTG4ParserExt> CCITTG4Parser<X> {
         // self._refline = self._curline; self._curline = array("b", [1] * width)
         // (the old reference line is reused for the new line)
         std::mem::swap(&mut self._refline, &mut self._curline);
-        fill_ones(&mut self._curline, self.width)?;
+        array_of_ones(&mut self._curline, self.width)?;
         self._curpos = -1;
         self._color = 1;
         Ok(())
@@ -711,10 +765,9 @@ impl<X: CCITTG4ParserExt> CCITTG4Parser<X> {
         Ok(())
     }
 
-    /// `self._curline[x] = color`, for a color that `array('b')` takes (a
-    /// signed char: decoding only writes 0 and 1).
+    /// `self._curline[x] = color` (decoding only writes 0 and 1).
     fn paint(&mut self, x: i64, color: i64) -> PyResult<()> {
-        array_set(&mut self._curline, x, signed_char(color)?)
+        array_set(&mut self._curline, x, color)
     }
 
     // pdfminer/ccitt.py:459 CCITTG4Parser._do_vertical
@@ -819,7 +872,7 @@ impl<X: CCITTG4ParserExt> CCITTG4Parser<X> {
     pub fn _do_uncompressed(&mut self, bits: &str) -> PyResult<()> {
         let _frame = py_frame()?;
         for c in bits.chars() {
-            let v = py_int_digit(Some(c))?;
+            let v = int_of_char(c)?;
             self.paint(self._curpos, v)?;
             self._curpos += 1;
             self._flush_line()?;
@@ -833,16 +886,13 @@ fn bits_text(bits: &[i8]) -> String {
     bits.iter().map(|b| b.to_string()).collect()
 }
 
-/// `int(c)` for a character of an `UNCOMPRESSED` code (`'0'` or `'1'`; an
-/// ASCII digit or letter in direct calls: the `ValueError` message quotes
-/// the character as `repr` does for those); `None` is `bits[1]` past the
-/// end of the code.
-fn py_int_digit(c: Option<char>) -> PyResult<i64> {
-    match c {
-        Some(c) if c.is_ascii_digit() => Ok(i64::from(u32::from(c) - u32::from('0'))),
-        Some(c) => Err(exc::ValueError(format!("invalid literal for int() with base 10: '{c}'"))),
-        None => Err(exc::IndexError("string index out of range")),
-    }
+/// `int(c)` for a one-character `str` (`'0'` or `'1'` of an `UNCOMPRESSED`
+/// code; any character in direct calls): a Unicode decimal digit, else
+/// `ValueError`.
+fn int_of_char(c: char) -> PyResult<i64> {
+    let mut buf = [0u8; 4];
+    let value = PyInt::parse_str(c.encode_utf8(&mut buf), 10)?;
+    Ok(value.as_i64().expect("a single digit"))
 }
 
 /// The value an `array('b')` item can take (`OverflowError` otherwise).
@@ -882,7 +932,7 @@ pub fn ccittfaxdecode_obj(data: &[u8], params: &PDFObject) -> PyResult<Vec<u8>> 
         }
         other => {
             let _frame = py_frame()?;
-            Err(exc::AttributeError(format!("'{}' object has no attribute 'get'", other.type_name())))
+            Err(raised_by_c(exc::AttributeError(format!("'{}' object has no attribute 'get'", other.type_name()))))
         }
     }
 }
@@ -891,13 +941,24 @@ pub fn ccittfaxdecode_obj(data: &[u8], params: &PDFObject) -> PyResult<Vec<u8>> 
 fn decode(data: &[u8], get: impl Fn(&str) -> PyResult<PDFObject>) -> PyResult<Vec<u8>> {
     let k = get("K")?;
     let k_is_minus_one = match &k {
-        PDFObject::Int(i) => *i == PyInt::Small(-1),
-        PDFObject::Float(f) => *f == -1.0,
-        _ => false,
+        // a compact int: the specialized comparison, without a C unit
+        PDFObject::Int(PyInt::Small(i)) if i.unsigned_abs() < 1 << 30 => *i == -1,
+        _ => {
+            let _unit = recursion::c_call(" in comparison")?;
+            match &k {
+                PDFObject::Float(f) => *f == -1.0,
+                _ => false,
+            }
+        }
     };
     if !k_is_minus_one {
-        // raise PDFValueError(K): str(e) is str(K)
-        return Err(exc::PDFValueError(k.py_str()?));
+        // raise PDFValueError(K): calling the class takes a C unit. str(e)
+        // is str(K), which Python computes only when the exception is
+        // printed, by its reader: not at this depth, but at the top of a
+        // fresh stack.
+        drop(recursion::c_call(WHILE_CALLING)?);
+        let message = recursion::with_depth(recursion::Depth::default(), || k.py_str())?;
+        return Err(exc::PDFValueError(message));
     }
     let cols = cast(get("Columns")?)?;
     let bytealign = cast(get("EncodedByteAlign")?)?;

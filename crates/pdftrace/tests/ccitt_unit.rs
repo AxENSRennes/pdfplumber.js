@@ -7,8 +7,8 @@ use std::borrow::Cow;
 use std::rc::Rc;
 
 use pdfminer::ccitt::{
-    ccittfaxdecode, ccittfaxdecode_obj, BitParserState, CCITTG4Parser, Leaf, PrintLines, Slot, BLACK, MODE,
-    UNCOMPRESSED, WHITE,
+    ccittfaxdecode, ccittfaxdecode_obj, BitParserState, CCITTFaxDecoder, CCITTG4Parser, Leaf, PrintLines, Slot, BLACK,
+    MODE, UNCOMPRESSED, WHITE,
 };
 use pdfminer::pdftypes::{PDFDict, PDFList, PDFObjRef, PDFObject, PDFStream};
 use pdfminer::psparser::{LIT_bytes, KWD, LIT};
@@ -297,7 +297,16 @@ fn obj() {
     replay("obj", |a| output(ccittfaxdecode_obj(bytes(&a[0]), &build(&a[1]))));
 }
 
-/// From the depth the generator called `ccittfaxdecode` at: the same
+/// `None` for an instance made, or the exception.
+fn made<T>(r: PyResult<T>) -> Value {
+    match r {
+        Ok(_) => Value::None,
+        Err(e) => Value::from(&e),
+    }
+}
+
+/// From the depth the generator called `ccittfaxdecode` (or the class) at,
+/// near the frame limit or with few C units left: the same
 /// `RecursionError`, at the same depth.
 #[test]
 fn deep() {
@@ -313,6 +322,9 @@ fn deep() {
         recursion::with_depth(base, || match (a[1].as_str(), &params) {
             (Some("dict"), PDFObject::Dict(d)) => output(ccittfaxdecode(data, d)),
             (Some("obj"), params) => output(ccittfaxdecode_obj(data, params)),
+            // the class called: None once made
+            (Some("g4init"), width) => made(CCITTG4Parser::<PrintLines>::new(width, false)),
+            (Some("faxinit"), width) => made(CCITTFaxDecoder::new(width, false, false)),
             other => panic!("{other:?}"),
         })
     });
