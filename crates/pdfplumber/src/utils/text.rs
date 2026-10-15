@@ -892,7 +892,8 @@ fn attr_names(v: &PyValue) -> PyResult<Vec<Rc<str>>> {
         PyValue::Str(s) => Ok(s.chars().map(|c| Rc::from(c.to_string())).collect()),
         PyValue::Tuple(items) | PyValue::List(items) => items.iter().map(key).collect(),
         PyValue::Dict(d) => Ok(d.keys().map(Rc::from).collect()),
-        other => Err(exc::TypeError(format!("'{}' object is not iterable", other.type_name()))),
+        // itemgetter("upright", *self.extra_attrs)
+        other => Err(exc::TypeError(format!("Value after * must be an iterable, not {}", other.type_name()))),
     }
 }
 
@@ -1266,6 +1267,35 @@ impl WordExtractor {
 // pdfplumber/utils/text.py:695 extract_words
 pub fn extract_words(chars: &[Obj], return_chars: bool, kwargs: &Kwargs) -> PyResult<Vec<Obj>> {
     WordExtractor::from_kwargs(kwargs, true)?.extract_words(chars, return_chars)
+}
+
+/// Binds the named parameters of a call `f(chars, **kwargs)`: removes them
+/// from `kwargs` and returns their values (`None` when absent).
+fn bind_named(func: &str, kwargs: &Kwargs, names: &[&str]) -> PyResult<(Vec<Option<PyValue>>, Kwargs)> {
+    if kwargs.contains("chars") {
+        return Err(exc::TypeError(format!("{func}() got multiple values for argument 'chars'")));
+    }
+    let mut rest = kwargs.clone();
+    let mut values = Vec::with_capacity(names.len());
+    for name in names {
+        values.push(if rest.contains(name) { Some(rest.remove(name)?) } else { None });
+    }
+    Ok((values, rest))
+}
+
+/// `extract_words(chars, **kwargs)` (`return_chars` may be in `kwargs`).
+pub fn extract_words_kwargs(chars: &[Obj], kwargs: &Kwargs) -> PyResult<Vec<Obj>> {
+    let (values, rest) = bind_named("extract_words", kwargs, &["return_chars"])?;
+    let return_chars = values[0].as_ref().is_some_and(PyValue::truthy);
+    extract_words(chars, return_chars, &rest)
+}
+
+/// `extract_text(chars, **kwargs)` (`line_dir_render`, `char_dir_render`
+/// may be in `kwargs`).
+pub fn extract_text_kwargs(chars: &[Obj], kwargs: &Kwargs) -> PyResult<String> {
+    let (values, rest) = bind_named("extract_text", kwargs, &["line_dir_render", "char_dir_render"])?;
+    let none = PyValue::None;
+    extract_text(chars, values[0].as_ref().unwrap_or(&none), values[1].as_ref().unwrap_or(&none), &rest)
 }
 
 // pdfplumber/utils/text.py:705 chars_to_textmap
