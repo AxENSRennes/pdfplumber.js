@@ -190,6 +190,20 @@ fn nunpack(s: &[u8]) -> PyInt {
     PyInt::from(num_bigint::BigInt::from(BigUint::from_bytes_be(s)))
 }
 
+/// The size of a unicode map that [`check_growth`] calls runaway: far more
+/// than any real or tested map (the predefined ones hold about 20 000
+/// entries).
+const MAX_CHECKED_ENTRIES: usize = 1 << 22;
+
+/// With debug assertions (`--profile mutants`), panics when a result outgrows
+/// `limit`: a mutant that loops while it allocates then fails at once instead
+/// of exhausting the memory (`docs/verification.md`, "Mutations"; like
+/// `psparser::ProgressGuard`). Release builds check nothing.
+#[inline]
+fn check_growth(len: usize, limit: usize) {
+    debug_assert!(len <= limit, "runaway growth: {len} > {limit}");
+}
+
 /// A UTF-16 surrogate code point (U+D800..U+DFFF).
 fn is_surrogate(c: u32) -> bool {
     (0xd800..0xe000).contains(&c)
@@ -209,6 +223,7 @@ pub fn decode_utf16be_ignore(b: &[u8]) -> String {
         i += 2;
         if !is_surrogate(ch) {
             out.push(char::from_u32(ch).expect("not a surrogate"));
+            check_growth(out.len(), 2 * b.len()); // UTF-8 bytes: at most 4 per 2 input bytes
             continue;
         }
         if ch >= 0xdc00 {
@@ -223,6 +238,7 @@ pub fn decode_utf16be_ignore(b: &[u8]) -> String {
         }
         i += 2;
         out.push(char::from_u32(0x10000 + ((ch - 0xd800) << 10) + (ch2 - 0xdc00)).expect("a supplementary char"));
+        check_growth(out.len(), 2 * b.len()); // UTF-8 bytes: at most 4 per 2 input bytes
     }
     out
 }
@@ -634,6 +650,7 @@ impl UnicodeMap {
             return Ok(());
         }
         self.cid2unichr.insert(cid, unichr);
+        check_growth(self.cid2unichr.len(), MAX_CHECKED_ENTRIES);
         Ok(())
     }
 }
