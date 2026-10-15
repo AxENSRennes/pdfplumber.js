@@ -353,6 +353,12 @@ la mutation la plus forte, manque donc à la passe ordinaire. Ces mutants
 `scripts/mutants-ok.sh`, qui copie le checkout, réécrit `PyResult<T>` en
 `Result<T, pycompat::PyErr>` dans les fichiers donnés par `-f`, et ne lance
 que les mutants `with Ok(` ; le rapport du module note les deux résultats.
+Dans cette passe aussi, `Ok(Default::default())` est « unviable » quand le
+type n'implémente pas `Default` (`PDFObject`, les enums du port) : chacun de
+ces corps est alors remplacé à la main, sur une copie, par une valeur concrète
+de chaque variante pertinente (`Ok(PDFObject::Null)`, `Ok(Some(Variante))`…),
+et le test doit échouer (`test result: FAILED`, pas une erreur de
+compilation).
 
 ```sh
 scripts/heavy.sh scripts/mutants-ok.sh -f crates/pdfminer/src/arcfour.rs \
