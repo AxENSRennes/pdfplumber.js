@@ -36,8 +36,9 @@ exception.
 
 - ``real``: the first ``--max-pages`` pages of every PDF of the corpus set
   ``upstream`` and the first page of every PDF of ``real`` (pages of more
-  than ``MAX_CHARS`` chars are skipped), with every configuration of
-  ``CONFIGS``.
+  than ``MAX_CHARS`` objects are skipped), with every configuration of
+  ``CONFIGS`` (but ``ZERO``, which makes a box of each char, so ``n**2``
+  heap entries, only on pages of at most ``ZERO_MAX_CHARS`` objects).
 - ``adversarial``: generated pages (``adversarial_pages``): chars on exact
   margin boundaries (``char_margin``, ``line_overlap``, ``word_margin``,
   ``line_margin``), overlapping and duplicated chars, vertical text, blank
@@ -104,7 +105,8 @@ from ..stages._common import open_document
 from ..typed_json import dumps, loads
 from ._common import at_depth, require_oracle_python, write_cases, write_meta
 
-MAX_CHARS = 6000
+MAX_CHARS = 5000
+ZERO_MAX_CHARS = 600
 FILE_TIMEOUT_S = 300
 
 #: LAParams keyword arguments of the runs.
@@ -113,7 +115,7 @@ CONFIGS = [
     {"boxes_flow": None},
     {"detect_vertical": True},
     {"all_texts": True},
-    {"line_overlap": 0.0, "char_margin": 0.0, "line_margin": 0.0, "word_margin": 0.0},
+    (ZERO := {"line_overlap": 0.0, "char_margin": 0.0, "line_margin": 0.0, "word_margin": 0.0}),
     {"char_margin": 1e6, "line_margin": 1e3, "boxes_flow": 1.0, "detect_vertical": True, "all_texts": True},
     {"line_overlap": 1, "char_margin": 3, "line_margin": 1, "word_margin": 1, "boxes_flow": -1},
     {"boxes_flow": None, "detect_vertical": True, "all_texts": True, "word_margin": 0.5},
@@ -305,11 +307,13 @@ def process_file(args):
                     layout = device.get_result()
                 except Exception:
                     continue
-                if len(raw_index(layout)) > MAX_CHARS:
+                nobjs = len(raw_index(layout))
+                if nobjs > MAX_CHARS:
                     continue
                 raw = dump_raw(layout)
                 check_dump(raw)
-                runs, outs = analyze_runs(raw, CONFIGS)
+                configs = [c for c in CONFIGS if c is not ZERO or nobjs <= ZERO_MAX_CHARS]
+                runs, outs = analyze_runs(raw, configs)
                 # sent back as typed JSON: the objects hold references to the
                 # document, which do not pickle
                 out.append(dumps([[f"{rel}#{pageno}", raw, runs], outs]))
