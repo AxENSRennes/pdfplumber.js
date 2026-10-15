@@ -10,6 +10,7 @@ rust-version.workspace = true
 [dependencies]
 pycompat.workspace = true
 pdfminer.workspace = true
+pdfplumber.workspace = true
 sha2.workspace = true
 
 [lints]

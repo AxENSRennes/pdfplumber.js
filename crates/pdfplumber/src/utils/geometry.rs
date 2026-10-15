@@ -349,9 +349,9 @@ pub fn rect_to_edges(rect: &Obj) -> PyResult<Vec<Obj>> {
         ("bottom", rect.hot(Hot::Top)?.clone()),
         ("orientation", PyValue::str("h")),
     ]);
+    let b_y1 = rect.hot(Hot::Y0)?.clone();
     let b_top = rect.hot(Hot::Top)?.add(rect.hot(Hot::Height)?)?;
     let b_doctop = rect.hot(Hot::Doctop)?.add(rect.hot(Hot::Height)?)?;
-    let b_y1 = rect.hot(Hot::Y0)?.clone();
     bottom.update([
         ("object_type", rect_edge.clone()),
         ("height", zero.clone()),
