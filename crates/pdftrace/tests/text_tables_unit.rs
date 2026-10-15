@@ -740,9 +740,13 @@ fn run_op(page: &CasePage, op: &[Value]) -> Value {
     }
 }
 
+/// With `TEXT_TABLES_TIME` set, [`replay_pages`] prints the time spent in
+/// each operation (for performance comparisons of the object model).
 fn replay_pages(module: &str, name: &'static str, min_pages: usize) {
     let data = UnitData::open(module);
     let mut c = Checker::new(name);
+    let timing = std::env::var_os("TEXT_TABLES_TIME").is_some();
+    let mut times: Vec<(String, std::time::Duration)> = Vec::new();
     let pages = for_each_case(&data, name, |i, args, out| {
         let record = obj(&args[0]);
         let get = |k: &str| record.get(k).unwrap_or_else(|| panic!("record without {k}"));
@@ -765,12 +769,24 @@ fn replay_pages(module: &str, name: &'static str, min_pages: usize) {
         assert_eq!(ops.len(), outs.len());
         for (k, (op, want)) in ops.iter().zip(outs.iter()).enumerate() {
             let Value::List(op) = op else { panic!("{op:?}") };
+            let start = std::time::Instant::now();
             let got = run_op(&page, op);
+            if timing {
+                let op_name = op[0].as_str().expect("op name").to_owned();
+                match times.iter_mut().find(|(n, _)| *n == op_name) {
+                    Some((_, t)) => *t += start.elapsed(),
+                    None => times.push((op_name, start.elapsed())),
+                }
+            }
             let want = want.as_str().expect("a canon text");
             c.check_text(|| format!("{name}:{i}:{k} {}", canon(&op[0])), &canon(&got), want);
         }
     });
     assert!(pages >= min_pages, "{name}: only {pages} pages");
+    if timing {
+        let total: std::time::Duration = times.iter().map(|(_, t)| *t).sum();
+        eprintln!("{name}: {pages} pages, operations {total:.3?}: {times:.3?}");
+    }
     c.finish(min_pages);
 }
 
