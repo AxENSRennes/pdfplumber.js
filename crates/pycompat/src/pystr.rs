@@ -26,11 +26,15 @@
 //!   cost of a UTF-8 validation (Rust rejects exactly the surrogate
 //!   sequences), and every constructor from Rust text is a copy.
 //!
-//! The choice was measured on the text and table operations of real pages
+//! Cost, measured on the text and table operations of the real pages
 //! (`TEXT_TABLES_TIME=1 cargo test --release --test text_tables_unit
-//! pages_real`): the same time as the former `Rc<str>` values, where a
-//! code-point vector (`Rc<[u32]>`) quadruples the memory of every text and
-//! converts at every boundary (`docs/architecture.md`, "Modèle de valeurs").
+//! pages_real`, five alternating rounds against the former `Rc<str>`
+//! values on a loaded shared machine): new/old time ratios 0.87 to 1.09,
+//! 0.96 on average, i.e. no difference beyond the noise. The layout is that
+//! of `Rc<str>` (a fat pointer), and every text without surrogates is the
+//! same bytes. A code-point vector (`Rc<[u32]>`) was not kept: it
+//! quadruples the memory of every text and needs a conversion at every
+//! boundary with Rust text.
 //!
 //! # JavaScript
 //!
