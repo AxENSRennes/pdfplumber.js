@@ -63,32 +63,72 @@ pub trait Writer {
     /// A `PDFStream`, followed by five values: `objid`, `genno`, `attrs`
     /// (a dict), `rawdata` and `data` (`bytes` or `None`).
     fn stream(&mut self);
-    /// Writes `rows` (at least two dicts with the same keys in the same
-    /// order) as one list value, if this writer has a form for it, and
-    /// returns whether it did.
-    fn table(&mut self, _rows: &[PyValue], _keys: &[Rc<str>]) -> PyResult<bool> {
+    /// Writes `rows` (dicts, grouped by key sequence in `shapes`) as one
+    /// list value, if this writer has a form for it, and returns whether it
+    /// did.
+    fn table(&mut self, _rows: &[PyValue], _shapes: &Shapes<'_>) -> PyResult<bool> {
         Ok(false)
     }
 }
 
-/// The keys of `items` when they are at least two dicts with the same
-/// keys in the same order.
-pub fn uniform_keys(items: &[PyValue]) -> Option<Vec<Rc<str>>> {
-    let PyValue::Dict(first) = items.first()? else { return None };
-    if items.len() < 2 || first.is_empty() {
+/// The most key sequences a table holds.
+pub const MAX_SHAPES: usize = 64;
+
+/// The dicts of a list grouped by key sequence (their *shape*).
+pub struct Shapes<'a> {
+    /// A dict of each shape, in order of first appearance.
+    pub first: Vec<&'a Obj>,
+    /// The shape of each row.
+    pub order: Vec<u8>,
+}
+
+impl Shapes<'_> {
+    /// The rows of shape `s`, in order.
+    pub fn rows<'r>(&self, items: &'r [PyValue], s: usize) -> Vec<&'r Obj> {
+        items
+            .iter()
+            .zip(&self.order)
+            .filter(|(_, &o)| usize::from(o) == s)
+            .map(|(v, _)| match v {
+                PyValue::Dict(d) => d,
+                _ => unreachable!("table rows are dicts"),
+            })
+            .collect()
+    }
+}
+
+fn same_keys(a: &Obj, b: &Obj) -> bool {
+    let (a, b) = (a.items(), b.items());
+    a.len() == b.len() && a.iter().zip(b).all(|((x, _), (y, _))| Rc::ptr_eq(x, y) || x.as_ref() == y.as_ref())
+}
+
+/// The shapes of `items` when they are at least two dicts of at most
+/// [`MAX_SHAPES`] shapes, at most one shape per two rows (otherwise a table
+/// saves nothing).
+pub fn shapes(items: &[PyValue]) -> Option<Shapes<'_>> {
+    if items.len() < 2 {
         return None;
     }
-    let keys = first.items();
-    for item in &items[1..] {
+    let mut first: Vec<&Obj> = Vec::new();
+    let mut order = Vec::with_capacity(items.len());
+    let mut last = 0;
+    for item in items {
         let PyValue::Dict(d) = item else { return None };
-        let other = d.items();
-        if other.len() != keys.len()
-            || !other.iter().zip(keys).all(|((a, _), (b, _))| Rc::ptr_eq(a, b) || a.as_ref() == b.as_ref())
-        {
-            return None;
-        }
+        let s = if !first.is_empty() && same_keys(first[last], d) {
+            last
+        } else if let Some(s) = first.iter().position(|f| same_keys(f, d)) {
+            s
+        } else {
+            if first.len() == MAX_SHAPES {
+                return None;
+            }
+            first.push(d);
+            first.len() - 1
+        };
+        order.push(s as u8);
+        last = s;
     }
-    Some(keys.iter().map(|(k, _)| k.clone()).collect())
+    (first.len() * 2 <= items.len()).then_some(Shapes { first, order })
 }
 
 enum Work<'a> {
@@ -120,8 +160,8 @@ pub fn write_value<W: Writer + ?Sized>(w: &mut W, v: &PyValue) -> PyResult<()> {
                 PyValue::Str(s) => w.str(s),
                 PyValue::Bytes(b) => w.bytes(b),
                 PyValue::List(items) | PyValue::Tuple(items) => {
-                    if let Some(keys) = uniform_keys(items) {
-                        if w.table(items, &keys)? {
+                    if let Some(shapes) = shapes(items) {
+                        if w.table(items, &shapes)? {
                             continue;
                         }
                     }

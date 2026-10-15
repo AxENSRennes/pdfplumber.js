@@ -53,6 +53,8 @@ GENERATORS: dict[str, tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]] = {
     "text_tables": (("meta.json",), ((),)),
     # every page operation on the quick set and sample documents (minutes)
     "text_tables_real": (("meta.json",), ((),)),
+    # what the JavaScript tests replay through the WebAssembly boundary (seconds)
+    "js_runtime": (("meta.json",), ((),)),
 }
 
 

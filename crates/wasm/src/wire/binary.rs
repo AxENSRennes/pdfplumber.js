@@ -27,7 +27,7 @@ use pdfplumber::obj::{Obj, PyValue};
 use pycompat::{exc, ExcKind, PyErr, PyInt, PyResult};
 use rustc_hash::FxHashMap;
 
-use super::{safe_int, write_value, Writer};
+use super::{safe_int, write_value, Shapes, Writer};
 use crate::strings::{decode_generalized_utf8, is_surrogate, PyStrRef};
 
 pub const MAGIC: &[u8; 4] = b"PJB1";
@@ -80,6 +80,8 @@ pub struct BinWriter {
     /// `(index, UTF-16 code units)` of the strings with a surrogate.
     special: Vec<(u32, Vec<u16>)>,
     special_index: FxHashMap<Vec<u16>, u32>,
+    /// Whether uniform lists of dicts are written as tables.
+    tables: bool,
 }
 
 impl Default for BinWriter {
@@ -102,7 +104,14 @@ impl BinWriter {
             utf16_len: 0,
             special: Vec::new(),
             special_index: FxHashMap::default(),
+            tables: true,
         }
+    }
+
+    /// A writer that writes lists as lists, never as tables (the argument
+    /// form JavaScript writes and [`decode`] reads).
+    pub fn without_tables() -> BinWriter {
+        BinWriter { tables: false, ..BinWriter::new() }
     }
 
     /// The block: header, value, string table.
@@ -188,12 +197,8 @@ impl BinWriter {
         self.buf.extend_from_slice(&x.to_le_bytes());
     }
 
-    fn column(&mut self, rows: &[PyValue], c: usize) -> PyResult<()> {
-        let cell = |r: &PyValue| match r {
-            PyValue::Dict(d) => d.items()[c].1.clone(),
-            _ => unreachable!("table rows are dicts"),
-        };
-        let cells: Vec<PyValue> = rows.iter().map(cell).collect();
+    fn column(&mut self, rows: &[&Obj], c: usize) -> PyResult<()> {
+        let cells: Vec<&PyValue> = rows.iter().map(|d| &d.items()[c].1).collect();
         let kind = column_kind(&cells);
         self.buf.push(kind);
         match kind {
@@ -219,28 +224,24 @@ impl BinWriter {
                 }
             }
             COL_STR | COL_OPT_STR => {
-                let idx: Vec<u32> = cells
-                    .iter()
-                    .map(|v| match v {
+                self.align(4);
+                for v in &cells {
+                    let i = match v {
                         PyValue::Str(s) => self.intern(s),
                         _ => NO_STR,
-                    })
-                    .collect();
-                self.align(4);
-                for i in idx {
+                    };
                     self.u32(i);
                 }
             }
             COL_NUM_SEQ => {
+                // the lengths, then every number, aligned (a Float64Array view)
                 for v in &cells {
-                    match v.as_seq() {
-                        Some(items) => {
-                            self.buf.push(items.len() as u8);
-                            for x in items {
-                                self.f64(as_f64(x).expect("a number sequence"));
-                            }
-                        }
-                        None => self.buf.push(NO_SEQ),
+                    self.buf.push(v.as_seq().map_or(NO_SEQ, |items| items.len() as u8));
+                }
+                self.align(8);
+                for v in &cells {
+                    for x in v.as_seq().unwrap_or(&[]) {
+                        self.f64(as_f64(x).expect("a number sequence"));
                     }
                 }
             }
@@ -264,31 +265,40 @@ fn as_f64(v: &PyValue) -> Option<f64> {
     }
 }
 
-/// The narrowest column type that holds every cell exactly.
-pub fn column_kind(cells: &[PyValue]) -> u8 {
-    let all = |f: &dyn Fn(&PyValue) -> bool| cells.iter().all(f);
-    let any_none = cells.iter().any(PyValue::is_none);
-    if all(&PyValue::is_none) {
-        COL_NONE
-    } else if all(&|v| matches!(v, PyValue::Bool(_))) {
-        COL_BOOL
-    } else if all(&|v| as_f64(v).is_some()) {
-        COL_F64
-    } else if all(&|v| as_f64(v).is_some() || v.is_none()) {
-        debug_assert!(any_none);
-        COL_OPT_F64
-    } else if all(&|v| matches!(v, PyValue::Str(_))) {
-        COL_STR
-    } else if all(&|v| matches!(v, PyValue::Str(_)) || v.is_none()) {
-        COL_OPT_STR
-    } else if all(&|v| {
-        v.is_none()
-            || matches!(v, PyValue::Tuple(items) | PyValue::List(items)
-                if items.len() < usize::from(NO_SEQ) && items.iter().all(|x| as_f64(x).is_some()))
-    }) {
-        COL_NUM_SEQ
-    } else {
-        COL_GENERIC
+/// Whether a cell is a sequence that a [`COL_NUM_SEQ`] column holds.
+fn is_num_seq(v: &PyValue) -> bool {
+    matches!(v, PyValue::Tuple(items) | PyValue::List(items)
+        if items.len() < usize::from(NO_SEQ) && items.iter().all(|x| as_f64(x).is_some()))
+}
+
+/// The narrowest column type that holds every cell exactly, in one pass:
+/// the kinds of cell seen, then the column type that allows them all.
+pub fn column_kind(cells: &[&PyValue]) -> u8 {
+    const NONE: u8 = 1;
+    const BOOL: u8 = 2;
+    const NUM: u8 = 4;
+    const STR: u8 = 8;
+    const SEQ: u8 = 16;
+    let mut seen = 0u8;
+    for v in cells {
+        seen |= match v {
+            PyValue::None => NONE,
+            PyValue::Bool(_) => BOOL,
+            v if as_f64(v).is_some() => NUM,
+            PyValue::Str(_) => STR,
+            v if is_num_seq(v) => SEQ,
+            _ => return COL_GENERIC,
+        };
+    }
+    match seen {
+        NONE => COL_NONE,
+        BOOL => COL_BOOL,
+        NUM => COL_F64,
+        x if x == NUM | NONE => COL_OPT_F64,
+        STR => COL_STR,
+        x if x == STR | NONE => COL_OPT_STR,
+        x if x & !NONE == SEQ => COL_NUM_SEQ,
+        _ => COL_GENERIC,
     }
 }
 
@@ -380,16 +390,28 @@ impl Writer for BinWriter {
         self.buf.push(TAG_STREAM);
     }
 
-    fn table(&mut self, rows: &[PyValue], keys: &[Rc<str>]) -> PyResult<bool> {
+    fn table(&mut self, rows: &[PyValue], shapes: &Shapes<'_>) -> PyResult<bool> {
+        if !self.tables {
+            return Ok(false);
+        }
         self.buf.push(TAG_TABLE);
         self.varint(rows.len());
-        self.varint(keys.len());
-        for k in keys {
-            let i = self.intern(k);
-            self.varint(i as usize);
+        self.varint(shapes.first.len());
+        for (s, first) in shapes.first.iter().enumerate() {
+            let group = shapes.rows(rows, s);
+            self.buf.reserve(group.len() * first.len() * 9);
+            self.varint(group.len());
+            self.varint(first.len());
+            for k in first.keys() {
+                let i = self.intern(k);
+                self.varint(i as usize);
+            }
+            for c in 0..first.len() {
+                self.column(&group, c)?;
+            }
         }
-        for c in 0..keys.len() {
-            self.column(rows, c)?;
+        if shapes.first.len() > 1 {
+            self.buf.extend_from_slice(&shapes.order);
         }
         Ok(true)
     }
@@ -574,7 +596,9 @@ pub fn decode(block: &[u8]) -> PyResult<PyValue> {
         loop {
             match stack.last_mut() {
                 None => {
-                    if r.pos != body_end {
+                    // only the zero padding that aligns the string table may follow
+                    let rest = block.get(r.pos..body_end).ok_or_else(|| malformed("value overlaps the string table"))?;
+                    if rest.len() >= 4 || rest.iter().any(|&b| b != 0) {
                         return Err(malformed("trailing bytes"));
                     }
                     return Ok(value);

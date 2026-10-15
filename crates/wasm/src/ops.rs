@@ -268,6 +268,12 @@ impl Core {
                 PyValue::None
             }
             "test_values" => return Ok(Out::Written(Box::new(write_test_values))),
+            "echo_wtf8" => {
+                // a `str` given as generalized UTF-8 bytes, returned as a `str`
+                let PyValue::Bytes(b) = args else { return Err(exc::TypeError("echo_wtf8 takes bytes")) };
+                let b = b.clone();
+                return Ok(Out::Written(Box::new(move |w| w.py_str(PyStrRef::Wtf8(&b)))));
+            }
             "exception_kinds" => {
                 PyValue::list(ExcKind::ALL.iter().map(|k| PyValue::str(&crate::errors::qualified_name(*k))))
             }
@@ -434,11 +440,20 @@ impl Core {
                 self.insert(Object::Value(v))?
             }
             "bench_encode" => {
-                let format = Format::parse(args)?;
-                match self.handles.get(h) {
-                    Some(Object::Value(v)) => return Ok(Out::Encoded(format, v.clone())),
-                    _ => return Err(exc::ValueError("invalid handle")),
-                }
+                // [format, index]: item `index` of the stored list, or all of it (None)
+                let a = a()?;
+                let format = Format::parse(arg(a, 0)?)?;
+                let Some(Object::Value(v)) = self.handles.get(h) else {
+                    return Err(exc::ValueError("invalid handle"));
+                };
+                let v = match arg(a, 1)? {
+                    PyValue::None => v.clone(),
+                    i => {
+                        let i = usize::try_from(int(i)?).map_err(|_| exc::IndexError("list index out of range"))?;
+                        seq(v)?.get(i).cloned().ok_or_else(|| exc::IndexError("list index out of range"))?
+                    }
+                };
+                return Ok(Out::Encoded(format, v));
             }
             _ => return Err(exc::ValueError(format!("unknown operation {name:?}"))),
         }))

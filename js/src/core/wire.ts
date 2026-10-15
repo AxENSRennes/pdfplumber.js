@@ -346,91 +346,183 @@ class Reader {
     }
   }
 
-  /** A list of uniform dicts written by columns, built column by column so
-   * that every row object goes through the same shape transitions. */
+  /** A list of dicts written by columns, grouped by key sequence (shape):
+   * each column is decoded into an array, the rows of each shape are built
+   * (see `rowBuilder`), then put back in order. */
   table(): Record<string, unknown>[] {
     const n = this.varint();
-    const ncols = this.varint();
-    if (n > this.u8.length - this.pos) throw new WireError("table longer than its block");
-    const keys: string[] = [];
-    for (let c = 0; c < ncols; c++) keys.push(this.str());
-    const rows: Record<string, unknown>[] = new Array(n);
-    for (let i = 0; i < n; i++) rows[i] = {};
-    for (let c = 0; c < ncols; c++) {
-      const key = keys[c];
-      const set =
-        key === "__proto__"
-          ? (i: number, v: unknown) => setOwn(rows[i], key, v)
-          : (i: number, v: unknown) => {
-              rows[i][key] = v;
-            };
-      this.check(1);
-      const kind = this.u8[this.pos++];
-      switch (kind) {
-        case COL.NONE:
-          for (let i = 0; i < n; i++) set(i, null);
-          break;
-        case COL.BOOL:
-          this.check(n);
-          for (let i = 0; i < n; i++) set(i, this.u8[this.pos + i] !== 0);
-          this.pos += n;
-          break;
-        case COL.F64: {
-          this.align(8);
-          const a = this.f64Array(n);
-          if (key === "__proto__") for (let i = 0; i < n; i++) set(i, a[i]);
-          else for (let i = 0; i < n; i++) rows[i][key] = a[i];
-          break;
-        }
-        case COL.OPT_F64: {
-          this.check(n);
-          const mask = this.u8.subarray(this.pos, this.pos + n);
-          this.pos += n;
-          this.align(8);
-          const a = this.f64Array(n);
-          for (let i = 0; i < n; i++) set(i, mask[i] ? a[i] : null);
-          break;
-        }
-        case COL.STR:
-        case COL.OPT_STR: {
-          this.align(4);
-          const idx = this.u32Array(n);
-          const strings = this.strings;
-          for (let i = 0; i < n; i++) {
-            const j = idx[i];
-            if (j === NO_STR && kind === COL.OPT_STR) set(i, null);
-            else {
-              const s = strings[j];
-              if (s === undefined) throw new WireError("string index");
-              set(i, s);
-            }
-          }
-          break;
-        }
-        case COL.NUM_SEQ:
-          for (let i = 0; i < n; i++) {
-            this.check(1);
-            const len = this.u8[this.pos++];
-            if (len === NO_SEQ) {
-              set(i, null);
-              continue;
-            }
-            this.check(len * 8);
-            const seq = new Array(len);
-            for (let j = 0; j < len; j++) seq[j] = this.view.getFloat64(this.pos + 8 * j, true);
-            this.pos += len * 8;
-            set(i, seq);
-          }
-          break;
-        case COL.GENERIC:
-          for (let i = 0; i < n; i++) set(i, this.value());
-          break;
-        default:
-          throw new WireError(`unknown column type ${kind}`);
+    const nshapes = this.varint();
+    if (n > this.u8.length - this.pos || nshapes > n || nshapes === 0) throw new WireError("bad table");
+    const groups: Record<string, unknown>[][] = [];
+    let total = 0;
+    for (let s = 0; s < nshapes; s++) {
+      const rows = this.varint();
+      const ncols = this.varint();
+      total += rows;
+      if (total > n) throw new WireError("bad table");
+      const keys: string[] = [];
+      for (let c = 0; c < ncols; c++) keys.push(this.str());
+      const kinds: number[] = [];
+      const cols: ArrayLike<unknown>[] = [];
+      for (let c = 0; c < ncols; c++) {
+        this.check(1);
+        const kind = this.u8[this.pos++];
+        kinds.push(kind);
+        cols.push(this.column(kind, rows));
       }
+      groups.push(rowBuilder(keys, kinds)(cols, rows));
+    }
+    if (total !== n) throw new WireError("bad table");
+    if (nshapes === 1) return groups[0];
+    this.check(n);
+    const order = this.u8.subarray(this.pos, this.pos + n);
+    this.pos += n;
+    const next = new Array<number>(nshapes).fill(0);
+    const out: Record<string, unknown>[] = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const s = order[i];
+      const row = s < nshapes ? groups[s][next[s]++] : undefined;
+      if (row === undefined) throw new WireError("bad table order");
+      out[i] = row;
+    }
+    return out;
+  }
+
+  /** The cells of a column. */
+  column(kind: number, n: number): ArrayLike<unknown> {
+    switch (kind) {
+      case COL.NONE:
+        return NULLS;
+      case COL.BOOL: {
+        this.check(n);
+        const out = new Array<boolean>(n);
+        for (let i = 0; i < n; i++) out[i] = this.u8[this.pos + i] !== 0;
+        this.pos += n;
+        return out;
+      }
+      case COL.F64:
+        this.align(8);
+        return this.f64Array(n);
+      case COL.OPT_F64: {
+        this.check(n);
+        const mask = this.u8.subarray(this.pos, this.pos + n);
+        this.pos += n;
+        this.align(8);
+        const a = this.f64Array(n);
+        const out = new Array<number | null>(n);
+        for (let i = 0; i < n; i++) out[i] = mask[i] ? a[i] : null;
+        return out;
+      }
+      case COL.STR:
+      case COL.OPT_STR: {
+        this.align(4);
+        const idx = this.u32Array(n);
+        const strings = this.strings;
+        const out = new Array<string | null>(n);
+        for (let i = 0; i < n; i++) {
+          const j = idx[i];
+          if (j === NO_STR && kind === COL.OPT_STR) out[i] = null;
+          else {
+            const s = strings[j];
+            if (s === undefined) throw new WireError("string index");
+            out[i] = s;
+          }
+        }
+        return out;
+      }
+      case COL.NUM_SEQ: {
+        // the lengths, then every number (crates/wasm/src/wire/binary.rs)
+        this.check(n);
+        const lens = this.u8.subarray(this.pos, this.pos + n);
+        this.pos += n;
+        this.align(8);
+        let total = 0;
+        for (let i = 0; i < n; i++) if (lens[i] !== NO_SEQ) total += lens[i];
+        const values = this.f64Array(total);
+        const out = new Array<number[] | null>(n);
+        let p = 0;
+        for (let i = 0; i < n; i++) {
+          const len = lens[i];
+          if (len === NO_SEQ) {
+            out[i] = null;
+            continue;
+          }
+          const seq = new Array<number>(len);
+          for (let j = 0; j < len; j++) seq[j] = values[p++];
+          out[i] = seq;
+        }
+        return out;
+      }
+      case COL.GENERIC: {
+        const out = new Array<unknown>(n);
+        for (let i = 0; i < n; i++) out[i] = this.value();
+        return out;
+      }
+      default:
+        throw new WireError(`unknown column type ${kind}`);
+    }
+  }
+}
+
+/** The cells of a column of `None`s. */
+const NULLS: ArrayLike<unknown> = new Proxy([], { get: (_t, p) => (p === "length" ? Infinity : null) });
+
+type RowBuilder = (cols: ArrayLike<unknown>[], n: number) => Record<string, unknown>[];
+
+let evalAllowed: boolean | undefined;
+const builders = new Map<string, RowBuilder>();
+
+/** Rows by keyed stores: the builder when code generation is not allowed
+ * (a Content-Security-Policy without 'unsafe-eval'). */
+function genericRows(keys: string[]): RowBuilder {
+  return (cols, n) => {
+    const rows: Record<string, unknown>[] = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const o: Record<string, unknown> = {};
+      for (let c = 0; c < keys.length; c++) setOwn(o, keys[c], cols[c][i]);
+      rows[i] = o;
     }
     return rows;
+  };
+}
+
+/** The function that builds the rows of a table shape: an object literal
+ * with the keys in order, so that every row is created with its final
+ * shape (about six times faster than keyed stores in V8, the measurements
+ * of docs/js-runtime.md). The keys are written as JSON string literals
+ * (`__proto__` as a computed key, which defines an own property). */
+export function rowBuilder(keys: string[], kinds: number[]): RowBuilder {
+  if (evalAllowed === undefined) {
+    try {
+      evalAllowed = new Function("return 1")() === 1;
+    } catch {
+      evalAllowed = false;
+    }
   }
+  if (!evalAllowed) return genericRows(keys);
+  const signature = `${kinds.join(",")}\u0000${keys.join("\u0000")}`;
+  let b = builders.get(signature);
+  if (b === undefined) {
+    if (builders.size >= 512) builders.clear();
+    const decl = keys.map((_, c) => `const c${c} = cols[${c}];`).join("");
+    const fields = keys.map(
+      (k, c) =>
+        `${k === "__proto__" ? '["__proto__"]' : JSON.stringify(k)}: ${kinds[c] === COL.NONE ? "null" : `c${c}[i]`}`,
+    );
+    b = new Function(
+      "cols",
+      "n",
+      `${decl}const rows = new Array(n);for (let i = 0; i < n; i++) rows[i] = {${fields.join(",")}};return rows;`,
+    ) as RowBuilder;
+    builders.set(signature, b);
+  }
+  return b;
+}
+
+/** Forces the keyed-store builder (tests of the fallback). */
+export function setCodegen(allowed: boolean | undefined): void {
+  evalAllowed = allowed;
+  builders.clear();
 }
 
 /** Decodes the PJB1 block at `offset` of `u8`. */
