@@ -167,10 +167,16 @@ def clear_logger_caches() -> None:
 # -- documents ----------------------------------------------------------------
 
 
+#: Object numbers from this one up are looked up ``DEEP_GETOBJ_CALLS``
+#: calls further down (``FontDoc._deep``).
+DEEP_OBJIDS = 200_000
+DEEP_GETOBJ_CALLS = 8
+
+
 class FontDoc:
     """A document whose ``getobj`` reads a table of objects, or raises the
     exception recorded for an object number (``PDFObjectNotFound`` for one
-    missing from both)."""
+    missing from both); from ``DEEP_OBJIDS`` up, through more frames."""
 
     def __init__(self) -> None:
         self.table: dict[Any, Any] = {}
@@ -178,11 +184,23 @@ class FontDoc:
         self.errors: dict[Any, tuple[type, tuple]] = {}
 
     def getobj(self, objid):
+        if type(objid) is int and objid >= DEEP_OBJIDS:
+            return self._deep(DEEP_GETOBJ_CALLS, objid)
         if objid in self.table:
             return self.table[objid]
         if objid in self.errors:
             cls, args = self.errors[objid]
             raise cls(*args)
+        raise pdfexceptions.PDFObjectNotFound(objid)
+
+    def _deep(self, n: int, objid):
+        """The lookup of an object number from ``DEEP_OBJIDS`` up, ``n``
+        frames further down (as a real document's ``getobj`` goes down
+        through its parser: deeper than what calls it)."""
+        if n:
+            return self._deep(n - 1, objid)
+        if objid in self.table:
+            return self.table[objid]
         raise pdfexceptions.PDFObjectNotFound(objid)
 
 
@@ -939,7 +957,16 @@ class Spec:
         self.doc = doc
 
     def ref(self, obj):
+        if self.rng.random() < 0.1:
+            return self.deep_ref(obj)
         return ref_to(self.doc, obj)
+
+    def deep_ref(self, obj):
+        """A reference whose ``getobj`` goes further down (``FontDoc._deep``)."""
+        deep = [k for k in self.doc.table if type(k) is int and k >= DEEP_OBJIDS]
+        objid = max([DEEP_OBJIDS, *deep]) + 1
+        self.doc.table[objid] = obj
+        return PDFObjRef(self.doc, objid)
 
     def maybe_ref(self, obj, p=0.15):
         return self.ref(obj) if self.rng.random() < p else obj
@@ -1397,11 +1424,25 @@ def depth_specs(rng):
             s = Spec(rng, doc)
             spec = s.simple(LIT(subtype)) if subtype == "TrueType" else s.cid()
             raw = data.hex().encode() + b">" if isinstance(filters, list) and len(filters) == 2 else data
-            attrs = {"Filter": s.ref(filters), "Length": len(raw)}
+            attrs = {"Filter": s.deep_ref(filters), "Length": len(raw)}
             if params is not None:
-                attrs["DecodeParms"] = s.ref(params)
+                attrs["DecodeParms"] = s.deep_ref(params)
             spec["ToUnicode"] = PDFStream(attrs, raw)
             yield spec, doc
+    # embedded programs whose filter is such a reference
+    for key in ("FontFile", "FontFile2"):
+        doc = FontDoc()
+        s = Spec(rng, doc)
+        program = type1_program(rng) if key == "FontFile" else tt_program(rng)
+        packed = zlib.compress(program)
+        attrs = {"Filter": s.deep_ref(LIT("FlateDecode")), "Length": len(packed), "Length1": len(program)}
+        if key == "FontFile":
+            spec = {"Type": LIT("Font"), "Subtype": LIT("Type1"), "BaseFont": LIT("ABCDEF+Foo")}
+        else:
+            spec = s.cid(ordering=b"Identity")
+            spec.pop("ToUnicode", None)
+        spec["FontDescriptor"] = {"FontBBox": [0, 0, 1000, 1000], key: PDFStream(attrs, packed)}
+        yield spec, doc
 
 
 def clear_cmap_caches() -> None:

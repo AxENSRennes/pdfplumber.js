@@ -68,6 +68,10 @@ fn check_marker(data: &UnitData, name: &str) {
 
 // -- documents and objects -----------------------------------------------------------
 
+/// The generator's `DEEP_OBJIDS`, `DEEP_GETOBJ_CALLS`.
+const DEEP_OBJIDS: i64 = 200_000;
+const DEEP_GETOBJ_CALLS: u32 = 8;
+
 /// The generator's `FontDoc`: a table of objects, and the exceptions of the
 /// object numbers whose loading raised.
 #[derive(Default)]
@@ -77,9 +81,15 @@ struct FontDoc {
 }
 
 impl PDFResolver for FontDoc {
-    /// `FontDoc.getobj`: a Python method (one frame).
+    /// `FontDoc.getobj`: a Python method (one frame); from `DEEP_OBJIDS`
+    /// up, `FontDoc._deep` takes `DEEP_GETOBJ_CALLS + 1` more and finds
+    /// only table objects.
     fn getobj(&self, objid: &PyInt) -> PyResult<PDFObject> {
         let _frame = py_frame()?;
+        if *objid >= PyInt::Small(DEEP_OBJIDS) {
+            drop(recursion::py_frames(DEEP_GETOBJ_CALLS + 1)?);
+            return self.table.borrow().get(objid).cloned().ok_or_else(|| exc::PDFObjectNotFound(objid.to_string()));
+        }
         if let Some(obj) = self.table.borrow().get(objid) {
             return Ok(obj.clone());
         }
