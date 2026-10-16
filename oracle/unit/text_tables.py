@@ -605,7 +605,9 @@ def seq_repeat_cases():
             ops.append(("words", {"x_tolerance_ratio": ratio}))
         for d in [("ttb", ["x"]), ("ttb",), ("x", ("y", [1]))]:
             ops += [("words", {"line_dir": d}), ("words", {"char_dir": d}), ("text", {"line_dir_render": d}),
-                    ("text", {"char_dir_render": d}), ("text", {"layout": True, "line_dir_render": d})]
+                    ("text", {"char_dir_render": d}), ("text", {"layout": True, "line_dir_render": d}),
+                    ("wordmap", {}, {"layout": True, "line_dir": d}), ("wordmap", {}, {"layout": True, "char_dir": d}),
+                    ("wordmap", {}, {"line_dir": d})]
         yield page_case(FakePage(chars, [], (0, 0, 612, 792)), {"chars": chars, "edges": [], "bbox": (0, 0, 612, 792)}, ops)
 
 

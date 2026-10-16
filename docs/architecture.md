@@ -92,11 +92,11 @@ observable, et seulement là.
   clés de `set`/`dict` avec un raccourci d'identité (`x is y or x == y`) ;
   une valeur NaN du modèle d'objets porte l'identité de son objet dans sa
   charge utile (`PyValue::float` : un nouvel objet ; un clone : le même),
-  voir `obj.rs`, « NaN identity ». Un NaN de charge utile nulle
-  (`PyValue::Float(f64::NAN)` écrit tel quel, par exemple par un décodeur
-  de valeurs venues de JavaScript) n'a pas d'identité : il n'est jamais
-  « le même objet » qu'un autre, lui-même compris, comme toute valeur
-  venue de l'extérieur.
+  voir `obj.rs`, « NaN identity ». `PyValue::Float` tient un `PyFloat` au
+  champ privé : hors de `obj.rs`, un `float` ne se fabrique que par
+  `PyValue::float` (nouvel objet ; c'est ce qu'emploie un décodeur de
+  valeurs venues de JavaScript) ou `PyValue::float_with_identity` (cas
+  de test), jamais comme un NaN nu que toutes les valeurs partageraient.
 - **Taille des séquences** : `seq * n` (`str`, `bytes`, `tuple`, `list`)
   lève les erreurs de CPython (`OverflowError`, `MemoryError` au-delà de
   `PY_SSIZE_T_MAX`) et construit tout résultat de 4 Gio au plus (dans la
