@@ -208,6 +208,12 @@ fn predefined_cmaps_load_lazily_and_match_pdfminer() {
 
 #[test]
 fn a_void_call_leaves_no_state_and_its_rerun_matches_pdfminer() {
+    if cfg!(target_family = "wasm") {
+        // no fresh thread there: the CMaps this test loads would stay in the
+        // provider and CMapDB's caches of the next test, which must miss
+        // them (natively, each test has its own thread-local state)
+        return;
+    }
     let dir = cmap_dir();
     let names: Vec<String> = fs::read_to_string(dir.join("names.txt")).unwrap().lines().map(str::to_owned).collect();
     on_thread(64 << 20, move || {
