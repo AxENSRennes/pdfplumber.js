@@ -140,6 +140,7 @@ pub fn decode_generalized_utf8(b: &[u8]) -> Result<Vec<u32>, InvalidStr> {
             if bk & 0xc0 != 0x80 {
                 return Err(bad(i + k));
             }
+            // (`|` and `^` are the same: the shift leaves the low 6 bits 0)
             c = (c << 6) | u32::from(bk & 0x3f);
         }
         if c < min || c > 0x10ffff {
@@ -152,7 +153,8 @@ pub fn decode_generalized_utf8(b: &[u8]) -> Result<Vec<u32>, InvalidStr> {
 }
 
 /// Encodes code points as generalized UTF-8 (each surrogate on its own,
-/// as Python's `surrogatepass`).
+/// as Python's `surrogatepass`). (Each `|` below joins disjoint bits: `^`
+/// would write the same bytes.)
 pub fn encode_generalized_utf8(cps: &[u32]) -> Vec<u8> {
     let mut out = Vec::with_capacity(cps.len());
     for &c in cps {
@@ -205,6 +207,10 @@ mod tests {
             assert!(decode_generalized_utf8(bad).is_err(), "{bad:x?}");
         }
         assert_eq!(decode_generalized_utf8(&[0xc2, 0x80]).unwrap(), [0x80]);
+        let at = |b: &[u8]| decode_generalized_utf8(b).unwrap_err().0;
+        assert_eq!(at(&[0x61, 0xe2, 0x28, 0xa1]), "invalid generalized UTF-8 at byte 2");
+        assert_eq!(at(&[0x61, 0xe2, 0x82]), "invalid generalized UTF-8 at byte 1");
+        assert_eq!(at(&[0x61, 0xc0, 0x80]), "invalid generalized UTF-8 at byte 1");
         assert_eq!(decode_generalized_utf8(&[0xf4, 0x8f, 0xbf, 0xbf]).unwrap(), [0x10ffff]);
     }
 
