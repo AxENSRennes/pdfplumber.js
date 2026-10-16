@@ -11,6 +11,50 @@
 //! depth pdfminer ran them at, with the logger caches cleared where the
 //! generator cleared them (`logging.disable`), as `pdffont::frames` models
 //! them.
+//!
+//! # Mutations
+//!
+//! `cargo mutants -f crates/pdfminer/src/pdffont/{mod,cff,truetype,type1,
+//! frames,unpack}.rs --test-package pdftrace --cargo-test-arg=--test=fonts_unit
+//! --profile mutants -j 1 --timeout 20 --baseline skip` (672 mutants: 208
+//! caught, 423 unviable, 4 timeouts, 37 missed), then, after new cases, the
+//! functions of the survivors again (`--re`, 117 mutants + 25), `cmapdb.rs`'s
+//! frame-counting functions with `cmaps_unit` too (56: all caught or
+//! unviable, 1 timeout) and `pycompat::recursion`'s logging model (5); the
+//! `Ok(..)` pass (`scripts/mutants-ok.sh`) of the six files (111: 61 caught,
+//! 46 unviable, 4 missed, then caught by the INDEX iteration cases) and of
+//! `cmapdb.rs` (46: 37 caught, 9 unviable); the unviable `Ok(..)` bodies by
+//! hand with concrete values of each pertinent variant (72: 71 caught); and
+//! hand mutants of the frame model, which cargo mutants does not mutate
+//! (constants, removed frames and logging calls, 37: 27 caught). The
+//! survivors are equivalent:
+//!
+//! - `|` made `^` (`getdict` 3, `unpack_be`): the bits combined never
+//!   overlap (`b1 << 8 | b2` with `b2 < 256`...);
+//! - `get_font`'s `"Type1" | "MMType1"` arm deleted: the default arm creates
+//!   the same `PDFType1Font` (`STRICT` is off);
+//! - `get_data`'s guard on a `get_filters` error other than `RecursionError`
+//!   made `true`: `stream.get_data()` raises the same error at once; the
+//!   `get_any` frame removed: `resolve1`'s frame follows at the same depth;
+//! - the frames of `name2unicode` in `get_encoding_counted`
+//!   (`reaches_raise_key_error`, the ligature test, the `RecursionError`
+//!   guard, `get_encoding_counted` without frames): at most 4 below
+//!   `PDFSimpleFont.__init__`, whose `_parse_bbox` always goes to 5 or more
+//!   afterwards (`safe_rect_list` -> `safe_rect` -> ... or its
+//!   `log.warning`), and only the logger cache of `encodingdb`, used by no
+//!   deeper call, keeps a trace; in a Type 1 program's header, below the
+//!   parser's construction (7 or 8);
+//! - hand mutants under the parser's construction (7 below the caller of
+//!   `run`, 8 with a cold `psparser` logger): `do_keyword`'s `nextobject`
+//!   `log.debug` (3-4) and the Type 1 parser's `nextobject` frame and log
+//!   (3-5), `_warn_once`'s frame and `log.warning` (4-7, a tie at most);
+//!   `IdentityCMap.__init__` and its evaluation loop entry in `get_cmap`
+//!   (one below `get_cmap`, under `_parse_bbox`'s 4 or the parser's 7);
+//!   `_load_data`'s second `log.debug` (the logger is cached by the first,
+//!   2 frames under the 8 of the load); the evaluation loop entry of
+//!   `CMapParser(...)` (C units only, never near their limit there).
+//! - Timeouts are mutants that loop (`k += 1` made `*=`, `WidthKey::hash`
+//!   constant), a format 4 `segcount` multiplied.
 
 use std::cell::RefCell;
 use std::collections::HashMap;

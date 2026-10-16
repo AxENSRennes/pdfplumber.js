@@ -188,7 +188,15 @@ Lecture :
   `Type1FontHeaderParser`, `getdict`/`CFFFont`, `TrueTypeFont`, et la
   création de police de `PDFResourceManager.get_font`), vérifié par
   `oracle/unit/fonts.py` (cas générés, seuils de profondeur, polices et
-  programmes embarqués du corpus réel) rejoué par `fonts_unit.rs`.
+  programmes embarqués du corpus réel) rejoué par `fonts_unit.rs` : tout
+  identique (13 397 cas générés dont 2 079 seuils de profondeur, 4 083
+  polices et 1 971 programmes des 20 premières pages de `all`), mutations
+  sans survivant non justifié (rapport en tête de `fonts_unit.rs`).
+  `cmapdb` compte désormais les cadres de `CMapDB` et de `CMapParser`
+  (chargement d'une CMap prédéfinie compris, mesuré par
+  `oracle/depth_probe.py`), et le modèle des caches de logger est dans
+  `pycompat::recursion`. L'étape PDF `fonts` attend l'interpréteur (codes
+  affichés) : vague suivante.
 - **Vagues suivantes**, dans l'ordre des dépendances :
   1. `pdfparser`, `pdfdocument` (xref, repli, flux d'objets, mot de passe
      via les gestionnaires déjà portés), `pdfpage` : étapes `objects`,

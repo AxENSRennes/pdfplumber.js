@@ -1043,9 +1043,11 @@ impl<X: PSStackParserExt> PSStackParser<X> {
     /// the constructor of a subclass that keeps the base `seek` (`CMapParser`,
     /// `Type1FontHeaderParser`), for those callers that count their frames
     /// (`psparser` does not count its own yet, `docs/architecture.md`).
-    /// The deepest point of the call: pdfminer/psparser.py:523
-    /// PSStackParser.__init__ -> :166 PSBaseParser.__init__ -> `self.seek(0)`,
-    /// :533 PSStackParser.seek -> :177 PSBaseParser.seek -> its `log.debug`
+    /// The deepest point of the call:
+    /// pdfminer/psparser.py:523 PSStackParser.__init__ calls
+    /// pdfminer/psparser.py:166 PSBaseParser.__init__, whose `self.seek(0)`
+    /// is pdfminer/psparser.py:533 PSStackParser.seek, which calls
+    /// pdfminer/psparser.py:177 PSBaseParser.seek and its `log.debug`
     /// (`reset()` is called one frame higher, twice). Taken before
     /// [`PSStackParser::init`], whose work does not depend on them.
     pub fn init_frames() -> PyResult<()> {
