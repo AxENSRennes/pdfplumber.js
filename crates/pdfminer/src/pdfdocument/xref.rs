@@ -384,35 +384,6 @@ pub fn pdfobj_cue(line: &[u8]) -> Option<(&[u8], &[u8])> {
 // ---------------------------------------------------------------------------
 // PDFXRefStream
 
-thread_local! {
-    /// Whether the Python process has evaluated `Iterator[tuple[int, int]]`
-    /// (`typing`'s `lru_cache` holds it then).
-    static TYPING_WARM: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-/// Sets whether the Python process has `Iterator[tuple[int, int]]` in
-/// `typing`'s cache (a new process has not, see [`typing_subscript`]).
-pub fn typing_cache_set(warm: bool) {
-    TYPING_WARM.with(|w| w.set(warm));
-}
-
-/// The frames of `Iterator[tuple[int, int]]` (in `PDFXRefStream.load`):
-/// the `_tp_cache` wrapper of `_SpecialGenericAlias.__getitem__`, one
-/// frame, which answers from its cache; the first time in the process the
-/// cache misses and `__getitem__` builds the alias (`_type_check`,
-/// `copy_with`, `_GenericAlias.__init__`...): seven frames at most below
-/// the caller, measured on the oracle (the depth only matters, nothing is
-/// observable in between). The cache is filled only when that succeeds.
-fn typing_subscript() -> PyResult<()> {
-    if TYPING_WARM.with(std::cell::Cell::get) {
-        leaf(1)
-    } else {
-        leaf(7)?;
-        TYPING_WARM.with(|w| w.set(true));
-        Ok(())
-    }
-}
-
 /// pdfminer/pdfdocument.py:257 `PDFXRefStream`.
 #[derive(Default)]
 pub struct PDFXRefStream {
@@ -458,12 +429,10 @@ impl PDFXRefStream {
             return Err(exc::PDFSyntaxError("Invalid index number"));
         }
         // self.ranges.extend(cast(Iterator[tuple[int, int]], choplist(2, index_array))):
-        // `Iterator[...]` runs typing's cached __getitem__ (its wrapper's frame;
-        // the cache is warm: pdfminer evaluates the same subscription when its
-        // modules are imported... see `typing_subscript`), choplist() creates
-        // its generator, cast() returns it, and extend() resumes it from C
-        // (a frame one level down each step, after the first).
-        typing_subscript()?;
+        // `Iterator` is `collections.abc.Iterator`, whose subscription is a
+        // `types.GenericAlias` made in C (no frame); choplist() creates its
+        // generator, `typing.cast()` returns it, and extend() resumes it from
+        // C (a frame one level down at each step).
         leaf(1)?; // choplist(2, index_array)
         leaf(1)?; // cast(...)
         {

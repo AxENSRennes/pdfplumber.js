@@ -6,20 +6,17 @@
 //! goes, so where a `RecursionError` happens (`docs/architecture.md`,
 //! "Profondeur de récursion"): the symbols interned so far (interning a
 //! name for the first time instantiates it, a frame more:
-//! `pdfminer::psparser::py_intern`) and `typing`'s cache of
-//! `Iterator[tuple[int, int]]` (`PDFXRefStream.load`,
-//! `pdfminer::pdfdocument::typing_cache_set`). The oracle computes every
-//! trace of `oracle.verify` in a new process (`python -m oracle.trace`,
+//! `pdfminer::psparser::py_intern`). The oracle computes every trace of
+//! `oracle.verify` in a new process (`python -m oracle.trace`,
 //! `oracle/cache.py`): a trace starts from the symbols that process
-//! imports ([`super::py_symbols`]) and a cold `typing` cache, which
-//! [`set_for_stage`] selects (the `pdftrace` binary, for each file). The
+//! imports ([`super::py_symbols`]), which [`set_for_stage`] selects (the
+//! `pdftrace` binary, for each file). The
 //! unit generator `oracle/unit/document.py` forks its process for each
 //! trace and records the state of that process, which its replay sets with
 //! [`set`].
 
 use std::cell::RefCell;
 
-use pdfminer::pdfdocument::typing_cache_set;
 use pdfminer::psparser::{py_symbols_reset, LIT_bytes, Symbol, Symbols, KWD, LIT};
 
 /// A process state.
@@ -31,8 +28,6 @@ pub struct PyProcess {
     pub bytes_literals: Vec<Vec<u8>>,
     /// names of the interned keywords
     pub keywords: Vec<Vec<u8>>,
-    /// Whether `typing` has `Iterator[tuple[int, int]]` cached.
-    pub typing_warm: bool,
 }
 
 impl PyProcess {
@@ -42,7 +37,6 @@ impl PyProcess {
             literals: symbols.literals.iter().map(|s| (*s).to_owned()).collect(),
             bytes_literals: symbols.bytes_literals.iter().map(|b| b.to_vec()).collect(),
             keywords: symbols.keywords.iter().map(|k| k.to_vec()).collect(),
-            typing_warm: false,
         }
     }
 
@@ -73,8 +67,6 @@ pub fn set_for_stage(stage: &str) {
 /// Starts a trace from the process state of this thread.
 pub fn start() {
     PROCESS.with(|p| {
-        let p = p.borrow();
-        py_symbols_reset(p.symbols());
-        typing_cache_set(p.typing_warm);
+        py_symbols_reset(p.borrow().symbols());
     });
 }

@@ -8,6 +8,10 @@
 //! A difference prints the case and the first differing line of the
 //! trace. `DOCUMENT_ONLY=<substring>` restricts the trace cases to the
 //! file names containing it.
+//!
+//! The generator computes each trace in a process forked for it, whose
+//! state (`py_process.jsonl`: the interned symbols) each
+//! replayed trace starts from (`stages::py_process`).
 
 use std::collections::HashSet;
 use std::io::{self, Write};
@@ -19,6 +23,7 @@ use pdfminer::pdfparser::FileKind;
 use pdfminer::pdftypes::PDFObject;
 use pdftrace::canon::{canon, canon_exc, canon_obj};
 use pdftrace::stages::common::{terminated, Lines};
+use pdftrace::stages::py_process::{self, PyProcess};
 use pdftrace::stages::{self, objects, StageInput};
 use pdftrace::unit::UnitData;
 use pdftrace::value::{PyStr, Value};
@@ -170,9 +175,33 @@ fn clip(s: &str) -> &str {
     &s[..s.len().min(400)]
 }
 
+/// The state of the generator's process when it forks a trace
+/// (`process_state` of `oracle/unit/document.py`).
+fn generator_process(data: &UnitData) -> PyProcess {
+    let cases = data.cases("py_process");
+    let [(_, Value::Dict(items))] = &cases[..] else { panic!("one process state") };
+    let get = |name: &str| {
+        items.iter().find(|(k, _)| k.as_str() == Some(name)).map(|(_, v)| v).unwrap_or_else(|| panic!("{name}"))
+    };
+    let list = |name: &str| match get(name) {
+        Value::List(l) => l.clone(),
+        other => panic!("{name}: {other:?}"),
+    };
+    let bytes = |v: &Value| match v {
+        Value::Bytes(b) => b.clone(),
+        other => panic!("bytes: {other:?}"),
+    };
+    PyProcess {
+        literals: list("literals").iter().map(|v| v.as_str().expect("a str name").to_owned()).collect(),
+        bytes_literals: list("bytes_literals").iter().map(bytes).collect(),
+        keywords: list("keywords").iter().map(bytes).collect(),
+    }
+}
+
 #[test]
 fn stage_traces() {
     let data = UnitData::open("document");
+    py_process::set(generator_process(&data));
     let only = std::env::var("DOCUMENT_ONLY").ok();
     let mut failures = Vec::new();
     let mut n = 0;

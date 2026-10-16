@@ -545,8 +545,129 @@ def cases_encryption() -> list[Case]:
     return out
 
 
+def prev_chain(n: int, streams: str) -> bytes:
+    """``n`` xref sections linked by ``/Prev`` (read_xref_from recurses):
+    tables (``streams`` "none"), xref streams ("all"), or tables and an xref
+    stream as the last one read ("bottom")."""
+    out = bytearray(b"%PDF-1.5\n")
+    off1 = len(out)
+    out += b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+    off2 = len(out)
+    out += b"2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n"
+    prev = None
+    num = 3
+    for i in range(n):
+        x = len(out)
+        prevpart = (b" /Prev %d" % prev) if prev is not None else b""
+        if streams == "all" or (streams == "bottom" and i == 0):
+            ents = b"".join(b"\x01" + o.to_bytes(4, "big") + b"\x00" for o in (off1, off2))
+            out += (b"%d 0 obj\n<< /Type /XRef /Size 3 /Index [1 2] /W [1 4 1] /Root 1 0 R%s /Length %d >>\nstream\n"
+                    % (num, prevpart, len(ents)) + ents + b"\nendstream\nendobj\n")
+            num += 1
+        else:
+            out += b"xref\n0 3\n0000000000 65535 f \n%010d 00000 n \n%010d 00000 n \n" % (off1, off2)
+            out += b"trailer\n<< /Size 3 /Root 1 0 R" + prevpart + b" >>\n"
+        prev = x
+    return bytes(out) + b"startxref\n%d\n%%%%EOF\n" % prev
+
+
+def length_chain(n: int) -> bytes:
+    """Streams whose /Length is the next stream, n deep (do_keyword ->
+    int_value -> getobj -> do_keyword...), then an int."""
+    doc = base_doc()
+    for i in range(n):
+        doc.add_raw(10 + i, b"%d 0 obj\n<< /Length %d 0 R >>\nstream\nabc\nendstream\nendobj\n" % (10 + i, 11 + i))
+    doc.add(10 + n, 3)
+    return classic(doc, TRAILER)
+
+
+def tail_object(body: bytes) -> bytes:
+    """``simple()`` plus an object 7 written after ``%%EOF`` (the end of
+    the file ends its parse), listed in the xref table."""
+    data = simple()
+    doc = base_doc()
+    head = doc.header
+    body0, offsets = doc.write_objects(None, len(head))
+    x = len(head) + len(body0)
+    end_len = len(trailer(dict(TRAILER, Size=8))) + len(startxref(x))
+    pos = x + len(xref_table({**offsets, 7: (0, 0)}, 8)) + end_len
+    data = head + body0 + xref_table({**offsets, 7: (pos, 0)}, 8) + trailer(dict(TRAILER, Size=8)) + startxref(x)
+    assert len(data) == pos
+    return data + b"7 0 obj\n" + body
+
+
+def fallback_float_id(r: int, cfm: str | None, later: bytes) -> bytes:
+    """An encrypted document repaired by PDFXRefFallback whose object
+    stream lists the id 41.0 before the object "41 0 obj": getobj(41.0)
+    parses that object and deciphers it with the float id (struct.pack
+    raises for RC4 and AES-128 once a string is deciphered; AES-256 and
+    Identity ignore the id)."""
+    docid = b"0123456789abcdef"
+    enc = standard_encryption(random.Random(r * 10 + (cfm is not None)), r=r, cfm=cfm, user="", owner="o", docid=docid)
+    out = bytearray(b"%PDF-1.5\n")
+    out += b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+    out += b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
+    out += b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 50 50] >>\nendobj\n"
+    inner = b"41.0 0 1"
+    out += b"40 0 obj\n<< /Type /ObjStm /N 1 /First 7 /Length %d >>\nstream\n" % len(inner) + inner + b"\nendstream\nendobj\n"
+    out += b"41 0 obj\n" + later + b"\nendobj\n"
+    out += b"trailer\n" + ser({"Root": Ref(1), "Encrypt": dict(enc.param), "ID": [docid, docid]}) + b"\n%%EOF\n"
+    return bytes(out)
+
+
+def cases_depth() -> list[Case]:
+    """Recursions around the depth where Python runs out of frames (the
+    first failing N in the comments): docs/architecture.md, "Profondeur de
+    récursion"; and the boundaries the mutation pass of pdfparser.rs found
+    untested."""
+    out: list[Case] = []
+
+    def window(label: str, make: Callable[[int], bytes], first_failing: int, before: int = 2, after: int = 1) -> None:
+        for n in range(first_failing - before, first_failing + after + 1):
+            out.append((f"depth-{label}-{n}", make(n), None))
+
+    # PDFDocument.__init__ fails from 985 /Prev sections on
+    window("prev-tables", lambda n: prev_chain(n, "none"), 985, before=5, after=5)
+    window("prev-streams", lambda n: prev_chain(n, "all"), 985)
+    window("prev-stream-bottom", lambda n: prev_chain(n, "bottom"), 985)
+    # getobj of the first stream fails from 142 on
+    window("length-chain", length_chain, 142)
+    # obj and endobj inside an object stream are skipped by PDFStreamParser
+    out.append(("objstm-obj-endobj", xref_stream_file(objstm_nums=(5, 6), objstm_items=lambda items: [
+        (Raw(b"5"), Raw(b"obj << /A 1 >> endobj")), *items]), None))
+    # the stream keyword at the end of the file: nextline() raises PSEOF
+    out.append(("stream-keyword-at-eof", tail_object(b"<< /Length 3 >>\nstream"), None))
+    out.append(("stream-keyword-at-eof-no-eol", tail_object(b"<< /Length 3 >> stream"), None))
+    # /Length around the largest bytes object (PY_SSIZE_T_MAX - 33):
+    # BufferedReader.read allocates it (MemoryError), one more is an
+    # OverflowError; a BytesIO (objects-bytesio) reads what there is
+    for label, length in [("max-bytes", b"9223372036854775774"), ("max-bytes-plus-1", b"9223372036854775775"),
+                          ("max-bytes-minus-1", b"9223372036854775773"), ("1e15", b"1000000000000000"),
+                          ("2e62", b"4611686018427387904")]:
+        doc = base_doc()
+        doc.objects = [o for o in doc.objects if o.num != 4]
+        doc.add_raw(4, b"4 0 obj\n<</Length " + length + b">>\nstream\n" + CONTENT + b"\nendstream\nendobj\n")
+        out.append((f"length-{label}", classic(doc, TRAILER), None))
+    # a field of an xref stream 100000 bytes wide (nunpack of a huge int)
+    wide = 100000
+    rows = b"\x01" + b"\xff" * wide + b"\x00" + b"\x01" + (9).to_bytes(wide, "big") + b"\x00"
+    data = flate(rows)
+    body = (b"%PDF-1.5\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+            b"2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n")
+    x = len(body)
+    body += (b"3 0 obj\n<< /Type /XRef /Size 3 /Index [1 2] /W [1 %d 1] /Root 1 0 R /Filter /FlateDecode /Length %d >>\nstream\n"
+             % (wide, len(data)) + data + b"\nendstream\nendobj\n")
+    out.append(("xrefstream-wide-field", body + startxref(x), None))
+    # a float id deciphered (struct.error for RC4/AES-128 with a string)
+    for label, r, cfm in [("rc4", 3, None), ("aes128", 4, "AESV2"), ("identity", 4, None), ("aes256", 6, None)]:
+        out.append((f"fallback-float-id-{label}", fallback_float_id(r, cfm, b"<< /Later true >>"), None))
+        out.append((f"fallback-float-id-{label}-string", fallback_float_id(r, cfm, b"<< /Later (abcdefghijklmnopqrstu) >>"), None))
+    return out
+
+
 def main() -> None:
     cases = cases_basic() + cases_fallback() + cases_length() + cases_headers() + cases_prev() + cases_xref_stream() + cases_encryption()
+    cases += cases_depth()
     write_corpus("objects", cases)
 
 

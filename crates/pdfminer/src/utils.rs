@@ -163,6 +163,7 @@ pub fn apply_tiff_predictor(
     bitspercomponent: &PDFObject,
     data: &[u8],
 ) -> PyResult<Vec<u8>> {
+    let _frame = pycompat::recursion::py_frame()?;
     let bpc = int_of(bitspercomponent);
     if bpc != PyInt::Small(8) {
         let error_msg = format!("Unsupported `bitspercomponent': {}", str_of(bitspercomponent)?);
@@ -218,6 +219,7 @@ pub fn apply_png_predictor(
     bitspercomponent: &PDFObject,
     data: &[u8],
 ) -> PyResult<Vec<u8>> {
+    let _frame = pycompat::recursion::py_frame()?;
     let bpc = int_of(bitspercomponent);
     if bpc != PyInt::Small(8) && bpc != PyInt::Small(1) {
         let msg = format!("Unsupported `bitspercomponent': {}", str_of(bitspercomponent)?);
@@ -305,6 +307,7 @@ pub fn apply_png_predictor(
                     let (raw_x_bpp, prior_x_bpp) =
                         if j - bpp < 0 { (0, 0) } else { (raw_x_bpp(&raw, j)?, above(&line_above, j, true)?) };
                     let prior_x = above(&line_above, j, false)?;
+                    pycompat::recursion::leaf(1)?; // paeth_predictor's frame
                     let paeth = paeth_predictor(raw_x_bpp, prior_x, prior_x_bpp);
                     raw.push(((i64::from(paeth_x) + paeth) & 255) as u8);
                 }

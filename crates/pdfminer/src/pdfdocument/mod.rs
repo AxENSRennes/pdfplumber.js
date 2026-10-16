@@ -57,7 +57,7 @@ use rustc_hash::FxHashMap;
 
 pub use pyval::PyVal;
 pub use security::*;
-pub use xref::{pdfobj_cue, typing_cache_set, ObjIds, PDFBaseXRef, PDFXRef, PDFXRefStream, XRefPos};
+pub use xref::{pdfobj_cue, ObjIds, PDFBaseXRef, PDFXRef, PDFXRefStream, XRefPos};
 
 use crate::data_structures::NumberTree;
 use crate::pdfparser::{FileKind, PDFParser, PDFStreamParser};

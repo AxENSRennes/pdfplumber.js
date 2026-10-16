@@ -23,7 +23,13 @@ what the stages do not reach:
   generated lines (every Latin-1 character around the pattern).
 
 Every trace runs in a fresh stage thread, from the stage entry depth, as
-``oracle/stages/__init__.py`` runs a stage.
+``oracle/stages/__init__.py`` runs a stage, in a process forked from this
+one for that trace alone (``in_child``): as each trace of ``oracle.verify``
+runs in a new process, no trace sees what another one left in the
+process-wide state that decides how deep a call goes (the symbols interned
+so far). ``py_process.jsonl`` records that state as the
+children start (``process_state``); the replay starts each trace from it
+(``pdftrace::stages::py_process``).
 
 Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.document
 """
@@ -31,9 +37,12 @@ Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.do
 from __future__ import annotations
 
 import io
+import json
+import os
 import random
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from typing import Any
 
 from pdfminer.pdfdocument import PDFDocument, PDFXRefFallback
 from pdfminer.pdfpage import PDFPage
@@ -51,6 +60,16 @@ from ..stages import streams as _streams_stage  # noqa: F401
 from ..stages._common import line, terminated
 from ..stages.objects import fetch_order
 from ._common import require_oracle_python, write_cases, write_meta
+
+#: Formats whose result needs more memory than any machine has (a width of
+#: at least 10**15 bytes, up to PY_SSIZE_T_MAX): MemoryError wherever they
+#: run, so the expected outcome. (Smaller huge widths and precisions fit or
+#: not depending on the machine; they are not generated.)
+UNALLOCATABLE_FORMATS = [
+    b"%999999999999999999d", b"%-999999999999999999d|", b"%0999999999999999999d", b"%+999999999999999d",
+    b"%1000000000000000x", b"%#1000000000000000o", b"%9223372036854775806d", b"%9223372036854775807d",
+    b"%1000000000000000.3f", b"%1000000000000000c", b"%1000000000000000r", b"abc%1000000000000000d",
+]
 
 MODULE = "document"
 #: Files of the quick set at most this large are included.
@@ -149,6 +168,44 @@ def api_trace(path: str, password: str | None, max_pages: int) -> Iterator[str]:
             yield line("getpages", sorted(pagenos) if pagenos else None, maxpages) + " " + value
 
 
+def in_child(fn: Callable[[], Any]) -> Any:
+    """``fn()`` (a JSON value) computed in a child process forked from this
+    one, which exits after it: what ``fn`` changes in the process (symbols
+    interned, caches) is gone with it. A harness error in the child is
+    raised again here."""
+    r, w = os.pipe()
+    pid = os.fork()
+    if pid == 0:  # the child
+        os.close(r)
+        try:
+            data, code = json.dumps({"value": fn()}).encode(), 0
+        except BaseException as e:  # noqa: BLE001  (reported to the parent)
+            data, code = json.dumps({"error": repr(e)}).encode(), 1
+        with os.fdopen(w, "wb") as f:
+            f.write(data)
+        os._exit(code)
+    os.close(w)
+    with os.fdopen(r, "rb") as f:
+        data = f.read()
+    os.waitpid(pid, 0)
+    result = json.loads(data)
+    if "error" in result:
+        raise RuntimeError(f"in a forked child: {result['error']}")
+    return result["value"]
+
+
+def process_state() -> dict[str, Any]:
+    """What a child forked now starts with: the names of the interned
+    literals (``str`` or ``bytes``) and keywords."""
+    from pdfminer.psparser import PSKeywordTable, PSLiteralTable
+
+    return {
+        "literals": sorted(k for k in PSLiteralTable.dict if isinstance(k, str)),
+        "bytes_literals": sorted(k for k in PSLiteralTable.dict if isinstance(k, bytes)),
+        "keywords": sorted(PSKeywordTable.dict),
+    }
+
+
 def stage_cases() -> Iterator[tuple[list, str]]:
     sets = [("adv-objects", ("objects", "objects-bytesio", "streams", "pages", "psparser", "api")),
             ("adv-pages", ("objects", "streams", "pages", "psparser", "api")),
@@ -163,13 +220,16 @@ def stage_cases() -> Iterator[tuple[list, str]]:
             data = f.path.read_bytes()
             for what in stages:
                 max_pages = 0 if set_name.startswith("adv") else 20
-                if what == "objects-bytesio":
-                    lines = _in_stage_thread(lambda: objects_bytesio(str(f.path), f.password, max_pages))
-                elif what == "api":
-                    lines = _in_stage_thread(lambda: api_trace(str(f.path), f.password, max_pages))
-                else:
-                    lines = trace_lines(what, f.path, f.password, max_pages)
+                lines = in_child(lambda: one_trace(what, str(f.path), f.password, max_pages))
                 yield [f.path.name, data, f.password, what, max_pages], "".join(x + "\n" for x in lines)
+
+
+def one_trace(what: str, path: str, password: str | None, max_pages: int) -> list[str]:
+    if what == "objects-bytesio":
+        return _in_stage_thread(lambda: objects_bytesio(path, password, max_pages))
+    if what == "api":
+        return _in_stage_thread(lambda: api_trace(path, password, max_pages))
+    return trace_lines(what, path, password, max_pages)
 
 
 def bytes_format_cases(rng: random.Random) -> Iterator[tuple[list, object]]:
@@ -183,6 +243,9 @@ def bytes_format_cases(rng: random.Random) -> Iterator[tuple[list, object]]:
     for fmt in fixed:
         for arg in (360, 0, -360, 65, 255, 256, -7):
             yield [fmt.encode("latin-1"), arg], _bytes_mod(fmt.encode("latin-1"), arg)
+    for fmt_b in UNALLOCATABLE_FORMATS:
+        for arg in (360, -7):
+            yield [fmt_b, arg], _bytes_mod(fmt_b, arg)
     for _ in range(4000):
         fmt = "".join(rng.choice(pieces) for _ in range(rng.randrange(1, 6)))
         arg = rng.choice([360, 0, 1, -1, 97, 2**40, -(2**40)])
@@ -192,7 +255,9 @@ def bytes_format_cases(rng: random.Random) -> Iterator[tuple[list, object]]:
 def _bytes_mod(fmt: bytes, arg: int) -> object:
     try:
         return fmt % arg
-    except MemoryError:
+    except MemoryError as e:
+        if fmt in UNALLOCATABLE_FORMATS:
+            return e
         raise
     except Exception as e:
         return e
@@ -219,7 +284,11 @@ def main() -> None:
     # the adversarial corpora this module replays, as their generators write them
     adv_objects.main()
     adv_pages.main()
+    state = process_state()
+    write_cases(MODULE, "py_process", [([], state)])
     n = write_cases(MODULE, "stages", stage_cases())
+    if process_state() != state:
+        raise RuntimeError("the process state changed while the traces ran in children")
     print(f"{MODULE}: {n} stage traces", file=sys.stderr)
     write_cases(MODULE, "bytes_format", bytes_format_cases(rng))
     write_cases(MODULE, "pdfobj_cue", pdfobj_cue_cases(rng))
