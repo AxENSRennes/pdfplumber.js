@@ -44,6 +44,7 @@ impl PyStrRef<'_> {
     /// The text when the `str` holds no surrogate, else `None`.
     pub fn as_text(&self) -> Result<Option<String>, InvalidStr> {
         match *self {
+            // (a shortcut: the general arm gives the same text)
             PyStrRef::Utf8(s) => Ok(Some(s.to_owned())),
             _ => {
                 let cps = self.code_points()?;
@@ -71,6 +72,7 @@ impl PyStrRef<'_> {
     /// The UTF-16 code units JavaScript receives.
     pub fn utf16(&self) -> Result<Vec<u16>, InvalidStr> {
         match *self {
+            // (shortcuts: through the code points, the units are the same)
             PyStrRef::Utf8(s) => Ok(s.encode_utf16().collect()),
             PyStrRef::Utf16(u) => Ok(u.to_vec()),
             _ => Ok(code_points_utf16(&self.code_points()?)),
@@ -84,6 +86,8 @@ pub fn code_points_utf16(cps: &[u32]) -> Vec<u16> {
     for &c in cps {
         if c >= 0x10000 {
             let v = c - 0x10000;
+            // (`|` and `^` are the same here: the 10-bit halves do not
+            // overlap the surrogate bases)
             out.push(0xd800 | (v >> 10) as u16);
             out.push(0xdc00 | (v & 0x3ff) as u16);
         } else {
@@ -215,6 +219,7 @@ mod tests {
             [0xd83d, 0xde00, 0xd800, 0xdbff, 0xdfff, 0xd800, 0xdc00]
         );
         assert!(PyStrRef::CodePoints(&[0x110000]).utf16().is_err());
+        assert_eq!(PyStrRef::CodePoints(&[0x10ffff]).utf16().unwrap(), [0xdbff, 0xdfff]);
         assert_eq!(PyStrRef::CodePoints(&[0xdc00]).utf16().unwrap(), [0xdc00]);
         assert_eq!(PyStrRef::Utf8("é😀").utf16().unwrap(), [0xe9, 0xd83d, 0xde00]);
         assert_eq!(PyStrRef::Utf16(&[0xd800]).code_points().unwrap(), [0xd800]);
