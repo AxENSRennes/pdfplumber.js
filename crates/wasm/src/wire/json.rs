@@ -242,6 +242,7 @@ impl Writer for JsonWriter {
         if x.is_nan() {
             self.special("nan", None);
         } else if x.is_infinite() {
+            // (x is ±inf: `>` and `>=` are the same here)
             self.special(if x > 0.0 { "inf" } else { "-inf" }, None);
         } else {
             self.begin_value();

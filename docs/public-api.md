@@ -38,10 +38,15 @@ Supported inputs (`PDFInput`):
 Supported `open()` options (`OpenOptions`), with pdfplumber's names:
 
 - `pages`: one-based page numbers to load.
-- `password`: password for encrypted PDFs.
+- `password`: password for encrypted PDFs (a string or bytes).
 - `laparams`: `LAParams` keyword arguments (layout analysis), or `null`.
 - `unicode_norm`: one of `NFC`, `NFKC`, `NFD`, or `NFKD`.
 - `raise_unicode_errors`, `strict_metadata`: as in pdfplumber.
+
+As `pdfplumber.open`, `open()` does not check these values: they go to the
+core as they are, and the ported code raises Python's error where Python
+raises it (an unknown `unicode_norm` when text is normalized, a `pages`
+that is not a list of numbers when the pages load...).
 - `logLevel`: where diagnostics go besides `onWarning`: `silent` (default),
   `warning` (warnings and above to `console.warn`) or `debug` (everything).
 - `onWarning`: callback receiving `{ source, level, message, page? }` for
@@ -148,7 +153,12 @@ pdfplumber's; only the matching differs. How a pattern is run:
 - A string is compiled with the `u` flag (and `i` when `case: false`),
   escaped first when `regex: false`.
 - Matches come from `String.prototype.matchAll`; pdfplumber then drops the
-  empty and whitespace-only ones, as it does in Python. The core converts
+  empty and whitespace-only ones, as it does in Python.
+- `main_group` is read for each match as Python's `m.group(main_group)`
+  reads it: a group number (a boolean counts as 0 or 1), or the name of a
+  named group (`(?<name>…)`); a number out of range or an unknown name
+  throws `IndexError` (only when there is a match), a group that did not
+  take part `AttributeError`, as in Python. The core converts
   JavaScript's UTF-16 offsets to Python's code point offsets; a match that
   starts or ends inside a surrogate pair (a pattern without `u` matching half
   of an astral character) throws `ValueError`.
@@ -223,7 +233,9 @@ raises it:
 
 - `PdfminerException`: `open()` on an empty, invalid or unreadable PDF, and
   on an encrypted PDF with a missing or wrong password (pdfplumber wraps
-  every exception of pdfminer's `PDFDocument` in it).
+  every exception of pdfminer's `PDFDocument` in it). *Pending the page
+  layer*: today `open()` only hands the bytes to the core and resolves; these
+  errors will come from `open()` once pdfplumber's `PDF` is ported.
 - `MalformedPDFException`, `PDFSyntaxError`, `PSEOF`... and Python builtins
   (`ValueError`, `TypeError`, `KeyError`...) raised later by pdfminer or
   pdfplumber.
@@ -240,8 +252,8 @@ Other errors:
 - `CoreCrash`: the WebAssembly core stopped on an internal error (a bug);
   its documents are lost, the next `open()` starts a new core.
 - `Error` and `TypeError`: input adaptation failures (a missing file, a
-  failed HTTP fetch, an unsupported input or option type), and failures to
-  load the module or a CMap file.
+  failed HTTP fetch, an unsupported input type, an argument that contains
+  itself), and failures to load the module or a CMap file.
 
 Callers should branch on `error.name` (or `isInstance`) and treat the message
 as diagnostic text.

@@ -444,9 +444,9 @@ impl Core {
             "doc_cmap_decode" => {
                 // [document, name, code]: `cmap.decode(code)` with the CMap
                 // the document caches for `name`, as a font of the document
-                // gets it (pdfminer/pdffont.py:1182
-                // PDFCIDFont.get_cmap_from_spec, cached with the font by
-                // pdfminer/pdfinterp.py:212 PDFResourceManager.get_font).
+                // gets it, cached with the font:
+                // pdfminer/pdffont.py:1182 PDFCIDFont.get_cmap_from_spec
+                // pdfminer/pdfinterp.py:212 PDFResourceManager.get_font
                 // A test of void calls: it reaches its document through an
                 // argument, and returns a handle to a value derived from it.
                 let a = a()?;

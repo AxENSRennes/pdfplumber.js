@@ -372,6 +372,9 @@ fn json_numbers_are_exact_and_flags_track_escapes() {
     assert_eq!(json::encode(&PyValue::Float(1e-7)).unwrap().0, b"1e-7");
     assert_eq!(json::encode(&PyValue::Float(1e-6)).unwrap().0, b"0.000001");
     assert_eq!(json::encode(&PyValue::list([])).unwrap().0, b"[]");
+    // short escapes for a quote, a backslash and a newline (the common ones), \u00XX for the other controls
+    let text = PyValue::str("\"\\\n\t\u{1}é");
+    assert_eq!(json::encode(&text).unwrap().0, "\"\\\"\\\\\\n\\u0009\\u0001é\"".as_bytes());
     assert_eq!(json::encode(&PyValue::Dict(Obj::new())).unwrap().0, b"{}");
 }
 
@@ -542,6 +545,12 @@ fn malformed_arguments_raise_and_never_panic() {
     table[8] = 20;
     table.extend_from_slice(&[1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, b'a', b'b', 0, 0, 2, 0, 0, 0]);
     assert_eq!(binary::decode(&table).unwrap().repr(), "'ab'");
+    // one string more than the 4 bytes after the blob have offsets for:
+    // refused before anything is allocated for them (a hostile count of
+    // 2^32 would ask for 64 GiB)
+    let mut over = table.clone();
+    over[20] = 2;
+    assert_eq!(m(&over), "malformed PJB1 block: string counts");
     let mut cut = table.clone();
     cut[36] = 3; // an end offset past the blob
     assert_eq!(m(&cut), "malformed PJB1 block: string offsets");
@@ -665,6 +674,67 @@ fn requests_report_their_errors() {
 /// `test_values` holds a list nested 100 000 levels deep).
 fn big_stack(f: impl FnOnce() + Send + 'static) {
     on_thread(1 << 30, f);
+}
+
+/// Spans no `RegExp` gives (JavaScript computes them; a bug or a hostile
+/// caller could send them): refused with an error, never a panic.
+#[test]
+fn search_spans_from_javascript_are_checked() {
+    let mut core = Core::new();
+    let ch = |i: usize, c: &str| {
+        let f = |x: f64| PyValue::Float(x);
+        PyValue::Dict(Obj::from_pairs([
+            ("text", PyValue::str(c)),
+            ("x0", f(i as f64 * 10.0)),
+            ("x1", f(i as f64 * 10.0 + 8.0)),
+            ("top", f(0.0)),
+            ("bottom", f(10.0)),
+            ("doctop", f(0.0)),
+            ("upright", PyValue::Bool(true)),
+            ("height", f(10.0)),
+            ("width", f(8.0)),
+            ("size", f(10.0)),
+        ]))
+    };
+    let chars = list(vec![ch(0, "a"), ch(1, "\u{1F600}"), ch(2, "b")]);
+    let Js::Arr(pair) = ok(call(&mut core, "textmap", 0, list(vec![chars, PyValue::None]), None)) else { panic!() };
+    let Js::Num(h) = pair[0] else { panic!() };
+    let h = PyValue::from(h as i64);
+    let n = |x: i64| PyValue::from(x);
+    let span = |a: i64, b: i64| list(vec![n(a), n(b)]);
+    let search = |core: &mut Core, spans: Vec<PyValue>, main: PyValue, named: PyValue| {
+        let args =
+            list(vec![h.clone(), list(vec![list(spans)]), PyValue::Bool(true), PyValue::Bool(false), main, named]);
+        call(core, "textmap_search", 0, args, None)
+    };
+    let message = |r: &Resp| error_name(r).1;
+    // UTF-16 offsets 3..4 are the code points 2..3: "b"
+    let r = ok(search(&mut core, vec![span(3, 4)], n(0), PyValue::None));
+    let Js::Arr(found) = r else { panic!() };
+    let Js::Obj(found) = &found[0] else { panic!() };
+    assert_eq!(found[0].1, s("b"));
+    assert_eq!(
+        message(&search(&mut core, vec![span(0, 2)], n(0), PyValue::None)),
+        "match offset 2 splits a surrogate pair"
+    );
+    assert_eq!(message(&search(&mut core, vec![span(0, 5)], n(0), PyValue::None)), "match offset 5 outside the text");
+    assert_eq!(message(&search(&mut core, vec![span(-1, 1)], n(0), PyValue::None)), "negative match offset");
+    // named groups: one dict per match, spans that are groups' spans
+    let named = |k: &str, v: PyValue| list(vec![PyValue::Dict(Obj::from_pairs([(k, v)]))]);
+    let w = PyValue::str("w");
+    let r = search(&mut core, vec![span(0, 4), span(3, 4)], w.clone(), named("w", span(3, 4)));
+    assert_eq!(r.status, 0);
+    let two = list(vec![PyValue::Dict(Obj::new()), PyValue::Dict(Obj::new())]);
+    assert_eq!(message(&search(&mut core, vec![span(0, 4)], w.clone(), two)), "one dict of named groups per match");
+    assert_eq!(
+        message(&search(&mut core, vec![span(0, 4)], w.clone(), named("w", span(0, 1)))),
+        "the span of group \"w\" is no group's span"
+    );
+    assert_eq!(
+        message(&search(&mut core, vec![span(0, 4)], w.clone(), named("w", PyValue::None))),
+        "the span of group \"w\" is no group's span"
+    );
+    assert_eq!(message(&search(&mut core, vec![span(0, 4)], w, named("v", PyValue::None))), "no such group");
 }
 
 #[test]

@@ -23,9 +23,12 @@ statut 2 (CMaps manquantes) : fetch/fs des fichiers, "cmap_add", même requête 
   `pp_result_ptr()`, `pp_result_len()`, `pp_result_free()`, `pp_buffers()`
   (`crates/wasm/src/abi.rs`). Les noms sont préfixés pour qu'un build natif
   n'exporte pas un `free` qui remplacerait celui de la libc.
-- **Mémoire** : `pp_alloc` crée un `Vec<u8>` que Rust garde dans une table
-  indexée par son adresse ; JS y écrit, puis `pp_call` *prend* le tampon (le
-  PDF passe dans le cœur sans copie supplémentaire). La réponse reste dans un
+- **Mémoire** : `pp_alloc` crée directement les octets partagés que le
+  cœur garde (`Rc<[u8]>`, ce que lit `pycompat::io::BytesIO`), dans une
+  table indexée par leur adresse ; JS y écrit, puis `pp_call` *prend* le
+  tampon : le PDF est une fois dans la mémoire du module (mesuré : 200 Mio
+  ouverts font grandir la mémoire de 200 Mio ; une copie la doublerait, et la
+  mémoire linéaire ne rétrécit jamais). La réponse reste dans un
   tampon de Rust jusqu'à l'appel suivant ; JS la décode en place puis appelle
   `pp_result_free`. Aucun bloc `unsafe` : JS lit et écrit la mémoire, Rust ne
   donne que des adresses de tampons qu'il possède. La crate a ses propres
@@ -40,8 +43,18 @@ statut 2 (CMaps manquantes) : fetch/fs des fichiers, "cmap_add", même requête 
   format de la charge 0 PJB1 / 1 JSON, drapeau de correction JSON), charge,
   bloc des diagnostics, chacun aligné sur 8 octets.
 - **Panique** : le profil `dist` a `panic = "abort"` ; une panique (un bogue)
-  devient un `unreachable` Wasm. JS lève `CoreCrash`, marque l'instance comme
-  morte, et le prochain `open()` instancie un nouveau cœur.
+  devient un `unreachable` Wasm. Toute exception qui sort des exports (ce
+  piège, un dépassement de pile : `RangeError` dans V8 et JavaScriptCore,
+  `InternalError` dans SpiderMonkey, une allocation impossible) laisse l'état
+  de Rust indéfini (un `RefCell` emprunté pour toujours) : JS lève
+  `CoreCrash`, marque l'instance comme morte, et le prochain `open()`
+  instancie un nouveau cœur. Un PDF trop grand pour la mémoire de wasm32
+  (4 Gio) finit ainsi, là où Python lèverait `MemoryError` (pas encore de
+  chemin récupérable).
+- **Profondeur** : le cœur lit, écrit et libère les valeurs sans récursion
+  (`PyValue` se libère avec une pile de travail, comme la « trashcan » de
+  CPython ; `PDFObject` de même) : une liste imbriquée sur 200 000 niveaux
+  traverse la frontière dans les deux sens.
 
 ## Format des résultats
 
@@ -134,6 +147,13 @@ Arguments (JS → Rust, PJB1 sans tables) : entier sûr → `int`, autre nombre
 → `float`, `bigint` → `int`, `PyFloat(x)` force un `float`, `PyTuple([...])`
 un `tuple`, tableau → `list`, objet ou `Map` à clés chaînes → `dict`
 (propriétés `undefined` omises), `Uint8Array`/`ArrayBuffer` → `bytes`.
+L'encodeur (`encodeValue`) n'est pas récursif : toute profondeur passe ; un
+conteneur qui se contient lui-même est une `TypeError` (le même objet deux
+fois ne l'est pas).
+
+Les fonctions qui construisent les lignes d'une table sont gardées par
+forme, sous la clé `JSON.stringify([types, clés])`, sans ambiguïté quelles
+que soient les clés (U+0000 compris).
 
 **Chaînes et surrogates.** Une `str` Python peut contenir un surrogate
 isolé (`chr(0xd800)`), qu'une `String` Rust ne peut pas porter. L'écriture
@@ -166,7 +186,9 @@ en attendant la couche page.
 que si quelqu'un écoute). La frontière exécute chaque requête dans un
 `diagnostics::collect` au niveau demandé par JS (0 : rien n'est collecté ni
 formaté), au plus 1 000 entrées par appel (les autres sont comptées), et les
-renvoie avec la réponse, y compris quand l'appel lève. JS les passe à
+renvoie avec la réponse, y compris quand l'appel lève. Un appel nul (CMaps
+manquantes, ci-dessous) ne renvoie aucun diagnostic : sa relance émet ceux
+de Python, une fois. JS les passe à
 `onWarning` (`api.ts`, `diagnosticsPolicy`) avec le nom du niveau et, plus
 tard, le numéro de page. Le coût en cadres Python d'un appel de log (qui
 décide où tombe une `RecursionError`) reste l'affaire du module qui porte
@@ -193,15 +215,25 @@ dans `check.sh`).
 - **Chargement paresseux et relance déterministe** (`crates/wasm/src/cmaps.rs`,
   `WasmCore.call`) : JS donne au cœur la liste des noms qui existent
   (`cmap_configure`). Quand le cœur demande une CMap connue mais pas encore
-  fournie, le fournisseur la note et répond « absente » ; l'appel est alors
-  nul : la frontière jette son résultat, réinitialise l'état dérivé du
-  document sur lequel il tournait (`Document::reset` : la couche page y
-  mettra son état, reconstruit depuis les octets), et répond « CMaps
-  manquantes » avec les noms. JS les récupère (`fetch` dans le navigateur et
+  fournie, le fournisseur la note et répond « absente », comme une
+  installation sans ce fichier : le code porté continue (pdfminer remplace
+  une CMap introuvable par un `CMap()` vide, que le cache des polices du
+  document garde). L'appel est alors nul (`ops.rs`, « Void calls ») : la
+  frontière jette son résultat et ses diagnostics, retire les handles qu'il
+  a créés, fait oublier à **chaque** objet l'état qu'il a dérivé
+  (`Object::reset` : un appel atteint tout objet dont il a reçu le handle,
+  dans n'importe quel argument ; `Document::state`, où la couche page
+  mettra le `PDF` de pdfplumber, reconstruit depuis les octets), et répond
+  « CMaps manquantes » avec les noms. Les caches du processus ne gardent que
+  ce qui ne dépend pas d'une CMap absente (`CMapDB` ne garde que les CMaps
+  chargées). JS les récupère (`fetch` dans le navigateur et
   le worker, `fs` sous Node, ou la fonction `cmaps.load` de `configure`), les
   passe au cœur (`cmap_add`) et relance la même requête, qui voit les CMaps
   dès le début : son résultat est celui de Python avec toutes les CMaps
-  installées. Chaque nom est chargé une fois (les caches de `CMapDB` ne
+  installées. Testé avec une requête (`doc_cmap_decode`) qui atteint son
+  document par un argument, y met la CMap en cache comme une police, et la
+  manque : le résultat est celui de pdfminer (`cmaps.jsonl`), aucun handle
+  ne reste, et un avertissement émis avant le manque arrive une fois. Chaque nom est chargé une fois (les caches de `CMapDB` ne
   gardent que les succès) ; un nom demandé deux fois est une erreur (boucle).
   Un nom hors de la liste est `CMapNotFound` sans requête réseau. Avec
   `cmaps: false`, toutes les CMaps sont absentes, comme une installation de
@@ -264,18 +296,25 @@ la couche page ajoutera l'interpréteur et les polices. Budget (brotli) :
   PJB1 et en JSON et décodées par des décodeurs Rust qui suivent `wire.ts`,
   toutes les sortes de colonnes, formes multiples, surrogates, entiers aux
   bornes, cycles PDF → `ValueError("Circular reference detected")`,
-  200 000 niveaux d'imbrication, arguments aléatoires, entrées tronquées ou
-  altérées sans panique, ABI, erreurs des requêtes, diagnostics) et
+  200 000 niveaux d'imbrication écrits, lus et libérés, arguments
+  aléatoires, entrées tronquées ou altérées sans panique, spans de
+  recherche invalides, ABI, erreurs des requêtes, diagnostics) et
   `tests/js_runtime_unit.rs` (rejeu des cas Python de
-  `oracle/unit/js_runtime.py` à travers `Core::call`, dans les deux formats).
+  `oracle/unit/js_runtime.py` à travers `Core::call`, dans les deux formats :
+  MRO, CMaps paresseuses, appels nuls, `main_group` de `search`, texte et
+  tables).
 - **JS** : `js/test/shared/tests.mjs`, les mêmes tests pour Node (vitest,
   `js/test/node/`, avec et sans génération de code) et les navigateurs
   (Playwright, `js/test/browser/`, cœur dans la page et en mode worker) :
   chargement, valeurs adverses (NaN, -0, grands entiers, surrogates isolés
-  depuis des tampons faits à la main, `__proto__`, 10^5 niveaux), bloc PJB1
-  fait à la main, erreurs et MRO contre CPython, diagnostics, CMaps
-  paresseuses contre pdfminer, texte/mots/recherche/tables contre
-  pdfplumber, entrées de `open()`, absence de fuite de tampons.
+  depuis des tampons faits à la main, `__proto__`, 10^5 niveaux dans les
+  deux sens, cycles), formes de table dont les clés ne diffèrent que par la
+  place d'un U+0000, bloc PJB1 fait à la main, erreurs et MRO contre
+  CPython, `CoreCrash` sur un dépassement de pile (module fait à la main),
+  diagnostics, CMaps paresseuses et appels nuls contre pdfminer,
+  texte/mots/recherche (dont `main_group` contre `m.group()`)/tables contre
+  pdfplumber, entrées et options de `open()` (`open.jsonl`), un PDF une
+  seule fois en mémoire, absence de fuite de tampons.
 - `scripts/check.sh` : noms de CMaps, build (sans `wasm-opt`), types, vitest,
   budget. `scripts/check-browsers.sh` : build complet puis Playwright.
 - **Navigateurs sur cette machine** : Chromium 148, Firefox 150 (Nightly de

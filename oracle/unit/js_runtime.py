@@ -35,8 +35,8 @@ typed JSON:
   refuses), evaluated for each match: ``{"in": [chars, pattern,
   main_group, matches], "out": result}``, the pattern in JavaScript syntax
   (``(?<name>...)``; Python's ``(?P<name>...)`` was run), ``matches`` the
-  spans of each match (ASCII text: the UTF-16 offsets of a ``RegExp``
-  with the ``d`` flag, the same matches) as ``[spans, named]``, ``named``
+  spans of each match (as the UTF-16 offsets of a ``RegExp`` with the
+  ``d`` flag, which finds the same matches) as ``[spans, named]``, ``named``
   the spans of the named groups (``indices.groups``), ``None`` for a
   pattern without any;
 - ``open.jsonl``: ``pdfplumber.open(path, **options)`` with options
@@ -96,8 +96,8 @@ SEARCHES = [
 ]
 TEXTMAP_KWARGS = [{}, {"layout": True}]
 # (Python pattern, JavaScript pattern) and main_group values: any value
-# m.group() takes, read for each match (pdfplumber/utils/text.py:172
-# TextMap.search), on the text map of "ab cd"
+# m.group() takes, read for each match, on the text map of "ab cd":
+# pdfplumber/utils/text.py:172 TextMap.search
 GROUP_PATTERNS = [
     ("zzz", "zzz"),
     ("(?P<w>ab)", "(?<w>ab)"),
@@ -106,6 +106,11 @@ GROUP_PATTERNS = [
     ("b|(?P<w>c)", "b|(?<w>c)"),
 ]
 MAIN_GROUPS = [0, 1, 2, -1, 5, True, False, "w", "v", "zz", None, 1.5, 2**70, -(2**70), b"w", [], {}]
+# and on a text with an astral character (UTF-16 offsets differ from
+# Python's code point offsets after it)
+ASTRAL_TEXT = "a\U0001F600b ab"
+ASTRAL_PATTERNS = [("b", "b"), ("(?P<w>\U0001F600)(b)", r"(?<w>\u{1F600})(b)"), ("(?P<w>b) (a)", "(?<w>b) (a)")]
+ASTRAL_GROUPS = [0, 1, 2, "w"]
 OPEN_PATH = "corpus/micro/text-operators.pdf"
 OPEN_OPTIONS = [
     {"unicode_norm": "X"},
@@ -247,26 +252,29 @@ def text_cases():
 
 
 def search_group_cases():
-    chars = [
-        {"text": c, "x0": i * 10.0, "x1": i * 10 + 8.0, "top": 0.0, "bottom": 10.0, "doctop": 0.0,
-         "upright": True, "height": 10.0, "width": 8.0, "size": 10.0}
-        for i, c in enumerate("ab cd")
-    ]
-    tm = utext.chars_to_textmap(chars)
-    assert tm.as_string.isascii()
-    span = lambda m, g: None if m.start(g) == -1 else list(m.span(g))  # noqa: E731
-    for main in MAIN_GROUPS:
-        for py_pattern, js_pattern in GROUP_PATTERNS:
-            compiled = re.compile(py_pattern)
-            matches = [
-                [
-                    [span(m, g) for g in range(compiled.groups + 1)],
-                    {name: span(m, name) for name in compiled.groupindex} if compiled.groupindex else None,
+    for text, patterns, mains in [("ab cd", GROUP_PATTERNS, MAIN_GROUPS), (ASTRAL_TEXT, ASTRAL_PATTERNS, ASTRAL_GROUPS)]:
+        chars = [
+            {"text": c, "x0": i * 10.0, "x1": i * 10 + 8.0, "top": 0.0, "bottom": 10.0, "doctop": 0.0,
+             "upright": True, "height": 10.0, "width": 8.0, "size": 10.0}
+            for i, c in enumerate(text)
+        ]
+        tm = utext.chars_to_textmap(chars)
+        assert tm.as_string == text
+        # a code point offset as a UTF-16 one (what RegExp's indices give)
+        utf16 = lambda i: len(tm.as_string[:i].encode("utf-16-le")) // 2  # noqa: E731
+        span = lambda m, g: None if m.start(g) == -1 else [utf16(m.start(g)), utf16(m.end(g))]  # noqa: E731
+        for main in mains:
+            for py_pattern, js_pattern in patterns:
+                compiled = re.compile(py_pattern)
+                matches = [
+                    [
+                        [span(m, g) for g in range(compiled.groups + 1)],
+                        {name: span(m, name) for name in compiled.groupindex} if compiled.groupindex else None,
+                    ]
+                    for m in compiled.finditer(tm.as_string)
                 ]
-                for m in compiled.finditer(tm.as_string)
-            ]
-            result = guarded(lambda: tm.search(py_pattern, return_chars=False, main_group=main))
-            yield [chars, js_pattern, main, matches], result
+                result = guarded(lambda: tm.search(py_pattern, return_chars=False, main_group=main))
+                yield [chars, js_pattern, main, matches], result
 
 
 def open_only(path, options):

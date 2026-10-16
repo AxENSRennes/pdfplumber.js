@@ -291,6 +291,7 @@ pub fn column_kind(cells: &[&PyValue]) -> u8 {
             _ => return COL_GENERIC,
         };
     }
+    // (`|` and `^` are the same in these patterns: the flags are distinct bits)
     match seen {
         NONE => COL_NONE,
         BOOL => COL_BOOL,
@@ -400,6 +401,8 @@ impl Writer for BinWriter {
         self.varint(shapes.first.len());
         for (s, first) in shapes.first.iter().enumerate() {
             let group = shapes.rows(rows, s);
+            // a capacity hint (about one 8-byte cell and a tag per cell):
+            // any other value writes the same bytes
             self.buf.reserve(group.len() * first.len() * 9);
             self.varint(group.len());
             self.varint(first.len());
