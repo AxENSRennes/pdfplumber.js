@@ -740,6 +740,16 @@ fn depth_boundaries() {
     let mut built: Option<(String, Rc<FontDoc>, Option<PDFFont>)> = None;
     replay_canon(&data, "depth", 100, |a| {
         let op = text(&a[3]);
+        // the generator builds the font once first (which loads the
+        // predefined CMaps it uses), then searches the boundaries
+        let key = format!("{:?}{:?}{:?}", a[0], a[1], a[2]);
+        if built.as_ref().is_none_or(|(k, _, _)| *k != key) {
+            clear_logger_cache();
+            let (doc, weak) = load_doc(&a[1], &a[2]);
+            let PDFObject::Dict(spec) = build(&a[0], &weak) else { panic!("a dict spec") };
+            let font = get_font(&spec).ok();
+            built = Some((key, doc, font));
+        }
         if op == "get_font" {
             return [&a[5], &a[6]]
                 .iter()
@@ -750,14 +760,6 @@ fn depth_boundaries() {
                     res(font, |f| font_attrs(&f))
                 })
                 .collect();
-        }
-        let key = format!("{:?}{:?}{:?}", a[0], a[1], a[2]);
-        if built.as_ref().is_none_or(|(k, _, _)| *k != key) {
-            clear_logger_cache();
-            let (doc, weak) = load_doc(&a[1], &a[2]);
-            let PDFObject::Dict(spec) = build(&a[0], &weak) else { panic!("a dict spec") };
-            let font = get_font(&spec).ok();
-            built = Some((key, doc, font));
         }
         let font = built.as_ref().and_then(|(_, _, f)| f.as_ref()).expect("a font for the queries");
         [&a[5], &a[6]].iter().map(|d| res(at(d, || query_call(font, op, &a[4])), |v| v)).collect()

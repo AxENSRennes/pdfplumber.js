@@ -1039,6 +1039,20 @@ impl<X: PSStackParserExt> PSStackParser<X> {
         Ok(p)
     }
 
+    /// The Python frames of `PSStackParser.__init__(self, fp)` called by
+    /// the constructor of a subclass that keeps the base `seek` (`CMapParser`,
+    /// `Type1FontHeaderParser`), for those callers that count their frames
+    /// (`psparser` does not count its own yet, `docs/architecture.md`).
+    /// The deepest point of the call: pdfminer/psparser.py:523
+    /// PSStackParser.__init__ -> :166 PSBaseParser.__init__ -> `self.seek(0)`,
+    /// :533 PSStackParser.seek -> :177 PSBaseParser.seek -> its `log.debug`
+    /// (`reset()` is called one frame higher, twice). Taken before
+    /// [`PSStackParser::init`], whose work does not depend on them.
+    pub fn init_frames() -> PyResult<()> {
+        let _chain = pycompat::recursion::py_frames(4)?;
+        pycompat::recursion::log_frames("pdfminer.psparser", pycompat::recursion::DEBUG)
+    }
+
     /// `self.fp`, which Python would dereference.
     fn fp_mut(&mut self, attr: &str) -> PyResult<&mut BytesIO> {
         self.fp.as_mut().ok_or_else(|| exc::AttributeError(format!("'NoneType' object has no attribute '{attr}'")))

@@ -28,9 +28,8 @@
 //! helper here must go.
 
 use std::borrow::Cow;
-use std::cell::RefCell;
 
-use pycompat::recursion::{eval_entry, py_frame, py_frames, Guard};
+use pycompat::recursion::{self, eval_entry, py_frame, py_frames, Guard};
 use pycompat::{ExcKind, PyInt, PyResult};
 
 use crate::encodingdb::{name2unicode, Cid2Unicode, EncodingDB};
@@ -51,6 +50,18 @@ pub enum Logger {
     EncodingDb,
 }
 
+impl Logger {
+    /// The logger's name (`logging.getLogger(__name__)`).
+    pub fn name(self) -> &'static str {
+        match self {
+            Logger::PdfFont => "pdfminer.pdffont",
+            Logger::PdfInterp => "pdfminer.pdfinterp",
+            Logger::CMapDb => "pdfminer.cmapdb",
+            Logger::EncodingDb => "pdfminer.encodingdb",
+        }
+    }
+}
+
 /// The levels of the logging calls made on these paths.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Level {
@@ -58,30 +69,24 @@ pub enum Level {
     Warning,
 }
 
-thread_local! {
-    /// `Logger._cache`: the (logger, level) pairs whose answer is cached.
-    static LOGGER_CACHE: RefCell<Vec<(Logger, Level)>> = const { RefCell::new(Vec::new()) };
-}
-
-/// `logging.disable(...)`: clears the cache of every logger (the next call
-/// of each level takes the third frame again).
-pub fn clear_logger_cache() {
-    LOGGER_CACHE.with(|c| c.borrow_mut().clear());
-}
-
-/// The frames of `log.<level>(...)` while logging is disabled (or at its
-/// default configuration, which costs the same): two, three the first time
-/// since the cache was cleared. The cache is filled only when the third
-/// frame was entered.
-pub fn log_frames(logger: Logger, level: Level) -> PyResult<()> {
-    let cached = LOGGER_CACHE.with(|c| c.borrow().contains(&(logger, level)));
-    if cached {
-        drop(py_frames(2)?);
-    } else {
-        drop(py_frames(3)?);
-        LOGGER_CACHE.with(|c| c.borrow_mut().push((logger, level)));
+impl Level {
+    /// `logging.DEBUG`, `logging.WARNING`
+    pub fn number(self) -> u32 {
+        match self {
+            Level::Debug => recursion::DEBUG,
+            Level::Warning => recursion::WARNING,
+        }
     }
-    Ok(())
+}
+
+/// `logging.disable(...)`: clears the cache of every logger
+/// ([`recursion::clear_logger_cache`]).
+pub use recursion::clear_logger_cache;
+
+/// The frames of `log.<level>(...)` ([`recursion::log_frames`]): two, three
+/// the first time since the cache was cleared.
+pub fn log_frames(logger: Logger, level: Level) -> PyResult<()> {
+    recursion::log_frames(logger.name(), level.number())
 }
 
 /// One Python frame for the duration of a call (a ported Python function,

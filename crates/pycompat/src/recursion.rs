@@ -153,9 +153,72 @@ pub fn eval_entry() -> PyResult<Guard> {
     Ok(take(0, EVAL_C_UNITS))
 }
 
+// ---------------------------------------------------------------------------
+// logging calls
+
+/// `logging.DEBUG`
+pub const DEBUG: u32 = 10;
+/// `logging.WARNING`
+pub const WARNING: u32 = 30;
+
+thread_local! {
+    /// `Logger._cache` of each logger: the (logger name, level) pairs whose
+    /// answer is cached.
+    static LOGGER_CACHE: std::cell::RefCell<Vec<(&'static str, u32)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// `logging.disable(...)`: clears the cache of every logger (the next call
+/// of each level on each logger takes the third frame again). The oracle
+/// runs it before a stage or a unit case.
+pub fn clear_logger_cache() {
+    LOGGER_CACHE.with(|c| c.borrow_mut().clear());
+}
+
+/// The Python frames of `log.<level>(...)` on the logger `logger`
+/// (`"pdfminer.cmapdb"`) while logging is disabled, or at its default
+/// configuration, which costs the same (`docs/verification.md`):
+/// `Logger.<level>` and `Logger.isEnabledFor`, two frames below the caller;
+/// three the first time the level is asked of the logger since its cache
+/// was cleared (`isEnabledFor` fills `Logger._cache` under
+/// `_acquireLock`). The cache is filled only when the third frame was
+/// entered.
+pub fn log_frames(logger: &'static str, level: u32) -> PyResult<()> {
+    let cached = LOGGER_CACHE.with(|c| c.borrow().contains(&(logger, level)));
+    if cached {
+        drop(py_frames(2)?);
+    } else {
+        drop(py_frames(3)?);
+        LOGGER_CACHE.with(|c| c.borrow_mut().push((logger, level)));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn log_frames_and_the_logger_cache() {
+        clear_logger_cache();
+        with_depth(Depth { py: PY_RECURSION_LIMIT - 2, c: 0 }, || {
+            // the first call needs three frames, and fails without filling
+            // the cache
+            assert!(log_frames("a", DEBUG).is_err());
+        });
+        with_depth(Depth { py: PY_RECURSION_LIMIT - 3, c: 0 }, || {
+            log_frames("a", DEBUG).expect("three frames left");
+            assert_eq!(current().py, PY_RECURSION_LIMIT - 3);
+        });
+        with_depth(Depth { py: PY_RECURSION_LIMIT - 2, c: 0 }, || {
+            log_frames("a", DEBUG).expect("cached: two frames");
+            // per logger and per level
+            assert!(log_frames("a", WARNING).is_err());
+            assert!(log_frames("b", DEBUG).is_err());
+            clear_logger_cache();
+            assert!(log_frames("a", DEBUG).is_err());
+        });
+        clear_logger_cache();
+    }
 
     #[test]
     fn frames_up_to_the_limit() {

@@ -46,9 +46,13 @@ pub type Type1FontHeaderParser = PSStackParser<Type1Header>;
 
 impl PSStackParser<Type1Header> {
     // pdfminer/pdffont.py:128 Type1FontHeaderParser.__init__
-    /// `Type1FontHeaderParser(data)` (a class instantiated from Python code:
-    /// the frames are the caller's, see [`frames::c_called`]).
+    /// `Type1FontHeaderParser(data)`: takes the frame of `__init__` and
+    /// those of the `PSStackParser.__init__` it calls (a caller
+    /// instantiating the class from Python code takes the evaluation loop
+    /// entry of `type.__call__`).
     pub fn new(data: BytesIO) -> PyResult<Type1FontHeaderParser> {
+        let _frame = frames::frame()?;
+        Type1FontHeaderParser::init_frames()?;
         PSStackParser::init(
             Some(data),
             Type1Header { cid2unicode: Cid2Unicode::default(), pairs: VecDeque::new(), put: KEYWORDS[3] },
@@ -86,7 +90,11 @@ impl PSStackParser<Type1Header> {
 
 impl PSStackParserExt for Type1Header {
     // pdfminer/pdffont.py:157 Type1FontHeaderParser.do_keyword
+    /// Called by `PSStackParser.nextobject`, whose frame and whose
+    /// `log.debug` before the call `psparser` does not count: taken here.
     fn do_keyword(p: &mut PSStackParser<Self>, _pos: Pos, token: PSKeyword) -> PyResult<()> {
+        let _nextobject = frames::frame()?;
+        pycompat::recursion::log_frames("pdfminer.psparser", pycompat::recursion::DEBUG)?;
         let _frame = frames::frame()?;
         if token == p.ext.put {
             let entries = p.pop(2);

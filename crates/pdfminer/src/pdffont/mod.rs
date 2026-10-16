@@ -47,10 +47,14 @@
 //! font built or queried at the depth of a nested Form XObject raises
 //! `RecursionError` where Python does (`docs/architecture.md`). A class
 //! instantiation is a call from C (`type.__call__` runs `__init__`).
-//! What is not modeled, and documented where it happens: the frames of
-//! `psparser` (the header and CMap parsers), of the filters below
-//! `PDFStream.decode`, and of the first load of a predefined CMap
-//! (`gzip`, `json`).
+//! `cmapdb` counts the frames of `CMapDB` (loading a predefined CMap
+//! included) and of the `CMapParser` methods; the parsers' construction
+//! takes the frames of `PSStackParser.__init__`. What is not modeled, and
+//! documented where it happens: the frames of `psparser` below
+//! `nextobject` (never deeper than the parser's construction, which comes
+//! first), of the filters below `PDFStream.decode` other than Flate, and the
+//! import of the UTF-16 codec by the first `bytes.decode("UTF-16BE")` of a
+//! Python process.
 
 pub mod cff;
 pub mod frames;
@@ -765,8 +769,9 @@ fn parse_bbox(descriptor: &Descriptor) -> PyResult<[f64; 4]> {
 }
 
 /// `CMapParser(FileUnicodeMap(), BytesIO(data)).run()`: the map of a
-/// `/ToUnicode` stream. The frames of the parser (`psparser`) are not
-/// modeled; those of the constructors are.
+/// `/ToUnicode` stream. `cmapdb` counts the frames of the parser (its
+/// construction, `run`), except some below `run` that never go deeper than
+/// the construction (see its documentation).
 fn parse_tounicode(strm: &PDFStream) -> PyResult<Rc<UnicodeMap>> {
     let mut unicode_map = {
         let (_entry, _init) = frames::c_called()?;
@@ -775,11 +780,10 @@ fn parse_tounicode(strm: &PDFStream) -> PyResult<Rc<UnicodeMap>> {
     };
     let data = get_data(strm)?;
     {
-        let (_entry, _init) = frames::c_called()?;
-        let mut parser = CMapParser::new(&mut unicode_map, BytesIO::new(data))?;
-        drop(_init);
-        drop(_entry);
-        let _run = frames::frame()?;
+        let mut parser = {
+            let _entry = pycompat::recursion::eval_entry()?; // type.__call__ runs __init__
+            CMapParser::new(&mut unicode_map, BytesIO::new(data))?
+        };
         parser.run()?;
     }
     Ok(Rc::new(unicode_map))
@@ -960,7 +964,7 @@ impl PDFFont {
             let length1 = int_of(&length1).expect("int_value gives an int");
             let data = slice_prefix(&get_data(&fontfile)?, &length1);
             let mut parser = {
-                let (_entry, _init) = frames::c_called()?;
+                let _entry = pycompat::recursion::eval_entry()?; // type.__call__ runs __init__
                 Type1FontHeaderParser::new(BytesIO::new(data.into()))?
             };
             simple.cid2unicode = Cow::Owned(parser.get_encoding()?);
@@ -1066,7 +1070,6 @@ impl PDFFont {
             }
         } else {
             let vertical = cmap_is_vertical(&*cmap)?;
-            let _frame = frames::frame()?; // CMapDB.get_unicode_map
             match CMapDB::get_unicode_map(&cidcoding, vertical) {
                 Ok(m) => unicode_map = Some(m),
                 Err(e) if e.is_instance(ExcKind::CMapDB_CMapNotFound) => {}
@@ -1341,14 +1344,7 @@ fn zeros(n: usize) -> PDFObject {
 pub fn get_cmap_from_spec(spec: &PDFDict, strict: bool) -> PyResult<Rc<dyn CMapBase>> {
     let _frame = frames::frame()?;
     let cmap_name = get_cmap_name(spec, strict)?;
-    let found = {
-        let _get_cmap = frames::frame()?; // CMapDB.get_cmap
-        if ["Identity-H", "Identity-V", "OneByteIdentityH", "OneByteIdentityV"].contains(&cmap_name.as_str()) {
-            let (_entry, _init) = frames::c_called()?;
-        }
-        CMapDB::get_cmap(&cmap_name)
-    };
-    match found {
+    match CMapDB::get_cmap(&cmap_name) {
         Ok(cmap) => Ok(cmap),
         Err(e) if e.is_instance(ExcKind::CMapDB_CMapNotFound) => {
             if strict {
