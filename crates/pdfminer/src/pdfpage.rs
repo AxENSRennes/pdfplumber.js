@@ -13,7 +13,8 @@ use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::LazyLock;
 
-use pycompat::recursion::{py_frame, py_frames, Guard};
+use pycompat::logging::Logger;
+use pycompat::recursion::{eval_entry, leaf, py_frame, Guard};
 use pycompat::{exc, ExcKind, PyErr, PyInt, PyResult};
 
 use crate::casting::IterItem;
@@ -26,6 +27,9 @@ use crate::utils::parse_rect;
 // pdfminer/pdfpage.py:21-22 LITERAL_PAGE, LITERAL_PAGES
 pub static LITERAL_PAGE: LazyLock<PSLiteral> = LazyLock::new(|| LIT("Page"));
 pub static LITERAL_PAGES: LazyLock<PSLiteral> = LazyLock::new(|| LIT("Pages"));
+
+/// `log = logging.getLogger(__name__)` of `pdfminer/pdfpage.py`.
+static LOG: Logger = Logger::new("pdfminer.pdfpage");
 
 // pdfminer/pdfpage.py:83 PDFPage.INHERITABLE_ATTRS
 pub const INHERITABLE_ATTRS: [&str; 4] = ["Resources", "MediaBox", "CropBox", "Rotate"];
@@ -71,6 +75,8 @@ impl PDFPage {
     /// Initialize a page object: `doc`, `pageid`, the page attributes
     /// `attrs` and the page label.
     pub fn new(doc: Rc<PDFDocument>, pageid: PDFObject, attrs: &PDFObject, label: Option<String>) -> PyResult<PDFPage> {
+        // cls(...): __init__ called from C
+        let _entry = eval_entry()?;
         let _frame = py_frame()?;
         let attrs = dict_value(attrs)?;
         let lastmod = resolve1_none(&attrs.get("LastModified").unwrap_or(PDFObject::Null))?;
@@ -103,14 +109,14 @@ impl PDFPage {
         let _frame = py_frame()?;
         if matches!(value, PDFObject::Null) {
             // log.warning("MediaBox missing from /Page (and not inherited), defaulting to US Letter")
-            drop(py_frames(2)?);
+            LOG.warning()?;
             return Ok(US_LETTER);
         }
         match parse_box(value) {
             Ok(rect) => Ok(rect),
             Err(e) if e.is_instance(ExcKind::PDFValueError) => {
                 // log.warning("Invalid MediaBox in /Page, defaulting to US Letter")
-                drop(py_frames(2)?);
+                LOG.warning()?;
                 Ok(US_LETTER)
             }
             Err(e) => Err(e),
@@ -128,7 +134,7 @@ impl PDFPage {
             Ok(rect) => Ok(rect),
             Err(e) if e.is_instance(ExcKind::PDFValueError) => {
                 // log.warning("Invalid CropBox in /Page, defaulting to MediaBox")
-                drop(py_frames(2)?);
+                LOG.warning()?;
                 Ok(mediabox)
             }
             Err(e) => Err(e),
@@ -156,7 +162,7 @@ impl PDFPage {
     // pdfminer/pdfpage.py:91 PDFPage.create_pages
     /// The pages of `document`, lazily (see [`CreatePages`]).
     pub fn create_pages(document: &Rc<PDFDocument>) -> CreatePages {
-        CreatePages { doc: document.clone(), state: CreateState::NotStarted, done: false }
+        CreatePages { doc: document.clone(), state: CreateState::NotStarted, done: false, from_c: false }
     }
 
     // pdfminer/pdfpage.py:153 PDFPage.get_pages
@@ -174,19 +180,18 @@ impl PDFPage {
         caching: bool,
         check_extractable: bool,
     ) -> PyResult<GetPages> {
-        // Create a PDF parser object associated with the file object.
-        let parser = crate::pdfparser::PDFParser::new(pycompat::io::BytesIO::new(data), file)?;
-        // Create a PDF document object that stores the document structure.
-        let doc = PDFDocument::new(parser, password, caching, true)?;
-        // Check if the document allows text extraction.
-        // If not, warn the user and proceed.
-        if !doc.is_extractable() && check_extractable {
-            let error_msg = format!("Text extraction is not allowed: {fp_repr}");
-            return Err(PyErr::new(ExcKind::PDFTextExtractionNotAllowed, error_msg));
-        }
-        // else, when not extractable: log.warning(warning_msg)
+        // the generator is created; its body runs at the first next()
+        leaf(1)?;
         Ok(GetPages {
-            pages: PDFPage::create_pages(&doc),
+            open: Some(GetPagesArgs {
+                data,
+                file,
+                fp_repr: fp_repr.to_owned(),
+                password: password.to_owned(),
+                caching,
+                check_extractable,
+            }),
+            pages: None,
             pagenos: pagenos.cloned().filter(|p| !p.is_empty()),
             maxpages,
             pageno: 0,
@@ -198,20 +203,61 @@ impl PDFPage {
 /// `parse_rect(resolve1(val) for val in resolve1(value))`: iterating the
 /// resolved value fails at once (`TypeError`) if it is not iterable; its
 /// items are resolved one by one as `parse_rect` unpacks them.
+///
+/// Frames: the generator expression is created (its frame starts and
+/// suspends), `parse_rect` takes its frame and unpacks the generator, which
+/// C code resumes once per item and once more (its frame, and `resolve1`'s
+/// below it, or the `__getitem__` of a stream iterated by the sequence
+/// protocol).
 fn parse_box(value: &PDFObject) -> PyResult<Rect4> {
     let items: Box<dyn Iterator<Item = PyResult<IterItem>>> = match resolve1_none(value)? {
         PDFObject::List(l) => Box::new(l.to_vec().into_iter().map(|v| Ok(IterItem::Obj(resolve1_none(&v)?)))),
-        PDFObject::Dict(d) => Box::new(d.keys().into_iter().map(|k| Ok(IterItem::Str(k)))),
-        PDFObject::Bytes(b) => Box::new(
-            (0..b.len()).map(move |i| b[i]).map(|c| Ok(IterItem::Obj(PDFObject::Int(PyInt::Small(i64::from(c)))))),
-        ),
-        // the sequence protocol: stream[0] raises PDFKeyError
-        stream @ PDFObject::Stream(_) => {
-            Box::new(std::iter::once(Err(stream.py_getitem_index0().expect_err("a stream has no attribute 0"))))
-        }
+        PDFObject::Dict(d) => Box::new(d.keys().into_iter().map(|k| {
+            leaf(1)?; // resolve1(val)
+            Ok(IterItem::Str(k))
+        })),
+        PDFObject::Bytes(b) => Box::new((0..b.len()).map(move |i| b[i]).map(|c| {
+            leaf(1)?; // resolve1(val)
+            Ok(IterItem::Obj(PDFObject::Int(PyInt::Small(i64::from(c)))))
+        })),
+        // the sequence protocol: stream.__getitem__(0) (called from C)
+        // raises PDFKeyError
+        stream @ PDFObject::Stream(_) => Box::new(std::iter::once_with(move || {
+            pycompat::recursion::c_called_leaf()?;
+            Err(stream.py_getitem_index0().expect_err("a stream has no attribute 0"))
+        })),
         other => return Err(exc::TypeError(format!("'{}' object is not iterable", other.type_name()))),
     };
-    parse_rect(items)
+    leaf(1)?; // the generator expression is created
+    let _parse_rect = py_frame()?;
+    parse_rect(GenExpr { items, done: false })
+}
+
+/// A generator expression resumed from C: each step enters the evaluation
+/// loop and takes the generator's frame while it computes its item, the
+/// last step (which finds no item) too.
+struct GenExpr<'a> {
+    items: Box<dyn Iterator<Item = PyResult<IterItem>> + 'a>,
+    done: bool,
+}
+
+impl Iterator for GenExpr<'_> {
+    type Item = PyResult<IterItem>;
+
+    fn next(&mut self) -> Option<PyResult<IterItem>> {
+        if self.done {
+            return None;
+        }
+        let frames = eval_entry().and_then(|entry| Ok((entry, py_frame()?)));
+        let item = match frames {
+            Ok(_frames) => self.items.next(),
+            Err(e) => Some(Err(e)),
+        };
+        if !matches!(item, Some(Ok(_))) {
+            self.done = true;
+        }
+        item
+    }
 }
 
 type Rect4 = FloatRect;
@@ -259,7 +305,11 @@ impl Labels {
     fn next(&mut self) -> PyResult<Option<String>> {
         match self {
             Labels::Repeat => Ok(None),
-            Labels::Labels(it) => match it.next() {
+            Labels::Labels(it) => match {
+                // the builtin next() resumes the generator from C
+                let _entry = eval_entry()?;
+                it.next()
+            } {
                 Some(label) => Ok(Some(label?)),
                 // the labels never end; a generator that raised is
                 // finished, and the error ended create_pages with it
@@ -275,11 +325,15 @@ pub struct CreatePages {
     doc: Rc<PDFDocument>,
     state: CreateState,
     done: bool,
+    /// Whether C code resumes the generator (`enumerate()` in `get_pages`):
+    /// each step enters the evaluation loop.
+    from_c: bool,
 }
 
 impl CreatePages {
     fn step(&mut self) -> PyResult<Option<PDFPage>> {
         // the frame of the create_pages generator, resumed
+        let _entry = if self.from_c { Some(eval_entry()?) } else { None };
         let _frame = py_frame()?;
         loop {
             match &mut self.state {
@@ -293,6 +347,8 @@ impl CreatePages {
                     let catalog = self.doc.catalog();
                     self.state = match catalog.get("Pages") {
                         Some(pages) => {
+                            // depth_first_search(...): the generator is created
+                            leaf(1)?;
                             let root = Search { obj: pages, parent: catalog, kids: None, props: None, started: false };
                             CreateState::Tree { labels, stack: vec![root], visited: HashSet::new(), pages: false }
                         }
@@ -325,6 +381,7 @@ impl CreatePages {
                             self.state = CreateState::Done;
                             continue;
                         };
+                        leaf(1)?; // xref.get_objids()
                         *ids = Some(x.objids());
                         continue;
                     };
@@ -424,12 +481,12 @@ fn depth_first_search(
             top.props = Some(object_properties.clone());
             if is(&LITERAL_PAGES) && object_properties.contains_key("Kids") {
                 // log.debug("Pages: Kids=%r", object_properties["Kids"])
-                drop(py_frames(2)?);
+                LOG.debug()?;
                 let kids = list_value(&object_properties.get("Kids").expect("checked"))?.to_vec();
                 top.kids = Some(kids.into_iter());
             } else if is(&LITERAL_PAGE) {
                 // log.debug("Page: %r", object_properties)
-                drop(py_frames(2)?);
+                LOG.debug()?;
                 // the generator returns after this yield
                 top.kids = Some(Vec::new().into_iter());
                 return Ok(Some((object_id, object_properties)));
@@ -477,22 +534,81 @@ impl Iterator for CreatePages {
     }
 }
 
-/// The generator `PDFPage.get_pages(...)`.
+/// What `get_pages` opens at its first step.
+struct GetPagesArgs {
+    data: Rc<[u8]>,
+    file: FileKind,
+    fp_repr: String,
+    password: String,
+    caching: bool,
+    check_extractable: bool,
+}
+
+/// The generator `PDFPage.get_pages(...)`, resumed by Python code (a frame
+/// per step).
 pub struct GetPages {
-    pages: CreatePages,
+    /// The arguments, until the first step opens the document.
+    open: Option<GetPagesArgs>,
+    pages: Option<CreatePages>,
     pagenos: Option<HashSet<usize>>,
     maxpages: usize,
     pageno: usize,
     done: bool,
 }
 
+impl GetPages {
+    /// The start of the generator's body: the document and its pages.
+    fn open(args: GetPagesArgs) -> PyResult<CreatePages> {
+        // Create a PDF parser object associated with the file object.
+        let parser = crate::pdfparser::PDFParser::new(pycompat::io::BytesIO::new(args.data), args.file)?;
+        // Create a PDF document object that stores the document structure.
+        let doc = PDFDocument::new(parser, &args.password, args.caching, true)?;
+        // Check if the document allows text extraction.
+        // If not, warn the user and proceed.
+        if !doc.is_extractable() {
+            if args.check_extractable {
+                let error_msg = format!("Text extraction is not allowed: {}", args.fp_repr);
+                return Err(PyErr::new(ExcKind::PDFTextExtractionNotAllowed, error_msg));
+            }
+            // log.warning(warning_msg)
+            LOG.warning()?;
+        }
+        // enumerate(cls.create_pages(doc)): the generator is created, then
+        // enumerate() resumes it (from C)
+        leaf(1)?;
+        let mut pages = PDFPage::create_pages(&doc);
+        pages.from_c = true;
+        Ok(pages)
+    }
+}
+
 impl Iterator for GetPages {
     type Item = PyResult<PDFPage>;
 
     fn next(&mut self) -> Option<PyResult<PDFPage>> {
+        if self.done {
+            return None;
+        }
+        // the frame of the get_pages generator, resumed
+        let _frame = match py_frame() {
+            Ok(frame) => frame,
+            Err(e) => {
+                self.done = true;
+                return Some(Err(e));
+            }
+        };
+        if let Some(args) = self.open.take() {
+            match GetPages::open(args) {
+                Ok(pages) => self.pages = Some(pages),
+                Err(e) => {
+                    self.done = true;
+                    return Some(Err(e));
+                }
+            }
+        }
         // Process each page contained in the document.
         while !self.done {
-            let page = match self.pages.next()? {
+            let page = match self.pages.as_mut().expect("opened").next()? {
                 Ok(page) => page,
                 Err(e) => {
                     self.done = true;

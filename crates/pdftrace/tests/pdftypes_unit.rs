@@ -13,7 +13,7 @@ use std::rc::{Rc, Weak};
 
 use pdfminer::pdftypes::{
     decipher_all, dict_value, float_value, int_value_obj, list_value, num_value, resolve1, resolve1_none, resolve_all,
-    str_value, uint_value, DecipherCallable, PDFDict, PDFList, PDFObjRef, PDFObject, PDFResolver, PDFStream,
+    str_value, uint_value, DecipherCallable, ObjId, PDFDict, PDFList, PDFObjRef, PDFObject, PDFResolver, PDFStream,
 };
 use pdfminer::psparser::{keyword_name, literal_name, KeywordName, LIT_bytes, KWD, LIT};
 use pdftrace::canon::{canon_obj, sha256_hex};
@@ -296,7 +296,7 @@ fn streams() {
 
 /// `test_decipher` of oracle/unit/pdftypes.py, with the frames it takes in
 /// Python: its own, and the generator expression `bytes()` resumes from C.
-fn test_decipher(objid: &PyInt, genno: &PyInt, data: &[u8], attrs: Option<&PDFDict>) -> PyResult<Vec<u8>> {
+fn test_decipher(objid: &ObjId, genno: &PyInt, data: &[u8], attrs: Option<&PDFDict>) -> PyResult<Vec<u8>> {
     let _frame = recursion::py_frame()?;
     // bytes(<genexpr>): the call of the type, then each step of the
     // generator runs from C
@@ -306,7 +306,7 @@ fn test_decipher(objid: &PyInt, genno: &PyInt, data: &[u8], attrs: Option<&PDFDi
     }
     let small = |i: &PyInt| i.as_i64().expect("small test ids");
     let n = attrs.map_or(100, |a| a.len() as i64);
-    let key = ((small(objid) + 7 * small(genno) + n) & 0xff) as u8;
+    let key = ((small(objid.as_int().expect("int test ids")) + 7 * small(genno) + n) & 0xff) as u8;
     let mut out: Vec<u8> = data.iter().rev().map(|b| b ^ key).collect();
     out.push((data.len() & 0xff) as u8);
     Ok(out)
@@ -321,7 +321,7 @@ fn decipher() {
             // decipher_all(test_decipher, objid, genno, x), then x itself
             let x = build(&a[0], &weak);
             let (Value::Int(objid), Value::Int(genno)) = (&a[1], &a[2]) else { panic!() };
-            let out = obj(decipher_all(&callback, objid, genno, &x));
+            let out = obj(decipher_all(&callback, &ObjId::int(objid.clone()), genno, &x));
             return finish(vec![out, Out::Obj(x)]);
         }
         let PDFObject::Dict(attrs) = build(&a[0], &weak) else { panic!() };
@@ -550,12 +550,9 @@ fn deep() {
         // function is run inline (its frame is its own).
         recursion::with_depth(base, || match a[0].as_str().expect("an op") {
             "repr" => text_sha(recursion::c_call(" while calling a Python object").and_then(|_call| x.repr())),
-            "literal_name" => text_sha(recursion::py_frame().and_then(|_frame| {
-                // literal_name's own frame (psparser takes no frames yet)
-                literal_name(&x)
-            })),
+            "literal_name" => text_sha(literal_name(&x)),
             "resolve_all" => canon_sha(resolve_all(&x, &PDFObject::Null)),
-            "decipher_all" => canon_sha(decipher_all(&callback, &one, &PyInt::ZERO, &x)),
+            "decipher_all" => canon_sha(decipher_all(&callback, &ObjId::int(one.clone()), &PyInt::ZERO, &x)),
             other => panic!("unknown op {other}"),
         })
     });

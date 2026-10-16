@@ -39,8 +39,11 @@ impl Lines {
 
 /// `terminated`: runs a stage body from the oracle's stage entry depth and
 /// ends the trace with `!end`, or with the line of the exception that
-/// escaped the body.
+/// escaped the body. As the oracle, it starts from a new Python process
+/// ([`super::py_process`]) with logging disabled (`logging.disable`).
 pub fn terminated(out: &mut dyn Write, body: impl FnOnce(&mut Lines) -> PyResult<()>) -> io::Result<()> {
+    super::py_process::start();
+    pycompat::logging::disable();
     let mut lines = Lines::default();
     let result = with_depth(STAGE_ENTRY, || body(&mut lines));
     match result {

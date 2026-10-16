@@ -17,11 +17,14 @@
 //! `io.BytesIO`: they differ for a negative or huge position or length
 //! ([`FileKind`]). Both read the same bytes from [`BytesIO`].
 //!
-//! Not modeled: a `BufferedReader.read(n)` allocates `n` bytes before
-//! reading, so a `/Length` of many gigabytes raises `MemoryError` in Python
-//! when the allocation fails, a limit that depends on the machine; the port
-//! reads what the file has. Likewise a `seek` beyond the largest file size
-//! of the file system (2**44 on ext4) raises `OSError` in Python only.
+//! A `BufferedReader.read(n)` beyond its buffer allocates `n` bytes before
+//! reading (`_bufferedreader_read_generic`), so a huge `/Length` raises
+//! `MemoryError` when that allocation fails: the port makes the same
+//! allocation ([`FileKind::read_size`]), natively (virtual memory, never
+//! touched, as Python's); on wasm32, where growing the memory is for good,
+//! only a size beyond the address space fails. Not modeled: a `seek`
+//! beyond the largest file size of the file system (2**44 on ext4) raises
+//! `OSError` in Python only.
 //!
 //! # Re-entrance
 //!
@@ -40,13 +43,17 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::LazyLock;
 
 use pycompat::io::{BytesIO, Pos};
-use pycompat::recursion::{py_frame, py_frames};
+use pycompat::logging::Logger;
+use pycompat::recursion::{c_called_leaf, eval_entry, leaf, py_frame};
 use pycompat::{exc, ExcKind, PyInt, PyResult};
 
 use crate::casting::safe_int;
 use crate::pdfdocument::PDFDocument;
 use crate::pdftypes::{dict_value, int_value_obj, PDFObjRef, PDFObject, PDFResolver, PDFStream};
 use crate::psparser::{PSKeyword, PSStackEntry, PSStackParser, PSStackParserExt, KWD};
+
+/// `log = logging.getLogger(__name__)` of `pdfminer/pdfparser.py`.
+static LOG: Logger = Logger::new("pdfminer.pdfparser");
 
 // pdfminer/pdfparser.py:48-53 PDFParser.KEYWORD_R, PDFParser.KEYWORD_NULL, PDFParser.KEYWORD_ENDOBJ,
 // PDFParser.KEYWORD_STREAM, PDFParser.KEYWORD_XREF, PDFParser.KEYWORD_STARTXREF
@@ -95,9 +102,33 @@ impl FileKind {
             Some(n) if n > MAX_BYTES && self == FileKind::BufferedReader => {
                 Err(exc::OverflowError("byte string is too large"))
             }
-            Some(n) => Ok(Some(usize::try_from(n).unwrap_or(usize::MAX))),
+            Some(n) => {
+                if self == FileKind::BufferedReader && n > BUFFER_SIZE {
+                    // PyBytes_FromStringAndSize(NULL, n): MemoryError when
+                    // the allocation fails
+                    allocation_probe(n)?;
+                }
+                Ok(Some(usize::try_from(n).unwrap_or(usize::MAX)))
+            }
         }
     }
+}
+
+/// `io.DEFAULT_BUFFER_SIZE`, the buffer of `open(path, "rb")`: a read of
+/// more bytes than it holds allocates the whole result first.
+const BUFFER_SIZE: i64 = 8192;
+
+/// Whether an allocation of `n` bytes succeeds, as CPython's `malloc` of a
+/// new bytes object: `MemoryError` if not. Natively the memory is asked
+/// for and given back untouched (no page is used); on wasm32 growing the
+/// memory cannot be undone, so only a size beyond the address space fails.
+fn allocation_probe(n: i64) -> PyResult<()> {
+    let n = usize::try_from(n).ok().filter(|&n| n <= isize::MAX as usize).ok_or_else(|| exc::MemoryError(""))?;
+    if cfg!(target_family = "wasm") {
+        return Ok(());
+    }
+    let mut probe: Vec<u8> = Vec::new();
+    probe.try_reserve_exact(n).map_err(|_| exc::MemoryError(""))
 }
 
 /// A unique number per parser, so that a document recognizes its own.
@@ -168,21 +199,29 @@ impl PSStackParser<PDFParserExt> {
     // pdfminer/pdfparser.py:39 PDFParser.__init__
     /// `PDFParser(fp)`, `fp` being a file object of class `file`.
     pub fn new(fp: BytesIO, file: FileKind) -> PyResult<PDFParser> {
+        // the class is called (from C), then its __init__
+        let _entry = eval_entry()?;
+        let _frame = py_frame()?;
         let ext = PDFParserExt { doc: None, fallback: false, file, id: next_parser_id(), keywords: Keywords::new() };
         PSStackParser::init(Some(fp), ext)
     }
 
     // pdfminer/pdfparser.py:44 PDFParser.set_document
     /// Associates the parser with a PDFDocument object.
-    pub fn set_document(&mut self, doc: Weak<PDFDocument>) {
+    pub fn set_document(&mut self, doc: Weak<PDFDocument>) -> PyResult<()> {
+        leaf(1)?;
         self.ext.doc = Some(doc);
+        Ok(())
     }
 
-    /// `self.seek(pos)` for a Python int `pos`: the file object's error
-    /// for a position it refuses (not a Python method).
+    /// `self.seek(pos)` for a Python int `pos` (not a Python method): the
+    /// error of the file object for a position it refuses, raised where
+    /// `self.fp.seek(pos)` raises it.
     pub fn seek_int(&mut self, pos: &PyInt) -> PyResult<()> {
-        let pos = self.ext.file.seek_pos(pos)?;
-        self.seek(pos)
+        match self.ext.file.seek_pos(pos) {
+            Ok(pos) => self.seek(pos),
+            Err(e) => self.seek_error(e),
+        }
     }
 
     /// The stand-in left in place of this parser while it is lent.
@@ -200,24 +239,17 @@ impl PSStackParser<PDFParserExt> {
     /// The body of `do_keyword` for `stream`; `pos` is the keyword's.
     fn do_stream(&mut self, mut pos: Pos) -> PyResult<()> {
         // stream object
-        let popped_data = self.pop(1);
+        let popped_data = self.pop(1)?;
         let Some((_, dic)) = popped_data.into_iter().next() else {
             // pop(1) returned []: the unpacking failed
             return Err(exc::PDFSyntaxError("Invalid stream dictionary: []"));
         };
-        // dict_value and the resolve1 it calls: a frame each
-        let dic = lend(self, |_| {
-            let _frames = py_frames(2)?;
-            dict_value(&dic)
-        })?;
+        let dic = lend(self, |_| dict_value(&dic))?;
         let mut objlen = PyInt::ZERO;
         if !self.ext.fallback {
             // try: objlen = int_value(dic["Length"]) except KeyError: (STRICT)
             if let Some(length) = dic.get("Length") {
-                objlen = match lend(self, |_| {
-                    let _frames = py_frames(2)?;
-                    int_value_obj(&length)
-                })? {
+                objlen = match lend(self, |_| int_value_obj(&length))? {
                     PDFObject::Int(i) => i,
                     PDFObject::Bool(b) => PyInt::Small(i64::from(b)),
                     _ => unreachable!("int_value returns an int or a bool"),
@@ -259,12 +291,16 @@ impl PSStackParser<PDFParserExt> {
         }
         self.seek_int(&PyInt::Small(pos).add(&objlen))?;
         // XXX limit objlen not to exceed object boundary
-        // (log.debug("Stream: pos=%d, objlen=%d, dic=%r, data=%r...", ...))
+        // log.debug("Stream: pos=%d, objlen=%d, dic=%r, data=%r...", ...)
+        LOG.debug()?;
         let Some(doc) = self.ext.doc.as_ref().and_then(Weak::upgrade) else {
             return Err(exc::AssertionError(""));
         };
+        // PDFStream(dic, bytes(data), self.doc.decipher): its __init__,
+        // called from C
+        c_called_leaf()?;
         let stream = PDFStream::new(dic, Rc::from(data), doc.decipher());
-        self.push((pos, PDFObject::Stream(Rc::new(stream))));
+        self.push((pos, PDFObject::Stream(Rc::new(stream))))?;
         Ok(())
     }
 }
@@ -297,13 +333,14 @@ pub fn lend<T>(p: &mut PDFParser, f: impl FnOnce(Option<&Rc<PDFDocument>>) -> Py
 }
 
 impl PSStackParserExt for PDFParserExt {
-    /// `PSStackParser.seek`, with the error of a `BufferedReader` for a
+    /// `self.fp.seek(pos)`, with the error of a `BufferedReader` for a
     /// negative position (a `BytesIO`'s is that of [`BytesIO::seek`]).
-    fn seek(p: &mut PDFParser, pos: Pos) -> PyResult<()> {
+    fn fp_seek(p: &mut PDFParser, pos: Pos) -> PyResult<()> {
         if pos < 0 && p.ext.file == FileKind::BufferedReader {
             return Err(exc::OSError("[Errno 22] Invalid argument"));
         }
-        p.psstackparser_seek(pos)
+        p.fp_mut("seek")?.seek(pos)?;
+        Ok(())
     }
 
     // pdfminer/pdfparser.py:55 PDFParser.do_keyword
@@ -312,29 +349,31 @@ impl PSStackParserExt for PDFParserExt {
         let _frame = py_frame()?;
         let k = p.ext.keywords;
         if token == k.xref || token == k.startxref {
-            let objs = p.pop(1);
-            p.add_results(objs);
+            let objs = p.pop(1)?;
+            p.add_results(objs)?;
         } else if token == k.endobj {
-            let objs = p.pop(4);
-            p.add_results(objs);
+            let objs = p.pop(4)?;
+            p.add_results(objs)?;
         } else if token == k.null {
             // null object
-            p.push((pos, PDFObject::Null));
+            p.push((pos, PDFObject::Null))?;
         } else if token == k.r {
             // reference to indirect object
             if p.curstack.len() >= 2 {
-                let popped = p.pop(2);
-                let object_id = safe_int(&popped[0].1)?;
+                let popped = p.pop(2)?;
+                let object_id = safe_int_counted(&popped[0].1)?;
                 if let Some(object_id) = object_id {
+                    // PDFObjRef(self.doc, object_id): its __init__, called from C
+                    c_called_leaf()?;
                     let obj = PDFObjRef::new(resolver(&p.ext.doc), object_id);
-                    p.push((pos, PDFObject::Ref(obj)));
+                    p.push((pos, PDFObject::Ref(obj)))?;
                 }
             }
         } else if token == k.stream {
             p.do_stream(pos)?;
         } else {
             // others
-            p.push((pos, PDFObject::Keyword(token)));
+            p.push((pos, PDFObject::Keyword(token)))?;
         }
         Ok(())
     }
@@ -342,13 +381,20 @@ impl PSStackParserExt for PDFParserExt {
 
 impl PSStackParser<PDFStreamParserExt> {
     // pdfminer/pdfparser.py:147 PDFStreamParser.__init__
+    /// `PDFStreamParser(data)`: the class is called (from C), its
+    /// `__init__` calls `PDFParser.__init__`.
     pub fn new(data: Rc<[u8]>) -> PyResult<PDFStreamParser> {
+        let _entry = eval_entry()?;
+        let _frame = py_frame()?;
+        let _parser_init = py_frame()?;
         PSStackParser::init(Some(BytesIO::new(data)), PDFStreamParserExt { doc: None, keywords: Keywords::new() })
     }
 
     // pdfminer/pdfparser.py:44 PDFParser.set_document
-    pub fn set_document(&mut self, doc: Weak<PDFDocument>) {
+    pub fn set_document(&mut self, doc: Weak<PDFDocument>) -> PyResult<()> {
+        leaf(1)?;
         self.ext.doc = Some(doc);
+        Ok(())
     }
 }
 
@@ -363,9 +409,8 @@ fn unpack_two(entries: Vec<PSStackEntry>) -> PyResult<PDFObject> {
 impl PSStackParserExt for PDFStreamParserExt {
     // pdfminer/pdfparser.py:150 PDFStreamParser.flush
     fn flush(p: &mut PDFStreamParser) -> PyResult<()> {
-        let objs = p.popall();
-        p.add_results(objs);
-        Ok(())
+        let _frame = py_frame()?;
+        p.add_results_popall()
     }
 
     // pdfminer/pdfparser.py:155 PDFStreamParser.do_keyword
@@ -374,11 +419,13 @@ impl PSStackParserExt for PDFStreamParserExt {
         let k = p.ext.keywords;
         if token == k.r {
             // reference to indirect object
-            let popped = p.pop(2);
-            let object_id = safe_int(&unpack_two(popped)?)?;
+            let popped = p.pop(2)?;
+            let object_id = safe_int_counted(&unpack_two(popped)?)?;
             if let Some(object_id) = object_id {
+                // PDFObjRef(self.doc, object_id): its __init__, called from C
+                c_called_leaf()?;
                 let obj = PDFObjRef::new(resolver(&p.ext.doc), object_id);
-                p.push((pos, PDFObject::Ref(obj)));
+                p.push((pos, PDFObject::Ref(obj)))?;
             }
             return Ok(());
         } else if token == k.obj || token == k.endobj {
@@ -386,7 +433,14 @@ impl PSStackParserExt for PDFStreamParserExt {
             return Ok(());
         }
         // others
-        p.push((pos, PDFObject::Keyword(token)));
+        p.push((pos, PDFObject::Keyword(token)))?;
         Ok(())
     }
+}
+
+/// `safe_int(o)` (`casting`, whose port does not count its frame): its
+/// frame, then the value.
+fn safe_int_counted(o: &PDFObject) -> PyResult<Option<PyInt>> {
+    leaf(1)?;
+    safe_int(o)
 }

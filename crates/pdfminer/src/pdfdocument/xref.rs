@@ -17,7 +17,7 @@
 use std::rc::Rc;
 
 use indexmap::IndexMap;
-use pycompat::recursion::py_frame;
+use pycompat::recursion::{eval_entry, leaf, py_frame};
 use pycompat::text::str_isspace;
 use pycompat::{exc, ExcKind, PyErr, PyInt, PyResult};
 use rustc_hash::FxBuildHasher;
@@ -25,10 +25,11 @@ use rustc_hash::FxBuildHasher;
 use super::pyval::{entry_bounds, slice, PyVal};
 use super::LITERAL_OBJSTM;
 use super::LITERAL_XREF;
+use super::LOG;
 use crate::casting::safe_int;
 use crate::pdfparser::{lend, PDFParser, PDFStreamParser};
-use crate::pdftypes::{dict_value, ObjId, PDFDict, PDFObject, PyBytes};
-use crate::psparser::KWD;
+use crate::pdftypes::{dict_value, stream_value, ObjId, PDFDict, PDFObject, PyBytes};
+use crate::psparser::{py_intern, Symbol, KWD};
 use crate::utils::nunpack;
 
 /// `repr(parser)` in error messages: the default repr, whose address the
@@ -70,7 +71,7 @@ impl PDFBaseXRef {
     }
 
     /// `get_trailer()` (pdfminer/pdfdocument.py:196 `PDFXRef.get_trailer`,
-    /// :294 `PDFXRefStream.get_trailer`)
+    /// :294 `PDFXRefStream.get_trailer`; the caller counts its frame)
     pub fn get_trailer(&self) -> PDFDict {
         match self {
             PDFBaseXRef::XRef(x) | PDFBaseXRef::Fallback(x) => x.get_trailer(),
@@ -101,8 +102,9 @@ impl PDFBaseXRef {
     }
 
     /// `get_pos(objid)`: raises a `KeyError` for an id the table does not
-    /// have.
+    /// have. Takes its frame.
     pub fn get_pos(&self, objid: &ObjId) -> PyResult<XRefPos> {
+        let _frame = py_frame()?;
         match self {
             PDFBaseXRef::XRef(x) | PDFBaseXRef::Fallback(x) => x.get_pos(objid),
             PDFBaseXRef::Stream(x) => x.get_pos(objid),
@@ -197,18 +199,23 @@ impl PDFXRef {
                 }
                 let (pos_b, genno_b, use_b) = (f[0], f[1], f[2]);
                 if use_b == b"n" {
+                    leaf(1)?; // safe_int
                     let pos_i = safe_int(&PDFObject::Bytes(pos_b.into()))?;
+                    leaf(1)?; // safe_int
                     let genno_i = safe_int(&PDFObject::Bytes(genno_b.into()))?;
                     if let (Some(pos_i), Some(genno_i)) = (pos_i, genno_i) {
                         self.offsets
                             .insert(ObjId::int(objid.clone()), XRefPos { strmid: None, index: pos_i, genno: genno_i });
+                    } else {
+                        // log.warning("Not adding object %s to xref ...")
+                        LOG.warning()?;
                     }
-                    // else: log.warning("Not adding object %s to xref ...")
                 }
                 objid = objid.add(&PyInt::Small(1));
             }
         }
-        // (log.debug("xref objects: %r", self.offsets))
+        // log.debug("xref objects: %r", self.offsets)
+        LOG.debug()?;
         self.load_trailer(parser)
     }
 
@@ -217,7 +224,10 @@ impl PDFXRef {
         let _frame = py_frame()?;
         let attempt = |parser: &mut PDFParser| -> PyResult<PDFObject> {
             let (_, kwd) = parser.nexttoken()?;
-            if kwd != PDFObject::Keyword(KWD(b"trailer")) {
+            // assert kwd is KWD(b"trailer"), str(kwd)
+            let trailer = KWD(b"trailer");
+            py_intern(Symbol::Keyword(trailer))?;
+            if kwd != PDFObject::Keyword(trailer) {
                 return Err(exc::AssertionError(kwd.py_str()?));
             }
             let (_, dic) = parser.nextobject()?;
@@ -226,7 +236,7 @@ impl PDFXRef {
         let dic = match attempt(parser) {
             Ok(dic) => dic,
             Err(e) if e.is_instance(ExcKind::PSEOF) => {
-                let x = parser.pop(1);
+                let x = parser.pop(1)?;
                 let Some((_, dic)) = x.into_iter().next() else {
                     return Err(no_valid_xref("Unexpected EOF - file corrupted"));
                 };
@@ -239,8 +249,8 @@ impl PDFXRef {
         for (k, v) in dic.items() {
             self.trailer.insert(k, v);
         }
-        // (log.debug("trailer=%r", self.trailer))
-        Ok(())
+        // log.debug("trailer=%r", self.trailer)
+        LOG.debug()
     }
 
     // pdfminer/pdfdocument.py:196 PDFXRef.get_trailer
@@ -277,7 +287,8 @@ impl PDFXRef {
             if line_bytes.starts_with(b"trailer") {
                 parser.seek(pos)?;
                 self.load_trailer(parser)?;
-                // (log.debug("trailer: %r", self.trailer))
+                // log.debug("trailer: %r", self.trailer)
+                LOG.debug()?;
                 break;
             }
             // line = line_bytes.decode("latin-1"); m = self.PDFOBJ_CUE.match(line)
@@ -290,11 +301,12 @@ impl PDFXRef {
             // expand ObjStm.
             parser.seek(pos)?;
             let (_, obj) = parser.nextobject()?;
-            let PDFObject::Stream(stream) = obj else { continue };
-            if stream.get("Type", &PDFObject::Null) != PDFObject::Literal(*LITERAL_OBJSTM) {
+            let PDFObject::Stream(stream) = &obj else { continue };
+            if stream.get_counted("Type", &PDFObject::Null)? != PDFObject::Literal(*LITERAL_OBJSTM) {
                 continue;
             }
             // stream = stream_value(obj): obj itself
+            let stream = lend(parser, |_| stream_value(&obj))?;
             let n = match stream.getitem("N") {
                 Ok(n) => n,
                 // with settings.STRICT: PDFSyntaxError(f"N is not defined: {stream!r}")
@@ -306,7 +318,10 @@ impl PDFXRef {
             let mut objs: Vec<PDFObject> = Vec::new();
             loop {
                 match parser1.nextobject() {
-                    Ok((_, obj)) => objs.push(obj),
+                    Ok((_, obj)) => {
+                        leaf(1)?; // cast(int, obj)
+                        objs.push(obj);
+                    }
                     Err(e) if e.is_instance(ExcKind::PSEOF) => break,
                     Err(e) => return Err(e),
                 }
@@ -369,6 +384,35 @@ pub fn pdfobj_cue(line: &[u8]) -> Option<(&[u8], &[u8])> {
 // ---------------------------------------------------------------------------
 // PDFXRefStream
 
+thread_local! {
+    /// Whether the Python process has evaluated `Iterator[tuple[int, int]]`
+    /// (`typing`'s `lru_cache` holds it then).
+    static TYPING_WARM: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Sets whether the Python process has `Iterator[tuple[int, int]]` in
+/// `typing`'s cache (a new process has not, see [`typing_subscript`]).
+pub fn typing_cache_set(warm: bool) {
+    TYPING_WARM.with(|w| w.set(warm));
+}
+
+/// The frames of `Iterator[tuple[int, int]]` (in `PDFXRefStream.load`):
+/// the `_tp_cache` wrapper of `_SpecialGenericAlias.__getitem__`, one
+/// frame, which answers from its cache; the first time in the process the
+/// cache misses and `__getitem__` builds the alias (`_type_check`,
+/// `copy_with`, `_GenericAlias.__init__`...): seven frames at most below
+/// the caller, measured on the oracle (the depth only matters, nothing is
+/// observable in between). The cache is filled only when that succeeds.
+fn typing_subscript() -> PyResult<()> {
+    if TYPING_WARM.with(std::cell::Cell::get) {
+        leaf(1)
+    } else {
+        leaf(7)?;
+        TYPING_WARM.with(|w| w.set(true));
+        Ok(())
+    }
+}
+
 /// pdfminer/pdfdocument.py:257 `PDFXRefStream`.
 #[derive(Default)]
 pub struct PDFXRefStream {
@@ -400,10 +444,11 @@ impl PDFXRefStream {
         parser.nexttoken()?;
         let (_, stream) = parser.nextobject()?;
         let stream = match stream {
-            PDFObject::Stream(s) if s.get("Type", &PDFObject::Null) == PDFObject::Literal(*LITERAL_XREF) => s,
+            PDFObject::Stream(s) if s.get_counted("Type", &PDFObject::Null)? == PDFObject::Literal(*LITERAL_XREF) => s,
             _ => return Err(no_valid_xref("Invalid PDF stream spec.")),
         };
         let size = stream.getitem("Size")?;
+        leaf(1)?; // stream.get("Index", (0, size))
         let index_array = match stream.attrs.get("Index") {
             Some(index) => PyVal::Obj(index),
             // (0, size): a tuple, iterated as such
@@ -411,6 +456,19 @@ impl PDFXRefStream {
         };
         if index_array.py_len()? % 2 != 0 {
             return Err(exc::PDFSyntaxError("Invalid index number"));
+        }
+        // self.ranges.extend(cast(Iterator[tuple[int, int]], choplist(2, index_array))):
+        // `Iterator[...]` runs typing's cached __getitem__ (its wrapper's frame;
+        // the cache is warm: pdfminer evaluates the same subscription when its
+        // modules are imported... see `typing_subscript`), choplist() creates
+        // its generator, cast() returns it, and extend() resumes it from C
+        // (a frame one level down each step, after the first).
+        typing_subscript()?;
+        leaf(1)?; // choplist(2, index_array)
+        leaf(1)?; // cast(...)
+        {
+            let _entry = eval_entry()?;
+            leaf(1)?;
         }
         let items = index_array.items(|t| format!("'{t}' object is not iterable"))?;
         let mut items = items.into_iter();
@@ -431,8 +489,18 @@ impl PDFXRefStream {
         let entlen = fl1.add(&fl2)?.add(&fl3)?;
         (self.fl1, self.fl2, self.fl3, self.entlen) = (Some(fl1), Some(fl2), Some(fl3), Some(entlen));
         self.trailer = Some(stream.attrs.clone());
-        // (log.debug("xref stream: objid=%s, fields=%d,%d,%d", ...))
-        Ok(())
+        // log.debug("xref stream: objid=%s, fields=%d,%d,%d",
+        //           ", ".join(map(repr, self.ranges)), ...): the join runs
+        // repr() on each range (a tuple) first
+        for (start, nobjs) in &self.ranges {
+            let _tuple = pycompat::recursion::c_call(" while getting the repr of an object")?;
+            for x in [start, nobjs] {
+                if let PyVal::Obj(o) = x {
+                    o.repr()?;
+                }
+            }
+        }
+        LOG.debug()
     }
 
     // pdfminer/pdfdocument.py:294 PDFXRefStream.get_trailer
@@ -450,12 +518,15 @@ impl PDFXRefStream {
         // entlen is an int, so are the fields (an int or a bool each)
         let fl = |f: &Option<PyVal>| f.as_ref().and_then(PyVal::as_index).expect("int fields");
         let (fl1, fl2) = (fl(&self.fl1), fl(&self.fl2));
+        leaf(1)?; // nunpack
         let f1 = nunpack(slice(ent, None, Some(&fl1)), 1);
         if !all_fields {
             return Ok((f1, PyInt::ZERO, PyInt::ZERO));
         }
         let fl12 = fl1.add(&fl2);
+        leaf(1)?; // nunpack
         let f2 = nunpack(slice(ent, Some(&fl1), Some(&fl12)), 0);
+        leaf(1)?; // nunpack
         let f3 = nunpack(slice(ent, Some(&fl12), None), 0);
         Ok((f1, f2, f3))
     }
@@ -555,7 +626,9 @@ impl Iterator for XRefStreamIds<'_> {
         if self.done {
             return None;
         }
-        match self.step() {
+        // the generator's frame, resumed (by Python code)
+        let step = py_frame().and_then(|_frame| self.step());
+        match step {
             Ok(Some(id)) => Some(Ok(id)),
             Ok(None) => {
                 self.done = true;

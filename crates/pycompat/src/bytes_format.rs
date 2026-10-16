@@ -8,8 +8,24 @@
 //! not a mapping): one conversion may consume it, a second one raises
 //! "not enough arguments", an unused argument raises "not all arguments
 //! converted".
+//!
+//! A width or a precision as large as the format says (up to
+//! `PY_SSIZE_T_MAX` and `INT_MAX - 3`) asks for that much memory: CPython
+//! raises `MemoryError` when the allocation fails (`_PyBytesWriter_Prepare`,
+//! `PyUnicode_New`), and so does the port ([`reserve`]): never an abort,
+//! and on a 32-bit target (wasm32) a size that does not fit the address
+//! space fails like an allocation. Between "fits in memory" and "does not"
+//! the limit is the machine's, in Python as here.
 
 use crate::err::{exc, PyResult};
+
+/// Makes room for `extra` more bytes in `out`, or `MemoryError` (Python's
+/// failed allocation): a size beyond the address space, or an allocation
+/// the allocator refuses.
+fn reserve(out: &mut Vec<u8>, extra: i64) -> PyResult<()> {
+    let extra = usize::try_from(extra).map_err(|_| exc::MemoryError(""))?;
+    out.try_reserve_exact(extra).map_err(|_| exc::MemoryError(""))
+}
 
 const F_LJUST: u8 = 1;
 const F_SIGN: u8 = 2;
@@ -162,7 +178,7 @@ pub fn bytes_mod_int(fmt: &[u8], arg: i64) -> PyResult<Vec<u8>> {
                 ))
             }
             b'i' | b'd' | b'u' | b'o' | b'x' | b'X' => (format_long(v, flags & F_ALT != 0, prec, c)?, true),
-            b'e' | b'E' | b'f' | b'F' | b'g' | b'G' => (format_float(v as f64, flags & F_ALT != 0, prec, c), true),
+            b'e' | b'E' | b'f' | b'F' | b'g' | b'G' => (format_float(v as f64, flags & F_ALT != 0, prec, c)?, true),
             b'c' => {
                 if !(0..256).contains(&v) {
                     return Err(exc::OverflowError("%c arg not in range(256)"));
@@ -196,6 +212,9 @@ pub fn bytes_mod_int(fmt: &[u8], arg: i64) -> PyResult<Vec<u8>> {
         if width < len {
             width = len;
         }
+        // alloc = width (+ 1 for a sign when len == width): the writer
+        // allocates it before writing (_PyBytesWriter_Prepare)
+        reserve(&mut out, width.saturating_add(i64::from(sign != 0 && len == width)))?;
         // Write the sign if needed
         if sign != 0 {
             if fill != b' ' {
@@ -257,30 +276,64 @@ fn format_long(v: i64, alt: bool, prec: i64, conv: u8) -> PyResult<Vec<u8>> {
         b'x' | b'X' => ("0x", format!("{magnitude:x}")),
         _ => ("", magnitude.to_string()),
     };
-    let mut out = String::new();
+    let mut out: Vec<u8> = Vec::new();
+    // the new str of numnondigits + max(prec, numdigits) characters
+    // (PyUnicode_New)
+    let zeros = (prec - digits.len() as i64).max(0);
+    reserve(&mut out, 3 + digits.len() as i64 + zeros)?;
     if v < 0 {
-        out.push('-');
+        out.push(b'-');
     }
     if alt {
-        out.push_str(prefix);
+        out.extend_from_slice(prefix.as_bytes());
     }
     // Fill with leading zeroes to meet minimum width.
-    for _ in digits.len() as i64..prec {
-        out.push('0');
-    }
-    out.push_str(&digits);
+    out.resize(out.len() + zeros as usize, b'0');
+    out.extend_from_slice(digits.as_bytes());
     if conv == b'X' {
-        out = out.to_uppercase();
+        out.make_ascii_uppercase();
     }
-    Ok(out.into_bytes())
+    Ok(out)
 }
+
+/// The precision past which the digits of the float of an `i64` are all
+/// zeros: such a float is an integer of at most 19 significant digits.
+const EXACT_PREC: i64 = 40;
 
 /// `PyOS_double_to_string(x, type, prec, alt ? Py_DTSF_ALT : 0)` for a
 /// finite `x` (the float of an int): C's `%e`, `%f`, `%g` and their upper
 /// case forms, with exact decimal rounding (Rust's formatting rounds the
 /// exact value, as glibc's printf and Python's dtoa do).
-fn format_float(x: f64, alt: bool, prec: i64, conv: u8) -> Vec<u8> {
-    let prec = if prec < 0 { 6 } else { prec as usize };
+///
+/// `x` is an integer, so beyond [`EXACT_PREC`] a larger precision only
+/// adds zeros (after the point for `%f` and the `#` form of `%g`, in the
+/// mantissa for `%e`; `%g` strips them): the text is computed at that
+/// precision and the zeros added, after making room for them ([`reserve`]:
+/// `MemoryError` where the allocation fails).
+fn format_float(x: f64, alt: bool, prec: i64, conv: u8) -> PyResult<Vec<u8>> {
+    let prec = if prec < 0 { 6 } else { prec };
+    let extra = (prec - EXACT_PREC).max(0);
+    let mut text = format_float_exact(x, alt, prec.min(EXACT_PREC) as usize, conv);
+    let zeros_at = match conv.to_ascii_lowercase() {
+        _ if extra == 0 => None,
+        b'f' => Some(text.len()),
+        b'e' => Some(text.iter().position(|&b| b == b'e' || b == b'E').expect("an exponent")),
+        _ if alt => Some(text.len()),
+        _ => None,
+    };
+    if let Some(at) = zeros_at {
+        let mut out = Vec::new();
+        reserve(&mut out, text.len() as i64 + extra)?;
+        out.extend_from_slice(&text[..at]);
+        out.resize(at + extra as usize, b'0');
+        out.extend_from_slice(&text[at..]);
+        text = out;
+    }
+    Ok(text)
+}
+
+/// [`format_float`] at a precision of at most [`EXACT_PREC`].
+fn format_float_exact(x: f64, alt: bool, prec: usize, conv: u8) -> Vec<u8> {
     let mut text = match conv.to_ascii_lowercase() {
         b'f' => {
             let mut t = format!("{x:.prec$}");

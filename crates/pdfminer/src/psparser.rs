@@ -90,6 +90,8 @@ use std::sync::{LazyLock, Mutex, OnceLock};
 
 use pycompat::float::float_from_bytes;
 use pycompat::io::{BytesIO, Pos};
+use pycompat::logging::Logger;
+use pycompat::recursion::{c_called_leaf, leaf, py_frame};
 use pycompat::repr::{bytes_repr, str_repr};
 use pycompat::{exc, ExcKind, PyInt, PyResult};
 use rustc_hash::FxHashMap;
@@ -337,6 +339,83 @@ pub fn KWD(name: &[u8]) -> PSKeyword {
     })
 }
 
+// ---------------------------------------------------------------------------
+// The frames of interning
+
+/// Names of symbols, as a Python process has them interned (generated
+/// tables: `psparser_symbols.rs`, and the stage harness's).
+#[derive(Clone, Copy, Debug)]
+pub struct Symbols {
+    /// `str` names of literals
+    pub literals: &'static [&'static str],
+    /// `bytes` names of literals (not valid UTF-8)
+    pub bytes_literals: &'static [&'static [u8]],
+    /// names of keywords
+    pub keywords: &'static [&'static [u8]],
+}
+
+impl Symbols {
+    /// The interned symbols.
+    pub fn symbols(&self) -> impl Iterator<Item = Symbol> + '_ {
+        let literals = self.literals.iter().map(|&s| Symbol::Literal(LIT(s)));
+        let bytes_literals = self.bytes_literals.iter().map(|&b| Symbol::Literal(LIT_bytes(b)));
+        let keywords = self.keywords.iter().map(|&k| Symbol::Keyword(KWD(k)));
+        literals.chain(bytes_literals).chain(keywords)
+    }
+}
+
+thread_local! {
+    /// The symbols the Python process has interned so far (addresses of
+    /// their names): see [`py_intern`]. A thread starts as the process of
+    /// a pdfplumber user, after `import pdfplumber`.
+    static PY_INTERNED: RefCell<rustc_hash::FxHashSet<usize>> = RefCell::new(
+        crate::psparser_symbols::IMPORT_PDFPLUMBER.symbols().map(Symbol::address).collect(),
+    );
+}
+
+/// A symbol as [`py_intern`] identifies it.
+#[derive(Clone, Copy, Debug)]
+pub enum Symbol {
+    Literal(PSLiteral),
+    Keyword(PSKeyword),
+}
+
+impl Symbol {
+    fn address(self) -> usize {
+        match self {
+            Symbol::Literal(lit) => std::ptr::from_ref(lit.0) as usize,
+            Symbol::Keyword(kwd) => kwd.0.as_ptr() as usize | (1 << (usize::BITS - 1)),
+        }
+    }
+}
+
+/// Starts a new run of the Python process, in which exactly `symbols` are
+/// interned (those its imported modules intern at import time): the
+/// harness calls it where the oracle starts a process.
+pub fn py_symbols_reset(symbols: impl IntoIterator<Item = Symbol>) {
+    PY_INTERNED.with(|s| {
+        let mut s = s.borrow_mut();
+        s.clear();
+        s.extend(symbols.into_iter().map(Symbol::address));
+    });
+}
+
+// pdfminer/psparser.py:87 PSSymbolTable.intern
+/// The frames of a call `LIT(name)` or `KWD(name)` that Python runs (not a
+/// module constant) and that gave `symbol`: the frame of `intern`, and, the
+/// first time the process interns that name, the class instantiation
+/// (`self.klass(name)`: `PSLiteral.__init__`/`PSKeyword.__init__` called
+/// from C), after which the name is in the table.
+pub fn py_intern(symbol: Symbol) -> PyResult<()> {
+    let address = symbol.address();
+    let _intern = py_frame()?;
+    if !PY_INTERNED.with(|s| s.borrow().contains(&address)) {
+        c_called_leaf()?;
+        PY_INTERNED.with(|s| s.borrow_mut().insert(address));
+    }
+    Ok(())
+}
+
 // pdfminer/psparser.py:102-107 KEYWORD_PROC_BEGIN, KEYWORD_PROC_END, KEYWORD_ARRAY_BEGIN, KEYWORD_ARRAY_END,
 // KEYWORD_DICT_BEGIN, KEYWORD_DICT_END
 pub static KEYWORD_PROC_BEGIN: LazyLock<PSKeyword> = LazyLock::new(|| KWD(b"{"));
@@ -350,8 +429,10 @@ pub static KEYWORD_DICT_END: LazyLock<PSKeyword> = LazyLock::new(|| KWD(b">>"));
 /// `literal_name(x)` with `settings.STRICT = False`: the literal's name as a
 /// `str` (a `bytes` name is decoded as UTF-8, or else written as its repr),
 /// and `str(x)` for any other object, which raises `RecursionError` for an
-/// object nested too deep (see `pdftypes`, "Depth").
+/// object nested too deep (see `pdftypes`, "Depth"). Takes its Python
+/// frame.
 pub fn literal_name(x: &PDFObject) -> PyResult<String> {
+    let _frame = py_frame()?;
     if let PDFObject::Literal(lit) = x {
         return Ok(match lit.name() {
             LiteralName::Str(s) => s.to_owned(),
@@ -570,32 +651,37 @@ impl Lexer {
     }
 
     // pdfminer/psparser.py:302 PSBaseParser._add_token
-    fn add_token(&mut self, obj: PDFObject) {
+    /// `self._add_token(obj)`: its frame, then the token.
+    fn add_token(&mut self, obj: PDFObject) -> PyResult<()> {
+        leaf(1)?;
         self.tokens.push_back((self.curtokenpos, obj));
+        Ok(())
     }
 
-    /// `self._parse1(s, i)`; `bufpos` is `self.bufpos`.
+    /// `self._parse1(s, i)`; `bufpos` is `self.bufpos`. The method called
+    /// takes its frame.
     pub fn parse1(&mut self, s: &[u8], i: usize, bufpos: Pos) -> PyResult<usize> {
-        Ok(match self.parse1 {
+        let _frame = py_frame()?;
+        match self.parse1 {
             Parse1::Main => self.parse_main(s, i, bufpos),
-            Parse1::Comment => self.parse_comment(s, i),
+            Parse1::Comment => Ok(self.parse_comment(s, i)),
             Parse1::Literal => self.parse_literal(s, i),
-            Parse1::LiteralHex => self.parse_literal_hex(s, i),
+            Parse1::LiteralHex => Ok(self.parse_literal_hex(s, i)),
             Parse1::Number => self.parse_number(s, i),
             Parse1::Float => self.parse_float(s, i),
             Parse1::Keyword => self.parse_keyword(s, i),
             Parse1::String => self.parse_string(s, i),
-            Parse1::String1 => return self.parse_string_1(s, i),
+            Parse1::String1 => self.parse_string_1(s, i),
             Parse1::WOpen => self.parse_wopen(s, i),
             Parse1::WClose => self.parse_wclose(s, i),
             Parse1::HexString => self.parse_hexstring(s, i),
-        })
+        }
     }
 
     // pdfminer/psparser.py:256 PSBaseParser._parse_main
-    fn parse_main(&mut self, s: &[u8], i: usize, bufpos: Pos) -> usize {
+    fn parse_main(&mut self, s: &[u8], i: usize, bufpos: Pos) -> PyResult<usize> {
         let Some(j) = search(s, i, C_SPACE, false) else {
-            return s.len();
+            return Ok(s.len());
         };
         let c = s[j];
         self.curtokenpos = bufpos + j as Pos;
@@ -639,11 +725,13 @@ impl Lexer {
             }
             b'\x00' => {}
             _ => {
+                // self._add_token(KWD(c))
                 let kwd = self.keyword_cache.get(&s[j..j + 1]);
-                self.add_token(PDFObject::Keyword(kwd));
+                py_intern(Symbol::Keyword(kwd))?;
+                self.add_token(PDFObject::Keyword(kwd))?;
             }
         }
-        j + 1
+        Ok(j + 1)
     }
 
     // pdfminer/psparser.py:305 PSBaseParser._parse_comment
@@ -659,25 +747,26 @@ impl Lexer {
     }
 
     // pdfminer/psparser.py:317 PSBaseParser._parse_literal
-    fn parse_literal(&mut self, s: &[u8], i: usize) -> usize {
+    fn parse_literal(&mut self, s: &[u8], i: usize) -> PyResult<usize> {
         let Some(j) = search(s, i, C_END_LITERAL, true) else {
             self.curtoken.extend_from_slice(&s[i..]);
-            return s.len();
+            return Ok(s.len());
         };
         self.curtoken.extend_from_slice(&s[i..j]);
         if s[j] == b'#' {
             self.hex.clear();
             self.parse1 = Parse1::LiteralHex;
-            return j + 1;
+            return Ok(j + 1);
         }
         // str(self._curtoken, "utf-8"), else the bytes themselves.
         let lit = match std::str::from_utf8(&self.curtoken) {
             Ok(name) => LIT(name),
             Err(_) => LIT_bytes(&self.curtoken),
         };
-        self.add_token(PDFObject::Literal(lit));
+        py_intern(Symbol::Literal(lit))?;
+        self.add_token(PDFObject::Literal(lit))?;
         self.parse1 = Parse1::Main;
-        j
+        Ok(j)
     }
 
     // pdfminer/psparser.py:337 PSBaseParser._parse_literal_hex
@@ -697,87 +786,98 @@ impl Lexer {
     }
 
     // pdfminer/psparser.py:347 PSBaseParser._parse_number
-    fn parse_number(&mut self, s: &[u8], i: usize) -> usize {
+    fn parse_number(&mut self, s: &[u8], i: usize) -> PyResult<usize> {
         let Some(j) = search(s, i, C_DIGIT, false) else {
             self.curtoken.extend_from_slice(&s[i..]);
-            return s.len();
+            return Ok(s.len());
         };
         self.curtoken.extend_from_slice(&s[i..j]);
         if s[j] == b'.' {
             self.curtoken.push(b'.');
             self.parse1 = Parse1::Float;
-            return j + 1;
+            return Ok(j + 1);
         }
-        // with contextlib.suppress(ValueError): int(self._curtoken)
+        // with contextlib.suppress(ValueError): self._add_token(int(...)):
+        // suppress.__init__ (called from C), __enter__ (called from C by
+        // BEFORE_WITH), _add_token and __exit__ (called inline, or from C
+        // when int() raised) each take a frame one level down: the first
+        // one decides.
+        c_called_leaf()?;
         if let Ok(v) = PyInt::parse_bytes(&self.curtoken, 10) {
-            self.add_token(PDFObject::Int(v));
+            self.add_token(PDFObject::Int(v))?;
         }
         self.parse1 = Parse1::Main;
-        j
+        Ok(j)
     }
 
     // pdfminer/psparser.py:364 PSBaseParser._parse_float
-    fn parse_float(&mut self, s: &[u8], i: usize) -> usize {
+    fn parse_float(&mut self, s: &[u8], i: usize) -> PyResult<usize> {
         let Some(j) = search(s, i, C_DIGIT, false) else {
             self.curtoken.extend_from_slice(&s[i..]);
-            return s.len();
+            return Ok(s.len());
         };
         self.curtoken.extend_from_slice(&s[i..j]);
         // with contextlib.suppress(ValueError): float(self._curtoken)
+        // (the frames of the `with`, as in parse_number)
+        c_called_leaf()?;
         if let Ok(v) = float_from_bytes(&self.curtoken) {
-            self.add_token(PDFObject::Float(v));
+            self.add_token(PDFObject::Float(v))?;
         }
         self.parse1 = Parse1::Main;
-        j
+        Ok(j)
     }
 
     // pdfminer/psparser.py:376 PSBaseParser._parse_keyword
-    fn parse_keyword(&mut self, s: &[u8], i: usize) -> usize {
+    fn parse_keyword(&mut self, s: &[u8], i: usize) -> PyResult<usize> {
         let Some(j) = search(s, i, C_END_LITERAL, true) else {
             self.curtoken.extend_from_slice(&s[i..]);
-            return s.len();
+            return Ok(s.len());
         };
         self.curtoken.extend_from_slice(&s[i..j]);
         let token = match &self.curtoken[..] {
             b"true" => PDFObject::Bool(true),
             b"false" => PDFObject::Bool(false),
-            name => PDFObject::Keyword(self.keyword_cache.get(name)),
+            name => {
+                let kwd = self.keyword_cache.get(name);
+                py_intern(Symbol::Keyword(kwd))?;
+                PDFObject::Keyword(kwd)
+            }
         };
-        self.add_token(token);
+        self.add_token(token)?;
         self.parse1 = Parse1::Main;
-        j
+        Ok(j)
     }
 
     // pdfminer/psparser.py:394 PSBaseParser._parse_string
-    fn parse_string(&mut self, s: &[u8], i: usize) -> usize {
+    fn parse_string(&mut self, s: &[u8], i: usize) -> PyResult<usize> {
         let Some(j) = search(s, i, C_END_STRING, true) else {
             self.curtoken.extend_from_slice(&s[i..]);
-            return s.len();
+            return Ok(s.len());
         };
         self.curtoken.extend_from_slice(&s[i..j]);
         let c = s[j];
         if c == b'\\' {
             self.oct.clear();
             self.parse1 = Parse1::String1;
-            return j + 1;
+            return Ok(j + 1);
         }
         if c == b'(' {
             self.paren += 1;
             self.curtoken.push(c);
-            return j + 1;
+            return Ok(j + 1);
         }
         if c == b')' {
             self.paren -= 1;
             if self.paren != 0 {
                 // WTF, they said balanced parens need no special treatment.
                 self.curtoken.push(c);
-                return j + 1;
+                return Ok(j + 1);
             }
         }
         let token = PDFObject::Bytes(Rc::from(&self.curtoken[..]));
-        self.add_token(token);
+        self.add_token(token)?;
         self.parse1 = Parse1::Main;
-        j + 1
+        Ok(j + 1)
     }
 
     // pdfminer/psparser.py:420 PSBaseParser._parse_string_1
@@ -807,32 +907,32 @@ impl Lexer {
     }
 
     // pdfminer/psparser.py:449 PSBaseParser._parse_wopen
-    fn parse_wopen(&mut self, s: &[u8], mut i: usize) -> usize {
+    fn parse_wopen(&mut self, s: &[u8], mut i: usize) -> PyResult<usize> {
         if s.get(i) == Some(&b'<') {
-            self.add_token(PDFObject::Keyword(self.dict_keywords.0));
+            self.add_token(PDFObject::Keyword(self.dict_keywords.0))?;
             self.parse1 = Parse1::Main;
             i += 1;
         } else {
             self.parse1 = Parse1::HexString;
         }
-        i
+        Ok(i)
     }
 
     // pdfminer/psparser.py:459 PSBaseParser._parse_wclose
-    fn parse_wclose(&mut self, s: &[u8], mut i: usize) -> usize {
+    fn parse_wclose(&mut self, s: &[u8], mut i: usize) -> PyResult<usize> {
         if s.get(i) == Some(&b'>') {
-            self.add_token(PDFObject::Keyword(self.dict_keywords.1));
+            self.add_token(PDFObject::Keyword(self.dict_keywords.1))?;
             i += 1;
         }
         self.parse1 = Parse1::Main;
-        i
+        Ok(i)
     }
 
     // pdfminer/psparser.py:467 PSBaseParser._parse_hexstring
-    fn parse_hexstring(&mut self, s: &[u8], i: usize) -> usize {
+    fn parse_hexstring(&mut self, s: &[u8], i: usize) -> PyResult<usize> {
         let Some(j) = search(s, i, C_SPACE | C_HEX, false) else {
             self.curtoken.extend_from_slice(&s[i..]);
-            return s.len();
+            return Ok(s.len());
         };
         self.curtoken.extend_from_slice(&s[i..j]);
         // HEX_PAIR.sub(lambda m: bytes((int(m.group(0), 16),)),
@@ -850,9 +950,14 @@ impl Lexer {
         if let Some(d) = pending {
             token.push(d);
         }
-        self.add_token(PDFObject::Bytes(token.into()));
+        if !token.is_empty() {
+            // re.sub calls the lambda (from C) for each match, one level
+            // down: the first call decides.
+            c_called_leaf()?;
+        }
+        self.add_token(PDFObject::Bytes(token.into()))?;
         self.parse1 = Parse1::Main;
-        j
+        Ok(j)
     }
 }
 
@@ -943,7 +1048,8 @@ impl ProgressGuard {
 }
 
 /// Methods a Python subclass of `PSStackParser` overrides (see the module
-/// documentation). Every default is the base-class behavior.
+/// documentation). Every default is the base-class behavior, and takes the
+/// Python frames of the base-class method (an override takes its own).
 pub trait PSStackParserExt: Sized {
     /// `seek(pos)`
     fn seek(p: &mut PSStackParser<Self>, pos: Pos) -> PyResult<()> {
@@ -955,13 +1061,23 @@ pub trait PSStackParserExt: Sized {
         p.psbaseparser_fillbuf()
     }
 
+    // pdfminer/psparser.py:570 PSStackParser.do_keyword
     /// `do_keyword(pos, token)`
     fn do_keyword(_p: &mut PSStackParser<Self>, _pos: Pos, _token: PSKeyword) -> PyResult<()> {
-        Ok(())
+        leaf(1)
     }
 
+    // pdfminer/psparser.py:174 PSBaseParser.flush
     /// `flush()`
     fn flush(_p: &mut PSStackParser<Self>) -> PyResult<()> {
+        leaf(1)
+    }
+
+    /// `self.fp.seek(pos)` in `PSBaseParser.seek` (not a method of the
+    /// parser: the error of the file object's class, see
+    /// `pdfparser::FileKind`).
+    fn fp_seek(p: &mut PSStackParser<Self>, pos: Pos) -> PyResult<()> {
+        p.fp_mut("seek")?.seek(pos)?;
         Ok(())
     }
 
@@ -1005,13 +1121,18 @@ pub struct PSStackParser<X: PSStackParserExt = ()> {
 /// pdfminer/psparser.py:161 `PSBaseParser`.
 pub type PSBaseParser = PSStackParser<()>;
 
+/// `log = logging.getLogger(__name__)` of `pdfminer/psparser.py`.
+static LOG: Logger = Logger::new("pdfminer.psparser");
+
 impl<X: PSStackParserExt> PSStackParser<X> {
     // pdfminer/psparser.py:166 PSBaseParser.__init__ + :523 PSStackParser.__init__
     /// `PSStackParser.__init__(self, fp)`, with the subclass state `ext`
     /// (Python subclasses set their attributes before or after calling it;
     /// the call itself only uses `fp` and the `seek` override). A subclass
-    /// constructor (`PDFContentParser::new`) calls this.
+    /// constructor (`PDFContentParser::new`) calls this, after taking its
+    /// own frames. The frames of both `__init__`s are taken here.
     pub fn init(fp: Option<BytesIO>, ext: X) -> PyResult<Self> {
+        let _stack_init = py_frame()?;
         let mut p = PSStackParser {
             fp,
             eof: false,
@@ -1034,13 +1155,17 @@ impl<X: PSStackParserExt> PSStackParser<X> {
             ],
             progress: ProgressGuard::default(),
         };
-        p.seek(0)?;
-        p.reset();
+        {
+            // PSBaseParser.__init__(self, fp)
+            let _base_init = py_frame()?;
+            p.seek(0)?;
+        }
+        p.reset()?;
         Ok(p)
     }
 
     /// `self.fp`, which Python would dereference.
-    fn fp_mut(&mut self, attr: &str) -> PyResult<&mut BytesIO> {
+    pub fn fp_mut(&mut self, attr: &str) -> PyResult<&mut BytesIO> {
         self.fp.as_mut().ok_or_else(|| exc::AttributeError(format!("'NoneType' object has no attribute '{attr}'")))
     }
 
@@ -1072,7 +1197,9 @@ impl<X: PSStackParserExt> PSStackParser<X> {
     // pdfminer/psparser.py:177 PSBaseParser.seek
     /// `PSBaseParser.seek(self, pos)`.
     pub fn psbaseparser_seek(&mut self, pos: Pos) -> PyResult<()> {
-        self.fp_mut("seek")?.seek(pos)?;
+        let _frame = py_frame()?;
+        LOG.debug()?;
+        X::fp_seek(self, pos)?;
         // reset the status for nextline()
         self.bufpos = pos;
         self.buf = Buf::empty();
@@ -1087,6 +1214,18 @@ impl<X: PSStackParserExt> PSStackParser<X> {
         Ok(())
     }
 
+    /// The frames `self.seek(pos)` enters before `self.fp.seek(pos)` raises
+    /// for a position that is not a `Py_ssize_t` (`PSStackParser.seek`,
+    /// `PSBaseParser.seek` and its `log.debug`), then `err`: a parser whose
+    /// `seek` is the base class's is given such a position as a Python int
+    /// (`pdfparser::PDFParser::seek_int`).
+    pub fn seek_error(&mut self, err: pycompat::PyErr) -> PyResult<()> {
+        let _stack_seek = py_frame()?;
+        let _base_seek = py_frame()?;
+        LOG.debug()?;
+        Err(err)
+    }
+
     /// Reports the read position after a step of a reading loop (see
     /// [`ProgressGuard`]).
     #[inline]
@@ -1098,14 +1237,15 @@ impl<X: PSStackParserExt> PSStackParser<X> {
     // pdfminer/psparser.py:533 PSStackParser.seek
     /// `PSStackParser.seek(self, pos)`.
     pub fn psstackparser_seek(&mut self, pos: Pos) -> PyResult<()> {
+        let _frame = py_frame()?;
         self.psbaseparser_seek(pos)?;
-        self.reset();
-        Ok(())
+        self.reset()
     }
 
     // pdfminer/psparser.py:192 PSBaseParser.fillbuf
     /// `PSBaseParser.fillbuf(self)`.
     pub fn psbaseparser_fillbuf(&mut self) -> PyResult<bool> {
+        let _frame = py_frame()?;
         if self.charpos < self.buf.len() {
             return Ok(false);
         }
@@ -1127,6 +1267,7 @@ impl<X: PSStackParserExt> PSStackParser<X> {
     // pdfminer/psparser.py:203 PSBaseParser.nextline
     /// Fetches a next line that ends either with `\r` or `\n`.
     pub fn nextline(&mut self) -> PyResult<(Pos, Vec<u8>)> {
+        let _frame = py_frame()?;
         let mut linebuf = Vec::new();
         let linepos = self.position();
         let mut eol = false;
@@ -1157,18 +1298,21 @@ impl<X: PSStackParserExt> PSStackParser<X> {
             }
             self.check_progress("nextline");
         }
+        LOG.debug()?;
         Ok((linepos, linebuf))
     }
 
     // pdfminer/psparser.py:232 PSBaseParser.revreadlines
     /// Fetches the lines backward, from the end of `fp` (a lazy iterator,
-    /// like the Python generator).
+    /// like the Python generator, whose frame each step takes).
     pub fn revreadlines(&mut self) -> PyResult<RevReadLines<'_>> {
-        Ok(RevReadLines { fp: self.fp_mut("seek")?, started: false, pos: 0, buf: Vec::new(), s: None })
+        leaf(1)?; // the generator is created (its frame starts and suspends)
+        Ok(RevReadLines { fp: self.fp_mut("seek")?, started: false, done: false, pos: 0, buf: Vec::new(), s: None })
     }
 
     // pdfminer/psparser.py:482 PSBaseParser.nexttoken
     pub fn nexttoken(&mut self) -> PyResult<PSToken> {
+        let _frame = py_frame()?;
         if self.eof {
             // It's not really unexpected, come on now...
             return Err(exc::PSEOF("Unexpected EOF"));
@@ -1190,7 +1334,9 @@ impl<X: PSStackParserExt> PSStackParser<X> {
                 Err(e) => return Err(e),
             }
         }
-        Ok(self.lexer.tokens.pop_front().expect("a token is ready"))
+        let token = self.lexer.tokens.pop_front().expect("a token is ready");
+        LOG.debug()?;
+        Ok(token)
     }
 
     /// The body of the `try:` block of `nexttoken`.
@@ -1207,45 +1353,79 @@ impl<X: PSStackParserExt> PSStackParser<X> {
     }
 
     // pdfminer/psparser.py:527 PSStackParser.reset
-    pub fn reset(&mut self) {
+    pub fn reset(&mut self) -> PyResult<()> {
+        leaf(1)?;
         self.context.clear();
         self.curtype = None;
         self.curstack.clear();
         self.results.clear();
+        Ok(())
     }
 
     // pdfminer/psparser.py:537 PSStackParser.push
-    pub fn push(&mut self, obj: PSStackEntry) {
+    pub fn push(&mut self, obj: PSStackEntry) -> PyResult<()> {
+        leaf(1)?;
         self.curstack.push(obj);
+        Ok(())
     }
 
     // pdfminer/psparser.py:540 PSStackParser.pop
     /// `self.pop(n)`: the last `n` entries (`curstack[-n:]`, so `pop(0)`
     /// takes the whole stack, like Python's slice).
-    pub fn pop(&mut self, n: usize) -> Vec<PSStackEntry> {
+    pub fn pop(&mut self, n: usize) -> PyResult<Vec<PSStackEntry>> {
+        leaf(1)?;
         let start = if n == 0 { 0 } else { self.curstack.len().saturating_sub(n) };
-        self.curstack.split_off(start)
+        Ok(self.curstack.split_off(start))
     }
 
     // pdfminer/psparser.py:545 PSStackParser.popall
-    pub fn popall(&mut self) -> Vec<PSStackEntry> {
-        std::mem::take(&mut self.curstack)
+    pub fn popall(&mut self) -> PyResult<Vec<PSStackEntry>> {
+        leaf(1)?;
+        Ok(std::mem::take(&mut self.curstack))
     }
 
     // pdfminer/psparser.py:550 PSStackParser.add_results
-    pub fn add_results(&mut self, objs: impl IntoIterator<Item = PSStackEntry>) {
+    /// `self.add_results(*objs)`. (Its `log.debug` is in a `try:` whose
+    /// `except Exception:` calls `log.debug` again: a `RecursionError` of
+    /// the first is raised again by the second, at the same depth.)
+    pub fn add_results(&mut self, objs: impl IntoIterator<Item = PSStackEntry>) -> PyResult<()> {
+        let _frame = py_frame()?;
+        LOG.debug()?;
         self.results.extend(objs);
+        Ok(())
+    }
+
+    /// `self.add_results(*self.popall())` (`PDFStreamParser.flush`,
+    /// `PDFContentParser.flush`): the frames of both calls. When `results`
+    /// is empty (always, from `nextobject`), the two buffers trade places
+    /// instead of moving the entries; otherwise the entries are appended.
+    /// Either way `curstack` keeps a buffer for the next objects.
+    pub fn add_results_popall(&mut self) -> PyResult<()> {
+        leaf(1)?; // popall
+        let _frame = py_frame()?; // add_results
+        LOG.debug()?;
+        let PSStackParser { curstack, results, .. } = self;
+        if results.is_empty() {
+            let empty: Vec<_> = std::mem::take(results).into();
+            *results = std::mem::replace(curstack, empty).into();
+        } else {
+            results.extend(curstack.drain(..));
+        }
+        Ok(())
     }
 
     // pdfminer/psparser.py:557 PSStackParser.start_type
-    pub fn start_type(&mut self, pos: Pos, type_: &'static str) {
+    pub fn start_type(&mut self, pos: Pos, type_: &'static str) -> PyResult<()> {
+        let _frame = py_frame()?;
         let stack = std::mem::take(&mut self.curstack);
         self.context.push((pos, self.curtype, stack));
         self.curtype = Some(type_);
+        LOG.debug()
     }
 
     // pdfminer/psparser.py:562 PSStackParser.end_type
     pub fn end_type(&mut self, type_: &'static str) -> PyResult<(Pos, Vec<PDFObject>)> {
+        let _frame = py_frame()?;
         if self.curtype != Some(type_) {
             let cur = self.curtype.map_or_else(|| "None".to_owned(), str_repr);
             return Err(exc::PSTypeError(format!("Type mismatch: {cur} != {}", str_repr(type_))));
@@ -1254,6 +1434,7 @@ impl<X: PSStackParserExt> PSStackParser<X> {
         let (pos, curtype, curstack) = self.context.pop().expect("curtype is set only with a context");
         self.curtype = curtype;
         self.curstack = curstack;
+        LOG.debug()?;
         Ok((pos, objs))
     }
 
@@ -1262,6 +1443,7 @@ impl<X: PSStackParserExt> PSStackParser<X> {
     /// and dictionaries (arrays and dictionaries as `PDFObject::List` and
     /// `PDFObject::Dict`).
     pub fn nextobject(&mut self) -> PyResult<PSStackEntry> {
+        let _frame = py_frame()?;
         while self.results.is_empty() {
             let (pos, token) = self.nexttoken()?;
             match token {
@@ -1269,17 +1451,17 @@ impl<X: PSStackParserExt> PSStackParser<X> {
                     let [array_begin, array_end, dict_begin, dict_end, proc_begin, proc_end] = self.structure_keywords;
                     if kwd == array_begin {
                         // begin array
-                        self.start_type(pos, "a");
+                        self.start_type(pos, "a")?;
                     } else if kwd == array_end {
                         // end array
                         match self.end_type("a") {
-                            Ok((pos, objs)) => self.push((pos, PDFObject::List(PDFList::new(objs)))),
+                            Ok((pos, objs)) => self.push((pos, PDFObject::List(PDFList::new(objs))))?,
                             Err(e) if e.is_instance(ExcKind::PSTypeError) && !settings::STRICT => {}
                             Err(e) => return Err(e),
                         }
                     } else if kwd == dict_begin {
                         // begin dictionary
-                        self.start_type(pos, "d");
+                        self.start_type(pos, "d")?;
                     } else if kwd == dict_end {
                         // end dictionary
                         match self.end_type("d") {
@@ -1289,6 +1471,11 @@ impl<X: PSStackParserExt> PSStackParser<X> {
                                         format!("Invalid dictionary construct: {}", PDFObject::list_repr(&objs)?);
                                     return Err(exc::PSSyntaxError(error_msg));
                                 }
+                                // {literal_name(k): v for (k, v) in choplist(2, objs) if v is not None}:
+                                // the comprehension runs in this frame (PEP 709); the
+                                // generator choplist() takes a frame one level down when
+                                // created and at each step, before literal_name's.
+                                leaf(1)?;
                                 let d = PDFDict::new();
                                 for pair in choplist(2, &objs) {
                                     let (k, v) = (&pair[0], &pair[1]);
@@ -1296,53 +1483,58 @@ impl<X: PSStackParserExt> PSStackParser<X> {
                                         d.insert(literal_name(k)?.into(), v.clone());
                                     }
                                 }
-                                self.push((pos, PDFObject::Dict(d)));
+                                self.push((pos, PDFObject::Dict(d)))?;
                             }
                             Err(e) if e.is_instance(ExcKind::PSTypeError) && !settings::STRICT => {}
                             Err(e) => return Err(e),
                         }
                     } else if kwd == proc_begin {
                         // begin proc
-                        self.start_type(pos, "p");
+                        self.start_type(pos, "p")?;
                     } else if kwd == proc_end {
                         // end proc
                         match self.end_type("p") {
-                            Ok((pos, objs)) => self.push((pos, PDFObject::List(PDFList::new(objs)))),
+                            Ok((pos, objs)) => self.push((pos, PDFObject::List(PDFList::new(objs))))?,
                             Err(e) if e.is_instance(ExcKind::PSTypeError) && !settings::STRICT => {}
                             Err(e) => return Err(e),
                         }
                     } else {
+                        // log.debug("do_keyword: pos=%r, token=%r, stack=%r", ...)
+                        LOG.debug()?;
                         self.do_keyword(pos, kwd)?;
                     }
                 }
                 // normal token (int, float, bool, bytes, literal); tokens are
                 // never of another type, so upstream's "unknown token" branch
                 // (log.error + raise PSException) cannot be reached.
-                token => self.push((pos, token)),
+                token => self.push((pos, token))?,
             }
             if !self.context.is_empty() {
                 continue;
             }
             self.flush()?;
         }
-        Ok(self.results.pop_front().expect("results is not empty"))
+        let obj = self.results.pop_front().expect("results is not empty");
+        // log.debug("nextobject: %r", obj), in a try: like add_results'
+        LOG.debug()?;
+        Ok(obj)
     }
 }
 
-/// The generator returned by [`PSStackParser::revreadlines`].
+/// The generator returned by [`PSStackParser::revreadlines`]: each step
+/// resumes it (a frame), and a `RecursionError` ends it.
 pub struct RevReadLines<'a> {
     fp: &'a mut BytesIO,
     started: bool,
+    done: bool,
     pos: Pos,
     buf: Vec<u8>,
     /// The chunk being split (`s`), once read.
     s: Option<Vec<u8>>,
 }
 
-impl Iterator for RevReadLines<'_> {
-    type Item = Vec<u8>;
-
-    fn next(&mut self) -> Option<Vec<u8>> {
+impl RevReadLines<'_> {
+    fn step(&mut self) -> Option<Vec<u8>> {
         if !self.started {
             self.started = true;
             self.pos = self.fp.seek_whence(0, 2).expect("seek to the end");
@@ -1377,6 +1569,26 @@ impl Iterator for RevReadLines<'_> {
             }
             self.s = Some(s);
         }
+    }
+}
+
+impl Iterator for RevReadLines<'_> {
+    type Item = PyResult<Vec<u8>>;
+
+    fn next(&mut self) -> Option<PyResult<Vec<u8>>> {
+        if self.done {
+            return None;
+        }
+        let _frame = match py_frame() {
+            Ok(frame) => frame,
+            Err(e) => {
+                self.done = true;
+                return Some(Err(e));
+            }
+        };
+        let line = self.step();
+        self.done = line.is_none();
+        line.map(Ok)
     }
 }
 

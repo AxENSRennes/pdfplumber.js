@@ -66,7 +66,7 @@ use sha2::{Sha256, Sha384, Sha512};
 
 use crate::arcfour::Arcfour;
 use crate::pdftypes::{
-    dict_value, int_value_obj, str_value, uint_value, DecipherCallable, PDFDict, PDFObject, PyBytes,
+    dict_value, int_value_obj, str_value, uint_value, DecipherCallable, ObjId, PDFDict, PDFObject, PyBytes,
 };
 use crate::psparser::literal_name;
 use crate::saslprep::saslprep;
@@ -213,6 +213,17 @@ fn pack_l(x: &PyInt) -> PyResult<[u8; 4]> {
     match x.as_i64().and_then(|i| u32::try_from(i).ok()) {
         Some(v) => Ok(v.to_le_bytes()),
         None => Err(exc::StructError("'L' format requires 0 <= number <= 4294967295")),
+    }
+}
+
+/// `struct.pack("<L", objid)` of an object id: an `int` (a `bool` is one),
+/// or `struct.error` for any other object (a float id in an encrypted
+/// document repaired by `PDFXRefFallback`).
+fn pack_l_id(objid: &ObjId) -> PyResult<[u8; 4]> {
+    match objid.obj() {
+        PDFObject::Int(i) => pack_l(i),
+        PDFObject::Bool(b) => pack_l(&PyInt::Small(i64::from(*b))),
+        _ => Err(exc::StructError("required argument is not an integer")),
     }
 }
 
@@ -469,7 +480,7 @@ impl PDFStandardSecurityHandler {
     /// The document's decryption callback: `self.decrypt`.
     pub fn decipher(self: &Rc<Self>) -> DecipherCallable {
         let handler = Rc::clone(self);
-        Rc::new(move |objid: &PyInt, genno: &PyInt, data: &[u8], attrs: Option<&PDFDict>| {
+        Rc::new(move |objid: &ObjId, genno: &PyInt, data: &[u8], attrs: Option<&PDFDict>| {
             handler.decrypt(objid, genno, data, attrs)
         })
     }
@@ -767,7 +778,7 @@ impl PDFStandardSecurityHandler {
     /// `self.decrypt(objid, genno, data, attrs)`, resolved on the class:
     /// decrypts a string or the data of a stream (`attrs`, its
     /// dictionary) of the object `objid`/`genno`.
-    pub fn decrypt(&self, objid: &PyInt, genno: &PyInt, data: &[u8], attrs: Option<&PDFDict>) -> PyResult<Vec<u8>> {
+    pub fn decrypt(&self, objid: &ObjId, genno: &PyInt, data: &[u8], attrs: Option<&PDFDict>) -> PyResult<Vec<u8>> {
         match self.class {
             SecurityHandlerClass::PDFStandardSecurityHandler => self.decrypt_base(objid, genno, data, attrs),
             _ => self.decrypt_v4(objid, genno, data, attrs, None),
@@ -775,7 +786,7 @@ impl PDFStandardSecurityHandler {
     }
 
     // pdfminer/pdfdocument.py:458 PDFStandardSecurityHandler.decrypt
-    fn decrypt_base(&self, objid: &PyInt, genno: &PyInt, data: &[u8], _attrs: Option<&PDFDict>) -> PyResult<Vec<u8>> {
+    fn decrypt_base(&self, objid: &ObjId, genno: &PyInt, data: &[u8], _attrs: Option<&PDFDict>) -> PyResult<Vec<u8>> {
         let _frame = recursion::py_frame()?;
         self.decrypt_rc4(objid, genno, data)
     }
@@ -786,7 +797,7 @@ impl PDFStandardSecurityHandler {
     /// the crypt filter.
     pub fn decrypt_v4(
         &self,
-        objid: &PyInt,
+        objid: &ObjId,
         genno: &PyInt,
         data: &[u8],
         attrs: Option<&PDFDict>,
@@ -796,9 +807,6 @@ impl PDFStandardSecurityHandler {
         if !self.encrypt_metadata.unwrap_or(true) {
             if let Some(attrs) = attrs {
                 if let Some(t) = attrs.get("Type").filter(|t| !matches!(t, PDFObject::Null)) {
-                    // literal_name's own frame (psparser's literal_name
-                    // takes none yet)
-                    let _literal_name = recursion::py_frame()?;
                     if literal_name(&t)? == "Metadata" {
                         return Ok(data.to_vec());
                     }
@@ -813,7 +821,7 @@ impl PDFStandardSecurityHandler {
     }
 
     /// `self.cfm[name](objid, genno, data)`
-    pub fn call_cfm(&self, method: CryptFilterMethod, objid: &PyInt, genno: &PyInt, data: &[u8]) -> PyResult<Vec<u8>> {
+    pub fn call_cfm(&self, method: CryptFilterMethod, objid: &ObjId, genno: &PyInt, data: &[u8]) -> PyResult<Vec<u8>> {
         match method {
             CryptFilterMethod::DecryptRc4 => self.decrypt_rc4(objid, genno, data),
             CryptFilterMethod::DecryptAes128 => self.decrypt_aes128(objid, genno, data),
@@ -828,10 +836,10 @@ impl PDFStandardSecurityHandler {
     }
 
     // pdfminer/pdfdocument.py:467 PDFStandardSecurityHandler.decrypt_rc4
-    pub fn decrypt_rc4(&self, objid: &PyInt, genno: &PyInt, data: &[u8]) -> PyResult<Vec<u8>> {
+    pub fn decrypt_rc4(&self, objid: &ObjId, genno: &PyInt, data: &[u8]) -> PyResult<Vec<u8>> {
         let _frame = recursion::py_frame()?;
         let mut key = self.key()?.to_vec();
-        key.extend_from_slice(&pack_l(objid)?[..3]);
+        key.extend_from_slice(&pack_l_id(objid)?[..3]);
         key.extend_from_slice(&pack_l(genno)?[..2]);
         let hash = md5(&[&key]);
         let key = &hash[..key.len().min(16)];
@@ -839,16 +847,16 @@ impl PDFStandardSecurityHandler {
     }
 
     // pdfminer/pdfdocument.py:524 PDFStandardSecurityHandlerV4.decrypt_identity
-    pub fn decrypt_identity(&self, _objid: &PyInt, _genno: &PyInt, data: &[u8]) -> PyResult<Vec<u8>> {
+    pub fn decrypt_identity(&self, _objid: &ObjId, _genno: &PyInt, data: &[u8]) -> PyResult<Vec<u8>> {
         let _frame = recursion::py_frame()?;
         Ok(data.to_vec())
     }
 
     // pdfminer/pdfdocument.py:527 PDFStandardSecurityHandlerV4.decrypt_aes128
-    pub fn decrypt_aes128(&self, objid: &PyInt, genno: &PyInt, data: &[u8]) -> PyResult<Vec<u8>> {
+    pub fn decrypt_aes128(&self, objid: &ObjId, genno: &PyInt, data: &[u8]) -> PyResult<Vec<u8>> {
         let _frame = recursion::py_frame()?;
         let mut key = self.key()?.to_vec();
-        key.extend_from_slice(&pack_l(objid)?[..3]);
+        key.extend_from_slice(&pack_l_id(objid)?[..3]);
         key.extend_from_slice(&pack_l(genno)?[..2]);
         key.extend_from_slice(b"sAlT");
         let hash = md5(&[&key]);
@@ -974,7 +982,7 @@ impl PDFStandardSecurityHandler {
     }
 
     // pdfminer/pdfdocument.py:660 PDFStandardSecurityHandlerV5.decrypt_aes256
-    pub fn decrypt_aes256(&self, _objid: &PyInt, _genno: &PyInt, data: &[u8]) -> PyResult<Vec<u8>> {
+    pub fn decrypt_aes256(&self, _objid: &ObjId, _genno: &PyInt, data: &[u8]) -> PyResult<Vec<u8>> {
         let _frame = recursion::py_frame()?;
         let (initialization_vector, ciphertext) = data.split_at(data.len().min(16));
         let key = self.key()?;

@@ -32,12 +32,14 @@
 //! # Recursion depth
 //!
 //! The recursive methods (`read_xref_from` over `/Prev` and `/XRefStm`,
-//! `getobj` over object streams, the outline search) and the functions
-//! they call take a Python frame each (`pycompat::recursion`), so a loop in
-//! the file ends in `RecursionError("maximum recursion depth exceeded")` as
-//! in Python. The frames of the parser's own methods (`psparser.rs`) are
-//! not counted yet, so the exact depth at which a long finite chain fails
-//! may differ (`docs/architecture.md`, "Profondeur de récursion").
+//! `getobj` over object streams, the outline search, the name tree lookup)
+//! and every Python function they call take their frames
+//! (`pycompat::recursion`): the parser's methods (`psparser.rs`), the
+//! accessors of `pdftypes`, the logging calls (`pycompat::logging`), the
+//! class instantiations (an `__init__` called from C) and the generators,
+//! so a loop in the file ends in `RecursionError("maximum recursion depth
+//! exceeded")` and a long finite chain fails at the same level as in Python
+//! (`docs/architecture.md`, "Profondeur de récursion").
 
 mod pyval;
 mod security;
@@ -47,14 +49,15 @@ use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
 use std::sync::LazyLock;
 
-use pycompat::recursion::{py_frame, py_frames};
+use pycompat::logging::Logger;
+use pycompat::recursion::{c_called_leaf, eval_entry, leaf, py_frame};
 use pycompat::repr::{bytes_repr, str_repr};
 use pycompat::{exc, ExcKind, PyErr, PyInt, PyResult};
 use rustc_hash::FxHashMap;
 
 pub use pyval::PyVal;
 pub use security::*;
-pub use xref::{pdfobj_cue, ObjIds, PDFBaseXRef, PDFXRef, PDFXRefStream, XRefPos};
+pub use xref::{pdfobj_cue, typing_cache_set, ObjIds, PDFBaseXRef, PDFXRef, PDFXRefStream, XRefPos};
 
 use crate::data_structures::NumberTree;
 use crate::pdfparser::{FileKind, PDFParser, PDFStreamParser};
@@ -62,8 +65,23 @@ use crate::pdftypes::{
     decipher_all, dict_value, int_value, list_value, str_value, stream_value, DecipherCallable, ObjId, PDFDict,
     PDFList, PDFObject, PDFResolver, PDFStream,
 };
-use crate::psparser::{literal_name, PSLiteral, LIT};
+use crate::psparser::{literal_name, py_intern, PSLiteral, Symbol, LIT};
 use crate::utils::{choplist, decode_text, format_int_alpha, format_int_roman};
+
+/// `log = logging.getLogger(__name__)` of `pdfminer/pdfdocument.py`.
+pub(crate) static LOG: Logger = Logger::new("pdfminer.pdfdocument");
+
+/// `decode_text(s)` (`utils`, whose port does not count its frames): its
+/// frame and, for PDFDocEncoding, the generator expression that
+/// `"".join(...)` runs (from C).
+pub(crate) fn decode_text_counted(s: &[u8]) -> PyResult<String> {
+    let _frame = py_frame()?;
+    if !s.starts_with(b"\xfe\xff") {
+        let _entry = eval_entry()?;
+        leaf(1)?;
+    }
+    Ok(decode_text(s))
+}
 
 // pdfminer/pdfdocument.py:102-104 LITERAL_OBJSTM, LITERAL_XREF, LITERAL_CATALOG
 pub static LITERAL_OBJSTM: LazyLock<PSLiteral> = LazyLock::new(|| LIT("ObjStm"));
@@ -125,6 +143,9 @@ impl PDFDocument {
     /// `fallback` and none is valid), the trailers, the encryption and the
     /// catalog.
     pub fn new(parser: PDFParser, password: &str, caching: bool, fallback: bool) -> PyResult<Rc<PDFDocument>> {
+        // the class is called (from C), then its __init__
+        let _entry = eval_entry()?;
+        let _frame = py_frame()?;
         let doc = Rc::new_cyclic(|this| PDFDocument {
             caching,
             xrefs: RefCell::new(Vec::new()),
@@ -143,7 +164,7 @@ impl PDFDocument {
             this: this.clone(),
         });
         let mut parser = Box::new(parser);
-        parser.set_document(Rc::downgrade(&doc));
+        parser.set_document(Rc::downgrade(&doc))?;
         doc.parser_id.set(parser.ext.id);
         doc.put_parser(parser);
         doc.init(password, fallback)?;
@@ -158,9 +179,9 @@ impl PDFDocument {
         PDFDocument::new(parser, password, true, true)
     }
 
-    /// The rest of `__init__`, once the document exists.
+    /// The rest of `__init__`, once the document exists (in the frame of
+    /// `__init__`, taken by [`PDFDocument::new`]).
     fn init(&self, password: &str, fallback: bool) -> PyResult<()> {
-        let _frame = py_frame()?;
         // Retrieve the information of each header that was appended
         // (maybe multiple times) at the end of the document.
         let found = self.with_parser(|p| {
@@ -175,6 +196,8 @@ impl PDFDocument {
                         p.ext.fallback = true;
                         Ok(())
                     })?;
+                    // PDFXRefFallback(): PDFXRef.__init__, called from C
+                    c_called_leaf()?;
                     let mut newxref = PDFXRef::new();
                     self.with_parser(|p| newxref.load_fallback(p))?;
                     self.xrefs.borrow_mut().push(Rc::new(PDFBaseXRef::Fallback(newxref)));
@@ -188,6 +211,7 @@ impl PDFDocument {
                 return Err(exc::PDFSyntaxError("No /Root object! - Is this really a PDF?"));
             };
             i += 1;
+            leaf(1)?; // xref.get_trailer()
             let trailer = xref.get_trailer();
             if trailer.is_empty() {
                 continue;
@@ -361,14 +385,19 @@ impl PDFDocument {
     fn _get_objects(&self, stream: &Rc<PDFStream>) -> PyResult<(Vec<PDFObject>, PDFObject)> {
         let _frame = py_frame()?;
         // (stream.get("Type") is not LITERAL_OBJSTM and settings.STRICT)
+        stream.get_counted("Type", &PDFObject::Null)?;
         let n = match stream.getitem("N") {
-            Ok(n) => n,
+            // cast(int, stream["N"])
+            Ok(n) => {
+                leaf(1)?;
+                n
+            }
             // with settings.STRICT: PDFSyntaxError(f"N is not defined: {stream!r}")
             Err(e) if e.is_instance(ExcKind::KeyError) => PDFObject::Int(PyInt::ZERO),
             Err(e) => return Err(e),
         };
         let mut parser = PDFStreamParser::new(stream.get_data()?)?;
-        parser.set_document(self.weak());
+        parser.set_document(self.weak())?;
         let mut objs = Vec::new();
         loop {
             match parser.nextobject() {
@@ -409,6 +438,8 @@ impl PDFDocument {
             if objid1 != *objid.obj() {
                 return Err(exc::PDFSyntaxError(format!("objid mismatch: {}={}", objid1.repr()?, objid.repr()?)));
             }
+            // kwd != KWD(b"obj")
+            py_intern(Symbol::Keyword(*crate::pdfparser::KEYWORD_OBJ))?;
             if !is_same_keyword(&kwd, &keyword_obj) {
                 return Err(exc::PDFSyntaxError(format!("Invalid object spec: offset={pos}")));
             }
@@ -425,8 +456,8 @@ impl PDFDocument {
         if self.xrefs.borrow().is_empty() {
             return Err(exc::PDFException("PDFDocument is not initialized"));
         }
-        // log.debug("getobj: objid=%r", objid): Logger.debug, isEnabledFor
-        drop(py_frames(2)?);
+        // log.debug("getobj: objid=%r", objid)
+        LOG.debug()?;
         if let Some((obj, _)) = self.cached_objs.borrow().get(objid) {
             return Ok(obj.clone());
         }
@@ -448,7 +479,7 @@ impl PDFDocument {
             }
         };
         // log.debug("register: objid=%r: %r", objid, obj)
-        drop(py_frames(2)?);
+        LOG.debug()?;
         if self.caching {
             self.cached_objs.borrow_mut().insert(objid.clone(), (obj.clone(), genno));
         }
@@ -465,12 +496,13 @@ impl PDFDocument {
             None => {
                 let obj = self._getobj_parse(&pos.index, objid)?;
                 match self.decipher() {
-                    Some(decipher) => decipher_all(&decipher, &objid.decipher_arg()?, &pos.genno, &obj)?,
+                    Some(decipher) => decipher_all(&decipher, objid, &pos.genno, &obj)?,
                     None => obj,
                 }
             }
         };
         if let PDFObject::Stream(s) = &obj {
+            leaf(1)?; // obj.set_objid(objid, genno)
             s.set_objid(objid.clone(), pos.genno.clone());
         }
         Ok(obj)
@@ -480,9 +512,12 @@ impl PDFDocument {
     /// The outline entries `(level, title, dest, action, se)`, depth first;
     /// `PDFNoOutlines` when the catalog has no `/Outlines`.
     pub fn get_outlines(&self) -> PyResult<Outlines> {
+        let _frame = py_frame()?;
         let Some(outlines) = self.catalog().get("Outlines") else {
             return Err(PyErr::new(ExcKind::PDFNoOutlines, ""));
         };
+        // search(self.catalog["Outlines"], 0): the generator is created
+        leaf(1)?;
         Ok(Outlines { stack: vec![OutlineFrame::new(outlines, PyInt::ZERO)], done: false })
     }
 
@@ -490,12 +525,24 @@ impl PDFDocument {
     /// Generate page label strings for the PDF document: one per page,
     /// without end. `PDFNoPageLabels` when the document has none.
     pub fn get_page_labels(&self) -> PyResult<PageLabelsIter> {
+        let _frame = py_frame()?;
         let page_labels = match self.catalog().get("PageLabels") {
             None => Err(exc::KeyError("'PageLabels'")),
-            Some(obj) => PageLabels::new(&obj),
+            Some(obj) => {
+                // PageLabels(...): NumberTree.__init__, called from C
+                let _entry = eval_entry()?;
+                PageLabels::new(&obj)
+            }
         };
         match page_labels {
-            Ok(page_labels) => Ok(page_labels.labels()),
+            Ok(page_labels) => {
+                // page_labels.labels: the property (called from C) creates
+                // the generator
+                let _entry = eval_entry()?;
+                let _property = py_frame()?;
+                leaf(1)?;
+                Ok(page_labels.labels())
+            }
             Err(e) if e.is_instance(ExcKind::PDFTypeError) || e.is_instance(ExcKind::KeyError) => {
                 Err(PyErr::new(ExcKind::PDFNoPageLabels, ""))
             }
@@ -563,12 +610,12 @@ impl PDFDocument {
         // search the last xref table by scanning the file backwards.
         let mut prev: Vec<u8> = Vec::new();
         for line in parser.revreadlines()? {
-            let line = xref::bytes_strip(&line).to_vec();
+            let line = xref::bytes_strip(&line?).to_vec();
             // log.debug("find_xref: %r", line)
-            drop(py_frames(2)?);
+            LOG.debug()?;
             if line == b"startxref" {
                 // log.debug("xref found: pos=%r", prev)
-                drop(py_frames(2)?);
+                LOG.debug()?;
                 if prev.is_empty() || !prev.iter().all(u8::is_ascii_digit) {
                     return Err(exc::PDFNoValidXRef(format!("Invalid xref position, no digit: {}", bytes_repr(&prev))));
                 }
@@ -594,18 +641,19 @@ impl PDFDocument {
     fn read_xref_from(&self, parser: &mut PDFParser, start: &PyInt) -> PyResult<()> {
         let _frame = py_frame()?;
         parser.seek_int(start)?;
-        parser.reset();
+        parser.reset()?;
         let (pos, token) = match parser.nexttoken() {
             Ok(t) => t,
             Err(e) if e.is_instance(ExcKind::PSEOF) => return Err(exc::PDFNoValidXRef("Unexpected EOF")),
             Err(e) => return Err(e),
         };
         // log.debug("read_xref_from: start=%d, token=%r", start, token)
-        drop(py_frames(2)?);
+        LOG.debug()?;
         let xref = if matches!(token, PDFObject::Int(_) | PDFObject::Bool(_)) {
             // XRefStream: PDF-1.5
             parser.seek(pos)?;
-            parser.reset();
+            parser.reset()?;
+            c_called_leaf()?; // PDFXRefStream()
             let mut xref = PDFXRefStream::new();
             xref.load(parser)?;
             PDFBaseXRef::Stream(xref)
@@ -613,15 +661,17 @@ impl PDFDocument {
             if token == PDFObject::Keyword(*crate::pdfparser::KEYWORD_XREF) {
                 parser.nextline()?;
             }
+            c_called_leaf()?; // PDFXRef()
             let mut xref = PDFXRef::new();
             xref.load(parser)?;
             PDFBaseXRef::XRef(xref)
         };
         let xref = Rc::new(xref);
         self.xrefs.borrow_mut().push(xref.clone());
+        leaf(1)?; // xref.get_trailer()
         let trailer = xref.get_trailer();
         // log.debug("trailer: %r", trailer)
-        drop(py_frames(2)?);
+        LOG.debug()?;
         if let Some(xrefstm) = trailer.get("XRefStm") {
             let pos = crate::pdfparser::lend(parser, |_| int_value(&xrefstm))?;
             self.read_xref_from(parser, &pos)?;
@@ -712,7 +762,10 @@ fn lookup(d: &PDFDict, cat: &str, key: &PyVal) -> PyResult<PDFObject> {
     }
     if let Some(names) = d.get("Names") {
         let objs = list_value(&names)?.to_vec();
-        // names = dict(choplist(2, objs)); return names[key]
+        // names = dict(choplist(2, objs)); return names[key]: the generator
+        // takes a frame one level down when created and at each step (from
+        // C, dict())
+        leaf(1)?;
         let mut found: Option<PDFObject> = None;
         for pair in choplist(2, &objs) {
             let k = ObjId::new(pair[0].clone())?;
@@ -777,7 +830,7 @@ impl Outlines {
         loop {
             // The generators of the `yield from` chain are resumed one
             // inside the other: a frame each.
-            let _frames = py_frames(self.stack.len() as u32)?;
+            let _frames = pycompat::recursion::py_frames(self.stack.len() as u32)?;
             let Some(top) = self.stack.last_mut() else {
                 return Ok(None);
             };
@@ -787,7 +840,7 @@ impl Outlines {
                     top.step = 1;
                     top.dict = Some(entry.clone());
                     if entry.contains_key("Title") && (entry.contains_key("A") || entry.contains_key("Dest")) {
-                        let title = decode_text(&str_value(&entry.get("Title").expect("checked"))?);
+                        let title = decode_text_counted(&str_value(&entry.get("Title").expect("checked"))?)?;
                         let dest = entry.get("Dest").unwrap_or(PDFObject::Null);
                         let action = entry.get("A").unwrap_or(PDFObject::Null);
                         let se = entry.get("SE").unwrap_or(PDFObject::Null);
@@ -863,27 +916,36 @@ impl PageLabels {
     /// Format page label value in a specific style
     pub fn _format_page_label(value: &PyInt, style: &PDFObject) -> PyResult<String> {
         let _frame = py_frame()?;
-        let is = |name: &str| matches!(style, PDFObject::Literal(lit) if *lit == LIT(name));
+        // style is LIT(name): LIT is called, then the identity compared
+        let is = |name: &str| -> PyResult<bool> {
+            let lit = LIT(name);
+            py_intern(Symbol::Literal(lit))?;
+            Ok(matches!(style, PDFObject::Literal(s) if *s == lit))
+        };
         Ok(if matches!(style, PDFObject::Null) {
             String::new()
-        } else if is("D") {
+        } else if is("D")? {
             // Decimal arabic numerals
             value.py_str()?
-        } else if is("R") {
+        } else if is("R")? {
             // Uppercase roman numerals
+            leaf(1)?; // format_int_roman
             format_int_roman(value)?.to_uppercase()
-        } else if is("r") {
+        } else if is("r")? {
             // Lowercase roman numerals
+            leaf(1)?; // format_int_roman
             format_int_roman(value)?
-        } else if is("A") {
+        } else if is("A")? {
             // Uppercase letters A-Z, AA-ZZ...
+            leaf(1)?; // format_int_alpha
             format_int_alpha(value)?.to_uppercase()
-        } else if is("a") {
+        } else if is("a")? {
             // Lowercase letters a-z, aa-zz...
+            leaf(1)?; // format_int_alpha
             format_int_alpha(value)?
         } else {
             // log.warning("Unknown page label style: %r", style)
-            drop(py_frames(2)?);
+            LOG.warning()?;
             String::new()
         })
     }
@@ -916,8 +978,9 @@ impl PageLabelsIter {
         let (start, label_dict_unchecked) = ranges[next - 1].clone();
         let label_dict = dict_value(&label_dict_unchecked)?;
         let style = label_dict.get("S").unwrap_or(PDFObject::Null);
-        let prefix =
-            decode_text(&str_value(&label_dict.get("P").unwrap_or_else(|| PDFObject::Bytes(Rc::from(&b""[..]))))?);
+        let prefix = decode_text_counted(&str_value(
+            &label_dict.get("P").unwrap_or_else(|| PDFObject::Bytes(Rc::from(&b""[..]))),
+        )?)?;
         let first_value = int_value(&label_dict.get("St").unwrap_or(PDFObject::Int(PyInt::Small(1))))?;
         let end = if next == ranges.len() {
             // This is the last specified range. It continues until the end
@@ -936,11 +999,12 @@ impl PageLabelsIter {
     }
 
     fn step(&mut self) -> PyResult<Option<String>> {
+        // the generator's frame, resumed
+        let _frame = py_frame()?;
         loop {
             match &mut self.state {
                 LabelsState::Done => return Ok(None),
                 LabelsState::NotStarted => {
-                    let _frame = py_frame()?;
                     let mut ranges = self.tree.0.values()?;
                     // The tree must begin with page index 0
                     let starts_at_0 = ranges

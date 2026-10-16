@@ -48,6 +48,7 @@ step "generated tables are up to date"
 "$PY" oracle/codegen/saslprep_tables.py --check
 "$PY" oracle/codegen/pdfminer_tables.py --check
 "$PY" oracle/codegen/ccitt_tables.py --check
+"$PY" oracle/codegen/py_symbols.py --check
 
 step "unit oracle data (python -m oracle.unit)"
 capped "$PY" -m oracle.unit

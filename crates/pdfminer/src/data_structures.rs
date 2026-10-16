@@ -4,10 +4,10 @@
 //! `/Kids` chain raises `RecursionError` where Python does: each Python
 //! function on the way takes its frame (`pycompat::recursion`), including
 //! `dict_value`/`list_value`/`int_value` and the `resolve1` they call (the
-//! Rust accessors do not count these two frames themselves), the resumptions
-//! of the `choplist` generator and the sort key called by `list.sort`.
+//! accessors count theirs), the resumptions of the `choplist` generator and
+//! the sort key called by `list.sort`.
 
-use pycompat::recursion::{eval_entry, py_frame, py_frames};
+use pycompat::recursion::{eval_entry, py_frame};
 use pycompat::PyResult;
 
 use crate::pdftypes::{dict_value, int_value_obj, list_value, PDFDict, PDFList, PDFObject};
@@ -24,26 +24,20 @@ pub struct NumberTree {
     pub limits: Option<PDFList>,
 }
 
-/// `f(x)` for one of the `*_value` accessors: its frame and `resolve1`'s.
-fn accessor<T>(f: impl FnOnce(&PDFObject) -> PyResult<T>, x: &PDFObject) -> PyResult<T> {
-    let _frames = py_frames(2)?;
-    f(x)
-}
-
 impl NumberTree {
     // pdfminer/data_structures.py:17 NumberTree.__init__
     pub fn new(obj: &PDFObject) -> PyResult<NumberTree> {
         let _frame = py_frame()?;
-        let _obj = accessor(dict_value, obj)?;
+        let _obj = dict_value(obj)?;
         let mut tree = NumberTree { _obj, nums: None, kids: None, limits: None };
         if let Some(nums) = tree._obj.get("Nums") {
-            tree.nums = Some(accessor(list_value, &nums)?);
+            tree.nums = Some(list_value(&nums)?);
         }
         if let Some(kids) = tree._obj.get("Kids") {
-            tree.kids = Some(accessor(list_value, &kids)?);
+            tree.kids = Some(list_value(&kids)?);
         }
         if let Some(limits) = tree._obj.get("Limits") {
-            tree.limits = Some(accessor(list_value, &limits)?);
+            tree.limits = Some(list_value(&limits)?);
         }
         Ok(tree)
     }
@@ -63,7 +57,7 @@ impl NumberTree {
             loop {
                 drop(py_frame()?);
                 let Some(pair) = pairs.next() else { break };
-                items.push((accessor(int_value_obj, &pair[0])?, pair[1].clone()));
+                items.push((int_value_obj(&pair[0])?, pair[1].clone()));
             }
         }
         if let Some(kids) = self.kids.as_ref().filter(|l| !l.is_empty()) {

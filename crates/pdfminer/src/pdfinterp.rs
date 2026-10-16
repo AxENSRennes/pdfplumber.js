@@ -10,6 +10,7 @@ use std::rc::Rc;
 use std::sync::LazyLock;
 
 use pycompat::io::{BytesIO, Pos};
+use pycompat::recursion::{c_called_leaf, eval_entry, leaf, py_frame};
 use pycompat::{exc, ExcKind, PyResult};
 
 use crate::pdftypes::{
@@ -42,6 +43,9 @@ impl PSStackParser<ContentStreams> {
     // pdfminer/pdfinterp.py:257 PDFContentParser.__init__
     /// `PDFContentParser(streams)`; raises `PSEOF` when there is no stream.
     pub fn new(streams: Vec<PDFObject>) -> PyResult<PDFContentParser> {
+        // the class is called (from C)
+        let _entry = eval_entry()?;
+        let _frame = py_frame()?;
         // PSStackParser.__init__(fp=None) is safe only because we've
         // overloaded all the methods that would attempt to access self.fp
         // without first calling self.fillfp().
@@ -54,6 +58,7 @@ impl PSStackParser<ContentStreams> {
     // pdfminer/pdfinterp.py:265 PDFContentParser.fillfp
     /// Opens the next stream when none is open; returns whether it did.
     pub fn fillfp(&mut self) -> PyResult<bool> {
+        let _frame = py_frame()?;
         if self.fp.is_none() {
             let strm = if self.ext.istream < self.ext.streams.len() {
                 let strm = stream_value(&self.ext.streams[self.ext.istream])?;
@@ -72,6 +77,7 @@ impl PSStackParser<ContentStreams> {
     /// Reads the data of an inline image up to `target` followed by a
     /// whitespace (`EI`), or up to `target` (`~>`, for ASCII85 data).
     pub fn get_inline_data(&mut self, pos: Pos, target: &[u8]) -> PyResult<(Pos, Vec<u8>)> {
+        let _frame = py_frame()?;
         self.seek(pos)?;
         let mut i = 0;
         let mut data: Vec<u8> = Vec::new();
@@ -133,12 +139,14 @@ fn strip_trailing_eol(data: &[u8]) -> usize {
 impl PSStackParserExt for ContentStreams {
     // pdfminer/pdfinterp.py:276 PDFContentParser.seek
     fn seek(p: &mut PSStackParser<Self>, pos: Pos) -> PyResult<()> {
+        let _frame = py_frame()?;
         p.fillfp()?;
         p.psstackparser_seek(pos)
     }
 
     // pdfminer/pdfinterp.py:280 PDFContentParser.fillbuf
     fn fillbuf(p: &mut PSStackParser<Self>) -> PyResult<bool> {
+        let _frame = py_frame()?;
         if p.charpos < p.buf.len() {
             return Ok(false);
         }
@@ -167,33 +175,24 @@ impl PSStackParserExt for ContentStreams {
 
     // pdfminer/pdfinterp.py:324 PDFContentParser.flush
     fn flush(p: &mut PSStackParser<Self>) -> PyResult<()> {
-        // self.add_results(*self.popall()). When `results` is empty (always,
-        // from nextobject), the two buffers trade places instead of moving
-        // the entries; otherwise the entries are appended. Either way
-        // `curstack` keeps a buffer for the next objects.
-        let PSStackParser { curstack, results, .. } = p;
-        if results.is_empty() {
-            let empty: Vec<_> = std::mem::take(results).into();
-            *results = std::mem::replace(curstack, empty).into();
-        } else {
-            results.extend(curstack.drain(..));
-        }
-        Ok(())
+        let _frame = py_frame()?;
+        p.add_results_popall()
     }
 
     // pdfminer/pdfinterp.py:331 PDFContentParser.do_keyword
     fn do_keyword(p: &mut PSStackParser<Self>, pos: Pos, token: PSKeyword) -> PyResult<()> {
+        let _frame = py_frame()?;
         let [keyword_bi, keyword_id, _] = p.ext.keywords;
         if token == keyword_bi {
             // inline image within a content stream
-            p.start_type(pos, "inline");
+            p.start_type(pos, "inline")?;
         } else if token == keyword_id {
             match inline_image(p, pos) {
                 Err(e) if e.is_instance(ExcKind::PSTypeError) && !settings::STRICT => {}
                 other => other?,
             }
         } else {
-            p.push((pos, PDFObject::Keyword(token)));
+            p.push((pos, PDFObject::Keyword(token)))?;
         }
         Ok(())
     }
@@ -206,6 +205,9 @@ fn inline_image(p: &mut PDFContentParser, pos: Pos) -> PyResult<()> {
         let error_msg = format!("Invalid dictionary construct: {}", PDFObject::list_repr(&objs)?);
         return Err(exc::PSTypeError(error_msg));
     }
+    // {literal_name(k): resolve1(v) for (k, v) in choplist(2, objs)}: the
+    // generator's frame one level down (created, then resumed)
+    leaf(1)?;
     let d = PDFDict::new();
     for pair in choplist(2, &objs) {
         d.insert(literal_name(&pair[0])?.into(), resolve1_none(&pair[1])?);
@@ -227,11 +229,13 @@ fn inline_image(p: &mut PDFContentParser, pos: Pos) -> PyResult<()> {
         // it may be necessary for decoding
         data.extend_from_slice(eos);
     }
+    // PDFStream(d, data): its __init__, called from C
+    c_called_leaf()?;
     let obj = PDFStream::new(d, Rc::from(data), None);
-    p.push((pos, PDFObject::Stream(Rc::new(obj))));
+    p.push((pos, PDFObject::Stream(Rc::new(obj))))?;
     if eos == b"EI" {
         // otherwise it is still in the stream
-        p.push((pos, PDFObject::Keyword(p.ext.keywords[2])));
+        p.push((pos, PDFObject::Keyword(p.ext.keywords[2])))?;
     }
     Ok(())
 }
