@@ -249,7 +249,8 @@ fn opt_bbox(b: &Option<Bbox>) -> PyValue {
 /// pattern's named groups (`self->pattern->groupindex`, only set when the
 /// pattern has some), after being hashed (`TypeError` for an unhashable
 /// one); a number outside `0..m.groups` or a name not found is
-/// `IndexError("no such group")`.
+/// `IndexError("no such group")` (a number past the last group: from
+/// `TextMap::search_with`, which reads the group's span).
 ///
 /// JavaScript gives the named groups of each match (`indices.groups`:
 /// name → span, `None` for a group that did not take part), not their
@@ -259,25 +260,19 @@ fn opt_bbox(b: &Option<Bbox>) -> PyValue {
 /// groups).
 fn group_index(index: &PyValue, m: &RegexMatch, named: Option<&NamedGroups>) -> PyResult<usize> {
     let no_such_group = || exc::IndexError("no such group");
-    let i = match index {
-        PyValue::Bool(b) => usize::from(*b),
-        PyValue::Int(i) => i.as_i64().and_then(|i| usize::try_from(i).ok()).ok_or_else(no_such_group)?,
+    match index {
+        PyValue::Bool(b) => Ok(usize::from(*b)),
+        PyValue::Int(i) => i.as_i64().and_then(|i| usize::try_from(i).ok()).ok_or_else(no_such_group),
         other => {
             let Some(named) = named else { return Err(no_such_group()) };
             HashKey::new(other.clone())?;
             let PyValue::Str(name) = other else { return Err(no_such_group()) };
             let (_, span) = named.iter().find(|(n, _)| n == name).ok_or_else(no_such_group)?;
-            return m
-                .spans
+            m.spans
                 .iter()
                 .position(|s| s == span)
-                .ok_or_else(|| exc::ValueError(format!("the span of group {name:?} is no group's span")));
+                .ok_or_else(|| exc::ValueError(format!("the span of group {name:?} is no group's span")))
         }
-    };
-    if i < m.spans.len() {
-        Ok(i)
-    } else {
-        Err(no_such_group())
     }
 }
 
