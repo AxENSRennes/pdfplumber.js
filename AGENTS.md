@@ -8,3 +8,4 @@
 - Python pdfplumber/pdfminer (`.venv`, Python 3.12, sources in `upstream/`) is the oracle. Never encode expected behavior by hand when Python can produce it; create test PDFs when needed.
 - A difference with Python is fixed at its cause, found by following the stage traces. Never add a font name, file fingerprint or unexplained threshold to make a case pass.
 - The previous pdf.js-based port is tagged `legacy-pdfjs`; read it only as a source of edge-case ideas, never as a reference for behavior.
+- Run every exploratory or measurement script (profilers, depth probes, one-off corpus scans) under explicit limits, e.g. `timeout 15m prlimit --as=4G -- .venv/bin/python probe.py`, and keep heavy test runs sequential. In October 2026 an unbounded probe that recorded the whole call stack on every call grew to 18 GB, froze the 22 GB dev VPS for 9 hours and cost an in-flight workflow.
