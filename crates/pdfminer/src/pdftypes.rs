@@ -1045,6 +1045,17 @@ impl PDFStream {
 
     // pdfminer/pdftypes.py:309 PDFStream.decode
     pub fn decode(&self) -> PyResult<()> {
+        self.decode_with(PDFStream::get_filters)
+    }
+
+    /// [`PDFStream::decode`], with `get_filters` called where `decode`
+    /// calls `self.get_filters()`, after the decipher callback: a caller
+    /// that counts the Python frames of the decode (`pdffont`'s
+    /// `get_data`) takes those of `get_filters` there, around the call.
+    pub fn decode_with(
+        &self,
+        get_filters: impl FnOnce(&PDFStream) -> PyResult<Vec<(PDFObject, PDFObject)>>,
+    ) -> PyResult<()> {
         let rawdata = self.rawdata.borrow().clone();
         let Some(rawdata) = rawdata.filter(|_| self.data.borrow().is_none()) else {
             let show = |b: &Option<PyBytes>| b.as_ref().map_or_else(|| "None".to_owned(), |b| bytes_repr(b));
@@ -1062,7 +1073,7 @@ impl PDFStream {
             };
             data = decipher(&objid, &genno, &data, Some(&self.attrs))?.into();
         }
-        let filters = self.get_filters()?;
+        let filters = get_filters(self)?;
         if filters.is_empty() {
             *self.data.borrow_mut() = Some(data);
             *self.rawdata.borrow_mut() = None;

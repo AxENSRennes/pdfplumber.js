@@ -117,12 +117,19 @@ bord par le cache) et le format de chaque ligne. Règles communes :
   cadres sous l'appelant, trois au premier appel d'un niveau sur un logger,
   `_acquireLock` remplissant le cache), ce qui décide où tombe une
   `RecursionError` dans une récursion profonde (`create_pages` journalise à
-  chaque nœud). Coupée, elle coûte exactement ce que coûte la configuration
-  par défaut (aucun gestionnaire, niveau WARNING) : la référence est un
-  utilisateur sans configuration de logging ; une configuration DEBUG
-  exécute des gestionnaires et peut avancer la `RecursionError`. Le port
-  compte ces cadres comme les autres (« Profondeur de récursion » de
-  `architecture.md`).
+  chaque nœud). La référence est donc la journalisation coupée
+  (`logging.disable(logging.CRITICAL)`), comme l'exécute l'oracle et comme
+  se comporte l'API JS, qui n'émet aucun message. Ce n'est pas la
+  configuration par défaut d'un utilisateur (aucun gestionnaire, niveau
+  WARNING) : `log.debug` y coûte la même chose, mais `log.warning` y est
+  actif et exécute `_log`, `findCaller`, `makeRecord` et le gestionnaire
+  `lastResort`, bien plus profonds (12 cadres sous l'appelant de
+  l'avertissement de `PDFFont._parse_bbox`, contre 4 coupée), et dont la
+  profondeur dépend des arguments formatés ; une configuration DEBUG fait de
+  même pour chaque `log.debug`. Près de la limite, ces configurations
+  peuvent avancer la `RecursionError` : non modélisé. Le port compte les
+  cadres de la journalisation coupée comme les autres (« Profondeur de
+  récursion » de `architecture.md`, `pycompat::recursion::log_frames`).
 - `oracle.stages.entry_depth()` mesure la profondeur (cadres Python, unités
   C restantes, `oracle/depth.py`) où s'exécute le corps d'une fonction
   d'étape ; `pdftrace::stages::STAGE_ENTRY` la reprend et un test unitaire

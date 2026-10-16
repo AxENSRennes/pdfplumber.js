@@ -12,7 +12,9 @@
 //!
 //! Frames: the construction takes those of `__init__` and of
 //! `PSStackParser.__init__` (`PSStackParser::init_frames`, 7 below the
-//! caller, 8 the first time the `psparser` logger is asked); `get_encoding`
+//! caller, 8 the first time the `psparser` logger is asked: when no other
+//! parser was created since its cache was cleared, as the seek of every
+//! parser fills it, `PSStackParser::psbaseparser_seek`); `get_encoding`
 //! and `do_keyword` (with `nextobject`'s frame and `log.debug`) take
 //! theirs; `psparser`'s below `nextobject` are not modeled and never go
 //! deeper than the construction.

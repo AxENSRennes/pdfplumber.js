@@ -154,28 +154,34 @@ fn stream_value(x: &PDFObject) -> PyResult<Rc<PDFStream>> {
     Ok(Rc::new(PDFStream::new(PDFDict::new(), Rc::from(&[][..]), None)))
 }
 
-/// `stream.get_data()`, with the frames of `get_data`, `decode` and
+/// `stream.get_data()` (pdfminer/pdftypes.py:399), with the frames of
+/// `get_data` and `decode`, held for the whole decode, and those of
 /// `get_filters` (the `get_any` and `resolve1` it calls; `PDFObjRef.resolve`
-/// and `getobj` count theirs). `get_any`, 4 frames below the caller of
-/// `get_data`, is the deepest point of a decode by Flate (zlib is C code),
-/// ASCIIHex, RunLength or no filter, predictors included (`int_value` ->
-/// `resolve1` is as deep, the filter functions one frame less; measured
-/// with `oracle/depth_probe.py`), so those are not taken again. Not
-/// modeled: the filters that go deeper, ASCII85 (`base64.a85decode`, 5),
-/// LZW (its decoder's generator and `log.debug`, 6 or 7), a corrupted Flate
-/// stream (`decompress_corrupted`'s `log.warning`, 5 to 7), CCITT.
+/// and `getobj` count theirs), taken where `decode` calls it, after the
+/// decipher callback ([`PDFStream::decode_with`]).
+///
+/// Below them, the code that counts its own frames runs at Python's depth:
+/// the decipher callback of an encrypted document's stream
+/// (`PDFStandardSecurityHandler.decrypt` and what it calls, deeper than
+/// `get_any` for RC4 and AES) and `ccittfaxdecode`.
+/// Of the rest, `get_any`, 4 frames below the caller of `get_data`, is the
+/// deepest point of a decode by Flate (zlib is C code), ASCIIHex, RunLength
+/// or no filter, predictors included (`int_value` -> `resolve1` is as deep,
+/// the filter functions one frame less; measured with
+/// `oracle/depth_probe.py`), so those are not taken again. Not modeled: the
+/// filters that go deeper, ASCII85 (`base64.a85decode`, 5), LZW (its
+/// decoder's generator and `log.debug`, 6 or 7), a corrupted Flate stream
+/// (`decompress_corrupted`'s `log.warning`, 5 to 7).
 fn get_data(stream: &PDFStream) -> PyResult<Rc<[u8]>> {
     let _frame = frames::frame()?;
     if stream.data().is_none() {
         let _decode = frames::frame()?;
-        let _get_filters = frames::frame()?;
-        frames::leaf(1)?; // get_any
-        let _resolve1 = frames::frame()?;
-        match stream.get_filters() {
-            // decode raises it again below, at the same point
-            Err(e) if e.is_instance(ExcKind::RecursionError) => return Err(e),
-            _ => {}
-        }
+        stream.decode_with(|s| {
+            let _get_filters = frames::frame()?;
+            frames::leaf(1)?; // get_any
+            let _resolve1 = frames::frame()?;
+            s.get_filters()
+        })?;
     }
     stream.get_data()
 }

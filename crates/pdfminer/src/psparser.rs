@@ -1087,7 +1087,18 @@ impl<X: PSStackParserExt> PSStackParser<X> {
 
     // pdfminer/psparser.py:177 PSBaseParser.seek
     /// `PSBaseParser.seek(self, pos)`.
+    ///
+    /// Its `log.debug("seek: %r", pos)` fills the cache of the
+    /// `pdfminer.psparser` logger (the frames of the call are not counted:
+    /// `psparser` does not count its own yet), which decides what the next
+    /// `log.debug` of `psparser` costs to the callers that count frames
+    /// (`Type1FontHeaderParser`, `CMapParser`): every parser seeks in its
+    /// constructor, so the cache is filled once any parser exists (a
+    /// document's `PDFParser`), and the other logging calls of `psparser`
+    /// (`nexttoken`, `nextobject`...), which come after that seek, change
+    /// nothing more.
     pub fn psbaseparser_seek(&mut self, pos: Pos) -> PyResult<()> {
+        pycompat::recursion::fill_logger_cache("pdfminer.psparser", pycompat::recursion::DEBUG);
         self.fp_mut("seek")?.seek(pos)?;
         // reset the status for nextline()
         self.bufpos = pos;

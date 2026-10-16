@@ -64,15 +64,15 @@ use std::rc::{Rc, Weak};
 use pdfminer::casting::IterItem;
 use pdfminer::cmapdb::{AttrValue, CMapBase, CMapDB, DirCMapProvider, Unichr, UnicodeMap};
 use pdfminer::layout::{CharDisp, LTCharFont, LTPayload};
+use pdfminer::pdfdocument::{security_handler_registry, PDFStandardSecurityHandler};
 use pdfminer::pdffont::cff::SidName;
 use pdfminer::pdffont::frames::clear_logger_cache;
-use pdfminer::pdfdocument::{security_handler_registry, PDFStandardSecurityHandler};
 use pdfminer::pdffont::{
     get_font, get_widths, get_widths2, getdict, CFFFont, FontKind, FontName, PDFFont, TrueTypeFont,
     Type1FontHeaderParser, WidthKey,
 };
 use pdfminer::pdftypes::{int_value, DecipherCallable, PDFDict, PDFList, PDFObjRef, PDFObject, PDFResolver, PDFStream};
-use pdfminer::psparser::{PSBaseParser, LIT_bytes, KWD, LIT};
+use pdfminer::psparser::{LIT_bytes, PSBaseParser, KWD, LIT};
 use pdfminer::utils::{Operand, SeqKind};
 use pdftrace::canon::{canon, sha256_hex};
 use pdftrace::typed_json::{self, Json};

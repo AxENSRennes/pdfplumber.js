@@ -175,13 +175,20 @@ pub fn clear_logger_cache() {
 }
 
 /// The Python frames of `log.<level>(...)` on the logger `logger`
-/// (`"pdfminer.cmapdb"`) while logging is disabled, or at its default
-/// configuration, which costs the same (`docs/verification.md`):
-/// `Logger.<level>` and `Logger.isEnabledFor`, two frames below the caller;
-/// three the first time the level is asked of the logger since its cache
-/// was cleared (`isEnabledFor` fills `Logger._cache` under
+/// (`"pdfminer.cmapdb"`) while the level is disabled (`docs/verification.md`,
+/// "Étapes": the reference is `logging.disable(logging.CRITICAL)`, as the
+/// oracle runs): `Logger.<level>` and `Logger.isEnabledFor`, two frames
+/// below the caller; three the first time the level is asked of the logger
+/// since its cache was cleared (`isEnabledFor` fills `Logger._cache` under
 /// `_acquireLock`). The cache is filled only when the third frame was
 /// entered.
+///
+/// An enabled level costs more: at Python's default configuration (no
+/// handler, level `WARNING`), `log.debug` costs the same, but `log.warning`
+/// runs `_log`, `findCaller`, `makeRecord` and the `lastResort` handler,
+/// whose formatting of the arguments may go deeper still (12 frames below
+/// the caller of `PDFFont._parse_bbox`'s warning, against 4 disabled):
+/// not modeled, the port emits no log records.
 pub fn log_frames(logger: &'static str, level: u32) -> PyResult<()> {
     let cached = LOGGER_CACHE.with(|c| c.borrow().contains(&(logger, level)));
     if cached {
@@ -191,6 +198,19 @@ pub fn log_frames(logger: &'static str, level: u32) -> PyResult<()> {
         LOGGER_CACHE.with(|c| c.borrow_mut().push((logger, level)));
     }
     Ok(())
+}
+
+/// The effect of `log.<level>(...)` on the cache of `logger` alone, for a
+/// logging call whose frames the caller does not count yet (`psparser`'s
+/// `log.debug` in `PSBaseParser.seek`): the next [`log_frames`] of that
+/// level on that logger takes two frames, as in Python after any such call.
+pub fn fill_logger_cache(logger: &'static str, level: u32) {
+    LOGGER_CACHE.with(|c| {
+        let mut cache = c.borrow_mut();
+        if !cache.contains(&(logger, level)) {
+            cache.push((logger, level));
+        }
+    });
 }
 
 #[cfg(test)]
@@ -216,6 +236,11 @@ mod tests {
             assert!(log_frames("b", DEBUG).is_err());
             clear_logger_cache();
             assert!(log_frames("a", DEBUG).is_err());
+            // a call whose frames are not counted fills the cache all the same
+            fill_logger_cache("a", DEBUG);
+            fill_logger_cache("a", DEBUG);
+            log_frames("a", DEBUG).expect("cached: two frames");
+            assert!(log_frames("a", WARNING).is_err());
         });
         clear_logger_cache();
     }

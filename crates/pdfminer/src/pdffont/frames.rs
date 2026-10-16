@@ -19,13 +19,16 @@
 //!   their `log.debug`) and the constructors of its maps (`CMapDB` and
 //!   `CMapParser` count their own frames) and
 //!   `encodingdb.EncodingDB.get_encoding`;
-//! - logging calls: `log.debug(...)` runs `Logger.debug` and
-//!   `Logger.isEnabledFor` (two frames below the caller) and, the first
-//!   time a level is asked of a logger since its cache was cleared
-//!   (`logging.disable`, which the oracle runs before a stage or a unit
-//!   case), `_acquireLock` (a third): [`log_frames`], on the per-thread
-//!   model of the loggers' caches of `pycompat::recursion`, shared with
-//!   `cmapdb` and `psparser` callers; [`clear_logger_cache`] is
+//! - logging calls, logging disabled (the reference, `docs/verification.md`:
+//!   an enabled `log.warning` goes deeper, not modeled): `log.debug(...)`
+//!   runs `Logger.debug` and `Logger.isEnabledFor` (two frames below the
+//!   caller) and, the first time a level is asked of a logger since its
+//!   cache was cleared (`logging.disable`, which the oracle runs before a
+//!   stage or a unit case), `_acquireLock` (a third): [`log_frames`], on
+//!   the per-thread model of the loggers' caches of `pycompat::recursion`,
+//!   shared with `cmapdb` and `psparser` (whose `PSBaseParser.seek` fills
+//!   the cache of its logger, so a document's parser leaves it filled
+//!   before any font is created); [`clear_logger_cache`] is
 //!   `logging.disable()`.
 //!
 //! Some of these frames are never the deepest of a font's creation, so
