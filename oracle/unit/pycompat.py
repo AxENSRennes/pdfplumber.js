@@ -547,7 +547,10 @@ def gen_pystr(rng):
     """``str`` operations of ``pycompat::PyStr`` on strings with lone
     surrogates, combining marks, Hangul and compatibility characters."""
     fixed = ["", "\ud800", "😀", "\U0001f600", "a\udc00b", "é", "ẛ̣", "각",
-             "각", "ﬁ", "ﷺ", "̈́", "क़", " \t\n", "\x1c", "'\"", "\ud800́"]
+             "각", "ﬁ", "ﷺ", "̈́", "क़", " \t\n", "\x1c", "'\"", "\ud800́",
+             # the bounds of each UTF-8 length
+             "\x7f", "\x80", "\u07ff", "\u0800", "\ud7ff", "\ue000", "\uffff", "\U00010000", "\U0010ffff",
+             "\x7f\x80\u07ff\u0800\uffff\U00010000\U0010ffff"]
     strs = fixed + [rand_pystr(rng, rng.randint(0, 10)) for _ in range(6000)]
     for s in strs:
         for form in ("NFC", "NFKC", "NFD", "NFKD"):
