@@ -489,7 +489,7 @@ def user_arg_cases():
     # edge of their orientation exists)
     for lines, strategies in [("abc", ["explicit"]), ("12", ["explicit"]), (b"\x10\x20\x30\x40", ["explicit", "lines"]),
                               ({"a": 1, "b": 2}, ["explicit"]), (5, ["explicit", "lines"]), (True, ["explicit", "lines"]),
-                              (2.5, ["explicit", "lines"]), (["10", "20"], ["explicit"]), ({"x0": 1}, ["explicit", "lines"]),
+                              (2.5, ["explicit", "lines"]), (["10", "20"], ["explicit"]), ({"x0": 1}, ["explicit"]), ([{"x0": 1}], ["explicit", "lines"]),
                               ("\ud800\ud801", ["explicit"]), ([b"x", b"y"], ["explicit"])]:
         for strategy in strategies:
             ops.append(("tables", {"vertical_strategy": strategy, "explicit_vertical_lines": lines,
