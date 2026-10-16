@@ -90,6 +90,7 @@ from typing import Any
 from pdfminer import pdfexceptions, pdffont, psexceptions
 from pdfminer.cmapdb import CMap, CMapDB, IdentityCMap, PyCMap, UnicodeMap
 from pdfminer.pdfdevice import PDFDevice
+from pdfminer.pdfdocument import PDFStandardSecurityHandlerV5
 from pdfminer.pdffont import (
     CFFFont,
     PDFCIDFont,
@@ -104,7 +105,7 @@ from pdfminer.pdfinterp import PDFPageInterpreter, PDFResourceManager
 from pdfminer.pdfparser import PDFSyntaxError
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdftypes import PDFObjRef, PDFStream
-from pdfminer.psparser import KWD, LIT, PSKeyword, PSLiteral
+from pdfminer.psparser import KWD, LIT, PSKeyword, PSLiteral, PSStackParser
 
 from ..canon import Named, canon, exception_message, exception_name
 from ..codegen import cmaps as codegen_cmaps
@@ -113,6 +114,7 @@ from ..stages._common import open_document
 from ..typed_json import decode as typed_decode
 from ..typed_json import encode as typed_encode
 from ._common import at_depth, depth_here, oracle_sources, require_oracle_python, unit_dir, write_cases, write_meta
+from .crypto import aes_cbc, deep_handlers, factory_of
 
 MODULE = "fonts"
 FILE_TIMEOUT_S = 180
@@ -176,12 +178,20 @@ DEEP_GETOBJ_CALLS = 8
 class FontDoc:
     """A document whose ``getobj`` reads a table of objects, or raises the
     exception recorded for an object number (``PDFObjectNotFound`` for one
-    missing from both); from ``DEEP_OBJIDS`` up, through more frames."""
+    missing from both); from ``DEEP_OBJIDS`` up, through more frames.
+
+    An encrypted document also has ``cipher``, ``[docid, param, password]``
+    (what ``PDFDocument._initialize_password`` builds its security handler
+    from), and ``decipher``, that handler's ``decrypt``: every stream of the
+    case with an object number gets it, as ``PDFParser`` gives it the
+    document's (``load_doc``, ``bind``)."""
 
     def __init__(self) -> None:
         self.table: dict[Any, Any] = {}
         #: objid -> (exception class, args)
         self.errors: dict[Any, tuple[type, tuple]] = {}
+        self.cipher: list | None = None
+        self.decipher = None
 
     def getobj(self, objid):
         if type(objid) is int and objid >= DEEP_OBJIDS:
@@ -235,7 +245,8 @@ def bind(value, doc):
     if isinstance(value, dict):
         return {k: bind(x, doc) for k, x in value.items()}
     if isinstance(value, PDFStream):
-        s = PDFStream(bind(value.attrs, doc), value.rawdata)
+        decipher = doc.decipher if value.objid is not None else None
+        s = PDFStream(bind(value.attrs, doc), value.rawdata, decipher)
         s.data = value.data
         s.objid = value.objid
         s.genno = value.genno
@@ -254,9 +265,19 @@ def dump_doc(doc: FontDoc) -> tuple[list, list]:
     return table, errors
 
 
-def load_doc(table, errors) -> FontDoc:
-    """The document of decoded ``table`` and ``errors``."""
+def security_handler(cipher):
+    """The security handler of ``[docid, param, password]``, built as
+    ``PDFDocument._initialize_password`` builds it."""
+    docid, param, password = cipher
+    return factory_of(param)(docid, param, password)
+
+
+def load_doc(table, errors, cipher=None) -> FontDoc:
+    """The document of decoded ``table``, ``errors`` and ``cipher``."""
     doc = FontDoc()
+    if cipher is not None:
+        doc.cipher = cipher
+        doc.decipher = security_handler(cipher).decrypt
     for objid, obj in table:
         doc.table[objid] = bind(obj, doc)
     for objid, name, args, _text in errors:
@@ -364,12 +385,12 @@ def query_depth():
     return at_depth(lambda: None)[0]
 
 
-def run_font(spec, table, errors, strings, probes):
+def run_font(spec, table, errors, strings, probes, cipher=None):
     """``(depth, query depth, outcome)``: the font built from the decoded
     dump, its attributes and the queries; ``outcome`` is the canonical
     text."""
     clear_logger_caches()
-    doc = load_doc(table, errors)
+    doc = load_doc(table, errors, cipher)
     spec = bind(spec, doc)
     rsrcmgr = PDFResourceManager()
     depth, font = at_depth(rsrcmgr.get_font, None, spec)
@@ -382,9 +403,9 @@ def run_font(spec, table, errors, strings, probes):
 def font_case(spec, doc: FontDoc, strings=SAMPLE_STRINGS, probes=PROBES):
     """A case of the set ``fonts``: dump, decode, run."""
     table, errors = dump_doc(doc)
-    spec_j, table_j, errors_j = roundtrip(spec, table, errors)
-    depth, qdepth, out = run_font(spec_j, table_j, errors_j, strings, probes)
-    return [spec, table, errors, list(strings), list(probes), depth, qdepth], out
+    spec_j, table_j, errors_j, cipher_j = roundtrip(spec, table, errors, doc.cipher)
+    depth, qdepth, out = run_font(spec_j, table_j, errors_j, strings, probes, cipher_j)
+    return [spec, table, errors, list(strings), list(probes), depth, qdepth, doc.cipher], out
 
 
 # -- widths ---------------------------------------------------------------------
@@ -1282,10 +1303,70 @@ class Spec:
         return self.type0()
 
 
+# -- encrypted documents ----------------------------------------------------------
+
+
+def cipher_specs(rng) -> list[list]:
+    """``[docid, param, password]`` of a handler of every decryption path
+    (``oracle.unit.crypto.deep_handlers``: RC4 40 and 128 bits, V4 with RC4,
+    AES-128 and identity crypt filters, AES-256, and an AES-256 handler whose
+    48-byte key AES refuses)."""
+    return [[docid, param, password] for _name, docid, param, password in deep_handlers(rng)]
+
+
+def encrypt_data(h, objid, genno, plain: bytes, attrs, rng) -> bytes:
+    """Raw data that ``h.decrypt(objid, genno, raw, attrs)`` deciphers to
+    ``plain``: ``plain`` itself for an identity filter, RC4 being its own
+    inverse, AES-CBC under the key of the object (PKCS#7 padding, which
+    ``unpad_aes`` removes); for a handler whose decryption raises, and for
+    one stream in ten, a 5-byte stream (an IV that ``modes.CBC`` refuses, or
+    RC4 data)."""
+    if rng.random() < 0.1:
+        return rng.randbytes(5)
+    once = attempt(h.decrypt, objid, genno, plain, attrs)
+    if once == plain:
+        return plain
+    if isinstance(once, bytes) and attempt(h.decrypt, objid, genno, once, attrs) == plain:
+        return once
+    if isinstance(h, PDFStandardSecurityHandlerV5):
+        key = h.key
+    else:
+        salted = h.key + struct.pack("<L", objid)[:3] + struct.pack("<L", genno)[:2] + b"sAlT"
+        key = hashlib.md5(salted).digest()[:16]
+    iv = rng.randbytes(16)
+    n = 16 - len(plain) % 16
+    try:
+        raw = iv + aes_cbc(key, iv, plain + bytes([n]) * n)
+    except ValueError:  # a key of a size AES refuses: the decryption raises
+        return iv + bytes(32)
+    assert h.decrypt(objid, genno, raw, attrs) == plain
+    return raw
+
+
+def encrypt_case(rng, spec, doc: FontDoc, cipher) -> None:
+    """Makes the document of a generated case an encrypted one: every stream
+    of the case gets an object number (``1000 + k``) and a generation, and
+    its raw data is encrypted for the handler of ``cipher`` (the streams of
+    an encrypted document, deciphered by ``PDFStream.decode``)."""
+    h = security_handler(cipher)
+    doc.cipher = cipher
+    for k, s in enumerate(streams_of(spec, doc)):
+        s.objid, s.genno = 1000 + k, rng.choice([0, 0, 0, 1, 7, 65535])
+        s.rawdata = encrypt_data(h, s.objid, s.genno, s.rawdata, s.attrs, rng)
+
+
 def font_spec_cases(rng):
     for _ in range(3000):
         doc = FontDoc()
         spec = Spec(rng, doc).any()
+        yield font_case(spec, doc)
+    # fonts of encrypted documents: their streams deciphered by a security
+    # handler of every kind
+    ciphers = cipher_specs(rng)
+    for k in range(400):
+        doc = FontDoc()
+        spec = Spec(rng, doc).any()
+        encrypt_case(rng, spec, doc, ciphers[k % len(ciphers)])
         yield font_case(spec, doc)
     # every predefined CMap, as the encoding of a CID font and of a Type 0
     # font, with its character collection's unicode map
@@ -1356,9 +1437,9 @@ def threshold(run):
     return run(lo), run(lo + 1)
 
 
-def built_font(spec_j, table_j, errors_j):
+def built_font(spec_j, table_j, errors_j, cipher_j=None):
     """A fresh font of a decoded dump, built at the generator's depth."""
-    doc = load_doc(table_j, errors_j)
+    doc = load_doc(table_j, errors_j, cipher_j)
     return PDFResourceManager().get_font(None, bind(spec_j, doc))
 
 
@@ -1446,6 +1527,30 @@ def depth_specs(rng):
             spec.pop("ToUnicode", None)
         spec["FontDescriptor"] = {"FontBBox": [0, 0, 1000, 1000], key: PDFStream(attrs, packed)}
         yield spec, doc
+    # fonts of encrypted documents: the security handler deciphers each
+    # stream inside PDFStream.decode, under get_data and decode (AES goes
+    # deeper than the filters), and in front of a failing filter
+    for cipher in cipher_specs(rng):
+        for kind in ("tounicode-simple", "tounicode-cid", "fontfile", "fontfile2", "fontfile-deep"):
+            doc = FontDoc()
+            s = Spec(rng, doc)
+            if kind.startswith("tounicode"):
+                spec = s.simple(LIT("TrueType")) if kind == "tounicode-simple" else s.cid()
+                spec["ToUnicode"] = s.stream(s.tounicode_data(), compress=rng.random() < 0.5)
+            else:
+                program = tt_program(rng) if kind == "fontfile2" else type1_program(rng)
+                packed = zlib.compress(program)
+                flate = s.deep_ref(LIT("FlateDecode")) if kind == "fontfile-deep" else LIT("FlateDecode")
+                attrs = {"Filter": flate, "Length": len(packed), "Length1": len(program)}
+                if kind == "fontfile2":
+                    spec = s.cid(ordering=b"Identity")
+                    spec.pop("ToUnicode", None)
+                else:
+                    spec = {"Type": LIT("Font"), "Subtype": LIT("Type1"), "BaseFont": LIT("ABCDEF+Foo")}
+                key = "FontFile2" if kind == "fontfile2" else "FontFile"
+                spec["FontDescriptor"] = {"FontBBox": [0, 0, 1000, 1000], key: PDFStream(attrs, packed)}
+            encrypt_case(rng, spec, doc, cipher)
+            yield spec, doc
 
 
 def clear_cmap_caches() -> None:
@@ -1473,68 +1578,86 @@ def depth_cases(rng):
         if k % 20 == 0:
             print(f"depth: font {k}", file=sys.stderr, flush=True)
         table, errors = dump_doc(doc)
-        spec_j, table_j, errors_j = roundtrip(spec, table, errors)
+        yield from font_depth_cases(spec, table, errors, doc.cipher, QUERIES)
+
+
+def font_depth_cases(spec, table, errors, cipher, queries):
+    """The cases of the set ``depth`` for one dumped font: ``[spec, table,
+    errors, op, arg, depth, depth + 1, cipher]`` and the outcomes at both
+    depths, for its creation (``get_font``; ``get_font_cold``, the first
+    loads of its predefined CMaps; ``get_font@parsed``, after a
+    ``PSStackParser`` was created, as a document's parser is before any
+    font) and for each of ``queries``."""
+    spec_j, table_j, errors_j, cipher_j = roundtrip(spec, table, errors, cipher)
+    clear_logger_caches()
+    font = attempt(built_font, spec_j, table_j, errors_j, cipher_j)  # loads the predefined CMaps once
+
+    def build(extra, parsed=False):
         clear_logger_caches()
-        font = attempt(built_font, spec_j, table_j, errors_j)  # loads the predefined CMaps once
+        if parsed:
+            # PSBaseParser.seek's log.debug fills the cache of the
+            # pdfminer.psparser logger
+            PSStackParser(io.BytesIO(b""))
+        doc2 = load_doc(table_j, errors_j, cipher_j)
+        spec2 = bind(spec_j, doc2)
+        depth, out = nested(extra, PDFResourceManager().get_font, None, spec2)
+        return depth, out if isinstance(out, Exception) else font_attrs(out)
 
-        def build(extra):
-            clear_logger_caches()
-            doc2 = load_doc(table_j, errors_j)
-            spec2 = bind(spec_j, doc2)
-            depth, out = nested(extra, PDFResourceManager().get_font, None, spec2)
-            return depth, out if isinstance(out, Exception) else font_attrs(out)
+    def case(op, arg, found):
+        (d0, out0), (d1, out1) = found
+        assert is_recursion(out1) and not is_recursion(out0), (op, out0, out1)
+        return [spec, table, errors, op, arg, d0, d1, cipher], [canon_or_hash(out0), canon_or_hash(out1)]
 
-        found = threshold(build)
+    found = threshold(build)
+    if found is not None:
+        yield case("get_font", None, found)
+
+    # the same after a generic parser was created (only a font with a
+    # stream can create a parser itself)
+    if streams_of(spec_j, load_doc(table_j, errors_j)):
+        found = threshold(lambda extra: build(extra, parsed=True))
         if found is not None:
-            (d0, out0), (d1, out1) = found
-            assert is_recursion(out1) and not is_recursion(out0), ("get_font", out0, out1)
-            yield [spec, table, errors, "get_font", None, d0, d1], [canon_or_hash(out0), canon_or_hash(out1)]
+            yield case("get_font@parsed", None, found)
 
-        # the same where the font loads its predefined CMaps (first loads)
-        clear_cmap_caches()
-        clear_logger_caches()
-        attempt(built_font, spec_j, table_j, errors_j)
-        if CMapDB._cmap_cache or CMapDB._umap_cache:
+    # the same where the font loads its predefined CMaps (first loads)
+    clear_cmap_caches()
+    clear_logger_caches()
+    attempt(built_font, spec_j, table_j, errors_j, cipher_j)
+    if CMapDB._cmap_cache or CMapDB._umap_cache:
 
-            def build_cold(extra):
-                clear_cmap_caches()
-                return build(extra)
+        def build_cold(extra):
+            clear_cmap_caches()
+            return build(extra)
 
-            found = threshold(build_cold)
-            if found is not None:
-                (d0, out0), (d1, out1) = found
-                assert is_recursion(out1) and not is_recursion(out0), ("get_font_cold", out0, out1)
-                yield [spec, table, errors, "get_font_cold", None, d0, d1], [canon_or_hash(out0), canon_or_hash(out1)]
-        if isinstance(font, Exception):
-            continue
-        cids = attempt(decode_loop, font, b"\x00A\x00B")
-        cid = cids[0] if isinstance(cids, list) and cids else 65
-        for op in QUERIES:
-            arg = {"decode": b"\x00A\x00B", "string_width": b"\x00A\x00B"}.get(op, cid)
+        found = threshold(build_cold)
+        if found is not None:
+            yield case("get_font_cold", None, found)
+    if isinstance(font, Exception):
+        return
+    cids = attempt(decode_loop, font, b"\x00A\x00B")
+    cid = cids[0] if isinstance(cids, list) and cids else 65
+    for op in queries:
+        arg = {"decode": b"\x00A\x00B", "string_width": b"\x00A\x00B"}.get(op, cid)
 
-            def query(extra, op=op, arg=arg):
-                clear_logger_caches()
-                return nested(extra, query_call, font, op, arg)
+        def query(extra, op=op, arg=arg):
+            clear_logger_caches()
+            return nested(extra, query_call, font, op, arg)
 
-            found = threshold(query)
-            if found is not None:
-                (d0, out0), (d1, out1) = found
-                assert is_recursion(out1) and not is_recursion(out0), (op, out0, out1)
-                yield [spec, table, errors, op, arg, d0, d1], [canon_or_hash(out0), canon_or_hash(out1)]
+        found = threshold(query)
+        if found is not None:
+            yield case(op, arg, found)
 
-            # the same query right after the font's creation, the logger
-            # caches as the creation left them (as the interpreter queries
-            # a font it just created: "<op>@build")
-            def query_built(extra, op=op, arg=arg):
-                clear_logger_caches()
-                fresh = built_font(spec_j, table_j, errors_j)
-                return nested(extra, query_call, fresh, op, arg)
+        # the same query right after the font's creation, the logger
+        # caches as the creation left them (as the interpreter queries
+        # a font it just created: "<op>@build")
+        def query_built(extra, op=op, arg=arg):
+            clear_logger_caches()
+            fresh = built_font(spec_j, table_j, errors_j, cipher_j)
+            return nested(extra, query_call, fresh, op, arg)
 
-            found = threshold(query_built)
-            if found is not None:
-                (d0, out0), (d1, out1) = found
-                assert is_recursion(out1) and not is_recursion(out0), (op, out0, out1)
-                yield [spec, table, errors, op + "@build", arg, d0, d1], [canon_or_hash(out0), canon_or_hash(out1)]
+        found = threshold(query_built)
+        if found is not None:
+            yield case(op + "@build", arg, found)
 
 
 # -- real corpus ------------------------------------------------------------------
@@ -1597,14 +1720,23 @@ class RecordingDevice(PDFDevice):
                 shown[obj] = None
 
 
-def dump_stream(s: PDFStream) -> PDFStream:
-    """A stream as the case carries it: its raw data, deciphered, when it was
-    not decoded yet; else its decoded data, its filters dropped."""
+class DecodedStream(Exception):
+    """A stream of an encrypted case that was already decoded: its raw
+    data, which the case's handler would decipher, is gone."""
+
+
+def dump_stream(s: PDFStream, encrypted: bool = False) -> PDFStream:
+    """A stream as the case carries it: its raw data when it was not decoded
+    yet (deciphered, unless the case is ``encrypted``: then the case's
+    handler deciphers it when the font decodes it); else its decoded data,
+    its filters dropped."""
     if s.rawdata is not None:
         raw = s.rawdata
-        if s.decipher:
+        if s.decipher and not encrypted:
             raw = s.decipher(s.objid, s.genno, raw, s.attrs)
         out = PDFStream(dict(s.attrs), raw)
+    elif encrypted:
+        raise DecodedStream(s.objid)
     else:
         out = PDFStream({k: v for k, v in s.attrs.items() if k not in FILTER_KEYS}, s.data)
     out.objid, out.genno = s.objid, s.genno
@@ -1622,7 +1754,8 @@ def safe_args(e: BaseException) -> tuple:
 
 def copy_graph(spec, real_doc, doc: FontDoc):
     """A copy of ``spec`` and, in ``doc``, of every object it reaches through
-    references (or the error of ``getobj``), streams through ``dump_stream``."""
+    references (or the error of ``getobj``), streams through ``dump_stream``
+    (still encrypted when ``doc`` has a cipher)."""
     memo: dict[int, Any] = {}
 
     def copy(x):
@@ -1640,7 +1773,7 @@ def copy_graph(spec, real_doc, doc: FontDoc):
                 for k, v in x.items():
                     out[k] = copy(v)
             else:
-                out = memo[id(x)] = dump_stream(x)
+                out = memo[id(x)] = dump_stream(x, doc.cipher is not None)
                 out.attrs = {k: copy(v) for k, v in out.attrs.items()}
             return out
         return x
@@ -1699,34 +1832,65 @@ def prune(spec, doc: FontDoc, read: set) -> None:
             s.data = None
 
 
-def corpus_font_case(spec, real_doc, original, strings):
+def corpus_font_case(spec, real_doc, original, strings, cipher=None):
     """The case of one font of a document, pruned when the outcome allows;
-    and whether the dump reproduces pdfminer's font."""
+    and whether the dump reproduces pdfminer's font. With ``cipher`` (an
+    encrypted document, ``real_doc`` a fresh instance of it whose streams
+    were not decoded yet), the streams stay encrypted."""
     doc = FontDoc()
+    doc.cipher = cipher
     spec_copy = copy_graph(spec, real_doc, doc)
     strings = list(strings)
     expected = canon_or_hash(
         original if isinstance(original, Exception) else [font_attrs(original), font_queries(original, strings, PROBES)]
     )
     table, errors = dump_doc(doc)
-    spec_j, table_j, errors_j = roundtrip(spec_copy, table, errors)
-    full = run_font(spec_j, table_j, errors_j, strings, PROBES)
+    spec_j, table_j, errors_j, cipher_j = roundtrip(spec_copy, table, errors, cipher)
+    full = run_font(spec_j, table_j, errors_j, strings, PROBES, cipher_j)
     # the streams the font reads (decoded by its creation)
-    probe_doc = load_doc(table_j, errors_j)
+    probe_doc = load_doc(table_j, errors_j, cipher_j)
     probe_spec = bind(spec_j, probe_doc)
     attempt(PDFResourceManager().get_font, None, probe_spec)
     read = {k for k, s in enumerate(streams_of(probe_spec, probe_doc)) if s.data is not None and s.rawdata is None}
-    pruned_doc = load_doc(table_j, errors_j)
+    pruned_doc = load_doc(table_j, errors_j, cipher_j)
     pruned_spec = bind(spec_j, pruned_doc)
     prune(pruned_spec, pruned_doc, read)
     table_p, errors_p = dump_doc(pruned_doc)
     spec_pj, table_pj, errors_pj = roundtrip(pruned_spec, table_p, errors_p)
-    pruned = run_font(spec_pj, table_pj, errors_pj, strings, PROBES)
+    pruned = run_font(spec_pj, table_pj, errors_pj, strings, PROBES, cipher_j)
     if pruned[2] == full[2]:
         args, (depth, qdepth, out) = [pruned_spec, table_p, errors_p], pruned
     else:
         args, (depth, qdepth, out) = [spec_copy, table, errors], full
-    return [*args, strings, list(PROBES), depth, qdepth], out, out == expected
+    return [*args, strings, list(PROBES), depth, qdepth, cipher], out, out == expected
+
+
+def plain_value(x) -> bool:
+    """Whether typed JSON carries ``x`` with no document (no reference, no
+    stream)."""
+    if isinstance(x, (PDFObjRef, PDFStream)):
+        return False
+    if isinstance(x, (list, tuple)):
+        return all(plain_value(v) for v in x)
+    if isinstance(x, dict):
+        return all(plain_value(v) for v in x.values())
+    return True
+
+
+def document_cipher(doc, password) -> list | None:
+    """``[docid, param, password]`` of an encrypted document whose
+    encryption dictionary typed JSON carries as it is, else ``None``."""
+    if doc.encryption is None:
+        return None
+    docid, param = doc.encryption
+    if not plain_value([docid, param]):
+        return None
+    return [list(docid), dict(param), password or ""]
+
+
+#: Fonts per encrypted document whose recursion boundary is searched
+#: (``corpus_depth``).
+DEPTH_FONTS_PER_FILE = 3
 
 
 def program_cases(spec, real_doc):
@@ -1759,9 +1923,17 @@ def program_cases(spec, real_doc):
 
 
 def collect_file(path, password):
-    """``(font cases, program cases, stats)`` of one document."""
-    fonts, programs, stats = [], [], collections.Counter()
-    with open_document(path, password) as doc:
+    """``(font cases, program cases, depth cases, stats)`` of one document.
+    The fonts of an encrypted document are copied from a second instance of
+    it, whose streams were not decoded yet: they stay encrypted, with the
+    document's handler in the case (``document_cipher``), and the boundary
+    of the first ones that read a stream is searched (``corpus_depth``)."""
+    fonts, programs, depths, stats = [], [], [], collections.Counter()
+    with open_document(path, password) as doc, open_document(path, password) as fresh:
+        cipher = document_cipher(doc, password)
+        if doc.encryption is not None:
+            stats["encrypted_files"] += 1
+            stats["encrypted_files_cipher"] += cipher is not None
         rsrcmgr = RecordingManager()
         device = RecordingDevice(rsrcmgr)
         interpreter = PDFPageInterpreter(rsrcmgr, device)
@@ -1775,7 +1947,11 @@ def collect_file(path, password):
         for spec, font in rsrcmgr.fonts:
             strings = device.strings.get(id(font), {}) if not isinstance(font, Exception) else {}
             try:
-                case, out, same = corpus_font_case(spec, doc, font, strings)
+                if cipher is not None:
+                    case, out, same = corpus_font_case(spec, fresh, font, strings, cipher)
+                    stats["encrypted_fonts"] += 1
+                else:
+                    case, out, same = corpus_font_case(spec, doc, font, strings)
             except Timeout:
                 raise
             except Exception as e:  # a harness limitation, counted
@@ -1784,9 +1960,17 @@ def collect_file(path, password):
             stats["fonts"] += 1
             stats["dump_differs"] += not same
             fonts.append((case, out))
+            spec_c, table_c, errors_c = case[:3]
+            if cipher is not None and len(depths) < DEPTH_FONTS_PER_FILE and streams_of(spec_c, load_doc(table_c, errors_c)):
+                depths.append(case)
         for spec, _ in rsrcmgr.fonts:
             programs += program_cases(spec, doc)
-    return fonts, programs, stats
+    depth_out = []
+    for case in depths:
+        for args, out in font_depth_cases(case[0], case[1], case[2], case[7], ()):
+            if args[3] in ("get_font", "get_font@parsed"):
+                depth_out.append((args, out))
+    return fonts, programs, depth_out, stats
 
 
 def process_file(args):
@@ -1794,14 +1978,15 @@ def process_file(args):
     signal.signal(signal.SIGALRM, on_alarm)
     signal.alarm(FILE_TIMEOUT_S)
     try:
-        fonts, programs, stats = collect_file(path, password)
+        fonts, programs, depths, stats = collect_file(path, password)
         with deep_recursion():
             fonts = [(json.dumps(typed_encode(case)), out) for case, out in fonts]
-        return rel, None, fonts, programs, stats
+            depths = [(json.dumps(typed_encode(case)), out) for case, out in depths]
+        return rel, None, fonts, programs, depths, stats
     except Timeout:
-        return rel, "timeout", [], [], collections.Counter()
+        return rel, "timeout", [], [], [], collections.Counter()
     except Exception as e:  # unreadable document: no font case
-        return rel, type(e).__name__, [], [], collections.Counter()
+        return rel, type(e).__name__, [], [], [], collections.Counter()
     finally:
         signal.alarm(0)
 
@@ -1817,29 +2002,33 @@ def corpus_sets(jobs):
     files = load_set("all")
     tasks = [(str(f.path), f.rel, f.password) for f in files]
     fonts: dict[str, tuple[str, str]] = {}
+    depths: dict[str, tuple[str, str]] = {}
     programs: dict[str, tuple[str, bytes]] = {}
     status, stats = collections.Counter(), collections.Counter()
     with multiprocessing.Pool(jobs) as pool:
-        for rel, err, file_fonts, file_programs, file_stats in pool.imap(process_file, tasks, chunksize=2):
+        for rel, err, file_fonts, file_programs, file_depths, file_stats in pool.imap(process_file, tasks, chunksize=2):
             if err is not None:
                 status[err] += 1
             stats.update(file_stats)
             for text, out in file_fonts:
                 fonts.setdefault(hashlib.sha256(text.encode()).hexdigest(), (text, out))
+            for text, out in file_depths:
+                depths.setdefault(hashlib.sha256(text.encode()).hexdigest(), (text, out))
             for kind, data in file_programs:
                 programs.setdefault(hashlib.sha256(kind.encode() + data).hexdigest(), (kind, data))
-    print(f"{len(fonts)} fonts, {len(programs)} programs from {len(files)} files; {dict(status)}; {dict(stats)}",
-          file=sys.stderr)
-    path = unit_dir(MODULE) / "corpus_fonts.jsonl"
-    tmp = path.with_name(f".{path.name}.tmp")
-    with open(tmp, "w", encoding="ascii") as f:
-        for sha in sorted(fonts):
-            text, out = fonts[sha]
-            f.write('{"in":' + text + ',"out":' + json.dumps(typed_encode(out)) + "}\n")
-    tmp.replace(path)
+    print(f"{len(fonts)} fonts, {len(depths)} depth cases, {len(programs)} programs from {len(files)} files; "
+          f"{dict(status)}; {dict(stats)}", file=sys.stderr)
+    for name, cases in (("corpus_fonts", fonts), ("corpus_depth", depths)):
+        path = unit_dir(MODULE) / f"{name}.jsonl"
+        tmp = path.with_name(f".{path.name}.tmp")
+        with open(tmp, "w", encoding="ascii") as f:
+            for sha in sorted(cases):
+                text, out = cases[sha]
+                f.write('{"in":' + text + ',"out":' + json.dumps(typed_encode(out)) + "}\n")
+        tmp.replace(path)
     n_programs = write_set("corpus_programs", (program_case(*programs[sha]) for sha in sorted(programs)))
-    return {"corpus_fonts": len(fonts), "corpus_programs": n_programs, "dump_differs": stats["dump_differs"],
-            "files_failed": dict(status), "stats": dict(stats)}
+    return {"corpus_fonts": len(fonts), "corpus_depth": len(depths), "corpus_programs": n_programs,
+            "dump_differs": stats["dump_differs"], "files_failed": dict(status), "stats": dict(stats)}
 
 
 # -- main -----------------------------------------------------------------------
@@ -1913,7 +2102,7 @@ def main() -> None:
 
     if args.corpus:
         counts = corpus_sets(args.jobs)
-        write_marker("corpus", sum(counts[k] for k in ("corpus_fonts", "corpus_programs")), **counts)
+        write_marker("corpus", sum(counts[k] for k in ("corpus_fonts", "corpus_depth", "corpus_programs")), **counts)
         write_meta(MODULE, cmap_dir=rel_cmap_dir)
         print(counts)
         return

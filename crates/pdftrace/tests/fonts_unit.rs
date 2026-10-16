@@ -66,12 +66,13 @@ use pdfminer::cmapdb::{AttrValue, CMapBase, CMapDB, DirCMapProvider, Unichr, Uni
 use pdfminer::layout::{CharDisp, LTCharFont, LTPayload};
 use pdfminer::pdffont::cff::SidName;
 use pdfminer::pdffont::frames::clear_logger_cache;
+use pdfminer::pdfdocument::{security_handler_registry, PDFStandardSecurityHandler};
 use pdfminer::pdffont::{
     get_font, get_widths, get_widths2, getdict, CFFFont, FontKind, FontName, PDFFont, TrueTypeFont,
     Type1FontHeaderParser, WidthKey,
 };
-use pdfminer::pdftypes::{PDFDict, PDFList, PDFObjRef, PDFObject, PDFResolver, PDFStream};
-use pdfminer::psparser::{LIT_bytes, KWD, LIT};
+use pdfminer::pdftypes::{int_value, DecipherCallable, PDFDict, PDFList, PDFObjRef, PDFObject, PDFResolver, PDFStream};
+use pdfminer::psparser::{PSBaseParser, LIT_bytes, KWD, LIT};
 use pdfminer::utils::{Operand, SeqKind};
 use pdftrace::canon::{canon, sha256_hex};
 use pdftrace::typed_json::{self, Json};
@@ -144,14 +145,39 @@ impl PDFResolver for FontDoc {
     }
 }
 
-/// A document of `table` and `errors` (the case's dumps).
-fn load_doc(table: &Value, errors: &Value) -> (Rc<FontDoc>, Weak<dyn PDFResolver>) {
+/// What the objects of a case are bound to: the document their references
+/// resolve through, and, for an encrypted document, the decryption callback
+/// of its streams (the generator's `FontDoc.decipher`).
+struct Binder {
+    doc: Weak<dyn PDFResolver>,
+    decipher: Option<DecipherCallable>,
+}
+
+/// `security_handler(cipher)` of the generator: the handler of `[docid,
+/// param, password]`, built as `PDFDocument._initialize_password` builds
+/// it; its `decrypt`.
+fn security_handler(cipher: &Value, doc: &Weak<dyn PDFResolver>) -> DecipherCallable {
+    let c = list(cipher);
+    let unbound = Binder { doc: doc.clone(), decipher: None };
+    let docid = list(&c[0]).iter().map(|x| build(x, &unbound)).collect();
+    let PDFObject::Dict(param) = build(&c[1], &unbound) else { panic!("a dict param") };
+    let v = int_value(&param.get("V").unwrap_or(PDFObject::Int(PyInt::ZERO))).expect("int_value(V)");
+    let class = security_handler_registry(&v).expect("a handler class");
+    let h = PDFStandardSecurityHandler::new(class, docid, param, text(&c[2])).expect("a security handler");
+    Rc::new(h).decipher()
+}
+
+/// A document of `table`, `errors` and `cipher` (the case's dumps; `cipher`
+/// absent or `None` for a document that is not encrypted).
+fn load_doc(table: &Value, errors: &Value, cipher: Option<&Value>) -> (Rc<FontDoc>, Binder) {
     let doc = Rc::new(FontDoc::default());
     let dyn_doc: Rc<dyn PDFResolver> = doc.clone();
     let weak = Rc::downgrade(&dyn_doc);
+    let decipher = cipher.filter(|c| !matches!(c, Value::None)).map(|c| security_handler(c, &weak));
+    let binder = Binder { doc: weak, decipher };
     for pair in list(table) {
         let p = list(pair);
-        doc.table.borrow_mut().insert(int(&p[0]), build(&p[1], &weak));
+        doc.table.borrow_mut().insert(int(&p[0]), build(&p[1], &binder));
     }
     for e in list(errors) {
         let e = list(e);
@@ -159,11 +185,13 @@ fn load_doc(table: &Value, errors: &Value) -> (Rc<FontDoc>, Weak<dyn PDFResolver
         let kind = ExcKind::ALL.iter().copied().find(|k| k.trace_name() == name).unwrap_or_else(|| panic!("{name}"));
         doc.errors.borrow_mut().insert(int(&e[0]), PyErr::new(kind, text(&e[3])));
     }
-    (doc, weak)
+    (doc, binder)
 }
 
-/// The PDF object of a typed value, its references bound to `doc`.
-fn build(v: &Value, doc: &Weak<dyn PDFResolver>) -> PDFObject {
+/// The PDF object of a typed value, its references bound to the document,
+/// its streams with an object number given the document's decryption
+/// callback (the generator's `bind`).
+fn build(v: &Value, doc: &Binder) -> PDFObject {
     match v {
         Value::None => PDFObject::Null,
         Value::Bool(b) => PDFObject::Bool(*b),
@@ -177,11 +205,12 @@ fn build(v: &Value, doc: &Weak<dyn PDFResolver>) -> PDFObject {
         Value::Dict(items) => PDFObject::Dict(PDFDict::from_pairs(
             items.iter().map(|(k, x)| (Rc::from(k.as_str().expect("a str key")), build(x, doc))),
         )),
-        Value::Ref(objid) => PDFObject::Ref(PDFObjRef::new(Some(doc.clone()), objid.clone())),
+        Value::Ref(objid) => PDFObject::Ref(PDFObjRef::new(Some(doc.doc.clone()), objid.clone())),
         Value::Stream(sv) => {
             let PDFObject::Dict(attrs) = build(&Value::Dict(sv.attrs.clone()), doc) else { unreachable!() };
             let Value::Bytes(raw) = &sv.raw else { panic!("a stream not decoded yet: {sv:?}") };
-            let s = PDFStream::new(attrs, Rc::from(&raw[..]), None);
+            let decipher = doc.decipher.clone().filter(|_| !matches!(sv.objid, Value::None));
+            let s = PDFStream::new(attrs, Rc::from(&raw[..]), decipher);
             if let (Value::Int(objid), Value::Int(genno)) = (&sv.objid, &sv.genno) {
                 s.set_objid(objid.clone(), genno.clone());
             }
@@ -548,11 +577,11 @@ fn font_queries(font: &PDFFont, strings: &[Value], probes: &[Value]) -> Value {
 }
 
 /// `run_font(...)` of a font case `[spec, table, errors, strings, probes,
-/// depth, query depth]`.
+/// depth, query depth, cipher]`.
 fn run_font(a: &[Value]) -> Vec<Value> {
     clear_logger_cache();
-    let (_doc, weak) = load_doc(&a[1], &a[2]);
-    let PDFObject::Dict(spec) = build(&a[0], &weak) else { panic!("a dict spec") };
+    let (_doc, binder) = load_doc(&a[1], &a[2], a.get(7));
+    let PDFObject::Dict(spec) = build(&a[0], &binder) else { panic!("a dict spec") };
     let font = at(&a[5], || get_font(&spec));
     let out = match font {
         Err(e) => Value::from(&e),
@@ -571,8 +600,8 @@ fn run_font(a: &[Value]) -> Vec<Value> {
 fn widths() {
     let data = open();
     replay_canon(&data, "widths", 1000, |a| {
-        let (_doc, weak) = load_doc(&a[2], &a[3]);
-        let PDFObject::List(seq) = build(&a[1], &weak) else { panic!("a list") };
+        let (_doc, binder) = load_doc(&a[2], &a[3], None);
+        let PDFObject::List(seq) = build(&a[1], &binder) else { panic!("a list") };
         let out = at(&a[4], || match text(&a[0]) {
             "get_widths" => get_widths(&seq).map(|w| {
                 w.iter()
@@ -821,24 +850,26 @@ fn query_call(font: &PDFFont, op: &str, arg: &Value) -> PyResult<Value> {
     })
 }
 
-#[test]
-fn depth_boundaries() {
-    let data = open();
+/// Replays a set of recursion boundaries (`font_depth_cases` of the
+/// generator): `[spec, table, errors, op, arg, depth, depth + 1, cipher]`,
+/// the outcome at both depths.
+fn replay_depth(data: &UnitData, name: &str, min_cases: usize) {
     // the font of the queries, built once per font dictionary
     let mut built: Option<(String, Rc<FontDoc>, Option<PDFFont>)> = None;
-    replay_canon(&data, "depth", 100, |a| {
+    replay_canon(data, name, min_cases, |a| {
         let op = text(&a[3]);
+        let cipher = a.get(7);
         // the generator builds the font once first (which loads the
         // predefined CMaps it uses), then searches the boundaries
-        let key = format!("{:?}{:?}{:?}", a[0], a[1], a[2]);
+        let key = format!("{:?}{:?}{:?}{:?}", a[0], a[1], a[2], cipher);
         if built.as_ref().is_none_or(|(k, _, _)| *k != key) {
             clear_logger_cache();
-            let (doc, weak) = load_doc(&a[1], &a[2]);
-            let PDFObject::Dict(spec) = build(&a[0], &weak) else { panic!("a dict spec") };
+            let (doc, binder) = load_doc(&a[1], &a[2], cipher);
+            let PDFObject::Dict(spec) = build(&a[0], &binder) else { panic!("a dict spec") };
             let font = get_font(&spec).ok();
             built = Some((key, doc, font));
         }
-        if op == "get_font" || op == "get_font_cold" {
+        if op == "get_font" || op == "get_font_cold" || op == "get_font@parsed" {
             return [&a[5], &a[6]]
                 .iter()
                 .map(|d| {
@@ -846,9 +877,14 @@ fn depth_boundaries() {
                         // clear_cmap_caches() of the generator: first loads
                         CMapDB::clear_caches();
                     }
-                    let (_doc, weak) = load_doc(&a[1], &a[2]);
-                    let PDFObject::Dict(spec) = build(&a[0], &weak) else { panic!("a dict spec") };
-                    let font = at(d, || get_font(&spec));
+                    clear_logger_cache();
+                    if op == "get_font@parsed" {
+                        // a parser created first, as a document's is
+                        PSBaseParser::init(Some(BytesIO::new(Rc::from(&b""[..]))), ()).expect("a parser");
+                    }
+                    let (_doc, binder) = load_doc(&a[1], &a[2], cipher);
+                    let PDFObject::Dict(spec) = build(&a[0], &binder) else { panic!("a dict spec") };
+                    let font = recursion::with_depth(depth(d), || get_font(&spec));
                     res(font, |f| font_attrs(&f))
                 })
                 .collect();
@@ -860,8 +896,8 @@ fn depth_boundaries() {
                 .iter()
                 .map(|d| {
                     clear_logger_cache();
-                    let (_doc, weak) = load_doc(&a[1], &a[2]);
-                    let PDFObject::Dict(spec) = build(&a[0], &weak) else { panic!("a dict spec") };
+                    let (_doc, binder) = load_doc(&a[1], &a[2], cipher);
+                    let PDFObject::Dict(spec) = build(&a[0], &binder) else { panic!("a dict spec") };
                     let fresh = get_font(&spec).expect("a font for the queries");
                     res(recursion::with_depth(depth(d), || query_call(&fresh, op, &a[4])), |v| v)
                 })
@@ -870,4 +906,19 @@ fn depth_boundaries() {
         let font = built.as_ref().and_then(|(_, _, f)| f.as_ref()).expect("a font for the queries");
         [&a[5], &a[6]].iter().map(|d| res(at(d, || query_call(font, op, &a[4])), |v| v)).collect()
     });
+}
+
+#[test]
+fn depth_boundaries() {
+    let data = open();
+    replay_depth(&data, "depth", 100);
+}
+
+/// The boundaries of the first fonts of the encrypted documents of the set
+/// `all` (their streams deciphered by the document's handler).
+#[test]
+fn corpus_depth() {
+    let data = open();
+    check_marker(&data, "corpus");
+    replay_depth(&data, "corpus_depth", 20);
 }
