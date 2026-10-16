@@ -676,6 +676,28 @@ fn big_stack(f: impl FnOnce() + Send + 'static) {
     on_thread(1 << 30, f);
 }
 
+/// `doc_cmap_decode` as `PDFCIDFont.get_cmap_from_spec` gets a CMap: an
+/// empty `CMap()` for a name `CMapDB` has no file for, any other error
+/// raised.
+#[test]
+fn doc_cmap_decode_falls_back_to_an_empty_cmap_on_cmap_not_found_only() {
+    let mut core = Core::new();
+    ok(call(&mut core, "cmap_configure", 0, list(vec![PyValue::str("X-Bad")]), None));
+    let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(b"%PDF".to_vec()))) else { panic!() };
+    let doc = PyValue::from(doc as i64);
+    let decode = |core: &mut Core, doc: &PyValue, name: &str, code: PyValue| {
+        call(core, "doc_cmap_decode", 0, list(vec![doc.clone(), PyValue::str(name), code]), None)
+    };
+    let code = PyValue::Bytes(Rc::from(&[1u8, 2][..]));
+    let Js::Arr(r) = ok(decode(&mut core, &doc, "No-Such-CMap", code.clone())) else { panic!() };
+    assert_eq!(r[0], Js::Arr(vec![]));
+    // a compact file without CODE2CID: PyCMap's AttributeError goes through
+    ok(call(&mut core, "cmap_add", 0, PyValue::str("X-Bad"), Some(b"PMCM\x01\x00".to_vec())));
+    assert_eq!(error_name(&decode(&mut core, &doc, "X-Bad", code.clone())).0, "AttributeError");
+    assert_eq!(error_name(&decode(&mut core, &doc, "No-Such-CMap", PyValue::None)).1, "code must be bytes");
+    assert_eq!(error_name(&decode(&mut core, &PyValue::from(12345_i64), "No-Such-CMap", code)).1, "invalid handle");
+}
+
 /// Spans no `RegExp` gives (JavaScript computes them; a bug or a hostile
 /// caller could send them): refused with an error, never a panic.
 #[test]
@@ -738,6 +760,98 @@ fn search_spans_from_javascript_are_checked() {
         "the span of group \"w\" is no group's span"
     );
     assert_eq!(message(&search(&mut core, vec![span(0, 4)], w, named("v", PyValue::None))), "no such group");
+}
+
+/// The values `test_values` writes by hand, as JavaScript must receive them
+/// (transport only, no Python semantics): the expectations of
+/// `expectedTestValues` in `js/test/shared/tests.mjs`, here so that
+/// mutation testing sees them.
+#[test]
+fn test_values_are_what_javascript_expects() {
+    if cfg!(target_family = "wasm") {
+        return; // the recursive test decoders cannot read "deep" on WebAssembly's stack
+    }
+    big_stack(|| {
+        let units = |u: &[u16]| Js::Str(u.to_vec());
+        let num = Js::Num;
+        let row = |i: i64| {
+            let f = i as f64;
+            obj(vec![
+                ("n", num(if i == 1 { 7.0 } else { f + 0.5 })),
+                ("s", s(if i % 2 == 0 { "even" } else { "odd" })),
+                ("os", if i == 1 { Js::Null } else { s("x") }),
+                ("b", Js::Bool(i % 2 == 0)),
+                ("none", Js::Null),
+                ("seq", if i == 2 { Js::Null } else { Js::Arr(vec![num(f), num(1.0)]) }),
+                ("on", if i == 0 { Js::Null } else { num(-0.0) }),
+                ("g", if i == 0 { Js::Big("1152921504606846976".into()) } else { Js::Arr(vec![s("a")]) }),
+                ("__proto__", num(f)),
+            ])
+        };
+        let mut deep = Js::Null;
+        for _ in 0..100_000 {
+            deep = Js::Arr(vec![deep]);
+        }
+        let expected = obj(vec![
+            ("nan", num(f64::NAN)),
+            ("inf", num(f64::INFINITY)),
+            ("-inf", num(f64::NEG_INFINITY)),
+            ("-0.0", num(-0.0)),
+            ("0.1", num(0.1)),
+            ("5e-324", num(5e-324)),
+            ("1.7976931348623157e308", num(f64::MAX)),
+            ("1e21", num(1e21)),
+            ("float 3.0", num(3.0)),
+            ("int 3", num(3.0)),
+            ("int -2147483649", num(-2_147_483_649.0)),
+            ("int 2**53", num(9_007_199_254_740_992.0)),
+            ("int 2**53+1", Js::Big("9007199254740993".into())),
+            ("int big", Js::Big("-123456789012345678901234567890".into())),
+            ("str wtf8 lone high", units(&[0x61, 0xd800, 0x62])),
+            ("str wtf8 lone low", units(&[0xdc00])),
+            ("str wtf8 split pair", units(&[0xd83d, 0xde00])),
+            ("str utf16 lone", units(&[0xdfff, 0x41, 0xd800])),
+            ("str code points", units(&[0xd83d, 0xde00, 0xdc00, 0xe9, 0])),
+            ("str nul", s("\0x")),
+            ("str escapes", s("\"\\\n\t\u{1}\u{7f}\u{2028}é😀")),
+            ("bytes", Js::Bytes(vec![0, 255, 128])),
+            (
+                "dict keys",
+                Js::Obj(vec![
+                    ("__proto__".encode_utf16().collect(), num(1.0)),
+                    (vec![0], num(2.0)),
+                    (vec![0xd800], num(3.0)),
+                    ("constructor".encode_utf16().collect(), Js::Null),
+                ]),
+            ),
+            (
+                "pdf objects",
+                Js::Arr(vec![
+                    Js::Lit(Box::new(s("DeviceRGB"))),
+                    Js::Lit(Box::new(Js::Bytes(vec![0xff]))),
+                    Js::Kw(b"BT".to_vec()),
+                    Js::Ref(Box::new(num(12.0))),
+                ]),
+            ),
+            (
+                "stream",
+                Js::Stream(vec![
+                    num(5.0),
+                    num(0.0),
+                    obj(vec![("Length", num(3.0))]),
+                    Js::Bytes(b"abc".to_vec()),
+                    Js::Null,
+                ]),
+            ),
+            ("deep", deep),
+            ("table", Js::Arr((0..3).map(row).collect())),
+        ]);
+        let mut core = Core::new();
+        for format in FORMATS {
+            ok(call(&mut core, "set_format", 0, PyValue::str(format), None));
+            assert_eq!(ok(call(&mut core, "test_values", 0, PyValue::None, None)), expected, "{format}");
+        }
+    });
 }
 
 #[test]
