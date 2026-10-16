@@ -33,9 +33,8 @@
 //!   overlap (`b1 << 8 | b2` with `b2 < 256`...);
 //! - `get_font`'s `"Type1" | "MMType1"` arm deleted: the default arm creates
 //!   the same `PDFType1Font` (`STRICT` is off);
-//! - `get_data`'s guard on a `get_filters` error other than `RecursionError`
-//!   made `true`: `stream.get_data()` raises the same error at once; the
-//!   `get_any` frame removed: `resolve1`'s frame follows at the same depth;
+//! - `get_data`'s `get_any` frame removed: `resolve1`'s frame follows at the
+//!   same depth;
 //! - the frames of `name2unicode` in `get_encoding_counted`
 //!   (`reaches_raise_key_error`, the ligature test, the `RecursionError`
 //!   guard, `get_encoding_counted` without frames): at most 4 below
@@ -55,6 +54,24 @@
 //!   `CMapParser(...)` (C units only, never near their limit there).
 //! - Timeouts are mutants that loop (`k += 1` made `*=`, `WidthKey::hash`
 //!   constant), a format 4 `segcount` multiplied.
+//!
+//! After the review fixes (`get_data` holding its frames across the decode,
+//! `PDFStream::decode_with`, `psbaseparser_seek` filling the `psparser`
+//! logger cache, `pycompat::recursion::fill_logger_cache`): `cargo mutants`
+//! on those functions (`--re 'get_data|decode_with|PDFStream::decode|
+//! fill_logger_cache|psbaseparser_seek'`, the four files, `fonts_unit`,
+//! `filters_unit`, `pdftypes_unit`, `psparser_base_unit`, corpus tests
+//! skipped, `--timeout 60`: 41 mutants, 13 caught, 26 unviable, 2 missed),
+//! their `Ok(..)` pass, and 7 hand mutants of the frame model (the
+//! `fill_logger_cache` call removed; `get_data`'s `decode`, `get_data`,
+//! `get_filters` and `resolve1` frames removed or dropped early; the
+//! `get_filters` call moved before the decipher callback: all caught by
+//! `depth`; the `get_any` leaf removed: equivalent, above). The 2 missed:
+//! `decode_with`'s two `ZlibError` guards made `true`, equivalent: with
+//! their constant arguments (`MAX_WBITS`, the default buffer size and
+//! `max_length`), `zlib::decompress` and `decompress_corrupted` raise only
+//! `ZlibError` (their `ValueError` branches check those arguments) and
+//! count no frames.
 
 use std::cell::RefCell;
 use std::collections::HashMap;

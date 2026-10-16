@@ -154,9 +154,9 @@ fn stream_value(x: &PDFObject) -> PyResult<Rc<PDFStream>> {
     Ok(Rc::new(PDFStream::new(PDFDict::new(), Rc::from(&[][..]), None)))
 }
 
-/// `stream.get_data()` (pdfminer/pdftypes.py:399), with the frames of
-/// `get_data` and `decode`, held for the whole decode, and those of
-/// `get_filters` (the `get_any` and `resolve1` it calls; `PDFObjRef.resolve`
+/// `stream.get_data()` (pdfminer/pdftypes.py:399 PDFStream.get_data), with
+/// the frames of `get_data` and `decode`, held for the whole decode, and
+/// those of `get_filters` (the `get_any` and `resolve1` it calls; `PDFObjRef.resolve`
 /// and `getobj` count theirs), taken where `decode` calls it, after the
 /// decipher callback ([`PDFStream::decode_with`]).
 ///
