@@ -719,6 +719,9 @@ fn search_spans_from_javascript_are_checked() {
     );
     assert_eq!(message(&search(&mut core, vec![span(0, 5)], n(0), PyValue::None)), "match offset 5 outside the text");
     assert_eq!(message(&search(&mut core, vec![span(-1, 1)], n(0), PyValue::None)), "negative match offset");
+    // offsets in the text, but a start after the end
+    let backwards = search(&mut core, vec![span(4, 3)], n(0), PyValue::None);
+    assert_eq!(message(&backwards), "match span outside TextMap.as_string");
     // named groups: one dict per match, spans that are groups' spans
     let named = |k: &str, v: PyValue| list(vec![PyValue::Dict(Obj::from_pairs([(k, v)]))]);
     let w = PyValue::str("w");
