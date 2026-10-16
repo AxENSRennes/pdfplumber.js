@@ -180,13 +180,23 @@ Décisions prises avant le port de `pdfparser.py` et `pdfdocument.py` :
   pas encore les leurs (accesseurs de `pdftypes` et `resolve1`,
   `literal_name`, `casting`, `get_unichr`/`decode` de `cmapdb`,
   `EncodingDB.get_encoding`/`name2unicode`, `PDFStream.get_data` jusqu'aux
-  filtres) et des appels de journalisation (`log_frames` : deux cadres,
-  trois au premier appel d'un niveau sur un logger depuis
-  `clear_logger_cache`, l'équivalent de `logging.disable`). Quand un de ces
-  modules comptera ses cadres, l'aide correspondante disparaît. Non
-  modélisés (documentés dans `pdffont/mod.rs`) : les cadres de `psparser`
-  (parseurs d'en-tête Type 1 et de CMap), ceux des filtres autres que Flate
-  et du premier chargement d'une CMap prédéfinie (`gzip`, `json`).
+  filtres). Quand un de ces modules comptera ses cadres, l'aide
+  correspondante disparaît. Les appels de journalisation prennent les leurs
+  par `pycompat::recursion::log_frames` (deux cadres, trois au premier appel
+  d'un niveau sur un logger depuis `clear_logger_cache`, l'équivalent de
+  `logging.disable` ; le cache est par logger et par niveau). `cmapdb`
+  compte déjà les siens pour `CMapDB` (`get_cmap`, `get_unicode_map`,
+  `_load_data` avec les cadres de la bibliothèque standard qu'il exécute :
+  4 sous `_load_data` pour un nom absent, `os.path.realpath`, et 8 pour le
+  premier chargement d'un fichier, `json.load` lisant l'en-tête gzip,
+  mesurés pour chaque fichier de pdfminer) et pour `CMapParser`
+  (construction, `run`, `do_keyword`, `_warn_once`) ; la construction d'un
+  parseur prend les cadres de `PSStackParser.__init__`
+  (`PSStackParser::init_frames`). Non modélisés (documentés dans
+  `cmapdb.rs` et `pdffont/mod.rs`) : les cadres de `psparser` sous
+  `nextobject`, jamais plus profonds que la construction du parseur, qui
+  vient avant ; ceux des filtres autres que Flate ; l'import du codec
+  UTF-16 au premier `bytes.decode("UTF-16BE")` d'un processus Python.
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 

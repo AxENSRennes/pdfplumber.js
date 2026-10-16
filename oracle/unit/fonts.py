@@ -7,7 +7,7 @@ the Rust replay is crates/pdftrace/tests/fonts_unit.rs. The predefined CMaps
 are read by the Rust side from the compact files of ``oracle/codegen/cmaps.py``
 (``cmap_dir`` in ``meta.json``, relative to the cache).
 
-Default run (a minute):
+Default run (about ten minutes: through ``scripts/heavy.sh``):
 
 - ``widths``: ``get_widths`` and ``get_widths2`` on generated arrays (numbers of
   every type, runs, lists, references to numbers, lists and missing or broken
@@ -31,7 +31,15 @@ Default run (a minute):
   ``decode``, ``to_unichr``, ``char_width``, ``char_disp``, ``string_width``.
 - ``depth``: for fonts of every kind, the largest number of extra Python frames
   under which building the font (and each query) still succeeds, with the
-  outcome there and one frame deeper (a ``RecursionError``).
+  outcome there and one frame deeper (a ``RecursionError``); the font is built
+  once first, which loads the predefined CMaps it uses (``get_font``), and,
+  for a font that loads some, the same search with ``CMapDB``'s caches
+  emptied before each build (``get_font_cold``: the first loads, as in a new
+  process). Fonts whose ``/ToUnicode`` uses ``usecmap`` (found, missing,
+  identity) are among them.
+
+The first ``bytes.decode("UTF-16BE")`` of a process imports the codec, deep
+below the caller (not modeled by the port): the module imports it first.
 
 ``--corpus`` (minutes, every PDF of the set ``all``, the first 20 pages, ``-j``
 workers): every font a page or a Form XObject uses (the ``spec`` given to
@@ -63,6 +71,7 @@ Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.fo
 from __future__ import annotations
 
 import argparse
+import codecs
 import collections
 import contextlib
 import hashlib
@@ -116,6 +125,12 @@ SAMPLE_STRINGS = [b"", b"A", b"Hello", b"\x00A\x00B", b"\x00", b"\xff\xfe\x01", 
 #: The recursion limit while dumping or decoding deep values (never while
 #: pdfminer runs).
 DEEP_LIMIT = 100_000
+
+# The first ``bytes.decode("UTF-16BE")`` of a process imports the codec
+# (``importlib``, 15 frames below ``CMapParser.run``), which the port does
+# not model (``crates/pdfminer/src/cmapdb.rs``, "Recursion depth"): imported
+# here, so that no set depends on the order the sets run in.
+codecs.lookup("UTF-16BE")
 
 
 def attempt(f, *args):
@@ -968,6 +983,18 @@ class Spec:
                          rng.choice(["<0061>", "[<0041> <0042> /C]", "<D7FF>"]) + " endbfrange")
         if rng.random() < 0.1:
             lines.append("1 beginbfchar <01> endbfchar <<")
+        r = rng.random()
+        if r < 0.15:
+            # usecmap: CMapDB.get_cmap from the parser (an identity, a
+            # predefined CMap, a missing one, a unicode map's data)
+            name = rng.choice(["Identity-H", "Foo-H", rng.choice(PREDEFINED), "to-unicode-Adobe-Japan1"])
+            lines.insert(3, f"/{name} usecmap")
+        elif r < 0.25:
+            # names through name2unicode (ligatures, invalid code points)
+            # and the warnings of _warn_once
+            lines.append(rng.choice(["1 beginbfrange <10> <11> [/f_i /uniD800] endbfrange",
+                                     "1 beginbfrange <10> <11> [/A_B /f_uniD800] endbfrange",
+                                     "2 beginbfrange /x <01> <0041> <01> <0002> <0041> endbfrange"]))
         lines += ["endcmap", "CMapName currentdict /CMap defineresource pop", "end", "end"]
         return "\n".join(lines).encode()
 
@@ -1320,6 +1347,30 @@ def depth_specs(rng):
         spec = Spec(rng, doc).cid()
         spec["FontDescriptor"] = {"FontBBox": [deep_list(n, 0), 1, 2, 3]}
         yield spec, doc
+    # CMaps loaded from the font (its encoding, its collection's unicode
+    # map) and from its /ToUnicode stream (usecmap), found or not
+    for name in ("UniJIS-UCS2-H", "GBK-EUC-V", "Foo-H", "Identity-V"):
+        for ordering in (b"Japan1", b"Korea1", b"Foo"):
+            doc = FontDoc()
+            spec = Spec(rng, doc).cid(encoding=name, ordering=ordering)
+            spec.pop("ToUnicode", None)
+            yield spec, doc
+    for name in ("Identity-H", "Foo-H", "UniCNS-UCS2-V", "to-unicode-Adobe-Japan1"):
+        for subtype in ("TrueType", "CIDFontType2"):
+            doc = FontDoc()
+            s = Spec(rng, doc)
+            spec = s.simple(LIT(subtype)) if subtype == "TrueType" else s.cid()
+            data = f"begincmap\n/{name} usecmap\n1 beginbfchar <41> <0042> endbfchar\nendcmap".encode()
+            spec["ToUnicode"] = s.stream(data, compress=False)
+            yield spec, doc
+
+
+def clear_cmap_caches() -> None:
+    """``CMapDB``'s caches emptied, as in a new Python process: the next
+    ``get_cmap``/``get_unicode_map`` of a predefined name loads its file
+    (the Rust replay calls ``CMapDB::clear_caches``)."""
+    CMapDB._cmap_cache.clear()
+    CMapDB._umap_cache.clear()
 
 
 QUERIES = ("decode", "string_width", "to_unichr", "char_width", "char_disp", "get_descent", "get_width")
@@ -1355,6 +1406,22 @@ def depth_cases(rng):
             (d0, out0), (d1, out1) = found
             assert is_recursion(out1) and not is_recursion(out0), ("get_font", out0, out1)
             yield [spec, table, errors, "get_font", None, d0, d1], [canon_or_hash(out0), canon_or_hash(out1)]
+
+        # the same where the font loads its predefined CMaps (first loads)
+        clear_cmap_caches()
+        clear_logger_caches()
+        attempt(built_font, spec_j, table_j, errors_j)
+        if CMapDB._cmap_cache or CMapDB._umap_cache:
+
+            def build_cold(extra):
+                clear_cmap_caches()
+                return build(extra)
+
+            found = threshold(build_cold)
+            if found is not None:
+                (d0, out0), (d1, out1) = found
+                assert is_recursion(out1) and not is_recursion(out0), ("get_font_cold", out0, out1)
+                yield [spec, table, errors, "get_font_cold", None, d0, d1], [canon_or_hash(out0), canon_or_hash(out1)]
         if isinstance(font, Exception):
             continue
         cids = attempt(decode_loop, font, b"\x00A\x00B")

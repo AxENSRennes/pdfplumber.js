@@ -78,7 +78,7 @@
 //!   `readall` -> `GzipFile.read` -> `_read_gzip_header` (twice) ->
 //!   `_read_exact` -> `GzipFile.read`, 8 frames below, for every file of
 //!   pdfminer's data (measured by a profile hook that counts the depth of
-//!   each call, `docs/verification.md`, "Mutations"); the `log.debug`
+//!   each call, `oracle/depth_probe.py`); the `log.debug`
 //!   calls take their frames where they are, for the logger cache;
 //! - the `CMapParser` methods: its construction (its `__init__` and the
 //!   `PSStackParser.__init__` it calls, [`PSStackParser::init_frames`]),

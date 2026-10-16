@@ -750,10 +750,14 @@ fn depth_boundaries() {
             let font = get_font(&spec).ok();
             built = Some((key, doc, font));
         }
-        if op == "get_font" {
+        if op == "get_font" || op == "get_font_cold" {
             return [&a[5], &a[6]]
                 .iter()
                 .map(|d| {
+                    if op == "get_font_cold" {
+                        // clear_cmap_caches() of the generator: first loads
+                        CMapDB::clear_caches();
+                    }
                     let (_doc, weak) = load_doc(&a[1], &a[2]);
                     let PDFObject::Dict(spec) = build(&a[0], &weak) else { panic!("a dict spec") };
                     let font = at(d, || get_font(&spec));
