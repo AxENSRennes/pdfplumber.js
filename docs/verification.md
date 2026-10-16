@@ -117,12 +117,14 @@ bord par le cache) et le format de chaque ligne. Règles communes :
   cadres sous l'appelant, trois au premier appel d'un niveau sur un logger,
   `_acquireLock` remplissant le cache), ce qui décide où tombe une
   `RecursionError` dans une récursion profonde (`create_pages` journalise à
-  chaque nœud). Coupée, elle coûte exactement ce que coûte la configuration
-  par défaut (aucun gestionnaire, niveau WARNING) : la référence est un
-  utilisateur sans configuration de logging ; une configuration DEBUG
-  exécute des gestionnaires et peut avancer la `RecursionError`. Le port
-  compte ces cadres comme les autres (« Profondeur de récursion » de
-  `architecture.md`).
+  chaque nœud). Coupée, elle coûte ce que coûte la configuration par
+  défaut (aucun gestionnaire, niveau WARNING) pour un appel `debug` ou
+  `info` ; un appel `warning` ou `error` passe par défaut au gestionnaire
+  `lastResort` (davantage de cadres), coupé il n'en coûte que deux ou trois :
+  la référence des traces, et du port, est la journalisation coupée. Une
+  configuration DEBUG exécute des gestionnaires et peut avancer la
+  `RecursionError`. Le port compte ces cadres comme les autres
+  (`pycompat::logging`, « Profondeur de récursion » de `architecture.md`).
 - `oracle.stages.entry_depth()` mesure la profondeur (cadres Python, unités
   C restantes, `oracle/depth.py`) où s'exécute le corps d'une fonction
   d'étape ; `pdftrace::stages::STAGE_ENTRY` la reprend et un test unitaire
