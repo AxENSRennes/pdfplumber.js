@@ -307,6 +307,7 @@ def font_attrs(font: PDFFont) -> Named:
         fields["default_disp"] = font.default_disp
     fields["is_vertical"] = font.is_vertical()
     fields["is_multibyte"] = font.is_multibyte()
+    fields["repr"] = repr(font)
     for method in ("get_ascent", "get_descent", "get_width", "get_height"):
         fields[method] = call_seq(getattr(font, method))
     return Named(type(font).__name__, fields)
@@ -654,6 +655,7 @@ def cff_report(font):
         "name2gid": list(font.name2gid.items()),
         "gid2name": list(font.gid2name.items()),
         "items": [items(ix) for ix in (font.name_index, font.dict_index, font.string_index, font.subr_index, font.charstring)],
+        "reprs": [repr(ix) for ix in (font.name_index, font.dict_index, font.string_index, font.subr_index, font.charstring)],
         "tell": fp.tell(),
     })
 
@@ -963,6 +965,15 @@ class Spec:
         if compress:
             attrs["Filter"] = LIT("FlateDecode")
             data = __import__("zlib").compress(data)
+            r = self.rng.random()
+            if r < 0.2:
+                # filters given by references, with a predictor that
+                # changes nothing, or ASCIIHex above Flate
+                attrs["Filter"] = self.ref(self.rng.choice([LIT("FlateDecode"), [LIT("FlateDecode")]]))
+                attrs["DecodeParms"] = self.maybe_ref(self.rng.choice([{"Predictor": 1}, {"Predictor": self.ref(1)}, {}]), 0.5)
+            elif r < 0.3:
+                attrs["Filter"] = [LIT("ASCIIHexDecode"), self.maybe_ref(LIT("FlateDecode"), 0.5)]
+                data = data.hex().encode() + b">"
         attrs["Length"] = len(data)
         return PDFStream(attrs, data)
 
@@ -1256,6 +1267,18 @@ def font_spec_cases(rng):
             spec = Spec(rng, doc).cid(encoding=name, ordering=ordering)
             spec.pop("ToUnicode", None)
             yield font_case(spec, doc, SAMPLE_STRINGS + [b"\x30\x42\x8b\xa0", b"\xa4\xa2\x41"])
+    # the encoding of an embedded Type 1 program read up to /Length1 (every
+    # kind of int, small or large, of either sign)
+    for k in range(12):
+        doc = FontDoc()
+        s = Spec(rng, doc)
+        data = type1_program(rng)
+        length1 = [len(data), len(data) // 2, 0, -10, -len(data) - 5, -(2**70), 2**70, True, 1.5, s.missing_ref(),
+                   s.ref(len(data) - 3), None][k]
+        attrs = {} if length1 is None else {"Length1": length1}
+        spec = {"Type": LIT("Font"), "Subtype": LIT("Type1"), "BaseFont": LIT("ABCDEF+Foo"),
+                "FontDescriptor": s.descriptor({"FontFile": s.stream(data, attrs)})}
+        yield font_case(spec, doc)
 
 
 # -- recursion depth --------------------------------------------------------------
@@ -1363,6 +1386,22 @@ def depth_specs(rng):
             data = f"begincmap\n/{name} usecmap\n1 beginbfchar <41> <0042> endbfchar\nendcmap".encode()
             spec["ToUnicode"] = s.stream(data, compress=False)
             yield spec, doc
+    # /ToUnicode streams whose filters and parameters are references
+    # (resolved by get_filters, deeper than get_any)
+    zlib = __import__("zlib")
+    data = zlib.compress(b"begincmap 1 beginbfchar <41> <0042> endbfchar endcmap")
+    for filters, params in ((LIT("FlateDecode"), None), ([LIT("FlateDecode")], {"Predictor": 1}),
+                            ([LIT("ASCIIHexDecode"), LIT("FlateDecode")], None)):
+        for subtype in ("TrueType", "CIDFontType2"):
+            doc = FontDoc()
+            s = Spec(rng, doc)
+            spec = s.simple(LIT(subtype)) if subtype == "TrueType" else s.cid()
+            raw = data.hex().encode() + b">" if isinstance(filters, list) and len(filters) == 2 else data
+            attrs = {"Filter": s.ref(filters), "Length": len(raw)}
+            if params is not None:
+                attrs["DecodeParms"] = s.ref(params)
+            spec["ToUnicode"] = PDFStream(attrs, raw)
+            yield spec, doc
 
 
 def clear_cmap_caches() -> None:
@@ -1434,11 +1473,24 @@ def depth_cases(rng):
                 return nested(extra, query_call, font, op, arg)
 
             found = threshold(query)
-            if found is None:
-                continue
-            (d0, out0), (d1, out1) = found
-            assert is_recursion(out1) and not is_recursion(out0), (op, out0, out1)
-            yield [spec, table, errors, op, arg, d0, d1], [canon_or_hash(out0), canon_or_hash(out1)]
+            if found is not None:
+                (d0, out0), (d1, out1) = found
+                assert is_recursion(out1) and not is_recursion(out0), (op, out0, out1)
+                yield [spec, table, errors, op, arg, d0, d1], [canon_or_hash(out0), canon_or_hash(out1)]
+
+            # the same query right after the font's creation, the logger
+            # caches as the creation left them (as the interpreter queries
+            # a font it just created: "<op>@build")
+            def query_built(extra, op=op, arg=arg):
+                clear_logger_caches()
+                fresh = built_font(spec_j, table_j, errors_j)
+                return nested(extra, query_call, fresh, op, arg)
+
+            found = threshold(query_built)
+            if found is not None:
+                (d0, out0), (d1, out1) = found
+                assert is_recursion(out1) and not is_recursion(out0), (op, out0, out1)
+                yield [spec, table, errors, op + "@build", arg, d0, d1], [canon_or_hash(out0), canon_or_hash(out1)]
 
 
 # -- real corpus ------------------------------------------------------------------

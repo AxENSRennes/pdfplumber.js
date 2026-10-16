@@ -19,7 +19,7 @@ use std::rc::{Rc, Weak};
 
 use pdfminer::casting::IterItem;
 use pdfminer::cmapdb::{AttrValue, CMapBase, CMapDB, DirCMapProvider, Unichr, UnicodeMap};
-use pdfminer::layout::CharDisp;
+use pdfminer::layout::{CharDisp, LTCharFont, LTPayload};
 use pdfminer::pdffont::cff::SidName;
 use pdfminer::pdffont::frames::clear_logger_cache;
 use pdfminer::pdffont::{
@@ -414,12 +414,37 @@ fn font_attrs(font: &PDFFont) -> Value {
     }
     fields.push(("is_vertical", Value::Bool(font.is_vertical())));
     fields.push(("is_multibyte", Value::Bool(font.is_multibyte())));
+    fields.push(("repr", Value::str(font.repr())));
+    check_ltchar_font(font);
     // called through call_seq from font_attrs, at the depth of the queries
     fields.push(("get_ascent", call_seq(|| font.get_ascent())));
     fields.push(("get_descent", call_seq(|| font.get_descent())));
     fields.push(("get_width", call_seq(|| font.get_width())));
     fields.push(("get_height", call_seq(|| font.get_height())));
     named(font.class_name(), fields)
+}
+
+/// A layout payload whose font name is the font's.
+#[derive(Clone)]
+struct FP;
+
+impl LTPayload for FP {
+    type FontName = FontName;
+    type GraphicState = ();
+    type Color = ();
+    type Attr = ();
+}
+
+/// What `LTChar.__init__` reads of a font (`LTCharFont`) is what the
+/// report shows (`fontname`, `is_vertical()`, `get_descent()`, compared
+/// with Python there).
+fn check_ltchar_font(font: &PDFFont) {
+    let name: FontName = LTCharFont::<FP>::fontname(font);
+    assert_eq!(canon(&fontname(&name)), canon(&fontname(&font.fontname)), "LTCharFont::fontname");
+    assert_eq!(LTCharFont::<FP>::is_vertical(font), font.is_vertical(), "LTCharFont::is_vertical");
+    let direct = res(font.get_descent(), |x| operand(&x));
+    let via = res(LTCharFont::<FP>::get_descent(font), |n| num(&n));
+    assert_eq!(canon(&via), canon(&direct), "LTCharFont::get_descent");
 }
 
 /// `decode_loop(font, s)` called through `attempt`.
@@ -609,6 +634,7 @@ fn cff_report(mut font: CFFFont) -> Value {
             ("name2gid", name2gid),
             ("gid2name", gid2name),
             ("items", items),
+            ("reprs", Value::List(indexes.iter().map(|ix| Value::str(ix.repr())).collect())),
             ("tell", Value::Int(PyInt::Small(font.fp.tell()))),
         ],
     )
@@ -762,6 +788,20 @@ fn depth_boundaries() {
                     let PDFObject::Dict(spec) = build(&a[0], &weak) else { panic!("a dict spec") };
                     let font = at(d, || get_font(&spec));
                     res(font, |f| font_attrs(&f))
+                })
+                .collect();
+        }
+        if let Some(op) = op.strip_suffix("@build") {
+            // the query right after a new creation of the font, the logger
+            // caches as the creation left them
+            return [&a[5], &a[6]]
+                .iter()
+                .map(|d| {
+                    clear_logger_cache();
+                    let (_doc, weak) = load_doc(&a[1], &a[2]);
+                    let PDFObject::Dict(spec) = build(&a[0], &weak) else { panic!("a dict spec") };
+                    let fresh = get_font(&spec).expect("a font for the queries");
+                    res(recursion::with_depth(depth(d), || query_call(&fresh, op, &a[4])), |v| v)
                 })
                 .collect();
         }

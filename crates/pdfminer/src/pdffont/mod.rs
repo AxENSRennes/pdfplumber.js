@@ -154,40 +154,27 @@ fn stream_value(x: &PDFObject) -> PyResult<Rc<PDFStream>> {
     Ok(Rc::new(PDFStream::new(PDFDict::new(), Rc::from(&[][..]), None)))
 }
 
-/// `stream.get_data()`, with the frames of `get_data` and `decode` down to
-/// the filters (`get_filters` and the `get_any`/`resolve1` it calls, the
-/// filter function, the predictor's `int_value`). The frames inside a
-/// filter other than Flate's (LZW's decoder, ASCII85...) are not modeled.
+/// `stream.get_data()`, with the frames of `get_data`, `decode` and
+/// `get_filters` (the `get_any` and `resolve1` it calls; `PDFObjRef.resolve`
+/// and `getobj` count theirs). `get_any`, 4 frames below the caller of
+/// `get_data`, is the deepest point of a decode by Flate (zlib is C code),
+/// ASCIIHex, RunLength or no filter, predictors included (`int_value` ->
+/// `resolve1` is as deep, the filter functions one frame less; measured
+/// with `oracle/depth_probe.py`), so those are not taken again. Not
+/// modeled: the filters that go deeper, ASCII85 (`base64.a85decode`, 5),
+/// LZW (its decoder's generator and `log.debug`, 6 or 7), a corrupted Flate
+/// stream (`decompress_corrupted`'s `log.warning`, 5 to 7), CCITT.
 fn get_data(stream: &PDFStream) -> PyResult<Rc<[u8]>> {
     let _frame = frames::frame()?;
     if stream.data().is_none() {
         let _decode = frames::frame()?;
-        // get_filters, and the frames of get_any and of resolve1 (whose
-        // resolve() and getobj() count theirs)
-        let filters = {
-            let _get_filters = frames::frame()?;
-            frames::leaf(1)?; // get_any
-            let _resolve1 = frames::frame()?;
-            stream.get_filters()
-        };
-        match filters {
-            Ok(filters) => {
-                for (f, params) in &filters {
-                    let flate = crate::pdftypes::in_literals(f, &crate::pdftypes::LITERALS_FLATE_DECODE[..]);
-                    if !flate && !matches!(f, PDFObject::Literal(_)) {
-                        continue;
-                    }
-                    if !flate {
-                        frames::leaf(1)?; // the filter function
-                    }
-                    if params.is_truthy() && params.py_contains_str("Predictor").unwrap_or(false) {
-                        frames::leaf(2)?; // int_value -> resolve1
-                    }
-                }
-            }
+        let _get_filters = frames::frame()?;
+        frames::leaf(1)?; // get_any
+        let _resolve1 = frames::frame()?;
+        match stream.get_filters() {
             // decode raises it again below, at the same point
             Err(e) if e.is_instance(ExcKind::RecursionError) => return Err(e),
-            Err(_) => {}
+            _ => {}
         }
     }
     stream.get_data()
