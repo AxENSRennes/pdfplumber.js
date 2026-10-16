@@ -92,7 +92,23 @@ observable, et seulement là.
   clés de `set`/`dict` avec un raccourci d'identité (`x is y or x == y`) ;
   une valeur NaN du modèle d'objets porte l'identité de son objet dans sa
   charge utile (`PyValue::float` : un nouvel objet ; un clone : le même),
-  voir `obj.rs`, « NaN identity ».
+  voir `obj.rs`, « NaN identity ». Un NaN de charge utile nulle
+  (`PyValue::Float(f64::NAN)` écrit tel quel, par exemple par un décodeur
+  de valeurs venues de JavaScript) n'a pas d'identité : il n'est jamais
+  « le même objet » qu'un autre, lui-même compris, comme toute valeur
+  venue de l'extérieur.
+- **Taille des séquences** : `seq * n` (`str`, `bytes`, `tuple`, `list`)
+  lève les erreurs de CPython (`OverflowError`, `MemoryError` au-delà de
+  `PY_SSIZE_T_MAX`) et construit tout résultat de 4 Gio au plus (dans la
+  représentation du port, `obj::MAX_REPEAT_BYTES`). Au-delà, le port lève
+  `MemoryError` là où CPython tenterait l'allocation (refusée sur la
+  machine de l'oracle à partir d'environ 26 Gio) : écart accepté, puisque
+  `wasm32` ne peut adresser plus ; c'est ce que ferait CPython sur une
+  machine qui n'accorde pas l'allocation. Aucun cas généré ne tombe entre
+  les deux. Les boucles du texte en mise en page (`[x] * n`, `range(n)`
+  qui ajoute une ligne par tour) gardent leur garde de 10^7 tours
+  (`utils/text.rs`, `MAX_REPEAT`) : Python y bouclerait jusqu'à épuiser la
+  mémoire.
 - **Objets pdfplumber** (`T_obj`) : dictionnaires ordonnés à clés `str`, comme
   en Python. L'ordre des clés est celui de Python (ordre d'affectation de
   `__dict__` des objets `LT*`, puis ajouts de `process_object`). Les attributs
@@ -103,7 +119,12 @@ observable, et seulement là.
   `TypeError`, `AssertionError`, `ValueError`, `IndexError`, `zlib.error`,
   `struct.error`, `UnicodeDecodeError`, `RecursionError`, …) avec sa
   hiérarchie (`except PSException:` attrape `PSEOF`). Le message reproduit
-  `str(e)`. Les `try/except` upstream deviennent des `match` sur ces types.
+  `str(e)` ; quand il contient un surrogate isolé (une `str` de
+  l'utilisateur), `message` en est une copie avec U+FFFD, et seul
+  `PyErr::py_message()` est exact : tout ce qui montre `str(e)` (traces,
+  frontière JavaScript, en UTF-16 par `PyStr::to_utf16`) lit
+  `py_message()`. Les `try/except` upstream deviennent des `match` sur ces
+  types.
 - **Avertissements** (`logging`, `warnings.warn`) : leur texte est sans effet
   sur la sortie et remonte par un canal de diagnostics (option `onWarning`
   côté JS) ; leurs cadres Python comptent pour la profondeur de récursion

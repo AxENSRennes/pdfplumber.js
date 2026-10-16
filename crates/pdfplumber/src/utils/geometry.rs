@@ -6,7 +6,7 @@
 
 use pycompat::{exc, ExcKind, PyErr, PyResult, PyStr};
 
-use crate::obj::{bbox_from_value, Bbox, Hot, Obj, PyValue};
+use crate::obj::{bbox_from_value, check_hashable, py_contains, Bbox, Hot, Obj, PyValue};
 use crate::utils::clustering::cluster_objects;
 
 /// `max(a, b)`: `b` only when `b > a`.
@@ -403,19 +403,20 @@ pub fn line_to_edge(line: &Obj) -> PyResult<Obj> {
 // pdfplumber/utils/geometry.py:254 obj_to_edges
 pub fn obj_to_edges(obj: &Obj) -> PyResult<Vec<Obj>> {
     let t = obj.hot(Hot::ObjectType)?;
-    let Some(name) = t.as_str() else {
-        return Err(exc::TypeError(format!("argument of type '{}' is not iterable", t.type_name())));
-    };
-    if name.contains("_edge") {
+    // `"_edge" in t`: Python's `in` on whatever value the object holds (a
+    // substring of a `str`, an item of a `list`, a key of a `dict`...)
+    if py_contains(t, &PyValue::str("_edge"))? {
         Ok(vec![obj.clone()])
-    } else if name == "line" {
+    } else if t.py_eq(&PyValue::str("line")) {
         Ok(vec![line_to_edge(obj)?])
-    } else if name == "rect" {
-        rect_to_edges(obj)
-    } else if name == "curve" {
-        curve_to_edges(obj)
     } else {
-        Err(exc::KeyError(t.repr()))
+        // `{"rect": rect_to_edges, "curve": curve_to_edges}[t]` hashes `t`
+        check_hashable(t)?;
+        match t.as_str() {
+            Some("rect") => rect_to_edges(obj),
+            Some("curve") => curve_to_edges(obj),
+            _ => Err(exc::KeyError(t.repr())),
+        }
     }
 }
 

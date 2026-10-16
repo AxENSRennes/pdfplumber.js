@@ -208,7 +208,10 @@ impl ExcKind {
 pub struct PyErrInfo {
     pub kind: ExcKind,
     /// `str(e)`, or, when `str(e)` holds a lone surrogate (a user's `str`
-    /// formatted into the message), that text with U+FFFD in its place.
+    /// formatted into the message), that text with U+FFFD in its place:
+    /// for Rust-side checks and logs only. Whatever shows `str(e)` to a
+    /// user (traces, the JavaScript boundary, whose strings hold lone
+    /// surrogates) reads [`PyErr::py_message`].
     pub message: String,
     /// `str(e)` as `surrogatepass` UTF-8 bytes (see [`crate::PyStr`]) when
     /// it holds a lone surrogate; `None` otherwise. Bytes rather than a

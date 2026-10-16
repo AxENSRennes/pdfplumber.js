@@ -577,6 +577,32 @@ def gen_pystr(rng):
         units = [rng.choice([rng.randint(0, 0xFFFF), rng.randint(0xD800, 0xDFFF), 0x61]) for _ in range(rng.randint(0, 8))]
         raw = b"".join(u.to_bytes(2, "little") for u in units)
         yield ["from_utf16", units], raw.decode("utf-16-le", "surrogatepass")
+    # bytes.decode("utf-8", "surrogatepass"), None when it raises: shortest
+    # forms only, at most U+10FFFF, whole sequences
+    edges = [b"", b"\x00", b"\x7f", b"\x80", b"\xbf", b"\xc0\x80", b"\xc1\xbf", b"\xc2\x80", b"\xdf\xbf", b"\xc2",
+             b"\xc2\x41", b"\xe0\x80\x80", b"\xe0\x9f\xbf", b"\xe0\xa0\x80", b"\xe0\xa0", b"\xe1\x80\x41",
+             b"\xed\x9f\xbf", b"\xed\xa0\x80", b"\xed\xbf\xbf", b"\xee\x80\x80", b"\xef\xbf\xbf", b"\xf0\x80\x80\x80",
+             b"\xf0\x8f\xbf\xbf", b"\xf0\x90\x80\x80", b"\xf0\x90\x80", b"\xf1\x80\x80\x41", b"\xf4\x8f\xbf\xbf",
+             b"\xf4\x90\x80\x80", b"\xf5\x80\x80\x80", b"\xf7\xbf\xbf\xbf", b"\xf8\x88\x80\x80\x80", b"\xfe", b"\xff",
+             b"\xc2\x80\xed\xa0\x80", b"a\xed\xa0\xbd\xed\xb8\x80b", b"\xf0\x9f\x98\x80", b"a\xc0", b"\xe0\xa0\x80\x80"]
+    pieces = [b"a", b"\xc2\xa9", b"\xed\xa0\x80", b"\xf0\x9f\x98\x80", b"\xe2\x82\xac"]
+    lead_or_cont = [0x00, 0x41, 0x7f, 0x80, 0x9f, 0xa0, 0xbf, 0xc0, 0xc1, 0xc2, 0xdf, 0xe0, 0xed, 0xef, 0xf0, 0xf4, 0xf5, 0xff]
+    randoms = []
+    for _ in range(4000):
+        if rng.random() < 0.5:
+            b = bytes(rng.choice([rng.choice(lead_or_cont), rng.randint(0, 255), rng.randint(0x80, 0xbf)]) for _ in range(rng.randint(1, 6)))
+        else:
+            b = b"".join(rng.choice(pieces) for _ in range(rng.randint(1, 3)))
+            if rng.random() < 0.6:
+                i = rng.randint(0, len(b) - 1)
+                b = b[:i] + bytes([rng.choice(lead_or_cont)]) + b[i + rng.choice([0, 1]):]
+        randoms.append(b)
+    for b in edges + randoms:
+        try:
+            out = b.decode("utf-8", "surrogatepass")
+        except UnicodeDecodeError:
+            out = None
+        yield ["from_surrogatepass", b], out
 
 
 def gen_bytes_repr(rng):

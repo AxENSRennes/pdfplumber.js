@@ -48,6 +48,12 @@
 //!   in CPython, is fixed by the port where it matters
 //!   (`utils/clustering.rs`).
 //!
+//! A `float` value is a [`PyFloat`], whose field is private: it is made by
+//! [`PyValue::float`] or [`PyValue::float_with_identity`] (or copied from
+//! another value), so every NaN carries an identity; code outside this
+//! module cannot write a bare `f64::NAN`, which would be one object shared
+//! by every such NaN.
+//!
 //! Values made from outside (a JavaScript number, a value of a test case)
 //! are new objects, except that a NaN whose payload already carries an
 //! identity keeps it ([`PyValue::float_with_identity`]): the generators of
@@ -261,7 +267,8 @@ pub enum PyValue {
     None,
     Bool(bool),
     Int(PyInt),
-    Float(f64),
+    /// A `float` (see [`PyFloat`]).
+    Float(PyFloat),
     Str(PyStr),
     Bytes(Rc<[u8]>),
     Tuple(Rc<[PyValue]>),
@@ -271,6 +278,30 @@ pub enum PyValue {
     /// (`PSLiteral`, `PSKeyword`, `PDFStream`, `PDFObjRef`, and the `list`
     /// and `dict` objects of a PDF structure, which keep their identity).
     Pdf(PDFObject),
+}
+
+/// The value of a Python `float` object. A NaN carries its object's
+/// identity in its payload (see "NaN identity" in the module
+/// documentation); the field is private so that no code outside this
+/// module writes a NaN without one: values are made by [`PyValue::float`]
+/// and [`PyValue::float_with_identity`], and copying one keeps its object.
+///
+/// ```compile_fail
+/// // a bare NaN would be one object shared by every such value
+/// let v = pdfplumber::obj::PyValue::Float(pdfplumber::obj::PyFloat(f64::NAN));
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PyFloat(f64);
+
+impl PyFloat {
+    /// `0.0`
+    pub const ZERO: PyFloat = PyFloat(0.0);
+
+    /// The number (a NaN with its identity payload).
+    #[inline]
+    pub fn get(self) -> f64 {
+        self.0
+    }
 }
 
 /// `None`. (A default lets cargo mutants replace a function returning a
@@ -309,6 +340,13 @@ const FRESH_NAN: u64 = 1 << 50;
 
 thread_local! {
     static NAN_COUNTER: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// The payload of a NaN (the mantissa bits below the quiet bit): its
+/// identity, 0 for none.
+#[inline]
+fn nan_payload(x: f64) -> u64 {
+    x.to_bits() & ((1 << 51) - 1)
 }
 
 /// A quiet NaN with a payload no other NaN of this thread has.
@@ -396,18 +434,18 @@ impl PyValue {
     /// module documentation).
     #[inline]
     pub fn float(x: f64) -> PyValue {
-        PyValue::Float(if x.is_nan() { fresh_nan() } else { x })
+        PyValue::Float(PyFloat(if x.is_nan() { fresh_nan() } else { x }))
     }
 
     /// A `float` from outside the port: a NaN whose payload holds an
     /// identity (non-zero, without the port's own bit) keeps it, any other
     /// NaN is a new object.
     pub fn float_with_identity(x: f64) -> PyValue {
-        let payload = x.to_bits() & ((1 << 51) - 1);
+        let payload = nan_payload(x);
         if x.is_nan() && (payload == 0 || payload & FRESH_NAN != 0) {
-            return PyValue::Float(fresh_nan());
+            return PyValue::Float(PyFloat(fresh_nan()));
         }
-        PyValue::Float(x)
+        PyValue::Float(PyFloat(x))
     }
 
     /// A `tuple` value.
@@ -485,7 +523,7 @@ impl PyValue {
             PyValue::None => false,
             PyValue::Bool(b) => *b,
             PyValue::Int(i) => !i.is_zero(),
-            PyValue::Float(x) => *x != 0.0,
+            PyValue::Float(PyFloat(x)) => *x != 0.0,
             PyValue::Str(s) => !s.is_empty(),
             PyValue::Bytes(b) => !b.is_empty(),
             PyValue::Tuple(t) | PyValue::List(t) => !t.is_empty(),
@@ -499,7 +537,7 @@ impl PyValue {
     #[inline]
     pub fn as_num(&self) -> Option<Num> {
         match self {
-            PyValue::Float(x) => Some(Num::Float(*x)),
+            PyValue::Float(PyFloat(x)) => Some(Num::Float(*x)),
             PyValue::Int(i) => Some(Num::Int(i.clone())),
             PyValue::Bool(b) => Some(Num::Int(PyInt::Small(i64::from(*b)))),
             PyValue::Pdf(_) => self.as_python()?.as_num(),
@@ -550,7 +588,7 @@ impl PyValue {
             PyValue::Int(i) => {
                 let _ = write!(out, "{i}");
             }
-            PyValue::Float(x) => out.push_str(&float_repr(*x)),
+            PyValue::Float(PyFloat(x)) => out.push_str(&float_repr(*x)),
             PyValue::Str(s) => out.push_str(&s.repr()),
             PyValue::Bytes(b) => out.push_str(&bytes_repr(b)),
             PyValue::Tuple(t) => {
@@ -610,7 +648,7 @@ impl PyValue {
     /// documentation; a `dict` is equal to itself through [`Obj::py_eq`]).
     #[inline]
     pub fn eq_bool(&self, other: &PyValue) -> bool {
-        if let (PyValue::Float(a), PyValue::Float(b)) = (self, other) {
+        if let (PyValue::Float(PyFloat(a)), PyValue::Float(PyFloat(b))) = (self, other) {
             return a == b || (a.is_nan() && a.to_bits() == b.to_bits());
         }
         self.py_eq(other)
@@ -619,7 +657,7 @@ impl PyValue {
     /// `a == b`, the operator: a NaN equals nothing; the items of
     /// containers compare with [`PyValue::eq_bool`].
     pub fn py_eq(&self, other: &PyValue) -> bool {
-        if let (PyValue::Float(a), PyValue::Float(b)) = (self, other) {
+        if let (PyValue::Float(PyFloat(a)), PyValue::Float(PyFloat(b))) = (self, other) {
             return a == b;
         }
         if let Some((a, b)) = self.as_python2(other) {
@@ -644,7 +682,7 @@ impl PyValue {
     /// `a < b`, `a <= b`, `a > b` or `a >= b`, with CPython's `TypeError`
     /// for unorderable types.
     pub fn compare(&self, other: &PyValue, op: CmpOp) -> PyResult<bool> {
-        if let (PyValue::Float(a), PyValue::Float(b)) = (self, other) {
+        if let (PyValue::Float(PyFloat(a)), PyValue::Float(PyFloat(b))) = (self, other) {
             return Ok(match op {
                 CmpOp::Lt => a < b,
                 CmpOp::Le => a <= b,
@@ -762,12 +800,8 @@ impl PyValue {
         }
         Some(Ok(match (self, other) {
             (PyValue::Str(a), PyValue::Str(b)) => PyValue::Str(a.concat(b)),
-            (PyValue::Bytes(a), PyValue::Bytes(b)) => {
-                if let Err(e) = check_repeat_len(a.len().checked_add(b.len())) {
-                    return Some(Err(e));
-                }
-                PyValue::Bytes(a.iter().chain(b.iter()).copied().collect())
-            }
+            // (the operands exist: no size beyond what memory holds)
+            (PyValue::Bytes(a), PyValue::Bytes(b)) => PyValue::Bytes(a.iter().chain(b.iter()).copied().collect()),
             (PyValue::Tuple(a), PyValue::Tuple(b)) => PyValue::Tuple(a.iter().chain(b.iter()).cloned().collect()),
             (PyValue::List(a), PyValue::List(b)) => PyValue::List(a.iter().chain(b.iter()).cloned().collect()),
             _ => return None,
@@ -778,9 +812,9 @@ impl PyValue {
     /// included), `None` for other operands. `n` must fit a `Py_ssize_t`
     /// (`OverflowError`); `n <= 0` gives an empty sequence; a result longer
     /// than `PY_SSIZE_T_MAX` raises CPython's error (`OverflowError` for
-    /// `str` and `bytes`, `MemoryError` for `tuple` and `list`); beyond
-    /// [`MAX_REPEAT`] items the port raises `MemoryError` (a resource
-    /// guard, where Python would try to allocate).
+    /// `str` and `bytes`, `MemoryError` for `tuple` and `list`); a result
+    /// beyond [`MAX_REPEAT_BYTES`] raises `MemoryError` (where CPython
+    /// would try to allocate it).
     fn seq_repeat(&self, other: &PyValue) -> Option<PyResult<PyValue>> {
         if let Some((a, b)) = self.as_python2(other) {
             return a.seq_repeat(&b);
@@ -815,7 +849,12 @@ impl PyValue {
                 _ => exc::MemoryError(""),
             });
         }
-        check_repeat_len(usize::try_from(len * n).ok())?;
+        let (units, item_size) = match self {
+            PyValue::Str(s) => (s.as_bytes().len() as u64, 1),
+            PyValue::Bytes(_) => (len, 1),
+            _ => (len, std::mem::size_of::<PyValue>() as u64),
+        };
+        check_repeat_size(units, n, item_size)?;
         let n = n as usize;
         Ok(match self {
             PyValue::Str(s) => PyValue::Str(s.repeat(n)),
@@ -829,7 +868,7 @@ impl PyValue {
     /// `a + b`
     #[inline]
     pub fn add(&self, other: &PyValue) -> PyResult<PyValue> {
-        if let (PyValue::Float(a), PyValue::Float(b)) = (self, other) {
+        if let (PyValue::Float(PyFloat(a)), PyValue::Float(PyFloat(b))) = (self, other) {
             return Ok(PyValue::float(a + b));
         }
         if let Some(r) = self.seq_concat(other) {
@@ -842,7 +881,7 @@ impl PyValue {
     /// `a - b`
     #[inline]
     pub fn sub(&self, other: &PyValue) -> PyResult<PyValue> {
-        if let (PyValue::Float(a), PyValue::Float(b)) = (self, other) {
+        if let (PyValue::Float(PyFloat(a)), PyValue::Float(PyFloat(b))) = (self, other) {
             return Ok(PyValue::float(a - b));
         }
         let (a, b) = self.num_operands("-", other)?;
@@ -851,7 +890,7 @@ impl PyValue {
 
     /// `a * b`
     pub fn mul(&self, other: &PyValue) -> PyResult<PyValue> {
-        if let (PyValue::Float(a), PyValue::Float(b)) = (self, other) {
+        if let (PyValue::Float(PyFloat(a)), PyValue::Float(PyFloat(b))) = (self, other) {
             return Ok(PyValue::float(a * b));
         }
         if let Some(r) = self.seq_repeat(other) {
@@ -863,7 +902,7 @@ impl PyValue {
 
     /// `a / b`
     pub fn truediv(&self, other: &PyValue) -> PyResult<PyValue> {
-        if let (PyValue::Float(a), PyValue::Float(b)) = (self, other) {
+        if let (PyValue::Float(PyFloat(a)), PyValue::Float(PyFloat(b))) = (self, other) {
             return Ok(PyValue::float(float_div(*a, *b)?));
         }
         let (a, b) = self.num_operands("/", other)?;
@@ -895,8 +934,8 @@ impl PyValue {
         match self {
             // float(x) of a float is x itself (PyNumber_Float)
             PyValue::Float(x) => Ok(PyValue::Float(*x)),
-            PyValue::Int(i) => Ok(PyValue::Float(i.to_f64()?)),
-            PyValue::Bool(b) => Ok(PyValue::Float(f64::from(u8::from(*b)))),
+            PyValue::Int(i) => Ok(PyValue::float(i.to_f64()?)),
+            PyValue::Bool(b) => Ok(PyValue::float(f64::from(u8::from(*b)))),
             PyValue::Str(s) => match s.as_str() {
                 Some(text) => Ok(PyValue::float(float_from_str(text)?)),
                 // _PyUnicode_TransformDecimalAndSpaceToASCII stops at the
@@ -957,18 +996,21 @@ pub fn py_sum<'a>(items: impl IntoIterator<Item = &'a PyValue>) -> PyResult<PyVa
     }
 }
 
-/// The resource guard of repeated sequences (`[x] * n`, `"ab" * n`, a
-/// loop over `range(n)` that appends): a length no real page reaches.
-/// Python would try to allocate (`MemoryError` when it cannot, which is
-/// certain from about 2**44 items on, beyond any address space) or loop
-/// until memory runs out.
-pub const MAX_REPEAT: usize = 10_000_000;
+/// The largest repetition result the port builds, in bytes of its own
+/// representation: the address space of `wasm32`, where no larger block
+/// can exist. Python builds whatever its allocator grants (`MemoryError`
+/// when the allocation is refused, which on the oracle machine happens
+/// from about 26 GiB on, see `pdfminer::utils`); the port raises
+/// `MemoryError` from 4 GiB on, as CPython would on a machine whose
+/// allocator cannot grant more (an accepted deviation, `architecture.md`).
+/// Below, the port allocates as Python does.
+pub const MAX_REPEAT_BYTES: u64 = 1 << 32;
 
-/// `MemoryError` for a sequence longer than [`MAX_REPEAT`] (`None`: longer
-/// than `usize`).
-fn check_repeat_len(len: Option<usize>) -> PyResult<()> {
-    match len {
-        Some(n) if n <= MAX_REPEAT => Ok(()),
+/// `MemoryError` for a repetition of `len * n` items of `item_size` bytes
+/// each beyond [`MAX_REPEAT_BYTES`].
+fn check_repeat_size(len: u64, n: u64, item_size: u64) -> PyResult<()> {
+    match len.checked_mul(n).and_then(|k| k.checked_mul(item_size)) {
+        Some(bytes) if bytes <= MAX_REPEAT_BYTES => Ok(()),
         _ => Err(exc::MemoryError("")),
     }
 }
@@ -1111,7 +1153,7 @@ pub fn check_hashable(v: &PyValue) -> PyResult<()> {
 fn hash_num<H: Hasher>(v: &PyValue, state: &mut H) -> bool {
     const TWO_63: f64 = 9_223_372_036_854_775_808.0;
     match v {
-        PyValue::Float(x) => {
+        PyValue::Float(PyFloat(x)) => {
             if x.fract() == 0.0 && *x >= -TWO_63 && *x < TWO_63 {
                 state.write_u8(0);
                 state.write_i64(*x as i64);

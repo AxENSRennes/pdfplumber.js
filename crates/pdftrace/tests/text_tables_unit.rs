@@ -858,21 +858,35 @@ fn table_helpers_smoke() {
     assert!(exc::ValueError("x").message == "x");
 }
 
-/// The resource guard of sequence repetition: a result longer than
-/// `MAX_REPEAT` (10**7) items raises `MemoryError` where CPython would
-/// allocate it (no oracle case: the generator leaves these out). Beyond
+/// The address-space limit of sequence repetition: a result beyond
+/// `MAX_REPEAT_BYTES` (4 GiB of the port's representation, the wasm32
+/// address space) raises `MemoryError` where CPython on the oracle machine
+/// would allocate it (no oracle case: the generator leaves these out, see
+/// `architecture.md`). Smaller results are built as in Python (oracle
+/// cases: a 20 MB `str` in `pages_fuzz`, `user_arg_cases`); beyond
 /// `PY_SSIZE_T_MAX`, CPython's own errors are oracle cases (`ops`).
 #[test]
-fn sequence_repeat_resource_guard() {
-    let n = PyValue::from(10_000_001i64);
-    for seq in [PyValue::str("a"), PyValue::Bytes(std::rc::Rc::from(&b"a"[..])), PyValue::tuple([PyValue::None])] {
+fn sequence_repeat_address_space_limit() {
+    let limit = pdfplumber::obj::MAX_REPEAT_BYTES as i64;
+    let item = std::mem::size_of::<PyValue>() as i64;
+    for (seq, n) in [
+        (PyValue::str("a"), limit + 1),
+        (PyValue::str("ab"), limit / 2 + 1),
+        (PyValue::str("\u{e9}"), limit / 2 + 1), // two UTF-8 bytes, one code point
+        (PyValue::Bytes(std::rc::Rc::from(&b"a"[..])), limit + 1),
+        (PyValue::tuple([PyValue::None]), limit / item + 1),
+        (PyValue::list([PyValue::None, PyValue::None]), limit / item / 2 + 1),
+    ] {
+        let n = PyValue::from(n);
         let e = seq.mul(&n).unwrap_err();
         assert_eq!((e.kind, e.message.as_str()), (pycompat::ExcKind::MemoryError, ""), "{seq:?}");
         let e = n.mul(&seq).unwrap_err();
         assert_eq!(e.kind, pycompat::ExcKind::MemoryError);
     }
-    let ok = PyValue::str("ab").mul(&PyValue::from(5_000_000i64)).unwrap();
-    assert_eq!(ok.as_str().map(str::len), Some(10_000_000));
+    let ok = PyValue::str("ab").mul(&PyValue::from(10_000_000i64)).unwrap();
+    assert_eq!(ok.as_str().map(str::len), Some(20_000_000));
+    let ok = PyValue::tuple([PyValue::None]).mul(&PyValue::from(10_000_001i64)).unwrap();
+    assert_eq!(ok.as_seq().map(<[PyValue]>::len), Some(10_000_001));
 }
 
 /// The resource guard of layout text: `for i in range(n)` that appends a
@@ -944,6 +958,45 @@ fn no_nan_vertex() {
         }
     }
     assert!(seen > 0, "some masks give vertices");
+}
+
+/// A NaN that comes from outside (a JavaScript number: `f64::NAN` or any
+/// payload) is a new object, as the values of a decoder are (`obj.rs`,
+/// "NaN identity"; `PyFloat`'s private field leaves no other way to make
+/// a `float`): two decoded NaNs are two objects (distinct clusters, `[a]
+/// == [b]` false, as the oracle's `nan_cluster_cases` check for distinct
+/// NaN objects), and each is found again as itself (one cluster, `[a] ==
+/// [a]`), whatever the bits it arrived with.
+#[test]
+fn outside_nans_are_new_objects() {
+    let item = |v: PyValue| Obj::from_pairs([("v", v)]);
+    let sizes = |a: PyValue, b: PyValue| -> Vec<usize> {
+        let xs = [item(a), item(b)];
+        let clusters =
+            cluster_objects(&xs, |o: &Obj| Ok(o.get("v").expect("v").clone()), &PyValue::from(0i64), false).unwrap();
+        clusters.iter().map(Vec::len).collect()
+    };
+    let same = |a: &PyValue, b: &PyValue| PyValue::list([a.clone()]).py_eq(&PyValue::list([b.clone()]));
+    let outside_bits =
+        [f64::NAN, -f64::NAN, f64::from_bits(0x7ff8_0000_0000_0001), f64::from_bits(0x7ff4_0000_0000_0000)];
+    for x in outside_bits {
+        let payload = x.to_bits() & ((1 << 51) - 1);
+        type Decode = fn(f64) -> PyValue;
+        let decoders: [(Decode, bool); 3] =
+            [(PyValue::from, false), (PyValue::float, false), (PyValue::float_with_identity, true)];
+        for (decode, keeps_payload) in decoders {
+            let (a, b) = (decode(x), decode(x));
+            // (float_with_identity keeps the identity of a test case's NaN:
+            // a payload without the port's own bit 50)
+            if !keeps_payload || payload == 0 || payload & (1 << 50) != 0 {
+                // a NaN without an identity payload: two new objects
+                assert_eq!(sizes(a.clone(), b.clone()), [1, 1], "{:#x}", x.to_bits());
+                assert!(!same(&a, &b));
+            }
+            assert_eq!(sizes(a.clone(), a.clone()), [2], "{:#x}", x.to_bits());
+            assert!(same(&a, &a) && a.eq_bool(&a.clone()));
+        }
+    }
 }
 
 /// `{:?}` of a value or a dict is its Python `repr` (the replay's mismatch

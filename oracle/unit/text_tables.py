@@ -420,6 +420,9 @@ def fuzz_cases(n: int, nan_sets: dict):
     yield from nan_shared_cases(nan_sets)
     yield from surrogate_cases()
     yield from user_arg_cases()
+    yield from odd_word_text_cases()
+    yield from odd_object_type_cases()
+    yield from seq_repeat_cases()
 
 
 #: Texts of the surrogate pages: lone surrogates (``chr(cid)`` of an
@@ -514,6 +517,96 @@ def user_arg_cases():
             ops.append(("tables_new", kw))
             ops.append(("extract_tables_new", kw))
     yield page_case(FakePage(chars, edges, bbox), {"chars": chars, "edges": edges, "bbox": bbox}, ops)
+
+
+#: one word's texts, in order: several that are not a str (hashable or
+#: not, a tuple holding a list), a char without "text" (MISSING)
+MISSING = object()
+ODD_WORD_TEXTS = [
+    [5, [1]], [b"a", {}], [5, "a", [1]], ["a", 5, ("x", [1])], [b"a", None], [5, MISSING], ["a", MISSING, [1]],
+    [MISSING, [1]], [[1], MISSING], ["a", ("x",), "b"], [("x", ["y"]), 5], ["\ud800", 2.5], ["ﬁ", b"x"],
+    [None, "ﬁ"], [5, 6], ["a", "b"],
+]
+
+
+def odd_word_text_cases():
+    """Words of several chars whose texts are not all str (``ODD_WORD_TEXTS``),
+    reaching ``merge_chars`` through a ``split_at_punctuation`` that is a
+    list or a tuple (no ``in <string>`` test): its ``"".join(<generator>)``
+    runs the whole generator (``c["text"]``, then the hashing
+    ``expansions.get``) before it checks that each item is a str."""
+    rng = random.Random(22)
+    for texts in ODD_WORD_TEXTS:
+        chars = []
+        for k, text in enumerate(texts):
+            c = synth_char(rng, 10 + 6 * k, 20, 6, 10, "a", True, 0, "F1", 10.0, (0,))
+            if text is MISSING:
+                del c["text"]
+            else:
+                c["text"] = text
+            chars.append(c)
+        ops = []
+        for punct in [["!"], ("!", "?"), [], ["\ud800"]]:
+            for expand in [True, False]:
+                kw = {"keep_blank_chars": True, "split_at_punctuation": punct, "expand_ligatures": expand}
+                ops += [("words", kw), ("text", {**kw, "layout": True}), ("utext", kw), ("wordmap", kw, {"layout": True})]
+        yield page_case(FakePage(chars, [], (0, 0, 612, 792)), {"chars": chars, "edges": [], "bbox": (0, 0, 612, 792)}, ops)
+
+
+#: object_type values of explicit-line dicts: str with surrogates, any
+#: container (``"_edge" in t``), unhashable values (the ``{rect, curve}[t]``
+#: lookup)
+ODD_OBJECT_TYPES = [
+    "\ud800", "\ud800_edge", "x_edge", ["_edge"], ["x"], ("x",), ("_edge",), {"_edge": 1}, {"x": 1}, b"_edge", b"x",
+    5, None, 2.5, True, ("x", ["y"]), ("_edge", ["y"]), "line", "line\ud800", "rect", "rect\ud800", "curve", "",
+]
+
+
+def odd_object_type_cases():
+    """Explicit vertical and horizontal lines given as dicts whose
+    ``object_type`` is any value (``ODD_OBJECT_TYPES``), with and without an
+    ``orientation``, through ``obj_to_edges`` in ``TableFinder.get_edges``."""
+    bbox = (0, 0, 612, 792)
+    rng = random.Random(23)
+    chars = synth_chars(rng)[:30]
+    for with_orientation in [False, True]:
+        ops = []
+        for t in ODD_OBJECT_TYPES:
+            for vertical in [True, False]:
+                if vertical:
+                    d = {"x0": 50, "x1": 50, "top": 10, "bottom": 200, "width": 0, "height": 190, "doctop": 10,
+                         "y0": 592, "y1": 782}
+                else:
+                    d = {"x0": 10, "x1": 300, "top": 60, "bottom": 60, "width": 290, "height": 0, "doctop": 60,
+                         "y0": 732, "y1": 732}
+                d["object_type"] = t
+                if with_orientation:
+                    d["orientation"] = "v" if vertical else "h"
+                lines = [10, d, 120] if vertical else [5, d, 150]
+                other = [20, 90] if vertical else [10, 300]
+                key, other_key = ("vertical", "horizontal") if vertical else ("horizontal", "vertical")
+                s = {f"{key}_strategy": "explicit", f"explicit_{key}_lines": lines,
+                     f"{other_key}_strategy": "explicit", f"explicit_{other_key}_lines": other}
+                ops += [("tables", s), ("extract_tables", s)]
+        yield page_case(FakePage(chars, [], bbox), {"chars": chars, "edges": [], "bbox": bbox}, ops)
+
+
+def seq_repeat_cases():
+    """``x_tolerance_ratio * char["size"]`` where the size is a sequence
+    and the ratio a large int: Python builds the repetition (a 20 MB str, a
+    list of 11 million items), then fails on ``bx + x``; directions whose
+    value is a tuple holding a list (unhashable in the set of
+    ``validate_directions``)."""
+    rng = random.Random(24)
+    for size in ["s", [1], b"s", ("s",), "\ud800"]:
+        chars = [synth_char(rng, 10 + 6 * k, 20, 6, 10, t, True, 0, "F1", size, (0,)) for k, t in enumerate("ab")]
+        ops = []
+        for ratio in [2, 11_000_000] + ([20_000_000] if isinstance(size, (str, bytes)) else []):
+            ops.append(("words", {"x_tolerance_ratio": ratio}))
+        for d in [("ttb", ["x"]), ("ttb",), ("x", ("y", [1]))]:
+            ops += [("words", {"line_dir": d}), ("words", {"char_dir": d}), ("text", {"line_dir_render": d}),
+                    ("text", {"char_dir_render": d}), ("text", {"layout": True, "line_dir_render": d})]
+        yield page_case(FakePage(chars, [], (0, 0, 612, 792)), {"chars": chars, "edges": [], "bbox": (0, 0, 612, 792)}, ops)
 
 
 def nan_shared_cases(nan_sets: dict):

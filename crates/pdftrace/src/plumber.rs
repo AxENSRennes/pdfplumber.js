@@ -20,7 +20,7 @@ pub fn to_value(v: &PyValue) -> Value {
         PyValue::None => Value::None,
         PyValue::Bool(b) => Value::Bool(*b),
         PyValue::Int(i) => Value::Int(i.clone()),
-        PyValue::Float(x) => Value::Float(*x),
+        PyValue::Float(x) => Value::Float(x.get()),
         PyValue::Str(s) => Value::py_str(s),
         PyValue::Bytes(b) => Value::Bytes(b.to_vec()),
         PyValue::Tuple(t) => Value::Tuple(t.iter().map(to_value).collect()),

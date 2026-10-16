@@ -259,11 +259,8 @@ fn position_key(dir: T_dir, x: &Obj) -> PyResult<PyValue> {
 /// `{"ttb": ..., ...}[d]` for a direction given as a value (`KeyError`
 /// otherwise).
 fn dir_key(d: &PyValue) -> PyResult<T_dir> {
-    match d {
-        PyValue::Str(s) => s.as_str().and_then(T_dir::parse).ok_or_else(|| exc::KeyError(d.repr())),
-        PyValue::List(_) | PyValue::Dict(_) => Err(exc::TypeError(format!("unhashable type: '{}'", d.type_name()))),
-        other => Err(exc::KeyError(other.repr())),
-    }
+    check_hashable(d)?;
+    d.as_str().and_then(T_dir::parse).ok_or_else(|| exc::KeyError(d.repr()))
 }
 
 /// `str(valid_dirs)` of `validate_directions`. Python prints a `set`, whose
@@ -278,11 +275,9 @@ fn valid_dir(d: &PyValue, name: &str, suffix: &str) -> PyResult<T_dir> {
         let prefix = format!("{name}{suffix} must be one of {VALID_DIRS_REPR}, not ");
         err_ending_with(ExcKind::ValueError, &prefix, &d.py_str(), "")
     };
-    match d {
-        PyValue::Str(s) => s.as_str().and_then(T_dir::parse).ok_or_else(invalid),
-        PyValue::List(_) | PyValue::Dict(_) => Err(exc::TypeError(format!("unhashable type: '{}'", d.type_name()))),
-        _ => Err(invalid()),
-    }
+    // `d not in valid_dirs` (a set) hashes `d`
+    check_hashable(d)?;
+    d.as_str().and_then(T_dir::parse).ok_or_else(invalid)
 }
 
 // pdfplumber/utils/text.py:78 validate_directions
@@ -1070,18 +1065,24 @@ impl WordExtractor {
         let upright = first.hot(Hot::Upright)?.clone();
         let char_dir = self.get_char_dir(&upright);
 
-        let mut text = PyStrBuilder::new();
-        for (i, c) in ordered_chars.iter().enumerate() {
+        // `"".join(<generator>)`: PySequence_Fast first runs the whole
+        // generator (each `c["text"]`, KeyError, then `expansions.get`,
+        // which hashes its key even in the empty dict of
+        // expand_ligatures=False), and only then checks that every item is
+        // a `str` (unicode_join: "sequence item i").
+        let mut texts = Vec::with_capacity(ordered_chars.len());
+        for c in ordered_chars {
             let t = char_text(c)?;
+            check_hashable(t)?;
+            texts.push(t);
+        }
+        let mut text = PyStrBuilder::new();
+        for (i, t) in texts.into_iter().enumerate() {
             match t {
                 PyValue::Str(s) => match expansion(s, self.expand_ligatures) {
                     Some(e) => text.push_rust_str(e),
                     None => text.push_str(s),
                 },
-                // dict.get hashes its key (even the empty dict of expand_ligatures=False)
-                PyValue::List(_) | PyValue::Dict(_) => {
-                    return Err(exc::TypeError(format!("unhashable type: '{}'", t.type_name())))
-                }
                 other => {
                     return Err(exc::TypeError(format!(
                         "sequence item {i}: expected str instance, {} found",

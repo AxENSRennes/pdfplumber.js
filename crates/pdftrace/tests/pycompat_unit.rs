@@ -265,6 +265,10 @@ fn pystr() {
                 let units: Vec<u16> = units.iter().map(|u| int(u) as u16).collect();
                 sv(&PyStr::from_utf16(&units))
             }
+            "from_surrogatepass" => {
+                let Value::Bytes(b) = &a[1] else { panic!("bytes") };
+                PyStr::from_surrogatepass_utf8(b).map_or(Value::None, |s| sv(&s))
+            }
             "cmp" => {
                 let (x, y) = (s(&a[1]), s(&a[2]));
                 Value::List(vec![

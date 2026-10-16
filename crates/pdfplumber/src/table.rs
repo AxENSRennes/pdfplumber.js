@@ -24,7 +24,7 @@ use pycompat::listsort::sort_by_key;
 use pycompat::pystr::PyStrBuilder;
 use pycompat::{exc, ExcKind, PyErr, PyResult, PyStr};
 
-use crate::obj::{bbox_value, py_contains, py_iter, Bbox, HashKey, Hot, Obj, PyValue};
+use crate::obj::{bbox_value, check_hashable, py_contains, py_iter, Bbox, HashKey, Hot, Obj, PyFloat, PyValue};
 use crate::utils::clustering::cluster_objects;
 use crate::utils::geometry::{
     bbox_to_rect, filter_edges, get_bbox_overlap, obj_to_bbox, obj_to_edges, objects_to_bbox, objects_to_rect,
@@ -70,12 +70,9 @@ pub fn snap_edges(edges: &[Obj], x_tolerance: &PyValue, y_tolerance: &PyValue) -
             Some("v") => v.push(e.clone()),
             Some("h") => h.push(e.clone()),
             _ => {
-                return Err(match o {
-                    PyValue::List(_) | PyValue::Dict(_) => {
-                        exc::TypeError(format!("unhashable type: '{}'", o.type_name()))
-                    }
-                    _ => exc::KeyError(o.repr()),
-                })
+                // `by_orientation[e["orientation"]]` hashes the key
+                check_hashable(o)?;
+                return Err(exc::KeyError(o.repr()));
             }
         }
     }
@@ -303,7 +300,7 @@ impl Intersections {
 /// `bool`.
 fn ordered_number(v: &PyValue) -> bool {
     match v {
-        PyValue::Float(x) => !x.is_nan(),
+        PyValue::Float(x) => !x.get().is_nan(),
         PyValue::Int(pycompat::PyInt::Small(_)) | PyValue::Bool(_) => true,
         _ => false,
     }
@@ -868,7 +865,7 @@ impl TableSettings {
 }
 
 /// `UNSET` (pdfplumber/table.py:482 UNSET): `UnsetFloat(0)`, a float.
-const UNSET_VALUE: PyValue = PyValue::Float(0.0);
+const UNSET_VALUE: PyValue = PyValue::Float(PyFloat::ZERO);
 
 /// The value of an `UNSET`-defaulted field (`__post_init__` resolves them
 /// all; a field left unresolved reads as `UNSET`, a `0.0`).
@@ -917,7 +914,7 @@ impl TableSettings {
 
     /// A setting by name (`getattr(self, setting)`; `UNSET` reads as `0.0`).
     fn setting(&self, name: &str) -> PyValue {
-        let unset = |v: &Option<PyValue>| v.clone().unwrap_or(PyValue::Float(0.0));
+        let unset = |v: &Option<PyValue>| v.clone().unwrap_or(UNSET_VALUE);
         match name {
             "snap_tolerance" => self.snap_tolerance.clone(),
             "snap_x_tolerance" => unset(&self.snap_x_tolerance),
