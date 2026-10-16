@@ -220,6 +220,8 @@ fn tables_cover_every_column_type() {
         let refs: Vec<&PyValue> = cells.iter().collect();
         seen[usize::from(column_kind(&refs))] = true;
         assert_eq!(binary_view(&v), js_view(&v));
+        // written as a table (the value right after the header), not as a list
+        assert_eq!(binary::encode(&v).unwrap()[16], binary::TAG_TABLE);
     }
     assert!(seen.iter().all(|&s| s), "column kinds seen: {seen:?}");
     // the narrowest kind

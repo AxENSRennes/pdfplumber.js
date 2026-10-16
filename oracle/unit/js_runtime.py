@@ -123,7 +123,14 @@ OPEN_OPTIONS = [
     {"strict_metadata": 1},
     {"laparams": {"line_margin": 0.3}},
 ]
-TABLE_SETTINGS = [None, {"vertical_strategy": "text", "horizontal_strategy": "text"}, {"snap_tolerance": 1}]
+TABLE_SETTINGS = [
+    None,
+    {"vertical_strategy": "text", "horizontal_strategy": "text"},
+    {"snap_tolerance": 1},
+    # explicit lines given as numbers span the page's bbox
+    {"vertical_strategy": "explicit", "explicit_vertical_lines": [72, 144.5, 216, 400], "horizontal_strategy": "lines"},
+    {"horizontal_strategy": "explicit", "explicit_horizontal_lines": [100, 200.25, 300], "vertical_strategy": "text"},
+]
 
 DOCUMENTS = [
     ("upstream/pdfjs/test/pdfs/noembed-sjis.pdf", 1),
