@@ -123,8 +123,6 @@ pub struct PDFDocument {
     decipher: RefCell<Option<DecipherCallable>>,
     /// `self._parser`, while no operation uses it.
     parser: RefCell<Option<Box<PDFParser>>>,
-    /// The id of `self._parser` (`PDFParserExt::id`).
-    parser_id: Cell<u64>,
     /// A stand-in kept for [`crate::pdfparser::lend`].
     spare_parser: RefCell<Option<Box<PDFParser>>>,
     cached_objs: RefCell<FxHashMap<ObjId, (PDFObject, PyInt)>>,
@@ -154,7 +152,6 @@ impl PDFDocument {
             encryption: RefCell::new(None),
             decipher: RefCell::new(None),
             parser: RefCell::new(None),
-            parser_id: Cell::new(0),
             spare_parser: RefCell::new(None),
             cached_objs: RefCell::new(FxHashMap::default()),
             parsed_objs: RefCell::new(FxHashMap::default()),
@@ -165,7 +162,6 @@ impl PDFDocument {
         });
         let mut parser = Box::new(parser);
         parser.set_document(Rc::downgrade(&doc))?;
-        doc.parser_id.set(parser.ext.id);
         doc.put_parser(parser);
         doc.init(password, fallback)?;
         Ok(doc)
@@ -244,11 +240,6 @@ impl PDFDocument {
     }
 
     // ---- the parser slot
-
-    /// Whether `id` is the id of this document's parser.
-    pub(crate) fn is_own_parser(&self, id: u64) -> bool {
-        self.parser_id.get() == id
-    }
 
     /// Takes the parser out of its slot.
     pub(crate) fn take_parser(&self) -> Option<Box<PDFParser>> {

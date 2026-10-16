@@ -115,29 +115,51 @@ deux). Règles :
   objet PDF prennent les unités C de CPython à chaque niveau (cas
   unitaires à la frontière pour chaque sorte d'objet), `resolve_all` et
   `decipher_all` un cadre par niveau. Une fonction Python portée prend son
-  cadre (`py_frame()`) pour sa durée, un appel depuis du C ses unités
-  (`eval_entry()`), un appel de log ses cadres (`py_frames(2)`, 3 au premier
-  appel d'un niveau sur un logger, voir `docs/verification.md`).
-- Le comptage est en place dans `pdftypes` (`resolve_all`, `decipher_all`,
-  `PDFObjRef.resolve`, `repr`) et pour `literal_name`. Les fonctions de
-  `psparser` et de `pdfinterp` ne prennent pas encore de cadre : aucun
-  appelant porté ne peut les exécuter près de la limite des cadres (une
-  étape les appelle à une profondeur d'environ 10). Elles en prendront avec
-  le port de l'interpréteur, dont la récursion (`do_Do` → `render_contents`)
-  les y amène, chaque module étant vérifié par des cas unitaires à la
-  frontière, comme `pdftypes`.
-  Vague 2 : `pdfparser` (`do_keyword`), `pdfdocument` (`getobj`,
-  `read_xref_from`, les chargements de xref, `lookup`, la recherche des
-  plans), `pdfpage` (`create_pages` et chaque générateur
-  `depth_first_search` de la chaîne `yield from`, repris à chaque page) et
-  `pdfinternals.resolve_all` prennent leurs cadres : une boucle (`/Prev`,
-  flux d'objets, `/Length` égal au flux, arbre de pages ou de plans, cycle
-  de références) finit en `RecursionError` comme en Python. Mais un
-  `getobj` passe par les méthodes du parseur (`nextobject`, `nexttoken`,
-  `_parse_*`…), qui ne comptent pas encore les leurs : la page où un arbre
-  profond juste à la limite échoue peut différer d'un niveau (cas laissé
-  hors du corpus adverse `adv-pages`). Le compte des cadres de `psparser`
-  réglera ce cas.
+  cadre (`py_frame()`) pour sa durée ; une fonction qui revient aussitôt
+  est seulement vérifiée (`leaf(n)`) ; un appel depuis du C (le `__init__`
+  d'une classe appelée, un générateur repris par `list()`, `join()`,
+  `extend()`, une lambda de `re.sub`) prend aussi ses unités
+  (`eval_entry()`, `c_called_leaf()`) ; un générateur prend son cadre à sa
+  création (il démarre et se suspend) puis à chaque reprise ; un appel de
+  log prend ses cadres par `pycompat::logging` (deux, trois au premier
+  appel d'un niveau sur un logger depuis `logging.disable()`, qui vide les
+  caches, voir `docs/verification.md`). Une compréhension ne prend pas de
+  cadre (PEP 709) ; `collections.abc.Iterator[...]` non plus (fait en C).
+- `LIT()`/`KWD()` appelés à l'exécution (un nom lu par le parseur,
+  `KWD(b"obj")` de `_getobj_parse`, `LIT("D")` des libellés) prennent le
+  cadre de `PSSymbolTable.intern`, plus celui de `PSLiteral.__init__` (appelé
+  depuis le C) la première fois que le processus interne ce nom
+  (`psparser::py_intern`). L'état « noms internés » est celui d'un processus
+  Python : au départ ceux qu'internent les imports (`import pdfplumber`,
+  `psparser_symbols.rs` ; ceux de `python -m oracle.trace --stage S` pour
+  le harnais, `pdftrace::stages::py_symbols`, générés par
+  `oracle/codegen/py_symbols.py`), puis tous ceux internés depuis ; le
+  harnais repart de l'état d'un nouveau processus à chaque trace, comme
+  l'oracle (`pdftrace::stages::py_process`).
+- Le comptage est en place partout où le document est lu : `psparser`
+  (chaque méthode des parseurs, `_add_token`, `contextlib.suppress`,
+  `literal_name`), les accesseurs de `pdftypes` (`resolve1`, `dict_value`…,
+  qui comptent les leurs), `PDFStream` (`__getitem__`, `get`,
+  `get_filters`, `decode`, `get_data`), les filtres (`lzwdecode`,
+  `ascii85decode`, `asciihexdecode`, `rldecode`, prédicteurs,
+  `ccittfaxdecode`, `decompress_corrupted`), `pdfparser`, `pdfdocument`
+  (`getobj`, `read_xref_from`, les chargements de xref, `lookup`, les
+  plans, les libellés), `pdfpage` (`create_pages`, chaque générateur
+  `depth_first_search` de la chaîne `yield from`, repris à chaque page,
+  `get_pages`) et `pdfinternals.resolve_all`, ainsi que
+  `PDFContentParser`. Une boucle (`/Prev`, flux d'objets, `/Length` égal au
+  flux, arbre de pages ou de plans, cycle de références) finit en
+  `RecursionError` comme en Python, et une chaîne finie échoue au même
+  niveau : les corpus adverses `adv-pages` et `adv-objects` ont, pour
+  chaque forme de récursion, des fenêtres de longueurs autour du premier
+  niveau qui échoue en Python (`cases_depth`), dont le point le plus
+  profond est chaque fois un autre chemin (journalisation, flux, nom
+  interné pour la première fois, flux d'objets et chaque filtre,
+  déchiffrement, xref de repli, arbres de nombres et de noms, plans,
+  `resolve_all`). Restent à compter les modules portés plus tard
+  (`pdfinterp` hors `PDFContentParser`, `pdffont`, `layout`) et les appels
+  d'un code porté avant ce comptage (`cmapdb` : ses fonctions ne prennent
+  pas encore leur cadre).
 - Le harnais fixe la profondeur de départ (`with_depth`) à celle que
   l'oracle a mesurée au même point d'appel ; le code porté ne la fixe jamais.
 
@@ -170,10 +192,13 @@ Décisions prises avant le port de `pdfparser.py` et `pdfdocument.py` :
   d'un `io.BufferedReader` (`open(path, "rb")`, ce que lit pdfplumber et
   l'oracle) et d'un `io.BytesIO` diffèrent pour une position ou une
   longueur négative ou énorme : `pdfparser::FileKind` choisit lesquelles
-  (l'API JS lit des octets ; l'oracle des étapes, un fichier). Non
-  modélisé : le `MemoryError` d'un `BufferedReader.read(n)` qui alloue `n`
-  octets au-delà de la mémoire de la machine, et l'`OSError` d'un `seek`
-  au-delà de la taille maximale de fichier du système de fichiers.
+  (l'API JS lit des octets ; l'oracle des étapes, un fichier). Un
+  `BufferedReader.read(n)` au-delà de son tampon alloue `n` octets d'abord :
+  le port fait la même allocation (mémoire virtuelle jamais touchée) et lève
+  `MemoryError` quand elle échoue ; en wasm32, où la mémoire ne rétrécit
+  pas, seule une taille hors de l'espace d'adressage échoue. Non modélisé :
+  l'`OSError` d'un `seek` au-delà de la taille maximale de fichier du
+  système de fichiers.
 - `PDFDocument.__init__` résout déjà des références (`Encrypt`, `ID`,
   `Info`, `Root` du trailer) : le document est créé dans un `Rc` dont l'état
   est intérieur (`RefCell`/`Cell`) avant que sa logique d'`__init__` ne
@@ -190,9 +215,11 @@ Décisions prises avant le port de `pdfparser.py` et `pdfdocument.py` :
   `PyInt` : pdfminer ne crée de référence qu'à travers `safe_int`
   (`pdfparser.py`), toujours un `int`. Implémenté par
   `pdftypes::ObjId` (l'objet d'origine et l'égalité/le hachage de Python) ;
-  `PDFStream::objid()` rend un `ObjId`. Seul écart connu : le déchiffrement
-  d'un objet dont l'id n'est pas un entier (un document chiffré réparé par
-  `PDFXRefFallback`) n'est pas porté (`NotPorted`).
+  `PDFStream::objid()` rend un `ObjId`. La fonction de déchiffrement reçoit
+  cet `ObjId` comme Python : `struct.pack("<L", objid)` (RC4, AES-128)
+  lève `struct.error` pour un id qui n'est pas un entier (un document
+  chiffré réparé par `PDFXRefFallback`), AES-256 et Identity l'ignorent,
+  et rien n'est appelé pour un objet sans chaîne non vide.
 - `CMapParser.do_keyword` appelle `CMapDB.get_cmap` (`usecmap`) de façon
   synchrone : le fournisseur de CMaps prédéfinies est synchrone pour le
   cœur ; un chargement paresseux côté navigateur se fait avant l'analyse
@@ -215,7 +242,10 @@ numérique et les nombres comme clés de dict (`NumKey` : `3` trouve `3.0`),
 entière, `%` Python, tris stables, `str.split()`/`strip()` et classes de
 caractères (`\s` bytes = `[\t\n\v\f\r ]`, `str.isspace()` Unicode),
 normalisation Unicode (NFC/NFKC/NFD/NFKD, tables de la version Unicode de
-CPython 3.12), échappement JSON `ensure_ascii`.
+CPython 3.12), échappement JSON `ensure_ascii`, `bytes % int` (avec le
+`MemoryError` d'une largeur ou d'une précision que l'allocation refuse),
+les deux compteurs de récursion (`recursion`) et les cadres d'un appel de
+`logging` (`logging`, le cache par logger et niveau).
 
 ## Données upstream
 

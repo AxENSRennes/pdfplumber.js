@@ -39,7 +39,6 @@
 //! back after.
 
 use std::rc::{Rc, Weak};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::LazyLock;
 
 use pycompat::io::{BytesIO, Pos};
@@ -131,12 +130,6 @@ fn allocation_probe(n: i64) -> PyResult<()> {
     probe.try_reserve_exact(n).map_err(|_| exc::MemoryError(""))
 }
 
-/// A unique number per parser, so that a document recognizes its own.
-fn next_parser_id() -> u64 {
-    static NEXT: AtomicU64 = AtomicU64::new(1);
-    NEXT.fetch_add(1, Ordering::Relaxed)
-}
-
 /// The keywords `do_keyword` tests, copied from the statics once.
 #[derive(Clone, Copy)]
 struct Keywords {
@@ -171,8 +164,6 @@ pub struct PDFParserExt {
     pub fallback: bool,
     /// The class of `self.fp`.
     pub file: FileKind,
-    /// Identifies the parser (see [`lend`]).
-    pub id: u64,
     keywords: Keywords,
 }
 
@@ -202,7 +193,7 @@ impl PSStackParser<PDFParserExt> {
         // the class is called (from C), then its __init__
         let _entry = eval_entry()?;
         let _frame = py_frame()?;
-        let ext = PDFParserExt { doc: None, fallback: false, file, id: next_parser_id(), keywords: Keywords::new() };
+        let ext = PDFParserExt { doc: None, fallback: false, file, keywords: Keywords::new() };
         PSStackParser::init(Some(fp), ext)
     }
 
@@ -230,7 +221,6 @@ impl PSStackParser<PDFParserExt> {
             doc: self.ext.doc.clone(),
             fallback: self.ext.fallback,
             file: self.ext.file,
-            id: self.ext.id,
             keywords: self.ext.keywords,
         };
         PSStackParser::placeholder(ext)
@@ -311,17 +301,16 @@ fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 }
 
 /// Runs `f`, which may resolve references through the document of `p`,
-/// with `p` lent to that document (see the module documentation): if `p`
-/// is the document's parser, it goes back to the document's slot for the
-/// duration of `f`, where a nested `getobj` finds it, and `p` is whatever
-/// that nesting left in it afterwards. `f` gets the document.
+/// with `p` lent to that document (see the module documentation): `p` is
+/// the document's parser (`PDFDocument::new` sets the document of the
+/// parser it takes, and only that parser, or a stand-in for it, is ever
+/// lent), so it goes back to the document's slot for the duration of `f`,
+/// where a nested `getobj` finds it, and `p` is whatever that nesting left
+/// in it afterwards. `f` gets the document.
 pub fn lend<T>(p: &mut PDFParser, f: impl FnOnce(Option<&Rc<PDFDocument>>) -> PyResult<T>) -> PyResult<T> {
     let Some(doc) = p.ext.doc.as_ref().and_then(Weak::upgrade) else {
         return f(None);
     };
-    if !doc.is_own_parser(p.ext.id) {
-        return f(Some(&doc));
-    }
     let mut lent = doc.take_spare_parser().unwrap_or_else(|| Box::new(p.stand_in()));
     std::mem::swap(p, &mut lent);
     doc.put_parser(lent);
@@ -333,16 +322,6 @@ pub fn lend<T>(p: &mut PDFParser, f: impl FnOnce(Option<&Rc<PDFDocument>>) -> Py
 }
 
 impl PSStackParserExt for PDFParserExt {
-    /// `self.fp.seek(pos)`, with the error of a `BufferedReader` for a
-    /// negative position (a `BytesIO`'s is that of [`BytesIO::seek`]).
-    fn fp_seek(p: &mut PDFParser, pos: Pos) -> PyResult<()> {
-        if pos < 0 && p.ext.file == FileKind::BufferedReader {
-            return Err(exc::OSError("[Errno 22] Invalid argument"));
-        }
-        p.fp_mut("seek")?.seek(pos)?;
-        Ok(())
-    }
-
     // pdfminer/pdfparser.py:55 PDFParser.do_keyword
     /// Handles PDF-related keywords.
     fn do_keyword(p: &mut PDFParser, pos: Pos, token: PSKeyword) -> PyResult<()> {

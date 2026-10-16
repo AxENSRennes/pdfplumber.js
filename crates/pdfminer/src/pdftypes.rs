@@ -764,20 +764,6 @@ impl ObjId {
         }
     }
 
-    /// The id as the `objid` argument of a [`DecipherCallable`]: the
-    /// security handlers only pack it with `struct.pack("<L", objid)`
-    /// (or ignore it), where a `bool` is the int 0 or 1. A decipher call on
-    /// another id (a float id in an encrypted document repaired by
-    /// `PDFXRefFallback`) is not ported: `struct.pack` would raise for
-    /// RC4/AES-128, the identity and AES-256 filters would ignore the id.
-    pub fn decipher_arg(&self) -> PyResult<PyInt> {
-        match &self.0 {
-            PDFObject::Int(i) => Ok(i.clone()),
-            PDFObject::Bool(b) => Ok(PyInt::Small(i64::from(*b))),
-            _ => Err(PyErr::not_ported("decipher() of an object whose id is not an int")),
-        }
-    }
-
     /// `str(objid)`
     pub fn py_str(&self) -> PyResult<String> {
         self.0.py_str()

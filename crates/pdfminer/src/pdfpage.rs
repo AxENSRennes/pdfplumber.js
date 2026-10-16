@@ -305,16 +305,18 @@ impl Labels {
     fn next(&mut self) -> PyResult<Option<String>> {
         match self {
             Labels::Repeat => Ok(None),
-            Labels::Labels(it) => match {
+            Labels::Labels(it) => {
                 // the builtin next() resumes the generator from C
-                let _entry = eval_entry()?;
-                it.next()
-            } {
-                Some(label) => Ok(Some(label?)),
-                // the labels never end; a generator that raised is
-                // finished, and the error ended create_pages with it
-                None => Err(PyErr::new(ExcKind::RuntimeError, "generator raised StopIteration")),
-            },
+                let entry = eval_entry()?;
+                let label = it.next();
+                drop(entry);
+                match label {
+                    Some(label) => Ok(Some(label?)),
+                    // the labels never end; a generator that raised is
+                    // finished, and the error ended create_pages with it
+                    None => Err(PyErr::new(ExcKind::RuntimeError, "generator raised StopIteration")),
+                }
+            }
         }
     }
 }

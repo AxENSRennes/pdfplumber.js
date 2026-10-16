@@ -1073,14 +1073,6 @@ pub trait PSStackParserExt: Sized {
         leaf(1)
     }
 
-    /// `self.fp.seek(pos)` in `PSBaseParser.seek` (not a method of the
-    /// parser: the error of the file object's class, see
-    /// `pdfparser::FileKind`).
-    fn fp_seek(p: &mut PSStackParser<Self>, pos: Pos) -> PyResult<()> {
-        p.fp_mut("seek")?.seek(pos)?;
-        Ok(())
-    }
-
     /// The position of the next byte to read, for [`ProgressGuard`] (not a
     /// Python method): it only grows between two seeks. The default is the
     /// offset in `fp`; a parser that reads several files one after the
@@ -1199,7 +1191,7 @@ impl<X: PSStackParserExt> PSStackParser<X> {
     pub fn psbaseparser_seek(&mut self, pos: Pos) -> PyResult<()> {
         let _frame = py_frame()?;
         LOG.debug()?;
-        X::fp_seek(self, pos)?;
+        self.fp_mut("seek")?.seek(pos)?;
         // reset the status for nextline()
         self.bufpos = pos;
         self.buf = Buf::empty();
@@ -1215,10 +1207,11 @@ impl<X: PSStackParserExt> PSStackParser<X> {
     }
 
     /// The frames `self.seek(pos)` enters before `self.fp.seek(pos)` raises
-    /// for a position that is not a `Py_ssize_t` (`PSStackParser.seek`,
+    /// for a position the file object refuses (`PSStackParser.seek`,
     /// `PSBaseParser.seek` and its `log.debug`), then `err`: a parser whose
-    /// `seek` is the base class's is given such a position as a Python int
-    /// (`pdfparser::PDFParser::seek_int`).
+    /// `seek` is the base class's, given a Python int
+    /// (`pdfparser::PDFParser::seek_int`, which knows the file's errors:
+    /// `pdfparser::FileKind`).
     pub fn seek_error(&mut self, err: pycompat::PyErr) -> PyResult<()> {
         let _stack_seek = py_frame()?;
         let _base_seek = py_frame()?;
