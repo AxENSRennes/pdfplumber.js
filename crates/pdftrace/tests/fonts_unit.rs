@@ -632,6 +632,13 @@ fn cff_report(mut font: CFFFont) -> Value {
             })
             .collect(),
     );
+    // `list(index)` (`INDEX.__iter__`), under `attempt`
+    let iters = Value::List(
+        indexes
+            .iter()
+            .map(|ix| res(ix.items(&mut font.fp), |items| Value::List(items.into_iter().map(Value::Bytes).collect())))
+            .collect(),
+    );
     named(
         "CFFFont",
         vec![
@@ -644,6 +651,7 @@ fn cff_report(mut font: CFFFont) -> Value {
             ("name2gid", name2gid),
             ("gid2name", gid2name),
             ("items", items),
+            ("iters", iters),
             ("reprs", Value::List(indexes.iter().map(|ix| Value::str(ix.repr())).collect())),
             ("tell", Value::Int(PyInt::Small(font.fp.tell()))),
         ],

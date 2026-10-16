@@ -673,6 +673,7 @@ def cff_report(font):
         "name2gid": list(font.name2gid.items()),
         "gid2name": list(font.gid2name.items()),
         "items": [items(ix) for ix in (font.name_index, font.dict_index, font.string_index, font.subr_index, font.charstring)],
+        "iters": [attempt(lambda ix=ix: list(ix)) for ix in (font.name_index, font.dict_index, font.string_index, font.subr_index, font.charstring)],
         "reprs": [repr(ix) for ix in (font.name_index, font.dict_index, font.string_index, font.subr_index, font.charstring)],
         "tell": fp.tell(),
     })
@@ -1299,7 +1300,7 @@ def font_spec_cases(rng):
     for k in range(12):
         doc = FontDoc()
         s = Spec(rng, doc)
-        data = type1_program(rng)
+        data = b"/Encoding 256 array\ndup 65 /A put\ndup 66 /B put\n" + type1_program(rng)
         length1 = [len(data), len(data) // 2, 0, -10, -len(data) - 5, -(2**70), 2**70, True, 1.5, s.missing_ref(),
                    s.ref(len(data) - 3), None][k]
         attrs = {} if length1 is None else {"Length1": length1}
