@@ -26,17 +26,30 @@
 //! exist, exposed for the JavaScript tests (text extraction, words, search
 //! spans, tables over objects given by JavaScript, predefined CMaps), plus
 //! the transport tests and the encoding benchmark.
+//!
+//! **Void calls.** A call that asked for a predefined CMap JavaScript has
+//! not handed over yet ([`cmaps`]) ran without it, as if pdfminer had no
+//! such file: whatever it computed or cached may differ from Python's run
+//! with every CMap installed (`PDFCIDFont.get_cmap_from_spec` caches an
+//! empty `CMap()` in the document's font cache). The call is void: its
+//! result and diagnostics are discarded, the handles it created are
+//! removed, and every object drops the state it derived ([`Object::reset`];
+//! a call can reach any object whose handle it was given, in any argument),
+//! so that the re-run computes everything again with the CMaps. Process-wide
+//! caches keep only what does not depend on a missing CMap (`CMapDB` caches
+//! loaded CMaps only).
 
 use std::rc::Rc;
 
-use pdfminer::cmapdb::{CMapDB, Unichr};
-use pdfplumber::obj::{bbox_from_value, bbox_value, Bbox, Obj, PyValue};
+use pdfminer::cmapdb::{Attrs, CMap, CMapBase, CMapDB, Unichr};
+use pdfplumber::obj::{bbox_from_value, bbox_value, Bbox, HashKey, Obj, PyValue};
 use pdfplumber::table::{TableFinder, TablePage, TableSettings};
 use pdfplumber::utils::text::{
     chars_to_textmap, dedupe_chars, extract_text_kwargs, extract_words_kwargs, Kwargs, RegexMatch, TextMap,
 };
 use pycompat::diagnostics::{self, Level};
 use pycompat::{exc, ExcKind, PyErr, PyInt, PyResult};
+use rustc_hash::FxHashMap;
 
 use crate::cmaps;
 use crate::errors::write_error;
@@ -73,25 +86,52 @@ impl Format {
     }
 }
 
-/// A document: the bytes and the options of `open()`. The page layer will
-/// keep its parsed state here; that state is dropped ([`Document::reset`])
-/// when a call misses a CMap, and rebuilt from the bytes by the re-run.
+/// A document: the bytes and the options of `open()`, and the state
+/// derived from them ([`DocState`]), dropped by [`Document::reset`] when a
+/// call is void and rebuilt from the bytes by the re-run.
 pub struct Document {
     pub data: Rc<[u8]>,
     pub options: PyValue,
+    pub state: DocState,
+}
+
+/// The state a document derives from its bytes. The page layer will keep
+/// pdfplumber's `PDF` here (its `PDFResourceManager` caches fonts, and with
+/// them the CMaps they loaded); today, the CMaps of `doc_cmap_decode`.
+#[derive(Default)]
+pub struct DocState {
+    /// CMaps by name, as fonts cache them (an empty `CMap()` for a name
+    /// `CMapDB` did not find).
+    pub cmaps: FxHashMap<String, Rc<dyn CMapBase>>,
 }
 
 impl Document {
-    /// Drops the state derived from the bytes (none yet).
-    pub fn reset(&mut self) {}
+    /// Drops the state derived from the bytes.
+    pub fn reset(&mut self) {
+        self.state = DocState::default();
+    }
 }
 
 /// An object JavaScript holds a handle to.
 pub enum Object {
     Document(Document),
     TextMap(TextMap),
-    /// A value kept for the benchmark.
+    /// A value kept for the benchmark, or derived by a test operation.
     Value(PyValue),
+}
+
+impl Object {
+    /// Drops what the object derived in calls (see the module
+    /// documentation, "Void calls"). Every variant says what it keeps.
+    pub fn reset(&mut self) {
+        match self {
+            Object::Document(d) => d.reset(),
+            // computed from the arguments of the call that made it, with
+            // no CMap: nothing to drop
+            Object::TextMap(_) => {}
+            Object::Value(_) => {}
+        }
+    }
 }
 
 /// A value written by hand.
@@ -110,6 +150,8 @@ pub enum Out {
 pub struct Core {
     pub handles: Handles<Object>,
     pub format: Format,
+    /// The handles created by the running call (removed if it is void).
+    created: Vec<u32>,
 }
 
 impl Default for Core {
@@ -200,6 +242,48 @@ fn opt_bbox(b: &Option<Bbox>) -> PyValue {
     b.as_ref().map_or(PyValue::None, bbox_value)
 }
 
+/// The number of the group `m.group(index)` reads (CPython 3.12
+/// `Modules/_sre/sre.c` `match_getindex`): an int (a bool is one) is the
+/// number itself, clipped to the `Py_ssize_t` range
+/// (`PyNumber_AsSsize_t(index, NULL)`); any other value is looked up in the
+/// pattern's named groups (`self->pattern->groupindex`, only set when the
+/// pattern has some), after being hashed (`TypeError` for an unhashable
+/// one); a number outside `0..m.groups` or a name not found is
+/// `IndexError("no such group")`.
+///
+/// JavaScript gives the named groups of each match (`indices.groups`:
+/// name → span, `None` for a group that did not take part), not their
+/// numbers: a name resolves to a group with that span (or that did not take
+/// part), whose `m.group`, `m.start` and `m.end`, all `search` reads, are
+/// those of the named group (`named` is `None` for a pattern without named
+/// groups).
+fn group_index(index: &PyValue, m: &RegexMatch, named: Option<&NamedGroups>) -> PyResult<usize> {
+    let no_such_group = || exc::IndexError("no such group");
+    let i = match index {
+        PyValue::Bool(b) => usize::from(*b),
+        PyValue::Int(i) => i.as_i64().and_then(|i| usize::try_from(i).ok()).ok_or_else(no_such_group)?,
+        other => {
+            let Some(named) = named else { return Err(no_such_group()) };
+            HashKey::new(other.clone())?;
+            let PyValue::Str(name) = other else { return Err(no_such_group()) };
+            let (_, span) = named.iter().find(|(n, _)| n == name).ok_or_else(no_such_group)?;
+            return m
+                .spans
+                .iter()
+                .position(|s| s == span)
+                .ok_or_else(|| exc::ValueError(format!("the span of group {name:?} is no group's span")));
+        }
+    };
+    if i < m.spans.len() {
+        Ok(i)
+    } else {
+        Err(no_such_group())
+    }
+}
+
+/// The named groups of a match: name → span (`None`: did not take part).
+type NamedGroups = Vec<(Rc<str>, Option<(usize, usize)>)>;
+
 /// UTF-16 offsets of a JavaScript match → code point offsets of `s`.
 struct Utf16Index {
     /// `cp[u]`: the code point offset at UTF-16 offset `u`, `None` inside
@@ -220,6 +304,17 @@ impl Utf16Index {
         Utf16Index { cp }
     }
 
+    /// A JavaScript span (`[start, end]`, or `None`).
+    fn span(&self, s: &PyValue) -> PyResult<Option<(usize, usize)>> {
+        match s {
+            PyValue::None => Ok(None),
+            s => {
+                let s = seq(s)?;
+                Ok(Some((self.convert(arg(s, 0)?)?, self.convert(arg(s, 1)?)?)))
+            }
+        }
+    }
+
     fn convert(&self, u: &PyValue) -> PyResult<usize> {
         let u = usize::try_from(int(u)?).map_err(|_| exc::ValueError("negative match offset"))?;
         match self.cp.get(u) {
@@ -233,12 +328,20 @@ impl Utf16Index {
 impl Core {
     pub fn new() -> Core {
         cmaps::install();
-        Core { handles: Handles::new(), format: Format::Binary }
+        Core { handles: Handles::new(), format: Format::Binary, created: Vec::new() }
     }
 
     fn insert(&mut self, o: Object) -> PyResult<PyValue> {
         let h = self.handles.insert(o).ok_or_else(|| exc::MemoryError("too many handles"))?;
+        self.created.push(h);
         Ok(PyValue::Int(PyInt::from(h)))
+    }
+
+    fn document(&mut self, h: &PyValue) -> PyResult<&mut Document> {
+        match self.handles.get_mut(handle(h)?) {
+            Some(Object::Document(d)) => Ok(d),
+            _ => Err(exc::ValueError("invalid handle")),
+        }
     }
 
     fn textmap(&self, h: &PyValue) -> PyResult<&TextMap> {
@@ -249,7 +352,7 @@ impl Core {
     }
 
     /// Runs one operation.
-    pub fn op(&mut self, name: &str, h: u32, args: &PyValue, data: Option<Vec<u8>>) -> PyResult<Out> {
+    pub fn op(&mut self, name: &str, h: u32, args: &PyValue, data: Option<Rc<[u8]>>) -> PyResult<Out> {
         let a = || seq(args);
         Ok(Out::Value(match name {
             "info" => PyValue::Dict(Obj::from_pairs([
@@ -336,7 +439,54 @@ impl Core {
             }
             "doc_open" => {
                 let data = data.ok_or_else(|| exc::TypeError("doc_open needs the PDF bytes"))?;
-                self.insert(Object::Document(Document { data: Rc::from(data), options: args.clone() }))?
+                self.insert(Object::Document(Document { data, options: args.clone(), state: DocState::default() }))?
+            }
+            "doc_cmap_decode" => {
+                // [document, name, code]: `cmap.decode(code)` with the CMap
+                // the document caches for `name`, as a font of the document
+                // gets it (pdfminer/pdffont.py:1182
+                // PDFCIDFont.get_cmap_from_spec, cached with the font by
+                // pdfminer/pdfinterp.py:212 PDFResourceManager.get_font).
+                // A test of void calls: it reaches its document through an
+                // argument, and returns a handle to a value derived from it.
+                let a = a()?;
+                let PyValue::Bytes(code) = arg(a, 2)? else { return Err(exc::TypeError("code must be bytes")) };
+                let name = str_arg(arg(a, 1)?)?;
+                let doc = self.document(arg(a, 0)?)?;
+                let cmap = match doc.state.cmaps.get(name) {
+                    Some(c) => c.clone(),
+                    None => {
+                        let c = match CMapDB::get_cmap(name) {
+                            Ok(c) => c,
+                            Err(e) if e.is_instance(ExcKind::CMapDB_CMapNotFound) => {
+                                Rc::new(CMap::new(Attrs::default()))
+                            }
+                            Err(e) => return Err(e),
+                        };
+                        doc.state.cmaps.insert(name.to_owned(), c.clone());
+                        c
+                    }
+                };
+                let cids = PyValue::list(cmap.decode(code)?.into_iter().map(PyValue::Int));
+                let derived = self.insert(Object::Value(cids.clone()))?;
+                PyValue::tuple([cids, derived])
+            }
+            "sequence" => {
+                // [[op, handle, args], ...]: the operations in turn, in one
+                // call (a void call voids them all); their values, in order
+                let mut out = Vec::new();
+                for r in a()? {
+                    let r = seq(r)?;
+                    let op = str_arg(arg(r, 0)?)?;
+                    if op == "sequence" {
+                        return Err(exc::ValueError("nested sequence"));
+                    }
+                    match self.op(op, handle(arg(r, 1)?)?, arg(r, 2)?, None)? {
+                        Out::Value(v) => out.push(v),
+                        _ => return Err(exc::ValueError(format!("{op} cannot run in a sequence"))),
+                    }
+                }
+                PyValue::list(out)
             }
             "doc_info" => match self.handles.get(h) {
                 Some(Object::Document(d)) => PyValue::Dict(Obj::from_pairs([
@@ -374,27 +524,40 @@ impl Core {
                 list_of_objs(tm.extract_text_lines(arg(a, 1)?.truthy(), arg(a, 2)?.truthy())?)
             }
             "textmap_search" => {
-                // [handle, matches, return_groups, return_chars, main_group]:
-                // each match is a list of [start, end] or None (UTF-16 offsets)
+                // [handle, matches, return_groups, return_chars, main_group,
+                // named]: each match is a list of [start, end] or None
+                // (UTF-16 offsets); `named`, for a pattern with named
+                // groups, has a dict of each match's named groups' spans
+                // (`indices.groups`)
                 let a = a()?;
                 let tm = self.textmap(arg(a, 0)?)?;
                 let index = Utf16Index::new(&tm.as_string);
                 let mut matches = Vec::new();
                 for m in seq(arg(a, 1)?)? {
-                    let spans = seq(m)?
-                        .iter()
-                        .map(|s| match s {
-                            PyValue::None => Ok(None),
-                            s => {
-                                let s = seq(s)?;
-                                Ok(Some((index.convert(arg(s, 0)?)?, index.convert(arg(s, 1)?)?)))
-                            }
-                        })
-                        .collect::<PyResult<Vec<_>>>()?;
+                    let spans = seq(m)?.iter().map(|s| index.span(s)).collect::<PyResult<Vec<_>>>()?;
                     matches.push(RegexMatch { spans });
                 }
-                let main_group = usize::try_from(int(arg(a, 4)?)?).map_err(|_| exc::IndexError("no such group"))?;
-                list_of_objs(tm.search(&matches, arg(a, 2)?.truthy(), arg(a, 3)?.truthy(), main_group)?)
+                let named = match a.get(5).unwrap_or(&PyValue::None) {
+                    PyValue::None => None,
+                    v => Some(
+                        seq(v)?
+                            .iter()
+                            .map(|g| {
+                                kwargs(g)?
+                                    .items()
+                                    .iter()
+                                    .map(|(k, s)| Ok((k.clone(), index.span(s)?)))
+                                    .collect::<PyResult<NamedGroups>>()
+                            })
+                            .collect::<PyResult<Vec<_>>>()?,
+                    ),
+                };
+                if named.as_ref().is_some_and(|n| n.len() != matches.len()) {
+                    return Err(exc::ValueError("one dict of named groups per match"));
+                }
+                let main_group = arg(a, 4)?;
+                let group = |k: usize, m: &RegexMatch| group_index(main_group, m, named.as_ref().map(|n| &n[k]));
+                list_of_objs(tm.search_with(&matches, arg(a, 2)?.truthy(), arg(a, 3)?.truthy(), group)?)
             }
             "find_tables" => {
                 // [chars, edges, bbox, table_settings, extract_kwargs]
@@ -459,18 +622,23 @@ impl Core {
         }))
     }
 
-    /// Drops the state of the object a void call (missing CMaps) ran on.
-    fn reset(&mut self, h: u32) {
-        if let Some(Object::Document(d)) = self.handles.get_mut(h) {
-            d.reset();
+    /// Undoes what a void call did (see the module documentation): removes
+    /// the handles it created and drops the derived state of every object.
+    fn void(&mut self) {
+        for h in std::mem::take(&mut self.created) {
+            self.handles.remove(h);
+        }
+        for o in self.handles.values_mut() {
+            o.reset();
         }
     }
 
     /// Runs a request (see the module documentation) and returns the
     /// response.
-    pub fn call(&mut self, request: &[u8], data: Option<Vec<u8>>) -> Vec<u8> {
+    pub fn call(&mut self, request: &[u8], data: Option<Rc<[u8]>>) -> Vec<u8> {
         let mut diag_level = None;
         let mut h = 0;
+        self.created.clear();
         let (result, collected) = {
             let parsed = binary::decode(request).and_then(|req| {
                 let r = seq(&req)?.to_vec();
@@ -496,8 +664,11 @@ impl Core {
         };
         let missing = cmaps::take_missing();
         if !missing.is_empty() {
-            self.reset(h);
-            return response(STATUS_NEED_CMAPS, FORMAT_BINARY, false, &encode_names(&missing), &collected);
+            // the re-run emits its own diagnostics: Python's, once
+            drop((result, collected));
+            self.void();
+            let none = diagnostics::Collected::default();
+            return response(STATUS_NEED_CMAPS, FORMAT_BINARY, false, &encode_names(&missing), &none);
         }
         match result {
             Ok(out) => match self.encode(out) {

@@ -618,10 +618,10 @@ pub fn decode(block: &[u8]) -> PyResult<PyValue> {
                 }
                 Some(Frame::Dict(obj, n, key)) => match key.take() {
                     None => {
-                        let PyValue::Str(k) = value else {
+                        let PyValue::Str(k) = &value else {
                             return Err(exc::TypeError("dict keys must be str"));
                         };
-                        *key = Some(k);
+                        *key = Some(k.clone());
                         break;
                     }
                     Some(k) => {

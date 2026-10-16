@@ -11,7 +11,13 @@
 //!   (inflated, or zlib-compressed) and runs the call again;
 //! - `text`: text, words, `dedupe_chars`, text maps (search with the spans
 //!   of the literal patterns, computed here as `RegExp` gives them),
-//!   lines and tables over pdfplumber's objects.
+//!   lines and tables over pdfplumber's objects;
+//! - `search_groups`: `main_group` read for each match as `m.group()` reads
+//!   it, with the spans the oracle recorded;
+//! - void calls: a request that reaches a document through an argument,
+//!   caches a CMap in it and misses that CMap, re-run once it is handed
+//!   over, gives Python's result with every CMap installed, leaves no
+//!   handle behind, and reports the diagnostics of the final run only.
 //!
 //! Regenerate the data with
 //! `PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.js_runtime`.
@@ -196,6 +202,118 @@ fn predefined_cmaps_load_lazily_and_match_pdfminer() {
                     ("message", s("Error -3 while decompressing data: incorrect header check"))
                 ])
             );
+        });
+    }
+}
+
+#[test]
+fn a_void_call_leaves_no_state_and_its_rerun_matches_pdfminer() {
+    let dir = cmap_dir();
+    let names: Vec<String> = fs::read_to_string(dir.join("names.txt")).unwrap().lines().map(str::to_owned).collect();
+    on_thread(64 << 20, move || {
+        let mut core = Core::new();
+        ok(call(&mut core, "cmap_configure", 0, list(names.iter().map(|n| PyValue::str(n)).collect()), None));
+        let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(b"%PDF".to_vec()))) else {
+            panic!("a handle")
+        };
+        let doc = PyValue::from(doc as i64);
+        let mut loaded = Vec::new();
+        let mut decoded = 0;
+        for (input, out) in data().cases("cmaps") {
+            if input[0].as_str() != Some("decode") {
+                continue;
+            }
+            // the document is an argument, not the request's handle
+            let args = list(vec![doc.clone(), py(&input[1]), py(&input[2])]);
+            let Js::Arr(got) = call_with_cmaps(&mut core, "doc_cmap_decode", args, &dir, &mut loaded) else {
+                panic!("a pair")
+            };
+            assert_eq!(got[0], value_view(&out), "{input:?}");
+            decoded += 1;
+        }
+        assert!(decoded >= 400 && loaded.len() >= 10, "{decoded} cases, {loaded:?}");
+        // the void runs' derived handles are gone: the document and one
+        // value per decode
+        let Js::Obj(info) = ok(call(&mut core, "info", 0, PyValue::None, None)) else { panic!() };
+        assert_eq!(info[3].1, Js::Num(f64::from(1 + decoded)));
+        // a request that warns, then misses a CMap: no diagnostics from the
+        // void run, the warning once from the re-run
+        let name = names.iter().find(|n| !n.starts_with("to-unicode-") && !loaded.contains(n)).unwrap().clone();
+        let warn = list(vec![
+            PyValue::str("warn"),
+            PyValue::from(0_i64),
+            list(vec![list(vec![PyValue::str("pdfminer.pdfinterp"), PyValue::from(30_i64), PyValue::str("w")])]),
+        ]);
+        let decode = list(vec![
+            PyValue::str("doc_cmap_decode"),
+            PyValue::from(0_i64),
+            list(vec![doc.clone(), PyValue::str(&name), PyValue::Bytes(Rc::from(&[0u8, 0x41][..]))]),
+        ]);
+        let sequence = list(vec![warn, decode]);
+        let no_diagnostics = obj(vec![("entries", Js::Arr(vec![])), ("dropped", Js::Num(0.0))]);
+        let r = call_level(&mut core, "sequence", 0, sequence.clone(), None, 10);
+        assert_eq!((r.status, &r.diagnostics), (2, &no_diagnostics));
+        assert_eq!(r.value, Js::Arr(vec![s(&name)]));
+        let raw = fs::read(dir.join(format!("{name}.pdfcmap"))).unwrap();
+        ok(call(&mut core, "cmap_add", 0, PyValue::str(&name), Some(raw)));
+        let r = call_level(&mut core, "sequence", 0, sequence, None, 10);
+        assert_eq!(r.status, 0);
+        let warning = Js::Arr(vec![s("pdfminer.pdfinterp"), Js::Num(30.0), s("w")]);
+        assert_eq!(r.diagnostics, obj(vec![("entries", Js::Arr(vec![warning])), ("dropped", Js::Num(0.0))]));
+        // a nested sequence, and an operation whose value is written by hand
+        let nested = list(vec![list(vec![PyValue::str("sequence"), PyValue::from(0_i64), list(vec![])])]);
+        assert_eq!(as_exception(&call(&mut core, "sequence", 0, nested, None)), exc("ValueError", "nested sequence"));
+        let written = list(vec![list(vec![PyValue::str("test_values"), PyValue::from(0_i64), PyValue::None])]);
+        assert_eq!(
+            as_exception(&call(&mut core, "sequence", 0, written, None)),
+            exc("ValueError", "test_values cannot run in a sequence")
+        );
+    });
+}
+
+fn exc(name: &str, message: &str) -> Js {
+    obj(vec![("exception", s(name)), ("message", s(message))])
+}
+
+#[test]
+fn search_reads_main_group_for_each_match_like_m_group() {
+    for &format in FORMATS {
+        on_thread(64 << 20, move || {
+            let mut core = Core::new();
+            ok(call(&mut core, "set_format", 0, PyValue::str(format), None));
+            let mut checked = 0;
+            for (input, out) in data().cases("search_groups") {
+                let r = ok(call(&mut core, "textmap", 0, list(vec![py(&input[0]), PyValue::None]), None));
+                let Js::Arr(pair) = r else { panic!() };
+                let Js::Num(h) = pair[0] else { panic!() };
+                let Value::List(matches) = &input[3] else { panic!("matches") };
+                let pairs: Vec<(PyValue, PyValue)> = matches
+                    .iter()
+                    .map(|m| match m {
+                        Value::List(m) => (py(&m[0]), py(&m[1])),
+                        other => panic!("a match: {other:?}"),
+                    })
+                    .collect();
+                let named = if pairs.first().is_some_and(|(_, n)| !n.is_none()) {
+                    list(pairs.iter().map(|(_, n)| n.clone()).collect())
+                } else {
+                    PyValue::None
+                };
+                let spans = list(pairs.into_iter().map(|(s, _)| s).collect());
+                let args = list(vec![
+                    PyValue::from(h as i64),
+                    spans,
+                    PyValue::Bool(true),
+                    PyValue::Bool(false),
+                    py(&input[2]),
+                    named,
+                ]);
+                let got = result(call(&mut core, "textmap_search", 0, args, None));
+                assert_eq!(got, value_view(&out), "{format} {:?} main_group={:?}", input[1], input[2]);
+                ok(call(&mut core, "free", h as u32, PyValue::None, None));
+                checked += 1;
+            }
+            assert!(checked >= 80, "{checked} cases");
         });
     }
 }

@@ -420,9 +420,31 @@ fn cyclic_pdf_values_raise_and_deep_values_do_not_recurse() {
         cur = &items[0];
     }
     assert_eq!(depth, 200_000);
-    std::mem::forget(back); // dropping 200 000 nested Rcs recurses (not the boundary's code)
-    std::mem::forget(deep);
+    // freed without recursion too (this thread's stack is 2 MiB natively,
+    // 1 MiB under WebAssembly: a recursive drop overflows it)
+    drop(back);
+    // a request whose argument is nested 200 000 levels deep: decoded,
+    // echoed, encoded and freed by the core without recursion
+    let mut core = Core::new();
+    let response = core.call(&request("echo", 0, &deep, 0), None);
+    let payload_len = u32::from_le_bytes(response[12..16].try_into().unwrap()) as usize;
+    assert_eq!((response[4], payload_len), (0, block.len()));
+    drop(deep);
+    assert_eq!(core.call(&request("info", 0, &PyValue::None, 0), None)[4], 0);
+    // tuples and dicts, alternately, and a value shared with a live one
+    let mut deep = PyValue::None;
+    for i in 0..200_000 {
+        deep = if i % 2 == 0 { PyValue::tuple([deep, PyValue::from(1.5)]) } else { obj_of("k", deep) };
+    }
+    let kept = PyValue::list([deep.clone()]);
+    drop(deep);
+    assert!(matches!(&kept, PyValue::List(items) if matches!(&items[0], PyValue::Dict(_))));
+    drop(kept);
     list.set(1, PDFObject::Null); // breaks the cycle
+}
+
+fn obj_of(key: &str, v: PyValue) -> PyValue {
+    PyValue::Dict(Obj::from_pairs([(key, v)]))
 }
 
 /// A value JavaScript can send: plain Python values, no lone surrogate.

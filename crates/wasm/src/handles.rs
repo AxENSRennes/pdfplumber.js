@@ -79,6 +79,11 @@ impl<T> Handles<T> {
         slot.value.take()
     }
 
+    /// The live objects, in slot order.
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        self.slots.iter_mut().filter_map(|s| s.value.as_mut())
+    }
+
     /// The number of live objects.
     pub fn len(&self) -> usize {
         self.slots.len() - 1 - self.free.len()
@@ -116,6 +121,7 @@ mod tests {
         assert_eq!(h.get(c), Some(&"C"));
         assert!(h.get_mut(a).is_none());
         assert_eq!(h.len(), 2);
+        assert_eq!(h.values_mut().map(|v| *v).collect::<Vec<_>>(), ["C", "b"]);
         assert_eq!(h.get(b | (1 << INDEX_BITS)), None);
         assert_eq!(h.get(12345), None);
     }

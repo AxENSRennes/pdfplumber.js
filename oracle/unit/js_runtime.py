@@ -29,7 +29,19 @@ typed JSON:
   JavaScript ``RegExp`` semantics, ``TextMap.extract_text_lines``, and
   ``TableFinder`` (``bbox``, ``cells``, ``rows``, ``columns``,
   ``extract``). One line per page: ``{"in": [path, page_number, chars,
-  edges, bbox], "out": {"ops": [[op, args, result], ...]}}``.
+  edges, bbox], "out": {"ops": [[op, args, result], ...]}}``;
+- ``search_groups.jsonl``: ``TextMap.search`` with every kind of
+  ``main_group`` (an int, a bool, a group name, values ``m.group()``
+  refuses), evaluated for each match: ``{"in": [chars, pattern,
+  main_group, matches], "out": result}``, the pattern in JavaScript syntax
+  (``(?<name>...)``; Python's ``(?P<name>...)`` was run), ``matches`` the
+  spans of each match (ASCII text: the UTF-16 offsets of a ``RegExp``
+  with the ``d`` flag, the same matches) as ``[spans, named]``, ``named``
+  the spans of the named groups (``indices.groups``), ``None`` for a
+  pattern without any;
+- ``open.jsonl``: ``pdfplumber.open(path, **options)`` with options
+  pdfplumber accepts at ``open()`` whatever their value (they fail later,
+  or never): ``{"in": [path, options], "out": None or the exception}``.
 
 The JavaScript tests (js/test/shared/) replay them: Node through vitest,
 browsers through Playwright, which read them with ``js/test/oracle-data.mjs``.
@@ -42,6 +54,7 @@ from __future__ import annotations
 import importlib
 import pkgutil
 import random
+import re
 
 import pdfplumber
 from pdfminer.cmapdb import CMapDB
@@ -82,6 +95,29 @@ SEARCHES = [
     ("e", True, True, False, False, 0),
 ]
 TEXTMAP_KWARGS = [{}, {"layout": True}]
+# (Python pattern, JavaScript pattern) and main_group values: any value
+# m.group() takes, read for each match (pdfplumber/utils/text.py:172
+# TextMap.search), on the text map of "ab cd"
+GROUP_PATTERNS = [
+    ("zzz", "zzz"),
+    ("(?P<w>ab)", "(?<w>ab)"),
+    ("(?P<w>x)?(?P<v>ab)", "(?<w>x)?(?<v>ab)"),
+    ("(a)(b)", "(a)(b)"),
+    ("b|(?P<w>c)", "b|(?<w>c)"),
+]
+MAIN_GROUPS = [0, 1, 2, -1, 5, True, False, "w", "v", "zz", None, 1.5, 2**70, -(2**70), b"w", [], {}]
+OPEN_PATH = "corpus/micro/text-operators.pdf"
+OPEN_OPTIONS = [
+    {"unicode_norm": "X"},
+    {"unicode_norm": None},
+    {"pages": "1"},
+    {"pages": [1.0]},
+    {"pages": [1]},
+    {"password": b"x"},
+    {"password": "x"},
+    {"strict_metadata": 1},
+    {"laparams": {"line_margin": 0.3}},
+]
 TABLE_SETTINGS = [None, {"vertical_strategy": "text", "horizontal_strategy": "text"}, {"snap_tolerance": 1}]
 
 DOCUMENTS = [
@@ -210,13 +246,53 @@ def text_cases():
         yield [rel, number, chars, edges, bbox], {"ops": ops}
 
 
+def search_group_cases():
+    chars = [
+        {"text": c, "x0": i * 10.0, "x1": i * 10 + 8.0, "top": 0.0, "bottom": 10.0, "doctop": 0.0,
+         "upright": True, "height": 10.0, "width": 8.0, "size": 10.0}
+        for i, c in enumerate("ab cd")
+    ]
+    tm = utext.chars_to_textmap(chars)
+    assert tm.as_string.isascii()
+    span = lambda m, g: None if m.start(g) == -1 else list(m.span(g))  # noqa: E731
+    for main in MAIN_GROUPS:
+        for py_pattern, js_pattern in GROUP_PATTERNS:
+            compiled = re.compile(py_pattern)
+            matches = [
+                [
+                    [span(m, g) for g in range(compiled.groups + 1)],
+                    {name: span(m, name) for name in compiled.groupindex} if compiled.groupindex else None,
+                ]
+                for m in compiled.finditer(tm.as_string)
+            ]
+            result = guarded(lambda: tm.search(py_pattern, return_chars=False, main_group=main))
+            yield [chars, js_pattern, main, matches], result
+
+
+def open_only(path, options):
+    """``pdfplumber.open`` alone: ``pdf.close()`` would load the pages."""
+    pdf = pdfplumber.open(path, **options)
+    pdf.stream.close()
+
+
+def open_cases():
+    root = corpus_root()
+    for options in OPEN_OPTIONS:
+        yield [OPEN_PATH, options], guarded(lambda: open_only(root / OPEN_PATH, options))
+
+
 def main():
     require_oracle_python()
     n_exc = write_cases(MODULE, "exceptions", exception_cases())
     n_doc = write_cases(MODULE, "documents", document_cases())
     n_cmap = write_cases(MODULE, "cmaps", cmap_cases())
     n_text = write_cases(MODULE, "text", text_cases())
-    write_meta(MODULE, cases={"exceptions": n_exc, "documents": n_doc, "cmaps": n_cmap, "text": n_text})
+    n_groups = write_cases(MODULE, "search_groups", search_group_cases())
+    n_open = write_cases(MODULE, "open", open_cases())
+    write_meta(
+        MODULE,
+        cases={"exceptions": n_exc, "documents": n_doc, "cmaps": n_cmap, "text": n_text, "search_groups": n_groups, "open": n_open},
+    )
     print(f"{MODULE}: {n_exc} exception classes, {n_cmap} CMap cases, {n_text} pages")
 
 

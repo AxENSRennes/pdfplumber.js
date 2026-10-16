@@ -592,7 +592,7 @@ pub fn call(core: &mut Core, op: &str, handle: u32, args: PyValue, data: Option<
 }
 
 pub fn call_level(core: &mut Core, op: &str, handle: u32, args: PyValue, data: Option<Vec<u8>>, level: i64) -> Resp {
-    response(&core.call(&request(op, handle, &args, level), data))
+    response(&core.call(&request(op, handle, &args, level), data.map(Rc::from)))
 }
 
 /// The value of a successful response.

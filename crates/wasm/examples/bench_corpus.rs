@@ -32,7 +32,7 @@ fn main() {
         let input = typed_json::from_json(json.get("in").expect("in")).expect("typed");
         let Value::List(args) = &input else { panic!("\"in\" is not a list") };
         let record = pdftrace::plumber::from_value(&args[0]).expect("a record");
-        let PyValue::Dict(record) = record else { panic!("a record is a dict") };
+        let PyValue::Dict(record) = &record else { panic!("a record is a dict") };
         let mut page = Obj::new();
         for key in ["chars", "edges"] {
             let v = record.get(key).expect("chars and edges").clone();

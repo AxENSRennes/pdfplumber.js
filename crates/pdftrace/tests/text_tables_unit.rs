@@ -887,5 +887,5 @@ fn debug_is_repr() {
     assert_eq!(format!("{o:?}"), "{'x0': 1.0, 'k': (1, 0.5, 'a')}");
     // the From conversions of the API
     assert_eq!(PyValue::from("a").repr(), "'a'");
-    assert!(matches!(PyValue::from(o.clone()), PyValue::Dict(d) if d.ptr_eq(&o)));
+    assert!(matches!(&PyValue::from(o.clone()), PyValue::Dict(d) if d.ptr_eq(&o)));
 }
