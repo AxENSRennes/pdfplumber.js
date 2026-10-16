@@ -410,6 +410,9 @@ impl Core {
                 let mut out = Vec::new();
                 for cid in seq(arg(a, 2)?)? {
                     let PyValue::Int(cid) = cid else { return Err(exc::TypeError("a cid must be an int")) };
+                    // (a `UnicodeMap` from `get_unicode_map` only raises
+                    // KeyError: the guard is for an `IdentityUnicodeMap`'s
+                    // `chr()` errors, which no request reaches today)
                     out.push(match umap.get_unichr(cid) {
                         Ok(u) => Ok(u),
                         Err(e) if e.is_instance(ExcKind::KeyError) => Err(e.message.clone()),
