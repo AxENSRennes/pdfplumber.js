@@ -28,15 +28,19 @@ Default run (about ten minutes: through ``scripts/heavy.sh``):
   every class, ``Type0`` chains, missing or malformed entries of every kind,
   embedded programs, ``/ToUnicode`` streams, every predefined CMap name and
   unknown ones), with the font's attributes and, for sample strings and codes,
-  ``decode``, ``to_unichr``, ``char_width``, ``char_disp``, ``string_width``.
+  ``decode``, ``to_unichr``, ``char_width``, ``char_disp``, ``string_width``;
+  then fonts of encrypted documents (``encrypt_case``: every stream encrypted
+  for a security handler of every kind, deciphered by ``PDFStream.decode``).
 - ``depth``: for fonts of every kind, the largest number of extra Python frames
   under which building the font (and each query) still succeeds, with the
   outcome there and one frame deeper (a ``RecursionError``); the font is built
   once first, which loads the predefined CMaps it uses (``get_font``), and,
   for a font that loads some, the same search with ``CMapDB``'s caches
   emptied before each build (``get_font_cold``: the first loads, as in a new
-  process). Fonts whose ``/ToUnicode`` uses ``usecmap`` (found, missing,
-  identity) are among them.
+  process), and, for a font with a stream, after a ``PSStackParser`` was
+  created (``get_font@parsed``: the ``psparser`` logger's cache filled, as by
+  a document's parser). Fonts whose ``/ToUnicode`` uses ``usecmap`` (found,
+  missing, identity) and fonts of encrypted documents are among them.
 
 The first ``bytes.decode("UTF-16BE")`` of a process imports the codec, deep
 below the caller (not modeled by the port): the module imports it first.
@@ -46,15 +50,21 @@ workers): every font a page or a Form XObject uses (the ``spec`` given to
 ``PDFResourceManager.get_font``), with every indirect object it reaches (and
 the error of those that do not load), and every string shown with it; the
 embedded font programs (``FontFile``, ``FontFile2``, ``FontFile3``) through
-``Type1FontHeaderParser``, ``TrueTypeFont`` and ``CFFFont``. Writes
-``corpus_fonts.jsonl``, ``corpus_programs.jsonl`` and ``corpus.json``.
+``Type1FontHeaderParser``, ``TrueTypeFont`` and ``CFFFont``. The fonts of an
+encrypted document are copied from a second instance of it, their streams
+still encrypted, with the document's ``[docid, param, password]``; the
+recursion boundaries of the first ones that read a stream are searched as in
+``depth``. Writes ``corpus_fonts.jsonl``, ``corpus_programs.jsonl``,
+``corpus_depth.jsonl`` and ``corpus.json``.
 
-A font case is ``[spec, table, errors, strings, probes, depth]``: the font
+A font case is ``[spec, table, errors, strings, probes, depth, query depth,
+cipher]``: the font
 dictionary (typed JSON, its references by number), the objects of the
 document it reaches (``[[objid, object], ...]``, streams with their raw
 data), the object numbers whose loading raised (``[[objid, exception],
-...]``), the strings to decode, the extra codes to query, and the recursion
-depth of the call. The case is run on objects decoded from that dump (so the
+...]``), the strings to decode, the extra codes to query, the recursion
+depths of the creation and of the queries, and, for an encrypted document,
+``[docid, param, password]`` (else ``None``). The case is run on objects decoded from that dump (so the
 Rust side sees exactly the same input); for the real corpus, the font built
 from the dump is checked against the one pdfminer built in the document
 (``corpus.json`` counts the differences, which only come from what the dump
