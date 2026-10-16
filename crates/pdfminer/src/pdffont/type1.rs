@@ -9,6 +9,13 @@
 //! placeholder entry stands for it in `results`. Only `do_keyword` adds
 //! results (`flush` does nothing) and the parser seeks only once, at its
 //! creation, so the two queues stay in step.
+//!
+//! Frames: the construction takes those of `__init__` and of
+//! `PSStackParser.__init__` (`PSStackParser::init_frames`, 7 below the
+//! caller, 8 the first time the `psparser` logger is asked); `get_encoding`
+//! and `do_keyword` (with `nextobject`'s frame and `log.debug`) take
+//! theirs; `psparser`'s below `nextobject` are not modeled and never go
+//! deeper than the construction.
 
 use std::collections::VecDeque;
 use std::sync::LazyLock;

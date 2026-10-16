@@ -15,14 +15,24 @@
 //! - `literal_name` (`psparser`; `str()` of a non-literal counts its C
 //!   units itself);
 //! - the `casting` functions;
-//! - `cmapdb` (`UnicodeMap.get_unichr`, `CMap.decode` and their
-//!   `log.debug`, the constructors) and `encodingdb.EncodingDB.get_encoding`;
+//! - `cmapdb`'s query methods (`UnicodeMap.get_unichr`, `CMap.decode` and
+//!   their `log.debug`) and the constructors of its maps (`CMapDB` and
+//!   `CMapParser` count their own frames) and
+//!   `encodingdb.EncodingDB.get_encoding`;
 //! - logging calls: `log.debug(...)` runs `Logger.debug` and
 //!   `Logger.isEnabledFor` (two frames below the caller) and, the first
 //!   time a level is asked of a logger since its cache was cleared
 //!   (`logging.disable`, which the oracle runs before a stage or a unit
-//!   case), `_acquireLock` (a third). [`log_frames`] keeps that cache per
-//!   thread; [`clear_logger_cache`] is `logging.disable()`.
+//!   case), `_acquireLock` (a third): [`log_frames`], on the per-thread
+//!   model of the loggers' caches of `pycompat::recursion`, shared with
+//!   `cmapdb` and `psparser` callers; [`clear_logger_cache`] is
+//!   `logging.disable()`.
+//!
+//! Some of these frames are never the deepest of a font's creation, so
+//! that no test can tell them (`crates/pdftrace/tests/fonts_unit.rs`,
+//! "Mutations"): the frames of `name2unicode` in `get_encoding` (the
+//! `_parse_bbox` that follows under the same `PDFSimpleFont.__init__` goes
+//! deeper). They are kept, as Python takes them.
 //!
 //! When one of those modules starts counting its own frames, the matching
 //! helper here must go.
