@@ -1430,13 +1430,15 @@ def depth_specs(rng):
                 attrs["DecodeParms"] = s.deep_ref(params)
             spec["ToUnicode"] = PDFStream(attrs, raw)
             yield spec, doc
-    # embedded programs whose filter is such a reference
-    for key in ("FontFile", "FontFile2"):
+    # embedded programs whose filter is such a reference, or not (then the
+    # construction of the Type 1 header parser is the deepest point)
+    for key, deep in (("FontFile", True), ("FontFile2", True), ("FontFile", False)):
         doc = FontDoc()
         s = Spec(rng, doc)
         program = type1_program(rng) if key == "FontFile" else tt_program(rng)
         packed = zlib.compress(program)
-        attrs = {"Filter": s.deep_ref(LIT("FlateDecode")), "Length": len(packed), "Length1": len(program)}
+        flate = s.deep_ref(LIT("FlateDecode")) if deep else LIT("FlateDecode")
+        attrs = {"Filter": flate, "Length": len(packed), "Length1": len(program)}
         if key == "FontFile":
             spec = {"Type": LIT("Font"), "Subtype": LIT("Type1"), "BaseFont": LIT("ABCDEF+Foo")}
         else:
