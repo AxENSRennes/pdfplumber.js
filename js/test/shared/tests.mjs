@@ -105,6 +105,76 @@ function expectedTestValues(lib) {
   };
 }
 
+/** A list nested `n` levels deep around `null`. */
+function nested(n) {
+  let v = null;
+  for (let i = 0; i < n; i++) v = [v];
+  return v;
+}
+
+function depthOf(v) {
+  let d = 0;
+  while (Array.isArray(v)) {
+    d++;
+    v = v[0];
+  }
+  return d;
+}
+
+/** A WebAssembly module with the exports of crates/wasm/src/abi.rs whose
+ * `pp_call` recurses without end: the engine's stack overflow (a
+ * `RangeError` in V8 and JavaScriptCore, an `InternalError` in
+ * SpiderMonkey, not a `WebAssembly.RuntimeError`) leaves the instance's
+ * state undefined. */
+function overflowingModule() {
+  const uleb = (n) => {
+    const out = [];
+    do {
+      let b = n & 0x7f;
+      n >>>= 7;
+      if (n) b |= 0x80;
+      out.push(b);
+    } while (n);
+    return out;
+  };
+  const name = (s) => [...uleb(s.length), ...[...s].map((c) => c.charCodeAt(0))];
+  const section = (id, bytes) => [id, ...uleb(bytes.length), ...bytes];
+  const vec = (items) => [...uleb(items.length), ...items.flat()];
+  const I32 = 0x7f;
+  const types = [
+    [0x60, 1, I32, 1, I32], // 0: (i32) -> i32
+    [0x60, 1, I32, 0], // 1: (i32) -> ()
+    [0x60, 2, I32, I32, 1, I32], // 2: (i32, i32) -> i32
+    [0x60, 0, 1, I32], // 3: () -> i32
+    [0x60, 0, 0], // 4: () -> ()
+  ];
+  const funcs = [0, 1, 2, 3, 3, 4, 3];
+  const exportsList = [
+    [...name("memory"), 2, 0],
+    ...["pp_alloc", "pp_free", "pp_call", "pp_result_ptr", "pp_result_len", "pp_result_free", "pp_buffers"].map(
+      (n, i) => [...name(n), 0, i],
+    ),
+  ];
+  const body = (code) => [...uleb(code.length + 1), 0, ...code];
+  const bodies = [
+    body([0x41, 8, 0x0b]), // pp_alloc: 8
+    body([0x0b]),
+    body([0x20, 0, 0x20, 1, 0x10, 2, 0x0b]), // pp_call: pp_call(request, data)
+    body([0x41, 0, 0x0b]),
+    body([0x41, 0, 0x0b]),
+    body([0x0b]),
+    body([0x41, 0, 0x0b]),
+  ];
+  return new Uint8Array([
+    0x00, 0x61, 0x73, 0x6d, 1, 0, 0, 0,
+    ...section(1, vec(types)),
+    ...section(3, vec(funcs.map((f) => [f]))),
+    ...section(5, [1, 0, 1]),
+    ...section(7, vec(exportsList)),
+    ...section(10, vec(bodies)),
+  ]);
+}
+
 /** Values that must cross JavaScript → Rust → JavaScript unchanged. */
 function echoValues(lib) {
   const values = [
@@ -170,6 +240,55 @@ export const tests = [
       } finally {
         await t.setFormat("binary");
       }
+    },
+  },
+  {
+    name: "arguments nested 10^5 levels deep cross both ways; cyclic arguments are refused",
+    async run({ lib, readFile }) {
+      const t = await lib.internals();
+      const pdf = await lib.open(await readFile("corpus/micro/text-operators.pdf"));
+      try {
+        assert(lib.encodeValue(nested(100_000)).length === 16 + 2 * 100_000 + 1, "encoded size");
+        assert(depthOf(await t.echo(nested(100_000))) === 100_000, "depth after echo");
+        assert(depthOf(await t.echo({ a: [nested(50_000)] }).then((v) => v.a[0])) === 50_000, "in a dict");
+        const cyclic = [1];
+        cyclic.push({ k: cyclic });
+        await rejects(t.echo(cyclic), (e) => assert(e instanceof TypeError, e.name), "cycle");
+        // the same object twice is not a cycle
+        const shared = { x: 1 };
+        assertSame(await t.echo([shared, [shared]]), [{ x: 1 }, [{ x: 1 }]], "shared");
+        // the core is alive, with the document opened before
+        const info = await t.info();
+        assert(info.handles === 1 && !t.core.crashed, JSON.stringify(info));
+      } finally {
+        await pdf.close();
+      }
+    },
+  },
+  {
+    name: "an exception out of the module (stack overflow) marks the core as crashed",
+    only: "direct",
+    async run({ lib }) {
+      const core = await lib.WasmCore.create(new WebAssembly.Module(overflowingModule()), null);
+      assert(!core.crashed, "fresh");
+      await rejects(core.call("info", 0, null), (e) => assert(e instanceof lib.CoreCrash, `${e.name} ${e.message}`), "overflow");
+      assert(core.crashed, "crashed after the overflow");
+      await rejects(core.call("info", 0, null), (e) => assert(e instanceof lib.CoreCrash, e.name), "dead");
+    },
+  },
+  {
+    name: "table rows keep their keys when two shapes differ only in where U+0000 falls",
+    async run({ lib }) {
+      const t = await lib.internals();
+      const a = { "a\u0000b": 1, c: 2 };
+      const b = { a: 1, "b\u0000c": 2 };
+      for (const format of ["binary", "json"]) {
+        await t.setFormat(format);
+        assertSame(await t.echo([a, a]), [a, a], `first shape (${format})`);
+        assertSame(await t.echo([b, b]), [b, b], `second shape (${format})`);
+        assertSame(await t.echo([a, b, a, b]), [a, b, a, b], `both (${format})`);
+      }
+      await t.setFormat("binary");
     },
   },
   {
@@ -351,6 +470,41 @@ export const tests = [
     },
   },
   {
+    name: "a call that misses a CMap is re-run from scratch: Python's result, its diagnostics once",
+    async run({ lib, oracle, readFile }) {
+      const t = await lib.internals();
+      const doc = await t.call("doc_open", null, 0, { data: await readFile("corpus/micro/text-operators.pdf") });
+      const handles = (await t.info()).handles;
+      let n = 0;
+      for (const { in: input, out } of await oracle("cmaps")) {
+        const [what, name, code] = input.map((v) => fromTyped(v, lib));
+        if (what !== "decode" || n >= 60) continue;
+        // the document is an argument: it caches the CMap, as a font does
+        const [cids, derived] = await t.call("doc_cmap_decode", [doc, name, code]);
+        assertSame(cids, fromTyped(out, lib), `decode ${name}`);
+        assertSame(await t.call("echo", null, 0), null, "alive");
+        await t.free(derived);
+        n++;
+      }
+      assert((await t.info()).handles === handles, "no handle left by the void runs");
+      // a request that warns, then misses a CMap: the warning once
+      const got = [];
+      const result = await t.call(
+        "sequence",
+        [
+          ["warn", 0, [["pdfminer.pdfinterp", 30, "w"]]],
+          ["doc_cmap_decode", 0, [doc, "UniKS-UCS2-H", new Uint8Array([0xac, 0x00])]],
+        ],
+        0,
+        { minLevel: 30, onDiagnostics: (d, dropped) => got.push([d, dropped]) },
+      );
+      assertSame(result[1][0], [1086], "UniKS-UCS2-H");
+      assertSame(got, [[[{ source: "pdfminer.pdfinterp", level: 30, message: "w" }], 0]], "diagnostics");
+      await t.free(result[1][1]);
+      await t.free(doc);
+    },
+  },
+  {
     name: "the default CMap location serves every CMap",
     async run({ lib }) {
       const t = await lib.internals();
@@ -419,6 +573,28 @@ export const tests = [
     },
   },
   {
+    name: "search reads main_group for each match, as m.group() does",
+    async run({ lib, oracle }) {
+      const t = await lib.internals();
+      let checked = 0;
+      for (const { in: input, out } of await oracle("search_groups")) {
+        const [charsT, pattern, mainT] = input;
+        const tm = await t.textmap(fromTyped(charsT, lib, true), {});
+        const main = fromTyped(mainT, lib, true);
+        let actual;
+        try {
+          actual = await tm.search(pattern, { return_chars: false, main_group: main });
+        } catch (e) {
+          actual = { exception: e.name, message: e.message };
+        }
+        assertSame(actual, fromTyped(out, lib), `${pattern} main_group=${String(fromTyped(mainT, lib))}`);
+        await tm.free();
+        checked++;
+      }
+      assert(checked >= 80, `${checked} cases`);
+    },
+  },
+  {
     name: "search patterns follow JavaScript RegExp semantics, spans converted to code points",
     async run({ lib }) {
       const t = await lib.internals();
@@ -470,7 +646,35 @@ export const tests = [
       }
       await rejects(lib.open(missingInput()), (e) => assert(e instanceof Error && !(e instanceof lib.PDFPlumberError), e.name), "missing file");
       await rejects(lib.open(42), (e) => assert(e instanceof TypeError, e.name), "bad input");
-      await rejects(lib.open(bytes, { pages: "1" }), (e) => assert(e instanceof TypeError, e.name), "bad option");
+    },
+  },
+  {
+    name: "open() takes the options pdfplumber.open() takes, whatever their values",
+    async run({ lib, oracle, readFile }) {
+      let checked = 0;
+      for (const { in: input, out } of await oracle("open")) {
+        const [path, optionsT] = input;
+        const options = fromTyped(optionsT, lib, true);
+        const where = `open(${path}, ${JSON.stringify(fromTyped(optionsT, lib), (k, v) => (v instanceof Uint8Array ? [...v] : v))})`;
+        assert(out === null, `${where}: Python raised; replayed once the page layer lands`);
+        const pdf = await lib.open(await readFile(path), options);
+        await pdf.close();
+        checked++;
+      }
+      assert(checked >= 9, `${checked} cases`);
+    },
+  },
+  {
+    name: "a PDF is in the module's memory once",
+    only: "direct",
+    async run({ lib }) {
+      const t = await lib.internals();
+      const size = 32 * 2 ** 20;
+      const before = t.core.memoryBytes();
+      const pdf = await lib.open(new Uint8Array(size));
+      const grown = t.core.memoryBytes() - before;
+      await pdf.close();
+      assert(grown < 1.5 * size, `memory grew by ${grown} bytes for ${size}`);
     },
   },
   {

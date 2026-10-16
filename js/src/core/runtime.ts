@@ -30,7 +30,8 @@ export interface CallOptions {
   /** Collect diagnostics at or above this level (0: none). */
   minLevel?: number;
   /** Receives the diagnostics of the call (and the count of the dropped
-   * ones), including those of a call re-run after loading CMaps. */
+   * ones): those of its final run, Python's, once. A run that missed a
+   * CMap is void, and reports none (crates/wasm/src/ops.rs). */
   onDiagnostics?: (entries: Diagnostic[], dropped: number) => void;
 }
 
@@ -138,16 +139,23 @@ export class WasmCore implements Core {
     return this.ex.pp_buffers();
   }
 
+  /** The size of the module's linear memory, in bytes (it never shrinks). */
+  memoryBytes(): number {
+    return this.ex.memory.buffer.byteLength;
+  }
+
+  /** Runs `f`, which calls the module's exports. Any exception out of it
+   * leaves the module's state undefined (a trap is a
+   * `WebAssembly.RuntimeError`, but a stack overflow is a `RangeError` in
+   * V8 and JavaScriptCore and an `InternalError` in SpiderMonkey, thrown
+   * while Rust holds borrows it never releases): the core is dead. */
   private guard<T>(f: () => T): T {
     if (this.dead !== undefined) throw new CoreCrash(this.dead);
     try {
       return f();
     } catch (e) {
-      if (e instanceof WebAssembly.RuntimeError) {
-        this.dead = e;
-        throw new CoreCrash(e);
-      }
-      throw e;
+      this.dead = e;
+      throw new CoreCrash(e);
     }
   }
 
@@ -218,34 +226,36 @@ export class WasmCore implements Core {
   }
 
   /** Runs a request until it does not miss CMaps; returns its final
-   * response, still undecoded beyond its status, as a copy, together with
-   * the diagnostics of the void runs. */
-  async runToEnd(request: Uint8Array, data?: Uint8Array): Promise<{ response: Uint8Array; earlier: Diagnostic[][] }> {
+   * response, still undecoded beyond its status, as a copy (the void runs
+   * report nothing). */
+  async runToEnd(request: Uint8Array, data?: Uint8Array): Promise<Uint8Array> {
     this.configure();
-    const earlier: Diagnostic[][] = [];
     for (;;) {
       const view = this.run(request, data);
       if (responseStatus(view) !== STATUS_NEED_CMAPS) {
         const response = view.slice();
         this.release();
-        return { response, earlier };
+        return response;
       }
       const r = decodeResponse(view);
       this.release();
-      earlier.push(r.diagnostics);
       await this.loadMissing(r.value as string[]);
     }
   }
 
   /** A request, re-run after loading the CMaps it misses; resolves to its
-   * value or rejects with the Python exception it raised. */
+   * value or rejects with the Python exception it raised. Only the final
+   * run's diagnostics are forwarded. */
   async call(op: string, handle: number, args: unknown, options: CallOptions = {}): Promise<unknown> {
     this.configure();
     for (;;) {
       const r = this.callRaw(op, handle, args, options);
+      if (r.status === STATUS_NEED_CMAPS) {
+        await this.loadMissing(r.value as string[]);
+        continue;
+      }
       if (r.diagnostics.length || r.dropped) options.onDiagnostics?.(r.diagnostics, r.dropped);
-      if (r.status !== STATUS_NEED_CMAPS) return responseValue(r, op);
-      await this.loadMissing(r.value as string[]);
+      return responseValue(r, op);
     }
   }
 

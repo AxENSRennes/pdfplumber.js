@@ -5,18 +5,11 @@
  */
 
 import { CoreCrash } from "../errors.js";
-import {
-  decodeResponse,
-  encodeRequest,
-  responseValue,
-  type CallOptions,
-  type Core,
-  type Diagnostic,
-} from "../core/runtime.js";
+import { decodeResponse, encodeRequest, responseValue, type CallOptions, type Core } from "../core/runtime.js";
 
 /** Messages from the worker. */
 export type WorkerReply =
-  | { id: number; response: Uint8Array; earlier: Diagnostic[][] }
+  | { id: number; response: Uint8Array }
   | { id: number; error: { name: string; message: string } }
   | { id: number; ready: true };
 
@@ -83,7 +76,6 @@ export class WorkerCore implements Core {
       throw e;
     }
     if (!("response" in r)) throw new Error("unexpected worker reply");
-    for (const d of r.earlier) if (d.length) options.onDiagnostics?.(d, 0);
     const response = decodeResponse(r.response);
     if (response.diagnostics.length || response.dropped)
       options.onDiagnostics?.(response.diagnostics, response.dropped);

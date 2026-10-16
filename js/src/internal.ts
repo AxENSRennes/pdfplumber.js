@@ -32,18 +32,20 @@ export class TextMapHandle {
     readonly text: string,
   ) {}
 
-  /** `TextMap.search` with a JavaScript pattern. */
+  /** `TextMap.search` with a JavaScript pattern. `main_group` is any
+   * value Python's `m.group()` takes (a number, a group name...). */
   async search(
     pattern: string | RegExp,
-    options: PatternOptions & { return_groups?: boolean; return_chars?: boolean; main_group?: number } = {},
+    options: PatternOptions & { return_groups?: boolean; return_chars?: boolean; main_group?: unknown } = {},
   ): Promise<SearchResult[]> {
-    const spans = matchSpans(this.text, compilePattern(pattern, options));
+    const { spans, named } = matchSpans(this.text, compilePattern(pattern, options));
     return (await this.core.call("textmap_search", 0, [
       this.handle,
       spans,
       options.return_groups ?? true,
       options.return_chars ?? true,
-      options.main_group ?? 0,
+      options.main_group === undefined ? 0 : options.main_group,
+      named,
     ])) as SearchResult[];
   }
 

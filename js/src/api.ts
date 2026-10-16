@@ -92,13 +92,12 @@ export function diagnosticsPolicy(options: OpenOptions, page?: number): Diagnost
   };
 }
 
-function check(options: OpenOptions): Record<string, unknown> {
+/** The keyword arguments of `pdfplumber.open` among the options, as they
+ * are: pdfplumber checks none of them at `open()`, and the ported code
+ * raises Python's errors where Python does (an `unicode_norm` it does not
+ * know when the text is normalized, `pages` when the pages load...). */
+function openKwargs(options: OpenOptions): Record<string, unknown> {
   const { pages, password, laparams, unicode_norm, raise_unicode_errors, strict_metadata } = options;
-  if (pages !== undefined && (!Array.isArray(pages) || !pages.every((p) => Number.isInteger(p))))
-    throw new TypeError("pages must be an array of one-based page numbers");
-  if (password !== undefined && typeof password !== "string") throw new TypeError("password must be a string");
-  if (unicode_norm != null && !["NFC", "NFKC", "NFD", "NFKD"].includes(unicode_norm))
-    throw new TypeError("unicode_norm must be one of NFC, NFKC, NFD, NFKD");
   return { pages, password, laparams, unicode_norm, raise_unicode_errors, strict_metadata };
 }
 
@@ -111,7 +110,7 @@ const registry =
 
 /** Opens a PDF (`pdfplumber.open`). */
 export async function open(input: PDFInput, options: OpenOptions = {}): Promise<PDFPlumberDocument> {
-  const args = check(options);
+  const args = openKwargs(options);
   const bytes = await platform().readInput(input);
   const core = await getCore();
   const policy = diagnosticsPolicy(options);

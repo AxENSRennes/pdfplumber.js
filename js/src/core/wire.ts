@@ -501,7 +501,8 @@ export function rowBuilder(keys: string[], kinds: number[]): RowBuilder {
     }
   }
   if (!evalAllowed) return genericRows(keys);
-  const signature = `${kinds.join(",")}\u0000${keys.join("\u0000")}`;
+  // unambiguous whatever the keys hold (U+0000 included)
+  const signature = JSON.stringify([kinds, keys]);
   let b = builders.get(signature);
   if (b === undefined) {
     if (builders.size >= 512) builders.clear();
@@ -741,12 +742,19 @@ class ByteWriter {
   }
 }
 
+/** Marks, on the work stack of `encodeValue`, the end of the container
+ * below it. */
+const EXIT = Symbol("exit");
+
 /** Encodes a JavaScript value as a PJB1 block of plain Python values:
  * `null`/`undefined` → `None`, booleans, safe integers → `int` (and
  * `bigint`), other numbers and `PyFloat` → `float`, strings → `str` (lone
  * surrogates kept), `Uint8Array`/`ArrayBuffer` → `bytes`, arrays → `list`,
  * `PyTuple` → `tuple`, plain objects and `Map`s with string keys → `dict`
- * (`undefined` properties left out). */
+ * (`undefined` properties left out). Without recursion: any depth
+ * encodes, and the core decodes and frees it without recursion too. A
+ * container inside itself is a `TypeError` (Python's `json.dumps` raises
+ * "Circular reference detected"); the same object twice is not. */
 export function encodeValue(value: unknown): Uint8Array {
   const w = new ByteWriter();
   w.raw(new Uint8Array([0x50, 0x4a, 0x42, 0x31, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]));
@@ -756,8 +764,16 @@ export function encodeValue(value: unknown): Uint8Array {
     w.varint(bytes.length);
     w.raw(bytes);
   };
-  const write = (v: unknown, depth: number): void => {
-    if (depth > 10000) throw new RangeError("argument nested too deeply");
+  // values to write, last first; a container is followed by its items,
+  // then by `EXIT` and itself (it leaves `open` once they are written)
+  const stack: unknown[] = [value];
+  const open = new Set<object>();
+  const enter = (v: object): void => {
+    if (open.has(v)) throw new TypeError("cyclic argument: a container holds itself");
+    open.add(v);
+    stack.push(v, EXIT);
+  };
+  const write = (v: unknown): void => {
     if (v === null || v === undefined) return w.u8(TAG.NONE);
     switch (typeof v) {
       case "boolean":
@@ -810,19 +826,26 @@ export function encodeValue(value: unknown): Uint8Array {
       const items = Array.isArray(v) ? v : v.items;
       w.u8(Array.isArray(v) ? TAG.LIST : TAG.TUPLE);
       w.varint(items.length);
-      for (const item of items) write(item, depth + 1);
+      enter(v as object);
+      for (let i = items.length - 1; i >= 0; i--) stack.push(items[i]);
       return;
     }
     const entries: [unknown, unknown][] =
       v instanceof Map ? [...v.entries()] : Object.entries(v as object).filter(([, x]) => x !== undefined);
     w.u8(TAG.DICT);
     w.varint(entries.length);
-    for (const [k, x] of entries) {
+    enter(v as object);
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const [k, x] = entries[i];
       if (typeof k !== "string") throw new TypeError("dict keys must be strings");
-      str(k);
-      write(x, depth + 1);
+      // a key is written as a `str` value is
+      stack.push(x, k);
     }
   };
-  write(value, 0);
+  while (stack.length) {
+    const v = stack.pop();
+    if (v === EXIT) open.delete(stack.pop() as object);
+    else write(v);
+  }
   return w.buf.slice(0, w.len);
 }

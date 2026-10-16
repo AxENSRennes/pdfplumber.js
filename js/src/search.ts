@@ -49,14 +49,29 @@ export function compilePattern(pattern: string | RegExp, options: PatternOptions
   return new RegExp(source, options.case === false ? "gdui" : "gdu");
 }
 
-/** The spans of every match of `re` over `text` (UTF-16 offsets; `null`
- * for a group that did not take part), in `matchAll` order. */
-export function matchSpans(text: string, re: RegExp): ([number, number] | null)[][] {
-  const out: ([number, number] | null)[][] = [];
+type Span = [number, number] | null;
+
+/** The matches of `re` over `text`, in `matchAll` order: the spans of each
+ * (UTF-16 offsets; `null` for a group that did not take part) and, for a
+ * pattern with named groups, the spans of those by name
+ * (`indices.groups`), what `m.group(name)` reads; `named` is `null` for a
+ * pattern without any (Python then refuses any name). */
+export function matchSpans(text: string, re: RegExp): { spans: Span[][]; named: Record<string, Span>[] | null } {
+  const spans: Span[][] = [];
+  const named: Record<string, Span>[] = [];
+  let hasNames = false;
+  const span = (s: [number, number] | undefined): Span => (s ? [s[0], s[1]] : null);
   for (const m of text.matchAll(re)) {
     const indices = m.indices;
     if (!indices) throw new Error("RegExp without the d flag");
-    out.push(Array.from(indices, (s) => (s ? [s[0], s[1]] : null)));
+    spans.push(Array.from(indices, span));
+    const groups = indices.groups;
+    hasNames ||= groups !== undefined;
+    const byName: Record<string, Span> = {};
+    for (const name of Object.keys(groups ?? {})) {
+      Object.defineProperty(byName, name, { value: span(groups![name]), enumerable: true, writable: true });
+    }
+    named.push(byName);
   }
-  return out;
+  return { spans, named: hasNames ? named : null };
 }

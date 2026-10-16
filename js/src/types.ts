@@ -24,8 +24,8 @@ export interface PDFPlumberWarning {
 export interface OpenOptions {
   /** One-based page numbers to load (`pages=`). */
   pages?: number[];
-  /** Password of an encrypted PDF (`password=`). */
-  password?: string;
+  /** Password of an encrypted PDF (`password=`: `str` or `bytes`). */
+  password?: string | Uint8Array;
   /** `laparams=`: layout analysis parameters (`LAParams` keyword
    * arguments), or `null`/absent for none. */
   laparams?: LAParams | null;
@@ -131,7 +131,10 @@ export interface SearchOptions extends ExtractTextOptions {
   case?: boolean;
   return_groups?: boolean;
   return_chars?: boolean;
-  main_group?: number;
+  /** The group whose text and bbox a result has: a number, or the name
+   * of a named group (`(?<name>…)`), read for each match as Python's
+   * `m.group(main_group)` reads it. */
+  main_group?: number | string;
 }
 
 /** A match of `search` (pdfplumber's `match_to_dict`). */

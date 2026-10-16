@@ -26,8 +26,8 @@ scope.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       return;
     }
     if (!core) throw new Error("worker not initialized");
-    const { response, earlier } = await (await core).runToEnd(m.request, m.data);
-    scope.postMessage({ id: m.id, response, earlier }, [response.buffer]);
+    const response = await (await core).runToEnd(m.request, m.data);
+    scope.postMessage({ id: m.id, response }, [response.buffer]);
   } catch (err) {
     const name = err instanceof CoreCrash ? "CoreCrash" : err instanceof Error ? err.name : "Error";
     scope.postMessage({ id: m.id, error: { name, message: err instanceof Error ? err.message : String(err) } });
