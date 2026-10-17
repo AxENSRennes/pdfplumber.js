@@ -172,7 +172,7 @@ def deep_recursion():
 def clear_logger_caches() -> None:
     """``logging.disable`` clears the cache of every logger: the first call of
     each level takes one more frame (``_acquireLock``); the Rust replay clears
-    its model of the cache at the same points (``frames::clear_logger_cache``)."""
+    its model of the cache at the same points (``pycompat::logging::disable``)."""
     logging.disable(logging.CRITICAL)
 
 

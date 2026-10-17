@@ -215,8 +215,18 @@ Lecture :
   Mutations sur le code modifié à l'intégration (`--in-diff`, `-j 1`) :
   `crates/wasm` 87 + 19 mutants, `pdffont`/`cmapdb` 100, `pdftrace` 3, puis
   passes `Ok(..)` (12 et 22) et 9 mutants à la main pour les types sans
-  `Default` : deux survivants, tués (borne du nombre de chaînes à
-  surrogate de `read_table`) ou supprimés (`From<&Unichr>` sans appelant).
+  `Default` : trois survivants, deux tués (borne du nombre de chaînes à
+  surrogate de `read_table`, `binary.rs:508`) et un supprimé
+  (`From<&Unichr>` sans appelant). Code de `crates/pdfplumber` réécrit en
+  résolvant les fusions (`TextMap::search_with` sur `code_points()`,
+  `WordExtractor::merge_chars`, `stream_missing_attribute` délégué à
+  `PDFStream::missing_attribute`) : 16 mutants (4 tués, 12 non
+  compilables), passe `Ok(..)` de `utils/text.rs` (67 tués, 4 non
+  compilables) et 2 mutants à la main de `stream_missing_attribute`
+  (tués par `ops_cases`), avec `text_tables_unit`. `fonts_unit` construit
+  un `LTChar` pour chaque `to_unichr` et compte ce qu'il vérifie : 40 910
+  (dont 113 surrogates isolés) sur `fonts` et 106 769 (dont 28) sur
+  `corpus_fonts`, avec un plancher par test.
 - **Vagues suivantes**, dans l'ordre des dépendances :
   1. `pdfinterp`, `pdfdevice`, `converter` (`PDFPageAggregator` vers
      `layout`) : étapes `fonts`, `interp`, `layout` (comptage des cadres de

@@ -559,19 +559,66 @@ fn check_ltchar_font(font: &PDFFont) {
 /// `LTChar(..., font, ..., text=font.to_unichr(cid), ...)` (what
 /// `PDFLayoutAnalyzer.render_char` builds): the char's text is the font's
 /// (`Unichr` into the layout's `PyStr`, a lone surrogate included), which
-/// the report compares with Python. Fonts whose `LTChar` cannot be built
-/// (a vertical displacement that is not a number) are skipped here.
+/// the report compares with Python. A cid whose `char_disp` fails has no
+/// `LTChar` (`render_char` raises before building it); an `LTChar` that
+/// cannot be built must be a vertical font's (a displacement that is not a
+/// number) or a font whose `get_descent` fails. Each outcome is counted in
+/// `LTCHAR_TEXT`, and the font tests require a minimum of checked chars and
+/// of lone surrogates among them (`check_ltchar_counts`).
 fn check_ltchar_text(font: &PDFFont, cid: &PyInt, u: &Unichr) {
-    let Ok(textdisp) = font.char_disp(cid) else { return };
+    let Ok(textdisp) = font.char_disp(cid) else {
+        LTCHAR_TEXT.with(|c| c.borrow_mut().no_disp += 1);
+        return;
+    };
     let (zero, one) = (Num::Int(PyInt::ZERO), Num::Int(PyInt::Small(1)));
     let matrix = [one.clone(), zero.clone(), zero.clone(), one.clone(), zero.clone(), zero.clone()];
     let gray = pdfminer::pdfcolor::predefined_colorspace("DeviceGray").expect("DeviceGray");
     let built = recursion::with_depth(Depth::default(), || {
         LTChar::<FP>::new(matrix, font, Num::Float(1.0), one, zero.clone(), u.clone(), zero, textdisp, gray, ())
     });
-    if let Ok(ch) = built {
-        assert_eq!(canon(&Value::py_str(ch.get_text())), canon(&unichr(u)), "LTChar text of cid {cid}");
+    match built {
+        Ok(ch) => {
+            assert_eq!(canon(&Value::py_str(ch.get_text())), canon(&unichr(u)), "LTChar text of cid {cid}");
+            LTCHAR_TEXT.with(|c| {
+                let mut c = c.borrow_mut();
+                c.checked += 1;
+                if matches!(u, Unichr::Surrogate(_)) {
+                    c.surrogates += 1;
+                }
+            });
+        }
+        Err(e) => {
+            assert!(
+                font.is_vertical() || font.get_descent().is_err(),
+                "LTChar of cid {cid} of a horizontal font with a descent not built: {e:?}"
+            );
+            LTCHAR_TEXT.with(|c| c.borrow_mut().not_built += 1);
+        }
     }
+}
+
+/// Outcomes of `check_ltchar_text` in the current test (each test runs in
+/// its own thread).
+#[derive(Default, Debug)]
+struct LtcharCounts {
+    checked: usize,
+    surrogates: usize,
+    no_disp: usize,
+    not_built: usize,
+}
+
+thread_local! {
+    static LTCHAR_TEXT: RefCell<LtcharCounts> = RefCell::default();
+}
+
+/// Requires that the replay checked at least `min_checked` `LTChar` texts,
+/// `min_surrogates` of them lone surrogates (floors below the counts of the
+/// current data, like the `min_cases` of `replay_canon`).
+fn check_ltchar_counts(name: &str, min_checked: usize, min_surrogates: usize) {
+    let c = LTCHAR_TEXT.with(|c| std::mem::take(&mut *c.borrow_mut()));
+    println!("{name}: LTChar text {c:?}");
+    assert!(c.checked >= min_checked, "{name}: only {} LTChar texts checked ({c:?})", c.checked);
+    assert!(c.surrogates >= min_surrogates, "{name}: only {} lone surrogates checked ({c:?})", c.surrogates);
 }
 
 /// `decode_loop(font, s)` called through `attempt`.
@@ -859,6 +906,7 @@ fn fonts() {
     let data = open();
     check_marker(&data, "generated");
     replay_canon(&data, "fonts", 3000, run_font);
+    check_ltchar_counts("fonts", 40_000, 100);
 }
 
 #[test]
@@ -866,6 +914,7 @@ fn corpus_fonts() {
     let data = open();
     check_marker(&data, "corpus");
     replay_canon(&data, "corpus_fonts", 1000, run_font);
+    check_ltchar_counts("corpus_fonts", 100_000, 20);
 }
 
 #[test]
