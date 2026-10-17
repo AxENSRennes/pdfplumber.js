@@ -332,7 +332,7 @@ Générateurs actuels (chacun s'exécute comme module, `python -m
 oracle.adversarial.objects` ; `oracle/unit/document.py` les relance avant
 d'écrire ses cas) :
 
-- `oracle/adversarial/objects.py` → `adv-objects` (276 PDF) : tables xref
+- `oracle/adversarial/objects.py` → `adv-objects` (320 PDF) : tables xref
   cassées ou absentes (repli `PDFXRefFallback` et son motif d'en-tête),
   offsets faux, `startxref` invalide, flux xref aux `/W`, `/Index`,
   prédicteurs et champs atypiques (flottants, noms, chaînes, négatifs),
@@ -351,7 +351,8 @@ d'écrire ses cas) :
   `obj`/`endobj` dans un flux d'objets, le mot-clé `stream` en fin de
   fichier, `/Length` autour de `PY_SSIZE_T_MAX - 33` (`MemoryError`,
   `OverflowError`), un champ de flux xref de 100 000 octets, un id flottant
-  déchiffré (`struct.error`).
+  déchiffré (`struct.error`) et un id booléen (`True`, un entier pour
+  `struct.pack`).
 - `oracle/adversarial/pages.py` → `adv-pages` : héritage (`/Resources`,
   `/MediaBox`, `/CropBox`, `/Rotate`, depuis les nœuds et le catalogue),
   boucles et partages dans l'arbre, `/Kids` absents ou atypiques (entiers,

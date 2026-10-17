@@ -605,22 +605,26 @@ def tail_object(body: bytes) -> bytes:
     return data + b"7 0 obj\n" + body
 
 
-def fallback_float_id(r: int, cfm: str | None, later: bytes) -> bytes:
+def fallback_float_id(r: int, cfm: str | None, later: bytes, id_token: bytes = b"41.0", num: int = 41) -> bytes:
     """An encrypted document repaired by PDFXRefFallback whose object
     stream lists the id 41.0 before the object "41 0 obj": getobj(41.0)
     parses that object and deciphers it with the float id (struct.pack
     raises for RC4 and AES-128 once a string is deciphered; AES-256 and
-    Identity ignore the id)."""
+    Identity ignore the id). With the id `true` before "1 0 obj" (the
+    catalog then is 11), the key of the offsets is True, an int for
+    struct.pack."""
+    assert len(id_token) == 4
     docid = b"0123456789abcdef"
     enc = standard_encryption(random.Random(r * 10 + (cfm is not None)), r=r, cfm=cfm, user="", owner="o", docid=docid)
     out = bytearray(b"%PDF-1.5\n")
-    out += b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
-    out += b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
-    out += b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 50 50] >>\nendobj\n"
-    inner = b"41.0 0 1"
+    root = 1 if num != 1 else 11
+    out += b"%d 0 obj\n<< /Type /Catalog /Pages %d 0 R >>\nendobj\n" % (root, root + 1)
+    out += b"%d 0 obj\n<< /Type /Pages /Kids [%d 0 R] /Count 1 >>\nendobj\n" % (root + 1, root + 2)
+    out += b"%d 0 obj\n<< /Type /Page /Parent %d 0 R /MediaBox [0 0 50 50] >>\nendobj\n" % (root + 2, root + 1)
+    inner = id_token + b" 0 1"
     out += b"40 0 obj\n<< /Type /ObjStm /N 1 /First 7 /Length %d >>\nstream\n" % len(inner) + inner + b"\nendstream\nendobj\n"
-    out += b"41 0 obj\n" + later + b"\nendobj\n"
-    out += b"trailer\n" + ser({"Root": Ref(1), "Encrypt": dict(enc.param), "ID": [docid, docid]}) + b"\n%%EOF\n"
+    out += b"%d 0 obj\n" % num + later + b"\nendobj\n"
+    out += b"trailer\n" + ser({"Root": Ref(root), "Encrypt": dict(enc.param), "ID": [docid, docid]}) + b"\n%%EOF\n"
     return bytes(out)
 
 
@@ -683,6 +687,9 @@ def cases_depth() -> list[Case]:
     for label, r, cfm in [("rc4", 3, None), ("aes128", 4, "AESV2"), ("identity", 4, None), ("aes256", 6, None)]:
         out.append((f"fallback-float-id-{label}", fallback_float_id(r, cfm, b"<< /Later true >>"), None))
         out.append((f"fallback-float-id-{label}-string", fallback_float_id(r, cfm, b"<< /Later (abcdefghijklmnopqrstu) >>"), None))
+        # a bool id: struct.pack takes True as 1
+        out.append((f"fallback-bool-id-{label}-string",
+                    fallback_float_id(r, cfm, b"<< /Later (abcdefghijklmnopqrstu) >>", b"true", 1), None))
     return out
 
 
