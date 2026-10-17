@@ -253,6 +253,8 @@ def bytes_format_cases(rng: random.Random) -> Iterator[tuple[list, object]]:
              "%99999999999999999999d", "%.99999999999d", "%.2147483647d", "%.2147483648d", "abc%dxyz", "%08.3f", "%+.2e",
              # widths of several digits, and around the last digit of PY_SSIZE_T_MAX
              "%12d", "%-15d|", "%021x", "%13.4f", "%9223372036854775808d", "%9223372036854775809d", "%.0r", "%.0a", "%.3r",
+             # float precisions past the digits of the float of an int
+             "%.41f", "%.50f", "%.45e", "%.45E", "%#.60g", "%.100g", "%#.41G", "%60.45f|", "%-+60.42e|",
              "%.2147483649d", "%.2147483645d"]
     for fmt in fixed:
         for arg in (360, 0, -360, 65, 255, 256, -7):
