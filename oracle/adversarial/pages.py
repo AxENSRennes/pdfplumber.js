@@ -392,6 +392,12 @@ def cases_depth() -> list[Case]:
     # older section only), and an error other than PDFObjectNotFound ends it
     base = build({3: page(MediaBox=BOX), 4: {"Title": b"x"}}, root=None)
     out.append(("no-pages-scan-older-xref", update_section(base, {5: b"<< /Producer (update) >>"}), None))
+    # pdfplumber's resolve_all turns only a RecursionError into
+    # MalformedPDFException (an /ArtBox, which pdfminer does not read,
+    # holding a reference to an object at a negative offset)
+    out.append(("artbox-ref-negative-offset", negative_offset(build({2: pages([Ref(3)], MediaBox=BOX),
+                                                                     3: page(Parent=Ref(2), ArtBox=Ref(4)),
+                                                                     4: [Ref(5), 0, 10, 10], 5: 0}), 5), None))
     out.append(("no-pages-scan-negative-offset", negative_offset(build({3: page(MediaBox=BOX), 4: {"Title": b"x"}}, root=None), 3), None))
     return out
 
