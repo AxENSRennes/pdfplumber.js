@@ -1039,6 +1039,8 @@ OP_VALUES = [
     "", "a", "ab", "b", b"x", (), (1,), (1, 2), (1.0, 2.5), (1, None), [1], [1, 2], [], {}, {"a": 1}, {"a": 1, "b": (2,)},
     # lone surrogates (chr(cid)), and strings float() parses
     "\ud800", "a\udfff", "\ue000", " 1.5 ", "1e3", "-inf", "\u0661\u0662", b"2.5", b"x1",
+    # the attribute of the stream below (PDFStream.__contains__)
+    "Length",
     # counts beyond the sizes CPython can repeat (OverflowError, MemoryError)
     2**62, -(2**62),
     # a dict is equal to itself even with a NaN value (dict_equal's identity shortcut)
@@ -1099,8 +1101,8 @@ def ops_cases():
     for op in ["add", "sub", "mul", "truediv", "lt", "le", "gt", "ge", "eq", "min", "max", "sum", "dictget", "in"]:
         for a in OP_VALUES:
             for b in OP_VALUES:
-                # a repetition beyond MAX_REPEAT (the port's resource guard)
-                # that CPython would allocate
+                # a repetition of more than 10**7 items that CPython would try to
+                # allocate (large; beyond MAX_REPEAT_BYTES, machine-dependent): none today
                 if op == "mul" and isinstance(a, (str, bytes, tuple, list)) and type(b) is int and a and 10**7 < b < 2**62:
                     continue
                 if op == "mul" and isinstance(b, (str, bytes, tuple, list)) and type(a) is int and b and 10**7 < a < 2**62:
