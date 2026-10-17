@@ -381,10 +381,12 @@ pub enum Symbol {
 }
 
 impl Symbol {
+    /// The address of the interned name: literals and keywords are
+    /// distinct leaked allocations, so no two symbols share one.
     fn address(self) -> usize {
         match self {
             Symbol::Literal(lit) => std::ptr::from_ref(lit.0) as usize,
-            Symbol::Keyword(kwd) => kwd.0.as_ptr() as usize | (1 << (usize::BITS - 1)),
+            Symbol::Keyword(kwd) => kwd.0.as_ptr() as usize,
         }
     }
 }
@@ -1613,5 +1615,37 @@ impl<X: PSStackParserExt> PSStackParser<X> {
             ],
             progress: ProgressGuard::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pycompat::recursion::{with_depth, Depth, PY_RECURSION_LIMIT};
+
+    /// A thread starts as a process that imported pdfplumber: interning a
+    /// name of its modules' constants takes one frame, a new name two (once).
+    #[test]
+    fn a_thread_starts_with_the_names_pdfplumber_interns() {
+        std::thread::spawn(|| {
+            let last = Depth { py: PY_RECURSION_LIMIT - 1, c: 0 };
+            with_depth(last, || {
+                py_intern(Symbol::Keyword(KWD(b"endobj"))).expect("interned by pdfminer.pdfparser");
+                py_intern(Symbol::Literal(LIT("Pages"))).expect("interned by pdfminer.pdfpage");
+                assert!(py_intern(Symbol::Keyword(KWD(b"zq_never_interned"))).is_err());
+                assert!(py_intern(Symbol::Literal(LIT("ZqNeverInterned"))).is_err());
+            });
+            with_depth(Depth { py: PY_RECURSION_LIMIT - 2, c: 0 }, || {
+                py_intern(Symbol::Literal(LIT("ZqNeverInterned"))).expect("two frames fit");
+            });
+            with_depth(last, || {
+                py_intern(Symbol::Literal(LIT("ZqNeverInterned"))).expect("interned now");
+                assert!(py_intern(Symbol::Keyword(KWD(b"ZqNeverInterned"))).is_err(), "a keyword is another symbol");
+            });
+            py_symbols_reset([]);
+            with_depth(last, || assert!(py_intern(Symbol::Keyword(KWD(b"endobj"))).is_err(), "a new process"));
+        })
+        .join()
+        .expect("the test thread");
     }
 }
