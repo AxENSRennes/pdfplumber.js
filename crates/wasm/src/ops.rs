@@ -268,10 +268,9 @@ fn group_index(index: &PyValue, m: &RegexMatch, named: Option<&NamedGroups>) -> 
             HashKey::new(other.clone())?;
             let PyValue::Str(name) = other else { return Err(no_such_group()) };
             let (_, span) = named.iter().find(|(n, _)| n == name).ok_or_else(no_such_group)?;
-            m.spans
-                .iter()
-                .position(|s| s == span)
-                .ok_or_else(|| exc::ValueError(format!("the span of group {:?} is no group's span", name.to_string_lossy())))
+            m.spans.iter().position(|s| s == span).ok_or_else(|| {
+                exc::ValueError(format!("the span of group {:?} is no group's span", name.to_string_lossy()))
+            })
         }
     }
 }
