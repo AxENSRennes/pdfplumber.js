@@ -92,6 +92,12 @@
 //!   leave (`__post_init__` makes `None` a dict and raises for every
 //!   other false value: `x in v` or `v[k] = ...` fails on `0`, `""`,
 //!   `[]`, `()`...; the `user_arg_cases` check these).
+//!
+//! The `Ok(..)` pass (diff made from the rewritten files): 79 mutants, 72
+//! caught; the 7 unviable ones (`Ok(Default::default())` for types without
+//! a default) were replaced by hand with concrete values (`num_operands`,
+//! `set_clusters`, `clusters`, `cluster_objects`, `WordMap::to_textmap`),
+//! and each fails the replay.
 
 use rustc_hash::FxHashMap as HashMap;
 use std::cell::RefCell;
