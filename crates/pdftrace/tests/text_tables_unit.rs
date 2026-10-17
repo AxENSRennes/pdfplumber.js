@@ -999,6 +999,36 @@ fn outside_nans_are_new_objects() {
     }
 }
 
+/// A dict key given as `&str`, `String`, `Rc<str>` or `PyStr` (with or
+/// without a surrogate) is the same `str` key: set by one, found by the
+/// others, hot (`x0`, `text`) or not. (The port's key types, which the
+/// oracle cases reach only through `&str` and `PyStr`.)
+#[test]
+fn key_kinds() {
+    use pycompat::PyStr;
+    use std::rc::Rc;
+    for name in ["x0", "fontname", "text"] {
+        let as_string = String::from(name);
+        let as_rc: Rc<str> = Rc::from(name);
+        let as_pystr = PyStr::new(name);
+        let mut o = Obj::from_pairs([("k", PyValue::None)]);
+        o.set(&as_string, PyValue::from(1i64));
+        assert!(o.get(name).is_some() && o.get(&as_rc).is_some() && o.get(&as_pystr).is_some());
+        o.set(&as_rc, PyValue::from(2i64));
+        o.set(&as_pystr, PyValue::from(3i64));
+        assert_eq!(o.keys().count(), 2, "{name}");
+        assert!(o.get(&as_string).unwrap().py_eq(&PyValue::from(3i64)));
+        assert!(o.get("x1").is_none() && o.get(&String::from("x")).is_none() && o.get(&Rc::<str>::from("y")).is_none());
+        assert!(o.get(&Rc::<str>::from("k")).is_some() && o.get(&String::from("k")).is_some());
+        assert_eq!(*o.keys().nth(1).unwrap(), as_pystr);
+    }
+    let surrogate = PyStr::from_code_points([0x61, 0xd800]).unwrap();
+    let mut o = Obj::from_pairs([("a", PyValue::None)]);
+    o.set(&surrogate, PyValue::from(1i64));
+    assert!(o.get(&surrogate).is_some() && o.get("a").is_some() && o.get(&String::from("a\u{fffd}")).is_none());
+    assert_eq!(o.item(&surrogate.clone()).unwrap().repr(), "1");
+}
+
 /// `{:?}` of a value or a dict is its Python `repr` (the replay's mismatch
 /// messages and the port's panics print it); the reprs themselves are
 /// oracle cases (`ops`).
