@@ -260,6 +260,10 @@ def bytes_format_cases(rng: random.Random) -> Iterator[tuple[list, object]]:
     for fmt_b in UNALLOCATABLE_FORMATS:
         for arg in (360, -7):
             yield [fmt_b, arg], _bytes_mod(fmt_b, arg)
+    # a * width or precision taken from the argument: C int bounds
+    for fmt_b in (b"%.*d", b"%*d", b"%-*d"):
+        for arg in (2**31 - 1, 2**31, -(2**31), -(2**31) - 1):
+            yield [fmt_b, arg], _bytes_mod(fmt_b, arg)
     for _ in range(4000):
         fmt = "".join(rng.choice(pieces) for _ in range(rng.randrange(1, 6)))
         arg = rng.choice([360, 0, 1, -1, 97, 2**40, -(2**40)])
