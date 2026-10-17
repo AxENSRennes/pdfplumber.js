@@ -550,7 +550,10 @@ def gen_pystr(rng):
              "각", "ﬁ", "ﷺ", "̈́", "क़", " \t\n", "\x1c", "'\"", "\ud800́",
              # the bounds of each UTF-8 length
              "\x7f", "\x80", "\u07ff", "\u0800", "\ud7ff", "\ue000", "\uffff", "\U00010000", "\U0010ffff",
-             "\x7f\x80\u07ff\u0800\uffff\U00010000\U0010ffff"]
+             "\x7f\x80\u07ff\u0800\uffff\U00010000\U0010ffff",
+             # NFC: two marks of one class composing in turn; trailing jamo bounds
+             "u\u0308\u0301", "a\u0301\u0302", "\u1100\u1161\u11a7", "\u1100\u1161\u11a8", "\u1100\u1161\u11c2",
+             "\u1100\u1161\u11c3", "\u1112\u1175\u11a7\u11a8"]
     strs = fixed + [rand_pystr(rng, rng.randint(0, 10)) for _ in range(6000)]
     for s in strs:
         for form in ("NFC", "NFKC", "NFD", "NFKD"):
