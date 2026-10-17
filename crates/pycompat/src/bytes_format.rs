@@ -315,8 +315,8 @@ fn format_float(x: f64, alt: bool, prec: i64, conv: u8) -> PyResult<Vec<u8>> {
     let prec = if prec < 0 { 6 } else { prec };
     let extra = (prec - EXACT_PREC).max(0);
     let mut text = format_float_exact(x, alt, prec.min(EXACT_PREC) as usize, conv);
+    // where the zeros go (none for `%g`; `extra` may be 0)
     let zeros_at = match conv.to_ascii_lowercase() {
-        _ if extra == 0 => None,
         b'f' => Some(text.len()),
         b'e' => Some(text.iter().position(|&b| b == b'e' || b == b'E').expect("an exponent")),
         _ if alt => Some(text.len()),

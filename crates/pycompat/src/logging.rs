@@ -130,8 +130,15 @@ mod tests {
         });
         with_depth(Depth { py: PY_RECURSION_LIMIT - 2, c: 0 }, || {
             A.debug().expect("cached: two frames");
+            B.debug().expect("each logger has its cache");
             assert!(A.warning().is_err(), "another level is not cached");
             assert!(B.warning().is_err());
+        });
+        with_depth(Depth { py: PY_RECURSION_LIMIT - 3, c: 0 }, || A.warning().expect("three frames fit"));
+        with_depth(Depth { py: PY_RECURSION_LIMIT - 2, c: 0 }, || {
+            A.warning().expect("cached");
+            A.debug().expect("the levels of a logger add up");
+            assert!(B.warning().is_err(), "the cache of another logger");
         });
         disable();
         with_depth(Depth { py: PY_RECURSION_LIMIT - 2, c: 0 }, || {
