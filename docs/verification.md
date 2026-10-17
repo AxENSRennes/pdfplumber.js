@@ -408,6 +408,12 @@ scripts/heavy.sh scripts/mutants-ok.sh -f crates/pdfminer/src/arcfour.rs \
   --profile mutants -j 1 --timeout 60 -- --package=pdftrace --test=crypto_unit
 ```
 
+Dans le crate `pycompat` lui-même, la réécriture donne `Result<T,
+crate::PyErr>`. Avec `--in-diff`, le diff doit venir des fichiers réécrits
+(la même substitution `perl` appliquée à la version de base et à la
+version courante, puis `diff -u a/<fichier> b/<fichier>`) : un diff du
+dépôt ne correspond plus à la copie que voit cargo mutants.
+
 ## Définition de « fini » pour un module
 
 1. Port fidèle : un module Rust par module Python, références upstream sur

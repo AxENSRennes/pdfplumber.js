@@ -52,6 +52,32 @@
 //! space, not printable, not alphanumeric, no decimal value), as in
 //! CPython. [`PyStr::normalize`] is `unicodedata.normalize` (see
 //! [`crate::unicodedata`]).
+//!
+//! # Mutation testing
+//!
+//! Wave 2 review: `cargo mutants -f crates/pycompat/src/pystr.rs
+//! --profile mutants -j 1` against `pycompat_unit`, `canon_unit`,
+//! `text_tables_unit` (without `pages_real`), `layout_unit` and
+//! `cmaps_unit` (253 mutants, then the functions with survivors again with
+//! every replay; the `Ok(..)` pass has no target here). Every mutant is
+//! caught or times out except these, which change no result:
+//!
+//! - `|` made `^` in [`encode_code_point`], `decode_at` and
+//!   [`PyStr::to_utf16`]: the lead-byte or surrogate tag and the payload
+//!   bits they join are disjoint.
+//! - `decode_at`, `b0 < 0x80` made `<=`: `0x80` is a continuation byte,
+//!   never the first byte of a code point in a `PyStr`.
+//! - `CodePoints::size_hint` (any value): a capacity hint, never trusted
+//!   for correctness (`CodePoints` is not `TrustedLen`).
+//! - [`PyStrBuilder::with_capacity`] made `default()`: capacity only.
+//! - [`PyStr::repeat`], `n == 0 || self.is_empty()` made `&&`: the general
+//!   path gives the same empty string.
+//!
+//! The boundaries of each UTF-8 length (`\x7f`, `\x80`, `߿`...) and
+//! invalid `surrogatepass` inputs (overlong forms, values above U+10FFFF,
+//! truncated sequences) are oracle cases of `pystr`; the Rust conversions
+//! and comparisons with Rust text are checked by `pystr_rust_conversions`,
+//! the lossy copy of an error message by `surrogate_error_message`.
 
 use std::fmt;
 use std::rc::Rc;
