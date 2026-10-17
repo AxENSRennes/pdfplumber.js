@@ -1625,27 +1625,25 @@ mod tests {
 
     /// A thread starts as a process that imported pdfplumber: interning a
     /// name of its modules' constants takes one frame, a new name two (once).
+    /// libtest runs each test on a new thread (natively; on wasm32-wasip1,
+    /// on the main thread, which no other test of this crate uses).
     #[test]
     fn a_thread_starts_with_the_names_pdfplumber_interns() {
-        std::thread::spawn(|| {
-            let last = Depth { py: PY_RECURSION_LIMIT - 1, c: 0 };
-            with_depth(last, || {
-                py_intern(Symbol::Keyword(KWD(b"endobj"))).expect("interned by pdfminer.pdfparser");
-                py_intern(Symbol::Literal(LIT("Pages"))).expect("interned by pdfminer.pdfpage");
-                assert!(py_intern(Symbol::Keyword(KWD(b"zq_never_interned"))).is_err());
-                assert!(py_intern(Symbol::Literal(LIT("ZqNeverInterned"))).is_err());
-            });
-            with_depth(Depth { py: PY_RECURSION_LIMIT - 2, c: 0 }, || {
-                py_intern(Symbol::Literal(LIT("ZqNeverInterned"))).expect("two frames fit");
-            });
-            with_depth(last, || {
-                py_intern(Symbol::Literal(LIT("ZqNeverInterned"))).expect("interned now");
-                assert!(py_intern(Symbol::Keyword(KWD(b"ZqNeverInterned"))).is_err(), "a keyword is another symbol");
-            });
-            py_symbols_reset([]);
-            with_depth(last, || assert!(py_intern(Symbol::Keyword(KWD(b"endobj"))).is_err(), "a new process"));
-        })
-        .join()
-        .expect("the test thread");
+        let last = Depth { py: PY_RECURSION_LIMIT - 1, c: 0 };
+        with_depth(last, || {
+            py_intern(Symbol::Keyword(KWD(b"endobj"))).expect("interned by pdfminer.pdfparser");
+            py_intern(Symbol::Literal(LIT("Pages"))).expect("interned by pdfminer.pdfpage");
+            assert!(py_intern(Symbol::Keyword(KWD(b"zq_never_interned"))).is_err());
+            assert!(py_intern(Symbol::Literal(LIT("ZqNeverInterned"))).is_err());
+        });
+        with_depth(Depth { py: PY_RECURSION_LIMIT - 2, c: 0 }, || {
+            py_intern(Symbol::Literal(LIT("ZqNeverInterned"))).expect("two frames fit");
+        });
+        with_depth(last, || {
+            py_intern(Symbol::Literal(LIT("ZqNeverInterned"))).expect("interned now");
+            assert!(py_intern(Symbol::Keyword(KWD(b"ZqNeverInterned"))).is_err(), "a keyword is another symbol");
+        });
+        py_symbols_reset([]);
+        with_depth(last, || assert!(py_intern(Symbol::Keyword(KWD(b"endobj"))).is_err(), "a new process"));
     }
 }
