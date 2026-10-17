@@ -492,3 +492,21 @@ fn recursion_limits() {
         }
     }
 }
+
+/// `PyErr::with_message`: a message with a lone surrogate keeps its exact
+/// text for `py_message()` (what traces and the JavaScript boundary show)
+/// and a U+FFFD copy in `message` (Rust-side checks only); any other
+/// message is plain text. (The messages themselves are oracle cases of
+/// `text_tables`, compared through `py_message`.)
+#[test]
+fn surrogate_error_message() {
+    use pycompat::{PyErr, PyStr};
+    let m = PyStr::from_code_points([0x61, 0xd800, 0x62]).unwrap();
+    let e = PyErr::with_message(ExcKind::KeyError, &m);
+    assert_eq!((e.kind, e.message.as_str()), (ExcKind::KeyError, "a\u{fffd}b"));
+    assert_eq!(e.py_message(), m);
+    let e = PyErr::with_message(ExcKind::ValueError, &PyStr::new("ab"));
+    assert_eq!(e.message, "ab");
+    assert!(e.surrogate_message.is_none());
+    assert_eq!(e.py_message(), PyStr::new("ab"));
+}

@@ -242,11 +242,6 @@ impl PyStr {
         std::str::from_utf8(&self.0).ok()
     }
 
-    /// Whether the `str` holds a surrogate.
-    pub fn has_surrogate(&self) -> bool {
-        self.as_str().is_none()
-    }
-
     /// The text with each surrogate replaced by U+FFFD (for messages of the
     /// port itself, never for a Python value).
     pub fn to_string_lossy(&self) -> String {
@@ -305,18 +300,6 @@ impl PyStr {
             return PyStr::empty();
         }
         PyStr(Rc::from(self.0.repeat(n)))
-    }
-
-    /// `sep.join(items)`
-    pub fn join<'a>(&self, items: impl IntoIterator<Item = &'a PyStr>) -> PyStr {
-        let mut b = PyStrBuilder::new();
-        for (i, s) in items.into_iter().enumerate() {
-            if i > 0 {
-                b.push_str(self);
-            }
-            b.push_str(s);
-        }
-        b.finish()
     }
 
     /// The rest of the string after `prefix`, if it starts with it
