@@ -332,7 +332,7 @@ Générateurs actuels (chacun s'exécute comme module, `python -m
 oracle.adversarial.objects` ; `oracle/unit/document.py` les relance avant
 d'écrire ses cas) :
 
-- `oracle/adversarial/objects.py` → `adv-objects` (320 PDF) : tables xref
+- `oracle/adversarial/objects.py` → `adv-objects` (330 PDF) : tables xref
   cassées ou absentes (repli `PDFXRefFallback` et son motif d'en-tête),
   offsets faux, `startxref` invalide, flux xref aux `/W`, `/Index`,
   prédicteurs et champs atypiques (flottants, noms, chaînes, négatifs),
