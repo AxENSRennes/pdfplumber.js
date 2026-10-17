@@ -167,8 +167,9 @@ pub fn bytes_mod_int(fmt: &[u8], arg: i64) -> PyResult<Vec<u8>> {
         let (text, numeric): (Vec<u8>, bool) = match c {
             b'r' | b'a' => {
                 let mut t = v.to_string().into_bytes();
-                if prec >= 0 && t.len() as i64 > prec {
-                    t.truncate(prec as usize);
+                if prec >= 0 {
+                    // at most `prec` characters
+                    t.truncate(usize::try_from(prec).unwrap_or(usize::MAX));
                 }
                 (t, false)
             }
