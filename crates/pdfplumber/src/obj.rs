@@ -344,6 +344,43 @@ impl Default for PyValue {
     }
 }
 
+// Freeing a value frees what only it holds without recursing, as CPython's
+// trashcan does for deep containers (Objects/listobject.c list_dealloc,
+// Objects/tupleobject.c tupledealloc, Objects/dictobject.c dict_dealloc:
+// Py_TRASHCAN_BEGIN): the items of a list, tuple or dict dropped last are
+// moved to a work list first. A list nested 10^6 levels deep is freed like a
+// flat one (docs/architecture.md, "Profondeur de récursion"); PDF objects
+// have their own (pdfminer::pdftypes).
+impl Drop for PyValue {
+    fn drop(&mut self) {
+        let mut stack = Vec::new();
+        take_items(self, &mut stack);
+        while let Some(mut v) = stack.pop() {
+            take_items(&mut v, &mut stack);
+            // `v` holds nothing of its own now: dropping it is shallow
+        }
+    }
+}
+
+/// Moves the containers `v` holds to `into` when `v` is their last owner
+/// (the other items are freed with `v`, without recursion).
+fn take_items(v: &mut PyValue, into: &mut Vec<PyValue>) {
+    let container = |v: &PyValue| matches!(v, PyValue::Tuple(_) | PyValue::List(_) | PyValue::Dict(_));
+    match v {
+        PyValue::Tuple(items) | PyValue::List(items) => {
+            if let Some(items) = Rc::get_mut(items) {
+                into.extend(items.iter_mut().filter(|v| container(v)).map(std::mem::take));
+            }
+        }
+        PyValue::Dict(d) => {
+            if let Some(data) = Rc::get_mut(&mut d.0) {
+                into.extend(data.items.iter_mut().map(|(_, v)| v).filter(|v| container(v)).map(std::mem::take));
+            }
+        }
+        _ => {}
+    }
+}
+
 impl std::fmt::Debug for PyValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.repr())
@@ -1445,6 +1482,25 @@ pub fn bbox_from_value(v: &PyValue) -> PyResult<Bbox> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deep_values_are_freed_without_recursion() {
+        // 10^6 levels of lists, tuples and dicts: a recursive drop would
+        // overflow this thread's stack (2 MiB natively, 1 MiB in Wasm)
+        let mut v = PyValue::None;
+        for i in 0..1_000_000 {
+            v = match i % 3 {
+                0 => PyValue::list([v, PyValue::from(1i64)]),
+                1 => PyValue::tuple([PyValue::str("a"), v]),
+                _ => PyValue::Dict(Obj::from_pairs([("k", v)])),
+            };
+        }
+        // shared items stay alive
+        let shared = PyValue::list([v.clone()]);
+        drop(v);
+        assert_eq!(shared.as_seq().map(|s| s[0].type_name()), Some("list"));
+        drop(shared);
+    }
 
     #[test]
     fn dict_semantics() {

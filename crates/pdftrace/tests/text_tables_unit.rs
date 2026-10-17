@@ -1052,5 +1052,5 @@ fn debug_is_repr() {
     assert_eq!(PyValue::from("a").repr(), "'a'");
     assert_eq!(PyValue::from(pycompat::PyStr::from_code_points([0x61, 0xd800]).unwrap()).repr(), "'a\\ud800'");
     assert_eq!(PyValue::from(String::from("b")).repr(), "'b'");
-    assert!(matches!(PyValue::from(o.clone()), PyValue::Dict(d) if d.ptr_eq(&o)));
+    assert!(matches!(&PyValue::from(o.clone()), PyValue::Dict(d) if d.ptr_eq(&o)));
 }

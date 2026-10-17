@@ -1,6 +1,6 @@
 [package]
 name = "pdfplumber-wasm"
-description = "Coarse-grained WebAssembly API over the pdfplumber port (stub)."
+description = "Coarse-grained WebAssembly API over the pdfplumber port, for the JavaScript package."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,6 +12,21 @@ name = "pdfplumber_wasm"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+pycompat.workspace = true
+pdfminer.workspace = true
+pdfplumber.workspace = true
+rustc-hash.workspace = true
 
-[lints]
-workspace = true
+[dev-dependencies]
+pdftrace.workspace = true
+
+# The workspace lints, except `unsafe_code`: "deny" instead of "forbid", so
+# that `abi.rs` alone can allow it for its `#[no_mangle]` exports (the lint
+# covers them); the crate has no `unsafe` block.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+upper_case_acronyms = "allow"
+too_many_arguments = "allow"
+module_inception = "allow"

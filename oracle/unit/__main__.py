@@ -58,6 +58,8 @@ GENERATORS: dict[str, tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]] = {
     # the adversarial corpora adv-objects and adv-pages (written first), then
     # the stage traces of the document layer on them, micro and small quick files (minutes)
     "document": (("meta.json",), ((),)),
+    # what the JavaScript tests replay through the WebAssembly boundary (seconds)
+    "js_runtime": (("meta.json",), ((),)),
 }
 
 

@@ -431,6 +431,22 @@ impl TextMap {
         return_chars: bool,
         main_group: usize,
     ) -> PyResult<Vec<Obj>> {
+        self.search_with(matches, return_groups, return_chars, |_, _| Ok(main_group))
+    }
+
+    // pdfplumber/utils/text.py:172 TextMap.search
+    /// `search` whose `main_group` is any value `m.group()` takes (an int,
+    /// a group name...): `main_group(k, m)` is the number of the group it
+    /// names in `m`, the `k`-th match, or the error `m.group(main_group)`
+    /// raises. Python only evaluates it for each match, in order (a pattern
+    /// without matches raises nothing).
+    pub fn search_with(
+        &self,
+        matches: &[RegexMatch],
+        return_groups: bool,
+        return_chars: bool,
+        main_group: impl Fn(usize, &RegexMatch) -> PyResult<usize>,
+    ) -> PyResult<Vec<Obj>> {
         let string: Vec<u32> = self.as_string.code_points().collect();
         // Matches come from the caller: a span outside the string cannot
         // come from a regular expression run over it.
@@ -439,8 +455,9 @@ impl TextMap {
             return Err(exc::ValueError("match span outside TextMap.as_string"));
         }
         let mut out = Vec::new();
-        for m in matches {
+        for (k, m) in matches.iter().enumerate() {
             // filter(lambda m: bool(m.group(main_group).strip()), gen)
+            let main_group = main_group(k, m)?;
             let span = match m.spans.get(main_group) {
                 Some(Some(span)) => *span,
                 Some(None) => return Err(exc::AttributeError("'NoneType' object has no attribute 'strip'")),
@@ -1108,8 +1125,8 @@ impl WordExtractor {
         ]);
         for key in star_items(&self.extra_attrs)? {
             let value = item_any(first, &key)?.clone();
-            let PyValue::Str(key) = key else { unreachable!("only str keys are found") };
-            word.set(&key, value);
+            let PyValue::Str(key) = &key else { unreachable!("only str keys are found") };
+            word.set(key, value);
         }
         Ok(word)
     }

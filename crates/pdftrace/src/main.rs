@@ -9,6 +9,13 @@
 //! pdftrace --list-stages
 //! ```
 //!
+//! `--cmap-dir DIR` (default: `$PDFPLUMBER_CMAP_DIR`) installs the provider
+//! of pdfminer's predefined CMaps for the process
+//! (`CMapDB::set_default_provider`), from the compact files that
+//! `oracle/codegen/cmaps.py` writes (`<cache>/cmap/<fingerprint>/`); without
+//! one, a stage that loads a predefined CMap raises `RuntimeError` there
+//! (`docs/architecture.md`, "Données upstream").
+//!
 //! Every option also takes the form `--option=value` (`--password=-x`: a
 //! password may start with `-`). `--max-pages` defaults to 20 for
 //! page-by-page stages; `0` means every page. With `--out`, the files are
@@ -22,15 +29,18 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::Arc;
 use std::time::Instant;
+
+use pdfminer::cmapdb::{CMapDB, DirCMapProvider};
 
 use pdftrace::canon::sha256_hex;
 use pdftrace::stages::{self, Stage, StageInput};
 
 const DEFAULT_MAX_PAGES: usize = 20;
 
-const USAGE: &str = "usage: pdftrace --stage S [--password P] [--max-pages N] FILE.pdf\n       \
-pdftrace --stage S [--password P] [--max-pages N] --out DIR FILE.pdf...\n       \
+const USAGE: &str = "usage: pdftrace --stage S [--password P] [--max-pages N] [--cmap-dir DIR] FILE.pdf\n       \
+pdftrace --stage S [--password P] [--max-pages N] [--cmap-dir DIR] --out DIR FILE.pdf...\n       \
 pdftrace --list-stages";
 
 struct Args {
@@ -38,6 +48,7 @@ struct Args {
     password: String,
     max_pages: Option<usize>,
     out: Option<PathBuf>,
+    cmap_dir: Option<PathBuf>,
     files: Vec<PathBuf>,
 }
 
@@ -46,6 +57,7 @@ fn parse_args(mut argv: impl Iterator<Item = String>) -> Result<Option<Args>, St
     let mut password = String::new();
     let mut max_pages = Some(DEFAULT_MAX_PAGES);
     let mut out = None;
+    let mut cmap_dir = std::env::var_os("PDFPLUMBER_CMAP_DIR").map(PathBuf::from);
     let mut files = Vec::new();
     while let Some(arg) = argv.next() {
         // `--option=value` is `--option value`.
@@ -64,6 +76,7 @@ fn parse_args(mut argv: impl Iterator<Item = String>) -> Result<Option<Args>, St
                 max_pages = (n > 0).then_some(n);
             }
             "--out" => out = Some(PathBuf::from(value("--out")?)),
+            "--cmap-dir" => cmap_dir = Some(PathBuf::from(value("--cmap-dir")?)),
             "--list-stages" | "--help" if has_inline => return Err(format!("{arg} takes no value")),
             "--list-stages" => return Ok(None),
             "-h" | "--help" => return Err(String::new()),
@@ -77,7 +90,7 @@ fn parse_args(mut argv: impl Iterator<Item = String>) -> Result<Option<Args>, St
         (None, _) => return Err("give one FILE.pdf, or --out DIR with several".into()),
         (Some(_), 0) => return Err("no FILE.pdf given".into()),
     }
-    Ok(Some(Args { stage, password, max_pages, out, files }))
+    Ok(Some(Args { stage, password, max_pages, out, cmap_dir, files }))
 }
 
 fn trace(stage: &Stage, args: &Args, pdf: &[u8], out: &mut dyn Write) -> io::Result<()> {
@@ -127,6 +140,16 @@ fn main() -> ExitCode {
     if stage.run.is_none() {
         eprintln!("pdftrace: stage {:?} is not implemented yet", stage.name);
         return ExitCode::from(2);
+    }
+    if let Some(dir) = &args.cmap_dir {
+        // one provider for the process: every thread that loads a CMap uses it
+        match DirCMapProvider::new(dir) {
+            Ok(provider) => CMapDB::set_default_provider(Some(Arc::new(provider))),
+            Err(e) => {
+                eprintln!("pdftrace: --cmap-dir {}: {e}", dir.display());
+                return ExitCode::from(2);
+            }
+        }
     }
     let mut status = ExitCode::SUCCESS;
     match &args.out {

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Local CI: formatting, lints, upstream references, generated tables, Rust
 # tests on the unit oracle data (natively and compiled to WebAssembly, run by
-# Node's WASI), Wasm build and the oracle self-tests. Regenerates the unit oracle data first when it is
+# Node's WASI), the JavaScript package (Wasm build, Node tests, size budget;
+# the browsers are scripts/check-browsers.sh) and the oracle self-tests. Regenerates the unit oracle data first when it is
 # missing or stale (`python -m oracle.unit`).
 #
 #   scripts/check.sh            # from any directory
@@ -62,10 +63,16 @@ capped cargo test --release --workspace
 
 step "cargo test on wasm32-wasip1 (Node WASI): the same unit replays compiled to WebAssembly"
 CARGO_TARGET_WASM32_WASIP1_RUNNER="node --no-warnings $ROOT/scripts/wasi-runner.mjs" \
-  capped cargo test --release --target wasm32-wasip1 -p pycompat -p pdfminer -p pdfplumber -p pdftrace
+  capped cargo test --release --target wasm32-wasip1 -p pycompat -p pdfminer -p pdfplumber -p pdftrace -p pdfplumber-wasm
 
-step "wasm32 build (dist profile)"
-cargo build --target wasm32-unknown-unknown --profile dist -p pdfplumber-wasm
+step "JavaScript package: CMap names, build (dist/, without wasm-opt), types, Node tests, size budget"
+node scripts/build-cmaps.mjs --check-names
+node scripts/build-wasm.mjs --no-opt
+node scripts/build-cmaps.mjs
+node scripts/build-js.mjs
+node node_modules/typescript/bin/tsc -p js/tsconfig.test.json
+capped node node_modules/vitest/vitest.mjs run --config js/vitest.config.ts
+node scripts/size.mjs --budget
 
 step "oracle self-tests"
 "$PY" -m unittest discover -s oracle/tests -t .

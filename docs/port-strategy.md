@@ -214,6 +214,16 @@ Lecture :
   explicites, `text_settings`, `+`/`*` de séquences, `float(str)`) comme en
   Python ; identité des NaN portée par leur charge utile ; `atan2` de glibc
   dans `pycompat::libm` (même résultat en Wasm).
+- **Vague 2, chantier `wasm-js`** (branche `wave2/wasm-js`) : l'infrastructure
+  WebAssembly et JavaScript avant la couche page
+  ([`js-runtime.md`](js-runtime.md)) : ABI sans `wasm-bindgen`, handles,
+  résultats en binaire `PJB1` (choisi par mesure contre JSON dans Node,
+  Chromium, Firefox et WebKit), erreurs Python vers JS (MRO vérifié contre
+  CPython), canal de diagnostics (`pycompat::diagnostics`), CMaps
+  prédéfinies paresseuses (`dist/cmaps`, relance déterministe), paquet
+  `js/` (Node, navigateur, worker, squelette de l'API publique), décision
+  sur `search` (sémantique `RegExp`), tests Node et navigateurs
+  (`scripts/check-browsers.sh`).
 - **Vagues suivantes**, dans l'ordre des dépendances :
   1. `pdfparser`, `pdfdocument` (xref, repli, flux d'objets, mot de passe
      via les gestionnaires déjà portés), `pdfpage` : étapes `objects`,

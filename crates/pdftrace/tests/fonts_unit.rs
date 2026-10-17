@@ -92,7 +92,6 @@ use pdfminer::cmapdb::{AttrValue, CMapBase, CMapDB, DirCMapProvider, Unichr, Uni
 use pdfminer::layout::{CharDisp, LTChar, LTCharFont, LTPayload};
 use pdfminer::pdfdocument::{security_handler_registry, PDFStandardSecurityHandler};
 use pdfminer::pdffont::cff::SidName;
-use pycompat::logging::disable as clear_logger_cache;
 use pdfminer::pdffont::{
     get_font, get_widths, get_widths2, getdict, CFFFont, FontKind, FontName, PDFFont, TrueTypeFont,
     Type1FontHeaderParser, WidthKey,
@@ -105,6 +104,7 @@ use pdftrace::typed_json::{self, Json};
 use pdftrace::unit::{cache_dir, UnitData};
 use pdftrace::value::{NameValue, PyStr, Value};
 use pycompat::io::BytesIO;
+use pycompat::logging::disable as clear_logger_cache;
 use pycompat::recursion::{self, py_frame, Depth, C_RECURSION_LIMIT};
 use pycompat::{exc, ExcKind, Num, NumKey, PyErr, PyInt, PyResult};
 

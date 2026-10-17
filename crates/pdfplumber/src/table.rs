@@ -869,8 +869,8 @@ const UNSET_VALUE: PyValue = PyValue::Float(PyFloat::ZERO);
 
 /// The value of an `UNSET`-defaulted field (`__post_init__` resolves them
 /// all; a field left unresolved reads as `UNSET`, a `0.0`).
-fn resolved(v: &Option<PyValue>) -> &PyValue {
-    v.as_ref().unwrap_or(&UNSET_VALUE)
+fn resolved(v: &Option<PyValue>) -> std::borrow::Cow<'_, PyValue> {
+    v.as_ref().map_or(std::borrow::Cow::Owned(UNSET_VALUE), std::borrow::Cow::Borrowed)
 }
 
 impl TableSettings {
@@ -1092,8 +1092,8 @@ impl TableFinder {
         let edges = TableFinder::get_edges(page, &settings)?;
         let intersections = edges_to_intersections(
             &edges,
-            resolved(&settings.intersection_x_tolerance),
-            resolved(&settings.intersection_y_tolerance),
+            &resolved(&settings.intersection_x_tolerance),
+            &resolved(&settings.intersection_y_tolerance),
         )?;
         let cells = intersections_to_cells(&intersections)?;
         let tables = cells_to_tables(&cells)?.into_iter().map(Table::new).collect();
@@ -1189,10 +1189,10 @@ impl TableFinder {
 
         let edges = merge_edges(
             edges,
-            resolved(&settings.snap_x_tolerance),
-            resolved(&settings.snap_y_tolerance),
-            resolved(&settings.join_x_tolerance),
-            resolved(&settings.join_y_tolerance),
+            &resolved(&settings.snap_x_tolerance),
+            &resolved(&settings.snap_y_tolerance),
+            &resolved(&settings.join_x_tolerance),
+            &resolved(&settings.join_y_tolerance),
         )?;
 
         filter_edges(&edges, None, None, &settings.edge_min_length)

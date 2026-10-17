@@ -1,0 +1,28 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>pdfplumber-js encoding benchmark</title>
+<pre id="out">running...</pre>
+<script type="module">
+  // The result-encoding benchmark in a browser (see encoding-bench.mjs):
+  // /corpus.pjb is mounted by js/bench/browsers.mjs. The result goes to
+  // window.__result and, with ?post, to POST /result.
+  import * as lib from "/dist/browser/internal.js";
+  import { runEncodingBench } from "/js/bench/encoding-bench.mjs";
+  const params = new URLSearchParams(location.search);
+  const out = document.getElementById("out");
+  try {
+    const corpus = new Uint8Array(await (await fetch("/corpus.pjb")).arrayBuffer());
+    const result = await runEncodingBench(lib, corpus, {
+      passes: Number(params.get("passes") ?? 5),
+      log: (m) => (out.textContent = m),
+    });
+    result.runtime = navigator.userAgent;
+    window.__result = result;
+    out.textContent = JSON.stringify(result, null, 1);
+    if (params.has("post")) await fetch("/result", { method: "POST", body: JSON.stringify(result) });
+  } catch (e) {
+    window.__result = { error: String(e && e.stack ? e.stack : e) };
+    out.textContent = window.__result.error;
+    if (params.has("post")) await fetch("/result", { method: "POST", body: JSON.stringify(window.__result) });
+  }
+</script>
