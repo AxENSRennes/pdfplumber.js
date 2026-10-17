@@ -207,8 +207,16 @@ impl ExcKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PyErrInfo {
     pub kind: ExcKind,
-    /// `str(e)`
+    /// `str(e)`, or, when `str(e)` holds a lone surrogate (a user's `str`
+    /// formatted into the message), that text with U+FFFD in its place:
+    /// for Rust-side checks and logs only. Whatever shows `str(e)` to a
+    /// user (traces, the JavaScript boundary, whose strings hold lone
+    /// surrogates) reads [`PyErr::py_message`].
     pub message: String,
+    /// `str(e)` as `surrogatepass` UTF-8 bytes (see [`crate::PyStr`]) when
+    /// it holds a lone surrogate; `None` otherwise. Bytes rather than a
+    /// `PyStr` keep a `PyErr` `Send`.
+    pub surrogate_message: Option<Box<[u8]>>,
 }
 
 /// A raised Python exception: its class and `str(e)` (`err.kind`,
@@ -229,7 +237,28 @@ impl std::ops::Deref for PyErr {
 
 impl PyErr {
     pub fn new(kind: ExcKind, message: impl Into<String>) -> PyErr {
-        PyErr(Box::new(PyErrInfo { kind, message: message.into() }))
+        PyErr(Box::new(PyErrInfo { kind, message: message.into(), surrogate_message: None }))
+    }
+
+    /// An error whose `str(e)` is a Python `str` (it may hold a lone
+    /// surrogate).
+    pub fn with_message(kind: ExcKind, message: &crate::PyStr) -> PyErr {
+        match message.as_str() {
+            Some(text) => PyErr::new(kind, text),
+            None => PyErr(Box::new(PyErrInfo {
+                kind,
+                message: message.to_string_lossy(),
+                surrogate_message: Some(Box::from(message.as_bytes())),
+            })),
+        }
+    }
+
+    /// `str(e)`, exactly.
+    pub fn py_message(&self) -> crate::PyStr {
+        match &self.surrogate_message {
+            None => crate::PyStr::new(&self.message),
+            Some(bytes) => crate::PyStr::from_surrogatepass_utf8(bytes).expect("the bytes of a str"),
+        }
     }
 
     /// `isinstance(e, base)`: the test behind `except base:`.

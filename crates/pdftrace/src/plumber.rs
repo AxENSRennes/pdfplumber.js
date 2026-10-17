@@ -20,8 +20,8 @@ pub fn to_value(v: &PyValue) -> Value {
         PyValue::None => Value::None,
         PyValue::Bool(b) => Value::Bool(*b),
         PyValue::Int(i) => Value::Int(i.clone()),
-        PyValue::Float(x) => Value::Float(*x),
-        PyValue::Str(s) => Value::str(s.as_ref()),
+        PyValue::Float(x) => Value::Float(x.get()),
+        PyValue::Str(s) => Value::py_str(s),
         PyValue::Bytes(b) => Value::Bytes(b.to_vec()),
         PyValue::Tuple(t) => Value::Tuple(t.iter().map(to_value).collect()),
         PyValue::List(t) => Value::List(t.iter().map(to_value).collect()),
@@ -32,7 +32,7 @@ pub fn to_value(v: &PyValue) -> Value {
 
 /// The `dict` value of an object.
 pub fn obj_value(o: &Obj) -> Value {
-    Value::Dict(o.items().iter().map(|(k, v)| (Value::str(k.as_ref()), to_value(v))).collect())
+    Value::Dict(o.items().iter().map(|(k, v)| (Value::py_str(k), to_value(v))).collect())
 }
 
 /// A pdfplumber value from a value: `str`-keyed dicts become [`Obj`]s,
@@ -42,8 +42,8 @@ pub fn from_value(v: &Value) -> Result<PyValue, String> {
         Value::None => PyValue::None,
         Value::Bool(b) => PyValue::Bool(*b),
         Value::Int(i) => PyValue::Int(i.clone()),
-        Value::Float(x) => PyValue::Float(*x),
-        Value::Str(s) => PyValue::str(s.as_str().ok_or("a str with a surrogate")?),
+        Value::Float(x) => PyValue::float_with_identity(*x),
+        Value::Str(s) => PyValue::Str(pycompat::PyStr::from(s)),
         Value::Bytes(b) => PyValue::Bytes(Rc::from(&b[..])),
         Value::Tuple(t) => PyValue::Tuple(t.iter().map(from_value).collect::<Result<_, _>>()?),
         Value::List(t) => PyValue::List(t.iter().map(from_value).collect::<Result<_, _>>()?),
@@ -64,8 +64,8 @@ pub fn obj_from_value(v: &Value) -> Result<Obj, String> {
 fn obj_from_items(items: &[(Value, Value)]) -> Result<Obj, String> {
     let mut o = Obj::new();
     for (k, v) in items {
-        let k = k.as_str().ok_or_else(|| format!("a dict key that is not a str: {k:?}"))?;
-        o.set(k, from_value(v)?);
+        let Value::Str(k) = k else { return Err(format!("a dict key that is not a str: {k:?}")) };
+        o.set(&pycompat::PyStr::from(k), from_value(v)?);
     }
     Ok(o)
 }

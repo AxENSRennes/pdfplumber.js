@@ -291,6 +291,49 @@ def gen_pow(rng):
         yield ["**", a, b], call(BINOPS["**"], a, b)
 
 
+def atan2_operands(rng):
+    """Operands ``(y, x)`` of ``math.atan2`` reaching every branch of the C
+    library's atan2 (crates/pycompat/src/libm.rs)."""
+    r = rng.random()
+    sign = lambda: rng.choice([1.0, -1.0])  # noqa: E731
+    if r < 0.15:
+        return rand_float(rng), rand_float(rng)
+    if r < 0.3:  # |y/x| or |x/y| next to 1/16 (polynomial or table)
+        x = sign() * rng.uniform(0.5, 1.5) * 2.0 ** rng.randint(-100, 100)
+        t = x * 0.0625 * (1 + rng.uniform(-1, 1) * 2.0 ** -rng.randint(0, 53)) * sign()
+        return (t, x) if rng.random() < 0.5 else (x, t)
+    if r < 0.45:  # next to 1 (the octant boundary)
+        x = sign() * rng.uniform(0.5, 1.5) * 2.0 ** rng.randint(-100, 100)
+        return sign() * abs(x) * (1 + rng.uniform(-1, 1) * 2.0 ** -rng.randint(0, 54)), x
+    if r < 0.6:  # rows of the table: k/256
+        x = sign() * rng.uniform(0.5, 1.5)
+        t = x * rng.randint(16, 256) / 256 * (1 + rng.uniform(-1, 1) * 2.0 ** -rng.randint(0, 53))
+        return (t, sign() * x) if rng.random() < 0.5 else (sign() * x, t)
+    if r < 0.7:  # exponents about 57 apart (the shortcuts)
+        e = rng.randint(-800, 800)
+        a = sign() * rng.uniform(1, 2) * 2.0**e
+        b = sign() * rng.uniform(1, 2) * 2.0 ** (e - rng.randint(54, 61))
+        return (a, b) if rng.random() < 0.5 else (b, a)
+    if r < 0.8:  # around 2**-500 and 2**500 (the scalings)
+        e = rng.choice([-500, 500]) + rng.randint(-4, 4)
+        return sign() * rng.uniform(1, 2) * 2.0**e, sign() * rng.uniform(1, 2) * 2.0 ** (e + rng.randint(-20, 20))
+    if r < 0.9:  # matrix entries
+        entries = [0, 1, -1, 2, 0.5, 12, -12, 0.0, -0.0, 0.7071067811865476, 0.8660254037844386, 1e-3]
+        return rng.choice(entries), rng.choice(entries)
+    return sign() * rng.random() * 2.0**-1022, sign() * rng.random() * 2.0 ** rng.randint(-1074, -1000)
+
+
+def gen_atan2(rng):
+    """``math.atan2(y, x)``: CPython's ``m_atan2`` then glibc's atan2."""
+    specials = [0.0, -0.0, 1.0, -1.0, math.inf, -math.inf, math.nan, 5e-324, -5e-324, 1e308, 2, -3]
+    for y in specials:
+        for x in specials:
+            yield [y, x], call(math.atan2, y, x)
+    for _ in range(40000):
+        y, x = atan2_operands(rng)
+        yield [y, x], call(math.atan2, y, x)
+
+
 def gen_compare(rng):
     edge = [2**53, 2**53 + 1, 2**63, 2**63 - 1, -(2**63), 2**64, 10**400, -(10**400), 0, -1, 1]
     for _ in range(4000):
@@ -476,6 +519,98 @@ def gen_json_str(rng):
         yield [s], json.dumps(s, ensure_ascii=True)
 
 
+#: Code point pools of the str cases: every kind normalization and the
+#: character classes treat differently.
+PYSTR_POOLS = [
+    (0x20, 0x7E),  # ASCII
+    (0x09, 0x0D), (0x1C, 0x20), (0x85, 0x85), (0xA0, 0xA0), (0x2000, 0x200B), (0x3000, 0x3000),  # spaces
+    (0xC0, 0x17F),  # Latin with canonical decompositions
+    (0x300, 0x36F), (0x1AB0, 0x1AFF), (0x20D0, 0x20FF), (0x591, 0x5C7), (0x0F71, 0x0F84),  # combining marks
+    (0x1100, 0x11FF), (0xAC00, 0xD7A3),  # Hangul jamo and syllables
+    (0xFB00, 0xFB06), (0xFF00, 0xFFEF), (0x2460, 0x24FF), (0x3300, 0x33FF), (0xFDFA, 0xFDFB),  # compatibility
+    (0x0344, 0x0344), (0x0958, 0x095F), (0x2ADC, 0x2ADC), (0x1D15E, 0x1D164),  # composition exclusions
+    (0xD800, 0xDFFF),  # surrogates
+    (0x1D400, 0x1D7FF), (0x2F800, 0x2FA1D), (0x1F600, 0x1F64F),  # astral
+    (0x00, 0x10FFFF),  # anything
+]
+
+
+def rand_pystr(rng, n):
+    out = []
+    for _ in range(n):
+        lo, hi = rng.choice(PYSTR_POOLS)
+        out.append(chr(rng.randint(lo, hi)))
+    return "".join(out)
+
+
+def gen_pystr(rng):
+    """``str`` operations of ``pycompat::PyStr`` on strings with lone
+    surrogates, combining marks, Hangul and compatibility characters."""
+    fixed = ["", "\ud800", "😀", "\U0001f600", "a\udc00b", "é", "ẛ̣", "각",
+             "각", "ﬁ", "ﷺ", "̈́", "क़", " \t\n", "\x1c", "'\"", "\ud800́",
+             # the bounds of each UTF-8 length
+             "\x7f", "\x80", "\u07ff", "\u0800", "\ud7ff", "\ue000", "\uffff", "\U00010000", "\U0010ffff",
+             "\x7f\x80\u07ff\u0800\uffff\U00010000\U0010ffff",
+             # NFC: two marks of one class composing in turn; trailing jamo bounds
+             "u\u0308\u0301", "a\u0301\u0302", "\u1100\u1161\u11a7", "\u1100\u1161\u11a8", "\u1100\u1161\u11c2",
+             "\u1100\u1161\u11c3", "\u1112\u1175\u11a7\u11a8"]
+    strs = fixed + [rand_pystr(rng, rng.randint(0, 10)) for _ in range(6000)]
+    for s in strs:
+        for form in ("NFC", "NFKC", "NFD", "NFKD"):
+            yield ["normalize", form, s], unicodedata.normalize(form, s)
+        yield ["repr", s], repr(s)
+        yield ["json", s], json.dumps(s)
+        yield ["len", s], len(s)
+        yield ["isspace", s], s.isspace()
+        yield ["strip", s], s.strip()
+        yield ["split", s], s.split()
+        yield ["bytes", s], s.encode("utf-8", "surrogatepass")
+        units = s.encode("utf-16-le", "surrogatepass")
+        yield ["utf16", s], [int.from_bytes(units[i : i + 2], "little") for i in range(0, len(units), 2)]
+    for s in fixed[:6]:
+        yield ["normalize", "NFX", s], call(unicodedata.normalize, "NFX", s)
+    for _ in range(3000):
+        a, b = rng.choice(strs), rng.choice(strs)
+        if rng.random() < 0.3 and a:
+            i = rng.randint(0, len(a) - 1)
+            b = a[i : i + rng.randint(1, 3)]
+        yield ["cmp", a, b], [a == b, a < b, a + b, b in a]
+        if b:
+            yield ["split_sep", a, b], a.split(b)
+        i, j = rng.randint(0, 12), rng.randint(0, 12)
+        yield ["slice", a, i, j], a[i:j]
+    for _ in range(2000):
+        units = [rng.choice([rng.randint(0, 0xFFFF), rng.randint(0xD800, 0xDFFF), 0x61]) for _ in range(rng.randint(0, 8))]
+        raw = b"".join(u.to_bytes(2, "little") for u in units)
+        yield ["from_utf16", units], raw.decode("utf-16-le", "surrogatepass")
+    # bytes.decode("utf-8", "surrogatepass"), None when it raises: shortest
+    # forms only, at most U+10FFFF, whole sequences
+    edges = [b"", b"\x00", b"\x7f", b"\x80", b"\xbf", b"\xc0\x80", b"\xc1\xbf", b"\xc2\x80", b"\xdf\xbf", b"\xc2",
+             b"\xc2\x41", b"\xe0\x80\x80", b"\xe0\x9f\xbf", b"\xe0\xa0\x80", b"\xe0\xa0", b"\xe1\x80\x41",
+             b"\xed\x9f\xbf", b"\xed\xa0\x80", b"\xed\xbf\xbf", b"\xee\x80\x80", b"\xef\xbf\xbf", b"\xf0\x80\x80\x80",
+             b"\xf0\x8f\xbf\xbf", b"\xf0\x90\x80\x80", b"\xf0\x90\x80", b"\xf1\x80\x80\x41", b"\xf4\x8f\xbf\xbf",
+             b"\xf4\x90\x80\x80", b"\xf5\x80\x80\x80", b"\xf7\xbf\xbf\xbf", b"\xf8\x88\x80\x80\x80", b"\xfe", b"\xff",
+             b"\xc2\x80\xed\xa0\x80", b"a\xed\xa0\xbd\xed\xb8\x80b", b"\xf0\x9f\x98\x80", b"a\xc0", b"\xe0\xa0\x80\x80"]
+    pieces = [b"a", b"\xc2\xa9", b"\xed\xa0\x80", b"\xf0\x9f\x98\x80", b"\xe2\x82\xac"]
+    lead_or_cont = [0x00, 0x41, 0x7f, 0x80, 0x9f, 0xa0, 0xbf, 0xc0, 0xc1, 0xc2, 0xdf, 0xe0, 0xed, 0xef, 0xf0, 0xf4, 0xf5, 0xff]
+    randoms = []
+    for _ in range(4000):
+        if rng.random() < 0.5:
+            b = bytes(rng.choice([rng.choice(lead_or_cont), rng.randint(0, 255), rng.randint(0x80, 0xbf)]) for _ in range(rng.randint(1, 6)))
+        else:
+            b = b"".join(rng.choice(pieces) for _ in range(rng.randint(1, 3)))
+            if rng.random() < 0.6:
+                i = rng.randint(0, len(b) - 1)
+                b = b[:i] + bytes([rng.choice(lead_or_cont)]) + b[i + rng.choice([0, 1]):]
+        randoms.append(b)
+    for b in edges + randoms:
+        try:
+            out = b.decode("utf-8", "surrogatepass")
+        except UnicodeDecodeError:
+            out = None
+        yield ["from_surrogatepass", b], out
+
+
 def gen_bytes_repr(rng):
     for b in [b"", b"'", b'"', b"'\"", b"\\", bytes(range(256))]:
         yield [b], repr(b)
@@ -607,6 +742,7 @@ GENERATORS = {
     "int_to_float": gen_int_to_float,
     "binop": gen_binop,
     "pow": gen_pow,
+    "atan2": gen_atan2,
     "compare": gen_compare,
     "sum": gen_sum,
     "minmax": gen_minmax,
@@ -616,6 +752,7 @@ GENERATORS = {
     "float_parse": gen_float_parse,
     "str_repr": gen_str_repr,
     "json_str": gen_json_str,
+    "pystr": gen_pystr,
     "bytes_repr": gen_bytes_repr,
     "utf8_ignore": gen_utf8_ignore,
     "unicode": gen_unicode,

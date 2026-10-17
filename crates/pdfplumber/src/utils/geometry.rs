@@ -4,10 +4,10 @@
 //! their `int`/`float` type, and the evaluation order (hence the first
 //! exception raised) is upstream's.
 
-use pycompat::{exc, PyResult};
+use pycompat::{exc, ExcKind, PyErr, PyResult, PyStr};
 
-use crate::obj::{bbox_from_value, Bbox, Hot, Obj, PyValue};
-use crate::utils::clustering::{cluster_objects, KeyKind};
+use crate::obj::{bbox_from_value, check_hashable, py_contains, Bbox, Hot, Obj, PyValue};
+use crate::utils::clustering::cluster_objects;
 
 /// `max(a, b)`: `b` only when `b > a`.
 pub fn max2(a: &PyValue, b: &PyValue) -> PyResult<PyValue> {
@@ -96,7 +96,8 @@ pub fn get_bbox_overlap(a: &Bbox, b: &Bbox) -> PyResult<Option<Bbox>> {
 pub fn calculate_area(bbox: &PyValue) -> PyResult<PyValue> {
     let [left, top, right, bottom] = bbox_from_value(bbox)?;
     if left.gt(&right)? || top.gt(&bottom)? {
-        return Err(exc::ValueError(format!("{} has a negative width or height.", bbox.py_str())));
+        let message = bbox.py_str().concat(&PyStr::new(" has a negative width or height."));
+        return Err(PyErr::with_message(ExcKind::ValueError, &message));
     }
     right.sub(&left)?.mul(&bottom.sub(&top)?)
 }
@@ -234,7 +235,7 @@ pub fn snap_objects(objs: &[Obj], attr: SnapAttr, tolerance: &PyValue) -> PyResu
         SnapAttr::Top | SnapAttr::Bottom => Axis::V,
     };
     let h = attr.hot();
-    let clusters = cluster_objects(objs, |o| Ok(o.hot(h)?.clone()), KeyKind::Stored, tolerance, false)?;
+    let clusters = cluster_objects(objs, |o| Ok(o.hot(h)?.clone()), tolerance, false)?;
     let mut avgs = Vec::with_capacity(clusters.len());
     for cluster in &clusters {
         let values = cluster.iter().map(|o| o.hot(h)).collect::<PyResult<Vec<_>>>()?;
@@ -402,19 +403,20 @@ pub fn line_to_edge(line: &Obj) -> PyResult<Obj> {
 // pdfplumber/utils/geometry.py:254 obj_to_edges
 pub fn obj_to_edges(obj: &Obj) -> PyResult<Vec<Obj>> {
     let t = obj.hot(Hot::ObjectType)?;
-    let Some(name) = t.as_str() else {
-        return Err(exc::TypeError(format!("argument of type '{}' is not iterable", t.type_name())));
-    };
-    if name.contains("_edge") {
+    // `"_edge" in t`: Python's `in` on whatever value the object holds (a
+    // substring of a `str`, an item of a `list`, a key of a `dict`...)
+    if py_contains(t, &PyValue::str("_edge"))? {
         Ok(vec![obj.clone()])
-    } else if name == "line" {
+    } else if t.py_eq(&PyValue::str("line")) {
         Ok(vec![line_to_edge(obj)?])
-    } else if name == "rect" {
-        rect_to_edges(obj)
-    } else if name == "curve" {
-        curve_to_edges(obj)
     } else {
-        Err(exc::KeyError(t.repr()))
+        // `{"rect": rect_to_edges, "curve": curve_to_edges}[t]` hashes `t`
+        check_hashable(t)?;
+        match t.as_str() {
+            Some("rect") => rect_to_edges(obj),
+            Some("curve") => curve_to_edges(obj),
+            _ => Err(exc::KeyError(t.repr())),
+        }
     }
 }
 

@@ -174,6 +174,28 @@ impl Unichr {
             Unichr::Surrogate(c) => format!("'\\u{c:04x}'"),
         }
     }
+
+    /// The Python `str` (a lone surrogate included), as text objects hold
+    /// it (`LTChar._text`).
+    pub fn to_pystr(&self) -> pycompat::PyStr {
+        match self {
+            Unichr::Text(s) => pycompat::PyStr::new(s),
+            Unichr::Surrogate(c) => pycompat::PyStr::from_code_point(*c),
+        }
+    }
+}
+
+/// The `str` a layout object holds (`LTChar(..., text=font.to_unichr(cid))`).
+impl From<Unichr> for pycompat::PyStr {
+    fn from(u: Unichr) -> pycompat::PyStr {
+        u.to_pystr()
+    }
+}
+
+impl From<&Unichr> for pycompat::PyStr {
+    fn from(u: &Unichr) -> pycompat::PyStr {
+        u.to_pystr()
+    }
 }
 
 impl From<String> for Unichr {
@@ -260,10 +282,7 @@ fn check_growth(len: usize, limit: usize) {
     debug_assert!(len <= limit, "runaway growth: {len} > {limit}");
 }
 
-/// A UTF-16 surrogate code point (U+D800..U+DFFF).
-fn is_surrogate(c: u32) -> bool {
-    (0xd800..0xe000).contains(&c)
-}
+use pycompat::pystr::is_surrogate;
 
 /// `bytes.decode("UTF-16BE", "ignore")`: CPython's UTF-16 decoder
 /// (`Objects/stringlib/codecs.h` `utf16_decode`) skipping what it reports:

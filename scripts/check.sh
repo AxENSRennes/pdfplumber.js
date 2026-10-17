@@ -26,7 +26,7 @@ fi
 
 capped() {
   if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet true >/dev/null 2>&1; then
-    systemd-run --user --scope --quiet -p MemoryMax=5G -p MemorySwapMax=0 "$@"
+    systemd-run --user --scope --quiet -p MemoryMax=5G -p MemorySwapMax=0 -p OOMPolicy=continue "$@"
   else
     "$@"
   fi
@@ -45,6 +45,8 @@ step "upstream file:line references (python -m oracle.upstream_refs)"
 
 step "generated tables are up to date"
 "$PY" oracle/codegen/libm_tables.py --check
+"$PY" oracle/codegen/atan2_tables.py --check
+"$PY" oracle/codegen/unicodedata_tables.py --check
 "$PY" oracle/codegen/saslprep_tables.py --check
 "$PY" oracle/codegen/pdfminer_tables.py --check
 "$PY" oracle/codegen/pdffont_tables.py --check

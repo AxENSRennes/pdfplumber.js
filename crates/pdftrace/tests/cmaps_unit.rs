@@ -44,7 +44,7 @@ use pdfminer::psparser::{LIT_bytes, LiteralName, KWD, LIT};
 use pdftrace::canon::{canon, sha256_hex};
 use pdftrace::typed_json::{self, Json};
 use pdftrace::unit::{cache_dir, UnitData};
-use pdftrace::value::{NameValue, PyStr, Value};
+use pdftrace::value::{NameValue, Value};
 use pycompat::io::BytesIO;
 use pycompat::recursion::{self, Depth, C_RECURSION_LIMIT};
 use pycompat::{PyInt, PyResult};
@@ -124,11 +124,10 @@ fn list(v: &Value) -> &[Value] {
     }
 }
 
+/// The `str` of a unicode map value, through `Unichr::to_pystr` (the text
+/// that LTChar holds).
 fn unichr(u: &Unichr) -> Value {
-    match u {
-        Unichr::Text(s) => Value::str(s.to_string()),
-        Unichr::Surrogate(c) => Value::Str(PyStr::from_code_points(vec![*c]).expect("a surrogate")),
-    }
+    Value::py_str(&u.to_pystr())
 }
 
 fn attr(a: &AttrValue) -> Value {

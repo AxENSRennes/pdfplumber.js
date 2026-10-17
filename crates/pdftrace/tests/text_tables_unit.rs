@@ -19,13 +19,12 @@
 
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::rc::Rc;
 
 use pdfplumber::obj::{bbox_from_value, bbox_value, Bbox, Obj, PyValue};
 use pdfplumber::table::{
     self, cells_to_tables, CellGroup, Intersections, Table, TableFinder, TablePage, TableSettings,
 };
-use pdfplumber::utils::clustering::{cluster_list, cluster_objects, make_cluster_dict, KeyKind};
+use pdfplumber::utils::clustering::{cluster_list, cluster_objects, make_cluster_dict};
 use pdfplumber::utils::geometry::{self, Axis, SnapAttr};
 use pdfplumber::utils::text::{
     chars_to_textmap, dedupe_chars, extract_text_kwargs, extract_text_simple, extract_words_kwargs, text_line_matches,
@@ -192,6 +191,12 @@ fn run_value_op(op: &str, a: &PyValue, b: &PyValue) -> Value {
             Ok(d.get(&pdfplumber::obj::HashKey::new(b.clone())?).cloned().unwrap_or(PyValue::None))
         })()),
         "unpack4" => v(pdfplumber::obj::bbox_from_value(a).map(|b| pdfplumber::obj::bbox_value(&b))),
+        "float" => v(a.to_float()),
+        "in" => v(pdfplumber::obj::py_contains(b, a).map(PyValue::Bool)),
+        "iter" => v(match pdfplumber::obj::py_iter(a) {
+            Some(items) => items.map(PyValue::list),
+            None => Err(exc::TypeError(format!("'{}' object is not iterable", a.type_name()))),
+        }),
         other => panic!("unknown op {other}"),
     }
 }
@@ -238,8 +243,9 @@ fn dict_cases() {
         for step in steps {
             let Value::Tuple(step) = step else { panic!("step") };
             let (op, k, v) = (step[0].as_str().expect("op"), step[1].as_str().expect("key"), py(&step[2]));
-            let items =
-                |o: &Obj| PyValue::list(o.items().iter().map(|(k, v)| PyValue::tuple([PyValue::str(k), v.clone()])));
+            let items = |o: &Obj| {
+                PyValue::list(o.items().iter().map(|(k, v)| PyValue::tuple([PyValue::Str(k.clone()), v.clone()])))
+            };
             let r: PyResult<PyValue> = match op {
                 "set" => {
                     d.set(k, v);
@@ -248,7 +254,7 @@ fn dict_cases() {
                 "del" => d.remove(k).map(|_| PyValue::None),
                 "get" => Ok(d.get(k).cloned().unwrap_or(PyValue::None)),
                 "in" => Ok(PyValue::Bool(d.contains(k))),
-                "keys" => Ok(PyValue::list(d.keys().map(PyValue::str))),
+                "keys" => Ok(PyValue::list(d.keys().cloned().map(PyValue::Str))),
                 "eq" => Ok(PyValue::Bool(d.py_eq(&other))),
                 "copyset" => {
                     let mut copy = d.clone();
@@ -291,9 +297,9 @@ fn cluster_cases() {
                 let xs = objs(&args[1]);
                 let preserve = matches!(args[3], Value::Bool(true));
                 let r = if name == "cluster_objects" {
-                    cluster_objects(&xs, |o| Ok(o.item("v")?.clone()), KeyKind::Stored, &py(&args[2]), preserve)
+                    cluster_objects(&xs, |o| Ok(o.item("v")?.clone()), &py(&args[2]), preserve)
                 } else {
-                    cluster_objects(&xs, |o| o.item("v")?.neg(), KeyKind::Computed, &py(&args[2]), preserve)
+                    cluster_objects(&xs, |o| o.item("v")?.neg(), &py(&args[2]), preserve)
                 };
                 result(r, |groups| Value::List(groups.into_iter().map(list_of_objs).collect()))
             }
@@ -442,7 +448,8 @@ fn textline_cases() {
     let data = data();
     let mut c = Checker::new("textlines");
     for_each_case(&data, "textlines", |i, args, out| {
-        let s: Vec<char> = args[0].as_str().expect("a str").chars().collect();
+        let Value::Str(s) = &args[0] else { panic!("a str") };
+        let s: Vec<u32> = pycompat::PyStr::from(s).code_points().collect();
         let strip = matches!(args[1], Value::Bool(true));
         let got = Value::List(text_line_matches(&s, strip).iter().map(spans_value).collect());
         c.check(|| format!("case {i}: {:?} strip={strip}", args[0]), &got, &out);
@@ -486,6 +493,11 @@ fn settings_cases() {
     let data = data();
     let mut c = Checker::new("settings");
     for_each_case(&data, "settings", |i, args, out| {
+        if args[0].as_str() == Some("new") {
+            let got = result(TableSettings::new(&obj(&args[1])), |s| settings_value(&s));
+            c.check(|| format!("case {i}: new {:?}", args[1]), &got, &out);
+            return;
+        }
         let settings = match &args[0] {
             Value::None => None,
             v => Some(obj(v)),
@@ -533,6 +545,10 @@ impl CasePage {
     /// with `tuplify_list_kwargs`)
     fn get_textmap(&self, kwargs: &Kwargs) -> PyResult<TextMap> {
         let kwargs = tuplify_list_kwargs(kwargs);
+        // get_textmap is an lru_cache: its key hashes every value
+        for (_, v) in kwargs.items() {
+            pdfplumber::obj::check_hashable(v)?;
+        }
         let mut full = Obj::from_pairs([("layout_bbox", bbox_value(&self.bbox))]);
         if !kwargs.contains("layout_width_chars") {
             full.set("layout_width", self.bbox[2].sub(&self.bbox[0])?);
@@ -574,10 +590,10 @@ impl CasePage {
     }
 }
 
-fn table_text(rows: Vec<Vec<Option<String>>>) -> Value {
+fn table_text(rows: Vec<Vec<Option<pycompat::PyStr>>>) -> Value {
     Value::List(
         rows.into_iter()
-            .map(|r| Value::List(r.into_iter().map(|c| c.map_or(Value::None, Value::str)).collect()))
+            .map(|r| Value::List(r.into_iter().map(|c| c.map_or(Value::None, |s| Value::py_str(&s))).collect()))
             .collect(),
     )
 }
@@ -633,7 +649,7 @@ fn settings_arg(v: &Value) -> Option<Obj> {
 /// One operation of `run_op` (generator), as a value.
 fn run_op(page: &CasePage, op: &[Value]) -> Value {
     let name = op[0].as_str().expect("op name");
-    let text = |r: PyResult<String>| result(r, Value::str);
+    let text = |r: PyResult<pycompat::PyStr>| result(r, |s| Value::py_str(&s));
     match name {
         "text" => text(page.get_textmap(&kw(&op[1])).map(|tm| tm.as_string)),
         "utext" => text(extract_text_kwargs(&page.chars, &kw(&op[1]))),
@@ -686,12 +702,9 @@ fn run_op(page: &CasePage, op: &[Value]) -> Value {
         "dedupe" => {
             let k = kw(&op[1]);
             let tolerance = k.get("tolerance").cloned().unwrap_or(PyValue::from(1i64));
-            let extra: Vec<Rc<str>> = match k.get("extra_attrs") {
-                None => vec![Rc::from("fontname"), Rc::from("size")],
-                Some(v) => v
-                    .as_seq()
-                    .map(|items| items.iter().map(|x| Rc::from(x.as_str().expect("a str"))).collect())
-                    .unwrap_or_default(),
+            let extra = match k.get("extra_attrs") {
+                None => PyValue::tuple([PyValue::str("fontname"), PyValue::str("size")]),
+                Some(v) => v.clone(),
             };
             result(dedupe_chars(&page.chars, &tolerance, &extra), list_of_objs)
         }
@@ -701,11 +714,23 @@ fn run_op(page: &CasePage, op: &[Value]) -> Value {
                 .and_then(|f| describe_finder(&f));
             result(r, |v| v)
         }
-        "extract_tables" => {
-            // pdfplumber/page.py:481 Page.extract_tables
-            let r = TableSettings::resolve(settings_arg(&op[1]).as_ref()).and_then(|tset| {
+        "tables_new" => {
+            let r = TableSettings::new(&kw(&op[1]))
+                .and_then(|s| TableFinder::new(page, s))
+                .and_then(|f| describe_finder(&f));
+            result(r, |v| v)
+        }
+        "extract_tables" | "extract_tables_new" => {
+            // pdfplumber/page.py:481 Page.extract_tables (a TableSettings
+            // resolves to itself)
+            let tset = match name {
+                "extract_tables" => TableSettings::resolve(settings_arg(&op[1]).as_ref()),
+                _ => TableSettings::new(&kw(&op[1])),
+            };
+            let r = tset.and_then(|tset| {
                 let tables = page.find_tables(&tset)?;
-                tables.iter().map(|t| t.extract(page, &tset.text_settings())).collect::<PyResult<Vec<_>>>()
+                let kwargs = tset.text_settings_kwargs("pdfplumber.table.Table.extract")?;
+                tables.iter().map(|t| t.extract(page, &kwargs)).collect::<PyResult<Vec<_>>>()
             });
             result(r, |ts| Value::List(ts.into_iter().map(table_text).collect()))
         }
@@ -714,7 +739,9 @@ fn run_op(page: &CasePage, op: &[Value]) -> Value {
             let r = TableSettings::resolve(settings_arg(&op[1]).as_ref()).and_then(|tset| {
                 match page.find_table(&tset)? {
                     None => Ok(None),
-                    Some(t) => Ok(Some(t.extract(page, &tset.text_settings())?)),
+                    Some(t) => {
+                        Ok(Some(t.extract(page, &tset.text_settings_kwargs("pdfplumber.table.Table.extract")?)?))
+                    }
                 }
             });
             result(r, |t| t.map_or(Value::None, table_text))
@@ -730,19 +757,24 @@ fn run_op(page: &CasePage, op: &[Value]) -> Value {
                     .iter()
                     .map(|(t, c)| {
                         let c = c.as_ref().map_or(Value::None, |c| to_value(&PyValue::Dict(c.clone())));
-                        Value::Tuple(vec![Value::str(t.to_string()), c])
+                        let t = pycompat::PyStr::from_code_point(*t);
+                        Value::Tuple(vec![Value::py_str(&t), c])
                     })
                     .collect();
-                Value::Tuple(vec![Value::str(tm.as_string.clone()), Value::List(tuples)])
+                Value::Tuple(vec![Value::py_str(&tm.as_string), Value::List(tuples)])
             })
         }
         other => panic!("unknown op {other}"),
     }
 }
 
+/// With `TEXT_TABLES_TIME` set, [`replay_pages`] prints the time spent in
+/// each operation (for performance comparisons of the object model).
 fn replay_pages(module: &str, name: &'static str, min_pages: usize) {
     let data = UnitData::open(module);
     let mut c = Checker::new(name);
+    let timing = std::env::var_os("TEXT_TABLES_TIME").is_some();
+    let mut times: Vec<(String, std::time::Duration)> = Vec::new();
     let pages = for_each_case(&data, name, |i, args, out| {
         let record = obj(&args[0]);
         let get = |k: &str| record.get(k).unwrap_or_else(|| panic!("record without {k}"));
@@ -765,12 +797,24 @@ fn replay_pages(module: &str, name: &'static str, min_pages: usize) {
         assert_eq!(ops.len(), outs.len());
         for (k, (op, want)) in ops.iter().zip(outs.iter()).enumerate() {
             let Value::List(op) = op else { panic!("{op:?}") };
+            let start = std::time::Instant::now();
             let got = run_op(&page, op);
+            if timing {
+                let op_name = op[0].as_str().expect("op name").to_owned();
+                match times.iter_mut().find(|(n, _)| *n == op_name) {
+                    Some((_, t)) => *t += start.elapsed(),
+                    None => times.push((op_name, start.elapsed())),
+                }
+            }
             let want = want.as_str().expect("a canon text");
             c.check_text(|| format!("{name}:{i}:{k} {}", canon(&op[0])), &canon(&got), want);
         }
     });
     assert!(pages >= min_pages, "{name}: only {pages} pages");
+    if timing {
+        let total: std::time::Duration = times.iter().map(|(_, t)| *t).sum();
+        eprintln!("{name}: {pages} pages, operations {total:.3?}: {times:.3?}");
+    }
     c.finish(min_pages);
 }
 
@@ -789,7 +833,7 @@ fn pages_real() {
 /// behavior: Python computes the spans itself).
 #[test]
 fn search_refuses_spans_outside_the_string() {
-    let tm = TextMap::new(vec![('a', None), ('b', None)], &PyValue::str("ttb"), &PyValue::str("ltr")).unwrap();
+    let tm = TextMap::new(vec![(0x61, None), (0x62, None)], &PyValue::str("ttb"), &PyValue::str("ltr")).unwrap();
     for span in [(0, 3), (2, 1), (3, 3)] {
         let m = RegexMatch { spans: vec![Some(span)] };
         let e = tm.search(&[m], true, true, 0).unwrap_err();
@@ -814,27 +858,44 @@ fn table_helpers_smoke() {
     assert!(exc::ValueError("x").message == "x");
 }
 
-/// Sequence concatenation and repetition (`"ab" + "c"`, `"ab" * 2`,
-/// `2 * (1,)`) are outside the object model: the port refuses them with
-/// `NotPorted` instead of computing something else (not a Python behavior,
-/// so not in the oracle cases, which skip them). A non-int factor is
-/// Python's `TypeError`.
+/// The address-space limit of sequence repetition: a result beyond
+/// `MAX_REPEAT_BYTES` (4 GiB of the port's representation, the wasm32
+/// address space) raises `MemoryError` where CPython on the oracle machine
+/// would allocate it (no oracle case: the generator leaves these out, see
+/// `architecture.md`). Smaller results are built as in Python (oracle
+/// cases: a 20 MB `str` in `pages_fuzz`, `user_arg_cases`); beyond
+/// `PY_SSIZE_T_MAX`, CPython's own errors are oracle cases (`ops`).
 #[test]
-fn sequence_operations_are_not_ported() {
-    let s = PyValue::str("ab");
-    let t = PyValue::tuple([PyValue::from(1i64)]);
-    let two = PyValue::from(2i64);
-    let not_ported = |r: PyResult<PyValue>| r.is_err_and(|e| e.kind == pycompat::ExcKind::NotPorted);
-    assert!(not_ported(s.add(&s)));
-    assert!(not_ported(t.add(&t)));
-    assert!(not_ported(s.mul(&two)));
-    assert!(not_ported(two.mul(&s)));
-    assert!(not_ported(PyValue::Bool(true).mul(&t)));
-    assert!(not_ported(t.mul(&PyValue::Bool(false))));
-    let e = s.mul(&PyValue::from(2.0)).unwrap_err();
-    assert_eq!(e.message, "can't multiply sequence by non-int of type 'float'");
-    let e = PyValue::from(2.0).mul(&t).unwrap_err();
-    assert_eq!(e.message, "can't multiply sequence by non-int of type 'float'");
+fn sequence_repeat_address_space_limit() {
+    let limit = pdfplumber::obj::MAX_REPEAT_BYTES as i64;
+    let item = std::mem::size_of::<PyValue>() as i64;
+    for (seq, n) in [
+        (PyValue::str("a"), limit + 1),
+        (PyValue::str("ab"), limit / 2 + 1),
+        (PyValue::str("\u{e9}"), limit / 2 + 1), // two UTF-8 bytes, one code point
+        (PyValue::Bytes(std::rc::Rc::from(&b"a"[..])), limit + 1),
+        (PyValue::tuple([PyValue::None]), limit / item + 1),
+        (PyValue::list([PyValue::None, PyValue::None]), limit / item / 2 + 1),
+    ] {
+        let n = PyValue::from(n);
+        let e = seq.mul(&n).unwrap_err();
+        assert_eq!((e.kind, e.message.as_str()), (pycompat::ExcKind::MemoryError, ""), "{seq:?}");
+        let e = n.mul(&seq).unwrap_err();
+        assert_eq!(e.kind, pycompat::ExcKind::MemoryError);
+    }
+    let ok = PyValue::str("ab").mul(&PyValue::from(10_000_000i64)).unwrap();
+    assert_eq!(ok.as_str().map(str::len), Some(20_000_000));
+    let ok = PyValue::tuple([PyValue::None]).mul(&PyValue::from(10_000_001i64)).unwrap();
+    assert_eq!(ok.as_seq().map(<[PyValue]>::len), Some(10_000_001));
+    drop(ok);
+    // a str or bytes item is one byte (not a PyValue): one more item than a
+    // tuple may hold is built (about 180 MB, freed at once)
+    let n = limit / item + 1;
+    let ok = PyValue::str("a").mul(&PyValue::from(n)).unwrap();
+    assert_eq!(ok.as_pystr().map(pycompat::PyStr::len), Some(n as usize));
+    drop(ok);
+    let ok = PyValue::Bytes(std::rc::Rc::from(&b"a"[..])).mul(&PyValue::from(n)).unwrap();
+    assert!(matches!(&ok, PyValue::Bytes(b) if b.len() == n as usize));
 }
 
 /// The resource guard of layout text: `for i in range(n)` that appends a
@@ -875,6 +936,108 @@ fn layout_range_resource_guard() {
     assert_eq!(chars_to_textmap(&chars, &kwargs).unwrap().as_string, "\n\n a"); // Python: chars_to_textmap([c], layout=True, ...)
 }
 
+/// `edges_to_intersections` never makes a vertex holding a NaN, whatever
+/// coordinate of an edge is a NaN and whatever the tolerances (a NaN
+/// included): each coordinate of a vertex takes part in a comparison that a
+/// NaN makes false. So `Table.rows`/`Table.columns` never look a NaN cell
+/// coordinate up through `TableFinder` (see `edges_to_intersections`).
+#[test]
+fn no_nan_vertex() {
+    let n = |x: f64| PyValue::from(x);
+    let coords = ["x0", "x1", "top", "bottom"];
+    let mut seen = 0;
+    for nan_mask in 0u32..256 {
+        let mut edges = Vec::new();
+        for (k, orientation) in ["v", "h"].into_iter().enumerate() {
+            let base = [10.0, 10.0, 0.0, 100.0];
+            let base = if orientation == "h" { [0.0, 100.0, 50.0, 50.0] } else { base };
+            let mut e = Obj::from_pairs([("orientation", PyValue::str(orientation))]);
+            for (i, c) in coords.iter().enumerate() {
+                let nan = nan_mask & (1 << (4 * k + i)) != 0;
+                e.set(*c, if nan { n(f64::NAN) } else { n(base[i]) });
+            }
+            edges.push(e);
+        }
+        for tol in [0.0, 3.0, f64::INFINITY, f64::NAN] {
+            let inter = table::edges_to_intersections(&edges, &n(tol), &n(tol)).expect("numbers");
+            for ((x, y), _, _) in &inter.points {
+                assert!(x.py_eq(x) && y.py_eq(y), "NaN vertex: mask {nan_mask:#x}, tolerance {tol}");
+                seen += 1;
+            }
+        }
+    }
+    assert!(seen > 0, "some masks give vertices");
+}
+
+/// A NaN that comes from outside (a JavaScript number: `f64::NAN` or any
+/// payload) is a new object, as the values of a decoder are (`obj.rs`,
+/// "NaN identity"; `PyFloat`'s private field leaves no other way to make
+/// a `float`): two decoded NaNs are two objects (distinct clusters, `[a]
+/// == [b]` false, as the oracle's `nan_cluster_cases` check for distinct
+/// NaN objects), and each is found again as itself (one cluster, `[a] ==
+/// [a]`), whatever the bits it arrived with.
+#[test]
+fn outside_nans_are_new_objects() {
+    let item = |v: PyValue| Obj::from_pairs([("v", v)]);
+    let sizes = |a: PyValue, b: PyValue| -> Vec<usize> {
+        let xs = [item(a), item(b)];
+        let clusters =
+            cluster_objects(&xs, |o: &Obj| Ok(o.get("v").expect("v").clone()), &PyValue::from(0i64), false).unwrap();
+        clusters.iter().map(Vec::len).collect()
+    };
+    let same = |a: &PyValue, b: &PyValue| PyValue::list([a.clone()]).py_eq(&PyValue::list([b.clone()]));
+    let outside_bits =
+        [f64::NAN, -f64::NAN, f64::from_bits(0x7ff8_0000_0000_0001), f64::from_bits(0x7ff4_0000_0000_0000)];
+    for x in outside_bits {
+        let payload = x.to_bits() & ((1 << 51) - 1);
+        type Decode = fn(f64) -> PyValue;
+        let decoders: [(Decode, bool); 3] =
+            [(PyValue::from, false), (PyValue::float, false), (PyValue::float_with_identity, true)];
+        for (decode, keeps_payload) in decoders {
+            let (a, b) = (decode(x), decode(x));
+            // (float_with_identity keeps the identity of a test case's NaN:
+            // a payload without the port's own bit 50)
+            if !keeps_payload || payload == 0 || payload & (1 << 50) != 0 {
+                // a NaN without an identity payload: two new objects
+                assert_eq!(sizes(a.clone(), b.clone()), [1, 1], "{:#x}", x.to_bits());
+                assert!(!same(&a, &b));
+            }
+            assert_eq!(sizes(a.clone(), a.clone()), [2], "{:#x}", x.to_bits());
+            assert!(same(&a, &a) && a.eq_bool(&a.clone()));
+        }
+    }
+}
+
+/// A dict key given as `&str`, `String`, `Rc<str>` or `PyStr` (with or
+/// without a surrogate) is the same `str` key: set by one, found by the
+/// others, hot (`x0`, `text`) or not. (The port's key types, which the
+/// oracle cases reach only through `&str` and `PyStr`.)
+#[test]
+fn key_kinds() {
+    use pycompat::PyStr;
+    use std::rc::Rc;
+    for name in ["x0", "fontname", "text"] {
+        let as_string = String::from(name);
+        let as_rc: Rc<str> = Rc::from(name);
+        let as_pystr = PyStr::new(name);
+        let mut o = Obj::from_pairs([("k", PyValue::None)]);
+        o.set(&as_string, PyValue::from(1i64));
+        assert!(o.get(name).is_some() && o.get(&as_rc).is_some() && o.get(&as_pystr).is_some());
+        o.set(&as_rc, PyValue::from(2i64));
+        o.set(&as_pystr, PyValue::from(3i64));
+        assert_eq!(o.keys().count(), 2, "{name}");
+        assert!(o.get(&as_string).unwrap().py_eq(&PyValue::from(3i64)));
+        assert!(o.get("x1").is_none() && o.get(&String::from("x")).is_none() && o.get(&Rc::<str>::from("y")).is_none());
+        assert!(o.get(&Rc::<str>::from("k")).is_some() && o.get(&String::from("k")).is_some());
+        assert_eq!(*o.keys().nth(1).unwrap(), as_pystr);
+    }
+    let surrogate = PyStr::from_code_points([0x61, 0xd800]).unwrap();
+    let mut o = Obj::from_pairs([("a", PyValue::None)]);
+    o.set(&surrogate, PyValue::from(1i64));
+    assert!(o.get(&surrogate).is_some() && o.get("a").is_some() && o.get(&String::from("a\u{fffd}")).is_none());
+    assert_eq!(o.item(&surrogate.clone()).unwrap().repr(), "1");
+}
+
 /// `{:?}` of a value or a dict is its Python `repr` (the replay's mismatch
 /// messages and the port's panics print it); the reprs themselves are
 /// oracle cases (`ops`).
@@ -887,5 +1050,7 @@ fn debug_is_repr() {
     assert_eq!(format!("{o:?}"), "{'x0': 1.0, 'k': (1, 0.5, 'a')}");
     // the From conversions of the API
     assert_eq!(PyValue::from("a").repr(), "'a'");
+    assert_eq!(PyValue::from(pycompat::PyStr::from_code_points([0x61, 0xd800]).unwrap()).repr(), "'a\\ud800'");
+    assert_eq!(PyValue::from(String::from("b")).repr(), "'b'");
     assert!(matches!(PyValue::from(o.clone()), PyValue::Dict(d) if d.ptr_eq(&o)));
 }

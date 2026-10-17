@@ -5,8 +5,7 @@ built from each page) on the first ``--max-pages`` pages of every PDF of the
 table- and text-heavy documents. Writes ``pages_real.jsonl`` (one page per
 line) to ``<cache>/unit/text_tables_real/<fingerprint>/``; the Rust replay is
 crates/pdftrace/tests/text_tables_unit.rs (``pages_real``). Pages whose
-chars hold a lone surrogate (not representable by the port's ``str``) are
-skipped and listed in ``meta.json``.
+chars hold lone surrogates are cases like the others (``pycompat::PyStr``).
 
 Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.text_tables_real [--max-pages 2] [-j 3]
 """
@@ -20,9 +19,9 @@ import sys
 
 import pdfplumber
 
-from ..corpus import corpus_root, load_set
+from ..corpus import REPO_DIR, corpus_root, load_set
 from ._common import require_oracle_python, write_cases, write_meta
-from ._plumber_ops import has_surrogate, page_case
+from ._plumber_ops import page_case
 
 MODULE = "text_tables_real"
 FILE_TIMEOUT_S = 600
@@ -54,6 +53,9 @@ SAMPLE_DOCS = [
     "corpus/external/irs-f1040.pdf",
     "corpus/external/federal-register-2024-01-02.pdf",
 ]
+#: Generated PDFs of this checkout (``oracle/generate_micro_pdfs.py``), all
+#: pages: chars whose text is a lone surrogate (``chr(cid)``).
+LOCAL_DOCS = ["corpus/micro/lone-surrogates.pdf"]
 
 
 # Operations on every real page.
@@ -134,9 +136,6 @@ def process_file(args):
                 except Exception as e:  # unreadable page: not a text/table case
                     skipped.append(f"{rel}#{pageno}: {type(e).__name__}")
                     continue
-                if has_surrogate(record["chars"]) or has_surrogate(record["edges"]):
-                    skipped.append(f"{rel}#{pageno}: lone surrogate")
-                    continue
                 out.append(page_case(page, record, REAL_OPS + explicit_ops(page)))
                 page.close()
         status = None
@@ -159,6 +158,10 @@ def real_cases(max_pages: int, workers: int, meta: dict):
             jobs.append((str(p), rel, None, SAMPLE_PAGES))
         elif p.is_file():
             jobs = [(j[0], j[1], j[2], SAMPLE_PAGES) if j[0] == str(p) else j for j in jobs]
+    for rel in LOCAL_DOCS:
+        p = REPO_DIR / rel
+        if str(p) not in seen:
+            jobs.append((str(p), rel, None, SAMPLE_PAGES))
     statuses, skipped = {}, []
     with multiprocessing.Pool(workers, maxtasksperchild=8) as pool:
         for rel, status, cases, sk in pool.imap(process_file, jobs):

@@ -35,15 +35,15 @@
 #![allow(clippy::mutable_key_type)]
 
 use rustc_hash::FxHashMap as HashMap;
-use std::rc::Rc;
 
 use pycompat::listsort::sort_by_key;
-use pycompat::text::str_isspace;
-use pycompat::{exc, PyErr, PyInt, PyResult};
+use pycompat::pystr::PyStrBuilder;
+use pycompat::text::str_isspace_cp;
+use pycompat::{exc, ExcKind, PyErr, PyInt, PyResult, PyStr};
 
-use crate::obj::{HashKey, Hot, Obj, PyValue};
+use crate::obj::{check_hashable, py_contains, py_iter, HashKey, Hot, Obj, PyValue};
 use crate::typing::T_dir;
-use crate::utils::clustering::{cluster_objects, KeyKind};
+use crate::utils::clustering::cluster_objects;
 use crate::utils::geometry::objects_to_bbox_refs;
 
 /// Options passed as `**kwargs`: an ordered `str`-keyed dict.
@@ -144,18 +144,54 @@ fn char_text(c: &Obj) -> PyResult<&PyValue> {
     c.hot(Hot::Text)
 }
 
-/// `expansions.get(text, text)` then iteration (`for letter in letters`).
-fn expanded_letters(text: &PyValue, expand: bool) -> PyResult<Vec<char>> {
-    match text {
-        PyValue::Str(s) => Ok(match (expand, ligature(s)) {
-            (true, Some(e)) => e.chars().collect(),
-            _ => s.chars().collect(),
-        }),
-        // Only the chars of words reach a text map, and `merge_chars` has
-        // already joined their texts, so a char's text is a `str` here
-        // unless the WordMap was built by hand.
-        _ => Err(PyErr::not_ported("a WordMap char whose text is not a str")),
+/// `expansions.get(text, text)` of a `str` (a ligature is never a
+/// surrogate).
+fn expansion(s: &PyStr, expand: bool) -> Option<&'static str> {
+    if expand {
+        s.as_str().and_then(ligature)
+    } else {
+        None
     }
+}
+
+/// `for letter in expansions.get(char["text"], char["text"]):
+/// _textmap.append((letter, char))`; returns the number of letters.
+///
+/// The chars of a WordMap that pdfplumber makes went through
+/// `WordExtractor.merge_chars`, whose `"".join(...)` raises `TypeError` for
+/// a text that is not a `str`: such a char reaches a text map only through
+/// a `WordMap` built by hand (`WordMap(tuples)`, which pdfplumber's `Page`
+/// and module functions never do, and the port's API does not offer), so
+/// that case is refused.
+fn push_letters(textmap: &mut Vec<(u32, Option<Obj>)>, c: &Obj, expand: bool) -> PyResult<i64> {
+    let PyValue::Str(s) = char_text(c)? else {
+        return Err(PyErr::not_ported("a hand-made WordMap char whose text is not a str"));
+    };
+    let before = textmap.len();
+    match expansion(s, expand) {
+        Some(e) => textmap.extend(e.chars().map(|ch| (ch as u32, Some(c.clone())))),
+        None => textmap.extend(s.code_points().map(|cp| (cp, Some(c.clone())))),
+    }
+    Ok((textmap.len() - before) as i64)
+}
+
+/// The `str` of code points (all at most U+10FFFF).
+fn cps_str(cps: &[u32]) -> PyStr {
+    let mut b = PyStrBuilder::with_capacity(cps.len());
+    for &c in cps {
+        b.push(c);
+    }
+    b.finish()
+}
+
+/// A `ValueError` (or other) whose message ends with a value's `str()`
+/// (it may hold a lone surrogate).
+fn err_ending_with(kind: ExcKind, prefix: &str, value: &PyStr, suffix: &str) -> PyErr {
+    let mut b = PyStrBuilder::new();
+    b.push_rust_str(prefix);
+    b.push_str(value);
+    b.push_rust_str(suffix);
+    PyErr::with_message(kind, &b.finish())
 }
 
 // -- directions -----------------------------------------------------------------
@@ -170,24 +206,16 @@ pub fn line_cluster_key(line_dir: T_dir, x: &Obj) -> PyResult<PyValue> {
     }
 }
 
-/// How [`line_cluster_key`] makes its value: `x["top"]` and `x["x0"]` are
-/// the stored objects, `-x["bottom"]` and `-x["x1"]` new ones.
-pub fn line_cluster_key_kind(line_dir: T_dir) -> KeyKind {
-    match line_dir {
-        T_dir::Ttb | T_dir::Ltr => KeyKind::Stored,
-        T_dir::Btt | T_dir::Rtl => KeyKind::Computed,
-    }
-}
-
 /// A sort key of two values, compared as a `tuple`.
 pub type PairKey = (PyValue, PyValue);
 
-/// `a < b` for two pairs (`tuplerichcompare`).
+/// `a < b` for two pairs (`tuplerichcompare`: the first items that differ
+/// by `PyObject_RichCompareBool`, which has the identity shortcut).
 pub fn pair_lt(a: &PairKey, b: &PairKey) -> PyResult<bool> {
-    if !a.0.py_eq(&b.0) {
+    if !a.0.eq_bool(&b.0) {
         return a.0.lt(&b.0);
     }
-    if !a.1.py_eq(&b.1) {
+    if !a.1.eq_bool(&b.1) {
         return a.1.lt(&b.1);
     }
     Ok(false)
@@ -214,16 +242,7 @@ fn bbox_origin(dir: T_dir, bbox: &PyValue) -> PyResult<PyValue> {
         T_dir::Ltr => 0,
         T_dir::Rtl => 2,
     };
-    match bbox.as_seq() {
-        Some(items) => items.get(i).cloned().ok_or_else(|| {
-            exc::IndexError(if matches!(bbox, PyValue::Tuple(_)) {
-                "tuple index out of range"
-            } else {
-                "list index out of range"
-            })
-        }),
-        None => Err(exc::TypeError(format!("'{}' object is not subscriptable", bbox.type_name()))),
-    }
+    crate::obj::py_getitem_index(bbox, i)
 }
 
 // pdfplumber/utils/text.py:70 POSITION_KEYS
@@ -240,11 +259,8 @@ fn position_key(dir: T_dir, x: &Obj) -> PyResult<PyValue> {
 /// `{"ttb": ..., ...}[d]` for a direction given as a value (`KeyError`
 /// otherwise).
 fn dir_key(d: &PyValue) -> PyResult<T_dir> {
-    match d {
-        PyValue::Str(s) => T_dir::parse(s).ok_or_else(|| exc::KeyError(d.repr())),
-        PyValue::List(_) | PyValue::Dict(_) => Err(exc::TypeError(format!("unhashable type: '{}'", d.type_name()))),
-        other => Err(exc::KeyError(other.repr())),
-    }
+    check_hashable(d)?;
+    d.as_str().and_then(T_dir::parse).ok_or_else(|| exc::KeyError(d.repr()))
 }
 
 /// `str(valid_dirs)` of `validate_directions`. Python prints a `set`, whose
@@ -255,12 +271,13 @@ pub const VALID_DIRS_REPR: &str = "{'ttb', 'btt', 'ltr', 'rtl'}";
 
 /// One direction checked by [`validate_directions`].
 fn valid_dir(d: &PyValue, name: &str, suffix: &str) -> PyResult<T_dir> {
-    let invalid = || exc::ValueError(format!("{name}{suffix} must be one of {VALID_DIRS_REPR}, not {}", d.py_str()));
-    match d {
-        PyValue::Str(s) => T_dir::parse(s).ok_or_else(invalid),
-        PyValue::List(_) | PyValue::Dict(_) => Err(exc::TypeError(format!("unhashable type: '{}'", d.type_name()))),
-        _ => Err(invalid()),
-    }
+    let invalid = || {
+        let prefix = format!("{name}{suffix} must be one of {VALID_DIRS_REPR}, not ");
+        err_ending_with(ExcKind::ValueError, &prefix, &d.py_str(), "")
+    };
+    // `d not in valid_dirs` (a set) hashes `d`
+    check_hashable(d)?;
+    d.as_str().and_then(T_dir::parse).ok_or_else(invalid)
 }
 
 // pdfplumber/utils/text.py:78 validate_directions
@@ -297,36 +314,41 @@ pub struct RegexMatch {
 // pdfplumber/utils/text.py:95 TextMap
 #[derive(Clone, Debug)]
 pub struct TextMap {
-    /// `(text, char)`: one code point each, `None` for layout whitespace.
-    pub tuples: Vec<(char, Option<Obj>)>,
+    /// `(text, char)`: one code point each (`ord` of the one-character
+    /// `str`), `None` for layout whitespace.
+    pub tuples: Vec<(u32, Option<Obj>)>,
     pub line_dir_render: T_dir,
     pub char_dir_render: T_dir,
-    pub as_string: String,
+    pub as_string: PyStr,
 }
+
+/// `"\n"` and `" "` as code points.
+const NEWLINE: u32 = 0x0a;
+const SPACE: u32 = 0x20;
 
 impl TextMap {
     // pdfplumber/utils/text.py:101 TextMap.__init__
     pub fn new(
-        tuples: Vec<(char, Option<Obj>)>,
+        tuples: Vec<(u32, Option<Obj>)>,
         line_dir_render: &PyValue,
         char_dir_render: &PyValue,
     ) -> PyResult<TextMap> {
         let (ld, cd) = validate_directions(line_dir_render, char_dir_render, "_render")?;
-        let mut tm = TextMap { tuples, line_dir_render: ld, char_dir_render: cd, as_string: String::new() };
+        let mut tm = TextMap { tuples, line_dir_render: ld, char_dir_render: cd, as_string: PyStr::empty() };
         tm.as_string = tm.to_string();
         Ok(tm)
     }
 
     // pdfplumber/utils/text.py:113 TextMap.to_string
     #[allow(clippy::inherent_to_string)]
-    pub fn to_string(&self) -> String {
+    pub fn to_string(&self) -> PyStr {
         let cd = self.char_dir_render;
         let ld = self.line_dir_render;
-        let base: String = self.tuples.iter().map(|t| t.0).collect();
+        let base: Vec<u32> = self.tuples.iter().map(|t| t.0).collect();
         if cd == T_dir::Ltr && ld == T_dir::Ttb {
-            return base;
+            return cps_str(&base);
         }
-        let mut lines: Vec<Vec<char>> = base.split('\n').map(|l| l.chars().collect()).collect();
+        let mut lines: Vec<Vec<u32>> = base.split(|&c| c == NEWLINE).map(<[u32]>::to_vec).collect();
         if matches!(ld, T_dir::Btt | T_dir::Rtl) {
             lines.reverse();
         }
@@ -340,28 +362,28 @@ impl TextMap {
             for line in &mut lines {
                 let pad = max_line_length - line.len();
                 if cd == T_dir::Btt {
-                    line.splice(0..0, std::iter::repeat_n(' ', pad));
+                    line.splice(0..0, std::iter::repeat_n(SPACE, pad));
                 } else {
-                    line.extend(std::iter::repeat_n(' ', pad));
+                    line.extend(std::iter::repeat_n(SPACE, pad));
                 }
             }
-            let mut out = String::new();
+            let mut out = Vec::new();
             for i in 0..max_line_length {
                 if i > 0 {
-                    out.push('\n');
+                    out.push(NEWLINE);
                 }
                 out.extend(lines.iter().map(|line| line[i]));
             }
-            out
+            cps_str(&out)
         } else {
-            let mut out = String::new();
+            let mut out = Vec::new();
             for (i, line) in lines.iter().enumerate() {
                 if i > 0 {
-                    out.push('\n');
+                    out.push(NEWLINE);
                 }
                 out.extend(line.iter());
             }
-            out
+            cps_str(&out)
         }
     }
 
@@ -370,7 +392,7 @@ impl TextMap {
     /// (`search` checks both).
     fn match_to_dict(
         &self,
-        string: &[char],
+        string: &[u32],
         m: &RegexMatch,
         main_group: usize,
         return_groups: bool,
@@ -409,7 +431,7 @@ impl TextMap {
         return_chars: bool,
         main_group: usize,
     ) -> PyResult<Vec<Obj>> {
-        let string: Vec<char> = self.as_string.chars().collect();
+        let string: Vec<u32> = self.as_string.code_points().collect();
         // Matches come from the caller: a span outside the string cannot
         // come from a regular expression run over it.
         let valid = |s: &Option<(usize, usize)>| s.is_none_or(|(a, b)| a <= b && b <= string.len());
@@ -424,7 +446,7 @@ impl TextMap {
                 Some(None) => return Err(exc::AttributeError("'NoneType' object has no attribute 'strip'")),
                 None => return Err(exc::IndexError("no such group")),
             };
-            if string[span.0..span.1].iter().all(|&c| str_isspace(c)) {
+            if string[span.0..span.1].iter().all(|&c| str_isspace_cp(c)) {
                 continue;
             }
             out.push(self.match_to_dict(&string, m, main_group, return_groups, return_chars)?);
@@ -434,7 +456,7 @@ impl TextMap {
 
     // pdfplumber/utils/text.py:212 TextMap.extract_text_lines
     pub fn extract_text_lines(&self, strip: bool, return_chars: bool) -> PyResult<Vec<Obj>> {
-        let string: Vec<char> = self.as_string.chars().collect();
+        let string: Vec<u32> = self.as_string.code_points().collect();
         let matches = text_line_matches(&string, strip);
         self.search(&matches, false, return_chars, 1)
     }
@@ -442,9 +464,9 @@ impl TextMap {
 
 /// `m.group(g)`: the text of a span, `None` for a group that did not
 /// participate.
-fn group_value(string: &[char], span: Option<(usize, usize)>) -> PyValue {
+fn group_value(string: &[u32], span: Option<(usize, usize)>) -> PyValue {
     match span {
-        Some((a, b)) => PyValue::from(string[a..b].iter().collect::<String>()),
+        Some((a, b)) => PyValue::Str(cps_str(&string[a..b])),
         None => PyValue::None,
     }
 }
@@ -452,17 +474,17 @@ fn group_value(string: &[char], span: Option<(usize, usize)>) -> PyValue {
 /// `re.finditer` of the two patterns of `extract_text_lines` over `string`
 /// (`r" *([^\n]+?) *(\n|$)"` when `strip`, else `r"([^\n]+)"`), with
 /// Python's matching semantics, as [`RegexMatch`]es.
-pub fn text_line_matches(s: &[char], strip: bool) -> Vec<RegexMatch> {
+pub fn text_line_matches(s: &[u32], strip: bool) -> Vec<RegexMatch> {
     let n = s.len();
     let mut out = Vec::new();
     if !strip {
         let mut i = 0;
         while i < n {
             let start = i;
-            if s[i] == '\n' {
+            if s[i] == NEWLINE {
                 i += 1;
             } else {
-                while i < n && s[i] != '\n' {
+                while i < n && s[i] != NEWLINE {
                     i += 1;
                 }
                 out.push(RegexMatch { spans: vec![Some((start, i)), Some((start, i))] });
@@ -471,7 +493,7 @@ pub fn text_line_matches(s: &[char], strip: bool) -> Vec<RegexMatch> {
         }
         return out;
     }
-    let spaces_from = |i: usize| s[i..].iter().take_while(|&&c| c == ' ').count();
+    let spaces_from = |i: usize| s[i..].iter().take_while(|&&c| c == SPACE).count();
     let mut pos = 0;
     while pos <= n {
         // search: the first start position where the pattern matches
@@ -493,12 +515,12 @@ pub fn text_line_matches(s: &[char], strip: bool) -> Vec<RegexMatch> {
 
 /// The match of `" *([^\n]+?) *(\n|$)"` at `start` (backtracking as `re`
 /// does: greedy leading spaces first, then the shortest group 1).
-fn match_text_line_at(s: &[char], start: usize, spaces_from: &impl Fn(usize) -> usize) -> Option<RegexMatch> {
+fn match_text_line_at(s: &[u32], start: usize, spaces_from: &impl Fn(usize) -> usize) -> Option<RegexMatch> {
     let n = s.len();
     let k_max = spaces_from(start);
     for k in (0..=k_max).rev() {
         let g1 = start + k;
-        if g1 >= n || s[g1] == '\n' {
+        if g1 >= n || s[g1] == NEWLINE {
             continue;
         }
         let mut g1_end = g1 + 1;
@@ -508,7 +530,7 @@ fn match_text_line_at(s: &[char], start: usize, spaces_from: &impl Fn(usize) -> 
             if q == n {
                 return Some(RegexMatch { spans: vec![Some((start, q)), Some((g1, g1_end)), Some((q, q))] });
             }
-            if s[q] == '\n' {
+            if s[q] == NEWLINE {
                 return Some(RegexMatch { spans: vec![Some((start, q + 1)), Some((g1, g1_end)), Some((q, q + 1))] });
             }
             // `[^\n]+?` takes one more character: there is one, and it is
@@ -613,7 +635,7 @@ impl TextMapOptions {
         }
         for (k, v) in kwargs.items() {
             let v = v.clone();
-            match k.as_ref() {
+            match k.as_str().unwrap_or("") {
                 "layout" => o.layout = v.truthy(),
                 "layout_width" => o.layout_width = v,
                 "layout_height" => o.layout_height = v,
@@ -634,10 +656,13 @@ impl TextMapOptions {
                 "use_text_flow" => o.use_text_flow = v.truthy(),
                 "presorted" => o.presorted = v.truthy(),
                 "expand_ligatures" => o.expand_ligatures = v.truthy(),
-                other if strict => {
-                    return Err(exc::TypeError(format!(
-                        "WordMap.to_textmap() got an unexpected keyword argument '{other}'"
-                    )))
+                _ if strict => {
+                    return Err(err_ending_with(
+                        ExcKind::TypeError,
+                        "WordMap.to_textmap() got an unexpected keyword argument '",
+                        k,
+                        "'",
+                    ))
                 }
                 _ => {}
             }
@@ -683,7 +708,7 @@ impl WordMap {
 
     // pdfplumber/utils/text.py:241 WordMap.to_textmap
     pub fn to_textmap(&self, o: &TextMapOptions) -> PyResult<TextMap> {
-        let mut textmap: Vec<(char, Option<Obj>)> = Vec::new();
+        let mut textmap: Vec<(u32, Option<Obj>)> = Vec::new();
 
         if self.tuples.is_empty() {
             return TextMap::new(
@@ -716,7 +741,7 @@ impl WordMap {
             0
         };
         let push_blank_line =
-            |tm: &mut Vec<(char, Option<Obj>)>| tm.extend(std::iter::repeat_n((' ', None), blank_line));
+            |tm: &mut Vec<(u32, Option<Obj>)>| tm.extend(std::iter::repeat_n((SPACE, None), blank_line));
 
         let mut num_newlines = PyInt::ZERO;
 
@@ -738,7 +763,6 @@ impl WordMap {
         let tuples_by_line = cluster_objects(
             &words_sorted_line_dir,
             |&i| line_cluster_key(line_dir, &self.tuples[i].0),
-            line_cluster_key_kind(line_dir),
             &o.y_tolerance,
             keep_order,
         )?;
@@ -758,10 +782,10 @@ impl WordMap {
                 max_int(PyInt::Small(i64::from(i > 0)), py_round_value(&y_dist)?.sub(&num_newlines));
 
             for _ in 0..range_len(&num_newlines_prepend)? {
-                if textmap.last().is_none_or(|t| t.0 == '\n') {
+                if textmap.last().is_none_or(|t| t.0 == NEWLINE) {
                     push_blank_line(&mut textmap);
                 }
-                textmap.push(('\n', None));
+                textmap.push((NEWLINE, None));
             }
 
             num_newlines = num_newlines.add(&num_newlines_prepend);
@@ -786,23 +810,20 @@ impl WordMap {
                 let num_spaces_prepend =
                     max_int(PyInt::Small(line_len.min(1)), py_round_value(&x_dist)?.sub(&PyInt::Small(line_len)));
                 let n = list_repeat_count(&num_spaces_prepend)?;
-                textmap.extend(std::iter::repeat_n((' ', None), n));
+                textmap.extend(std::iter::repeat_n((SPACE, None), n));
                 line_len = line_len
                     .checked_add(num_spaces_prepend.as_i64().ok_or_else(|| exc::MemoryError(""))?)
                     .ok_or_else(|| exc::MemoryError(""))?;
 
                 for c in chars {
-                    for letter in expanded_letters(char_text(c)?, expand)? {
-                        textmap.push((letter, Some(c.clone())));
-                        line_len += 1;
-                    }
+                    line_len += push_letters(&mut textmap, c, expand)?;
                 }
             }
 
             // Append spaces at end of line
             if o.layout {
                 let n = seq_repeat_count(&layout_width_chars.sub(&PyValue::from(line_len))?)?;
-                textmap.extend(std::iter::repeat_n((' ', None), n));
+                textmap.extend(std::iter::repeat_n((SPACE, None), n));
             }
         }
 
@@ -813,13 +834,13 @@ impl WordMap {
                 if i > 0 {
                     push_blank_line(&mut textmap);
                 }
-                textmap.push(('\n', None));
+                textmap.push((NEWLINE, None));
             }
 
             // Remove terminal newline
             match textmap.last() {
                 None => return Err(exc::IndexError("list index out of range")),
-                Some(('\n', None)) => {
+                Some((NEWLINE, None)) => {
                     textmap.pop();
                 }
                 Some(_) => {}
@@ -832,7 +853,10 @@ impl WordMap {
 
 // -- WordExtractor ----------------------------------------------------------------
 
-/// `split_at_punctuation`: a string (`text in s` is a substring test).
+/// `extra_attrs` and `split_at_punctuation` are kept as given, as upstream
+/// does: `extra_attrs` is iterated when words are extracted (`itemgetter`),
+/// `text in split_at_punctuation` is Python's `in` (a substring test for a
+/// `str`, membership for a `list`...).
 #[derive(Clone, Debug)]
 pub struct WordExtractor {
     pub x_tolerance: PyValue,
@@ -847,8 +871,9 @@ pub struct WordExtractor {
     pub char_dir: T_dir,
     pub line_dir_rotated: T_dir,
     pub char_dir_rotated: T_dir,
-    pub extra_attrs: Vec<Rc<str>>,
-    pub split_at_punctuation: String,
+    /// `[] if extra_attrs is None else extra_attrs`
+    pub extra_attrs: PyValue,
+    pub split_at_punctuation: PyValue,
     pub expand_ligatures: bool,
 }
 
@@ -924,7 +949,7 @@ impl WordExtractorArgs {
         let mut a = WordExtractorArgs::default();
         for (k, v) in kwargs.items() {
             let v = v.clone();
-            match k.as_ref() {
+            match k.as_str().unwrap_or("") {
                 "x_tolerance" => a.x_tolerance = v,
                 "y_tolerance" => a.y_tolerance = v,
                 "x_tolerance_ratio" => a.x_tolerance_ratio = v,
@@ -940,10 +965,13 @@ impl WordExtractorArgs {
                 "extra_attrs" => a.extra_attrs = v,
                 "split_at_punctuation" => a.split_at_punctuation = v,
                 "expand_ligatures" => a.expand_ligatures = v,
-                other if strict => {
-                    return Err(exc::TypeError(format!(
-                        "WordExtractor.__init__() got an unexpected keyword argument '{other}'"
-                    )))
+                _ if strict => {
+                    return Err(err_ending_with(
+                        ExcKind::TypeError,
+                        "WordExtractor.__init__() got an unexpected keyword argument '",
+                        k,
+                        "'",
+                    ))
                 }
                 _ => {}
             }
@@ -952,20 +980,25 @@ impl WordExtractorArgs {
     }
 }
 
-/// The keys of `extra_attrs` (any iterable of keys; a `str` iterates its
-/// characters, as in Python).
-fn attr_names(v: &PyValue) -> PyResult<Vec<Rc<str>>> {
-    let key = |x: &PyValue| match x {
-        PyValue::Str(s) => Ok(s.clone()),
-        _ => Err(PyErr::not_ported("a non-str key in extra_attrs")),
-    };
-    match v {
-        PyValue::None => Ok(Vec::new()),
-        PyValue::Str(s) => Ok(s.chars().map(|c| Rc::from(c.to_string())).collect()),
-        PyValue::Tuple(items) | PyValue::List(items) => items.iter().map(key).collect(),
-        PyValue::Dict(d) => Ok(d.keys().map(Rc::from).collect()),
-        // itemgetter("upright", *self.extra_attrs)
-        other => Err(exc::TypeError(format!("Value after * must be an iterable, not {}", other.type_name()))),
+/// The items of `*v` in a call (`itemgetter("upright", *extra_attrs)`):
+/// any iterable (a `str` gives its characters, a `dict` its keys).
+fn star_items(v: &PyValue) -> PyResult<Vec<PyValue>> {
+    match py_iter(v) {
+        Some(items) => items,
+        None => Err(exc::TypeError(format!("Value after * must be an iterable, not {}", v.type_name()))),
+    }
+}
+
+/// `obj[key]` for a key of any type: a `str` is looked up (its own
+/// `KeyError`), another hashable value is no key of a pdfplumber object
+/// (`KeyError(repr(key))`), an unhashable one raises `TypeError`.
+pub fn item_any<'a>(obj: &'a Obj, key: &PyValue) -> PyResult<&'a PyValue> {
+    match key {
+        PyValue::Str(k) => obj.item(k),
+        other => {
+            check_hashable(other)?;
+            Err(exc::KeyError(other.repr()))
+        }
     }
 }
 
@@ -977,12 +1010,13 @@ impl WordExtractor {
         let char_dir_rotated = or_value(&a.char_dir_rotated, &a.line_dir);
         let (line_dir, char_dir) = validate_directions(&a.line_dir, &a.char_dir, "")?;
         let (line_dir_rotated, char_dir_rotated) = validate_directions(line_dir_rotated, char_dir_rotated, "_rotated")?;
-        let extra_attrs = attr_names(&a.extra_attrs)?;
+        let extra_attrs = if a.extra_attrs.is_none() { PyValue::list([]) } else { a.extra_attrs.clone() };
+        // `string.punctuation if split_at_punctuation is True else
+        // (split_at_punctuation or "")`
         let split_at_punctuation = match &a.split_at_punctuation {
-            PyValue::Bool(true) => PUNCTUATION.to_owned(),
-            v if !v.truthy() => String::new(),
-            PyValue::Str(s) => s.to_string(),
-            _ => return Err(PyErr::not_ported("a non-str split_at_punctuation")),
+            PyValue::Bool(true) => PyValue::str(PUNCTUATION),
+            v if !v.truthy() => PyValue::str(""),
+            v => v.clone(),
         };
         Ok(WordExtractor {
             x_tolerance: a.x_tolerance.clone(),
@@ -1031,18 +1065,24 @@ impl WordExtractor {
         let upright = first.hot(Hot::Upright)?.clone();
         let char_dir = self.get_char_dir(&upright);
 
-        let mut text = String::new();
-        for (i, c) in ordered_chars.iter().enumerate() {
+        // `"".join(<generator>)`: PySequence_Fast first runs the whole
+        // generator (each `c["text"]`, KeyError, then `expansions.get`,
+        // which hashes its key even in the empty dict of
+        // expand_ligatures=False), and only then checks that every item is
+        // a `str` (unicode_join: "sequence item i").
+        let mut texts = Vec::with_capacity(ordered_chars.len());
+        for c in ordered_chars {
             let t = char_text(c)?;
+            check_hashable(t)?;
+            texts.push(t);
+        }
+        let mut text = PyStrBuilder::new();
+        for (i, t) in texts.into_iter().enumerate() {
             match t {
-                PyValue::Str(s) => match (self.expand_ligatures, ligature(s)) {
-                    (true, Some(e)) => text.push_str(e),
-                    _ => text.push_str(s),
+                PyValue::Str(s) => match expansion(s, self.expand_ligatures) {
+                    Some(e) => text.push_rust_str(e),
+                    None => text.push_str(s),
                 },
-                // dict.get hashes its key (even the empty dict of expand_ligatures=False)
-                PyValue::List(_) | PyValue::Dict(_) => {
-                    return Err(exc::TypeError(format!("unhashable type: '{}'", t.type_name())))
-                }
                 other => {
                     return Err(exc::TypeError(format!(
                         "sequence item {i}: expected str instance, {} found",
@@ -1055,7 +1095,7 @@ impl WordExtractor {
         let height = bottom.sub(&top)?;
         let width = x1.sub(&x0)?;
         let mut word = Obj::from_pairs([
-            ("text", PyValue::from(text)),
+            ("text", PyValue::Str(text.finish())),
             ("x0", x0),
             ("x1", x1),
             ("top", top),
@@ -1066,8 +1106,10 @@ impl WordExtractor {
             ("width", width),
             ("direction", dir_value(char_dir)),
         ]);
-        for key in &self.extra_attrs {
-            word.set(key, first.item(key)?.clone());
+        for key in star_items(&self.extra_attrs)? {
+            let value = item_any(first, &key)?.clone();
+            let PyValue::Str(key) = key else { unreachable!("only str keys are found") };
+            word.set(&key, value);
         }
         Ok(word)
     }
@@ -1155,7 +1197,7 @@ impl WordExtractor {
                 false
             } else {
                 match text {
-                    PyValue::Str(s) => !s.is_empty() && s.chars().all(str_isspace),
+                    PyValue::Str(s) => s.isspace(),
                     // bytes.isspace()
                     PyValue::Bytes(b) => !b.is_empty() && b.iter().all(|&c| pycompat::text::bytes_isspace(c)),
                     other => {
@@ -1170,15 +1212,7 @@ impl WordExtractor {
                 start_next_word(&mut current_word, None, emit)?;
                 continue;
             }
-            let in_punct = match text {
-                PyValue::Str(s) => self.split_at_punctuation.contains(s.as_ref()),
-                other => {
-                    return Err(exc::TypeError(format!(
-                        "'in <string>' requires string as left operand, not {}",
-                        other.type_name()
-                    )))
-                }
-            };
+            let in_punct = py_contains(&self.split_at_punctuation, text)?;
             if in_punct {
                 start_next_word(&mut current_word, Some(char), emit)?;
                 start_next_word(&mut current_word, None, emit)?;
@@ -1211,13 +1245,7 @@ impl WordExtractor {
 
         // Cluster by line
         let tolerance = if matches!(line_dir, T_dir::Ttb | T_dir::Btt) { &self.y_tolerance } else { &self.x_tolerance };
-        let subclusters = cluster_objects(
-            &chars,
-            |c| line_cluster_key(line_dir, c),
-            line_cluster_key_kind(line_dir),
-            tolerance,
-            false,
-        )?;
+        let subclusters = cluster_objects(&chars, |c| line_cluster_key(line_dir, c), tolerance, false)?;
 
         let mut out = Vec::with_capacity(subclusters.len());
         for mut sc in subclusters {
@@ -1229,15 +1257,16 @@ impl WordExtractor {
     }
 
     /// `itemgetter("upright", *self.extra_attrs)(char)`: one value, or a
-    /// tuple with extra attributes.
-    fn grouping_key(&self, c: &Obj) -> PyResult<PyValue> {
+    /// tuple with extra attributes (`extra` are the items of
+    /// `self.extra_attrs`).
+    fn grouping_key(c: &Obj, extra: &[PyValue]) -> PyResult<PyValue> {
         let upright = c.hot(Hot::Upright)?.clone();
-        if self.extra_attrs.is_empty() {
+        if extra.is_empty() {
             return Ok(upright);
         }
         let mut items = vec![upright];
-        for k in &self.extra_attrs {
-            items.push(c.item(k)?.clone());
+        for k in extra {
+            items.push(item_any(c, k)?.clone());
         }
         Ok(PyValue::tuple(items))
     }
@@ -1255,6 +1284,8 @@ impl WordExtractor {
             let word = self.merge_chars(&word_chars)?;
             emit(word, word_chars)
         };
+        // grouping_key = itemgetter("upright", *self.extra_attrs)
+        let extra = star_items(&self.extra_attrs)?;
         let mut i = 0;
         let mut next_key: Option<PyValue> = None;
         while i < chars.len() {
@@ -1262,7 +1293,7 @@ impl WordExtractor {
             // groupby: the key of the group's first char
             let tgtkey = match next_key.take() {
                 Some(k) => k,
-                None => self.grouping_key(&chars[i])?,
+                None => WordExtractor::grouping_key(&chars[i], &extra)?,
             };
             if self.use_text_flow {
                 // The group is consumed char by char by iter_chars_to_words:
@@ -1283,7 +1314,7 @@ impl WordExtractor {
                         end_reached = true;
                         return None;
                     }
-                    let key = match self.grouping_key(&chars[i]) {
+                    let key = match WordExtractor::grouping_key(&chars[i], &extra) {
                         Ok(k) => k,
                         Err(e) => {
                             end_reached = true;
@@ -1305,7 +1336,7 @@ impl WordExtractor {
                 let start = i;
                 i += 1;
                 while i < chars.len() {
-                    let key = self.grouping_key(&chars[i])?;
+                    let key = WordExtractor::grouping_key(&chars[i], &extra)?;
                     if !key.py_eq(&tgtkey) {
                         next_key = Some(key);
                         break;
@@ -1375,7 +1406,7 @@ pub fn extract_words_kwargs(chars: &[Obj], kwargs: &Kwargs) -> PyResult<Vec<Obj>
 
 /// `extract_text(chars, **kwargs)` (`line_dir_render`, `char_dir_render`
 /// may be in `kwargs`).
-pub fn extract_text_kwargs(chars: &[Obj], kwargs: &Kwargs) -> PyResult<String> {
+pub fn extract_text_kwargs(chars: &[Obj], kwargs: &Kwargs) -> PyResult<PyStr> {
     let (values, rest) = bind_named("extract_text", kwargs, &["line_dir_render", "char_dir_render"])?;
     let none = PyValue::None;
     extract_text(chars, values[0].as_ref().unwrap_or(&none), values[1].as_ref().unwrap_or(&none), &rest)
@@ -1405,10 +1436,10 @@ pub fn extract_text(
     line_dir_render: &PyValue,
     char_dir_render: &PyValue,
     kwargs: &Kwargs,
-) -> PyResult<String> {
+) -> PyResult<PyStr> {
     let chars = &crate::utils::generic::to_list(chars)[..];
     if chars.is_empty() {
-        return Ok(String::new());
+        return Ok(PyStr::empty());
     }
 
     if kwargs.get("layout").is_some_and(PyValue::truthy) {
@@ -1434,38 +1465,37 @@ pub fn extract_text(
         let lines = cluster_objects(
             &words,
             |w| line_cluster_key(line_dir, w),
-            line_cluster_key_kind(line_dir),
             if vertical { &y_tolerance } else { &x_tolerance },
             false,
         )?;
 
-        let mut text = String::new();
+        let mut text = PyStrBuilder::new();
         for (i, line) in lines.iter().enumerate() {
             if i > 0 {
-                text.push('\n');
+                text.push(NEWLINE);
             }
             for (j, word) in line.iter().enumerate() {
                 if j > 0 {
-                    text.push(' ');
+                    text.push(SPACE);
                 }
-                text.push_str(word.hot(Hot::Text)?.as_str().expect("words have str text"));
+                text.push_str(word.hot(Hot::Text)?.as_pystr().expect("words have str text"));
             }
         }
-        let tuples = text.chars().map(|c| (c, None)).collect();
+        let tuples = text.finish().code_points().map(|c| (c, None)).collect();
         Ok(TextMap::new(tuples, &line_dir_render, &char_dir_render)?.as_string)
     }
 }
 
 // pdfplumber/utils/text.py:771 collate_line
-pub fn collate_line(line_chars: &[Obj], tolerance: &PyValue) -> PyResult<String> {
-    let mut coll = String::new();
+pub fn collate_line(line_chars: &[Obj], tolerance: &PyValue) -> PyResult<PyStr> {
+    let mut coll = PyStrBuilder::new();
     let mut last_x1: Option<PyValue> = None;
     let mut sorted = line_chars.to_vec();
     sort_by_key(&mut sorted, |c| Ok(c.hot(Hot::X0)?.clone()), |a, b| a.lt(b))?;
     for char in &sorted {
         if let Some(last) = &last_x1 {
             if char.hot(Hot::X0)?.gt(&last.add(tolerance)?)? {
-                coll.push(' ');
+                coll.push(SPACE);
             }
         }
         last_x1 = Some(char.hot(Hot::X1)?.clone());
@@ -1476,30 +1506,32 @@ pub fn collate_line(line_chars: &[Obj], tolerance: &PyValue) -> PyResult<String>
             }
         }
     }
-    Ok(coll)
+    Ok(coll.finish())
 }
 
 // pdfplumber/utils/text.py:785 extract_text_simple
-pub fn extract_text_simple(chars: &[Obj], x_tolerance: &PyValue, y_tolerance: &PyValue) -> PyResult<String> {
-    let clustered = cluster_objects(chars, |c| Ok(c.hot(Hot::Doctop)?.clone()), KeyKind::Stored, y_tolerance, false)?;
-    let mut out = String::new();
+pub fn extract_text_simple(chars: &[Obj], x_tolerance: &PyValue, y_tolerance: &PyValue) -> PyResult<PyStr> {
+    let clustered = cluster_objects(chars, |c| Ok(c.hot(Hot::Doctop)?.clone()), y_tolerance, false)?;
+    let mut out = PyStrBuilder::new();
     for (i, c) in clustered.iter().enumerate() {
         if i > 0 {
-            out.push('\n');
+            out.push(NEWLINE);
         }
         out.push_str(&collate_line(c, x_tolerance)?);
     }
-    Ok(out)
+    Ok(out.finish())
 }
 
 // pdfplumber/utils/text.py:794 dedupe_chars
-/// `extra_attrs`: `None` (or empty) for no extra attribute.
-pub fn dedupe_chars(chars: &[Obj], tolerance: &PyValue, extra_attrs: &[Rc<str>]) -> PyResult<Vec<Obj>> {
-    // key = itemgetter("upright", "text", *extra_attrs)
+/// `extra_attrs`: the value given (upstream's default is `("fontname",
+/// "size")`; a false value, `None` included, for no extra attribute).
+pub fn dedupe_chars(chars: &[Obj], tolerance: &PyValue, extra_attrs: &PyValue) -> PyResult<Vec<Obj>> {
+    // key = itemgetter(*("upright", "text"), *(extra_attrs or tuple()))
+    let extra = if extra_attrs.truthy() { star_items(extra_attrs)? } else { Vec::new() };
     let key = |c: &Obj| -> PyResult<PyValue> {
         let mut items = vec![c.hot(Hot::Upright)?.clone(), c.hot(Hot::Text)?.clone()];
-        for k in extra_attrs {
-            items.push(c.item(k)?.clone());
+        for k in &extra {
+            items.push(item_any(c, k)?.clone());
         }
         Ok(PyValue::tuple(items))
     };
@@ -1519,12 +1551,8 @@ pub fn dedupe_chars(chars: &[Obj], tolerance: &PyValue, extra_attrs: &[Rc<str>])
             end += 1;
         }
         let grp_chars = &indexed[g..end];
-        for y_cluster in
-            cluster_objects(grp_chars, |(_, c)| Ok(c.hot(Hot::Doctop)?.clone()), KeyKind::Stored, tolerance, false)?
-        {
-            for mut x_cluster in
-                cluster_objects(&y_cluster, |(_, c)| Ok(c.hot(Hot::X0)?.clone()), KeyKind::Stored, tolerance, false)?
-            {
+        for y_cluster in cluster_objects(grp_chars, |(_, c)| Ok(c.hot(Hot::Doctop)?.clone()), tolerance, false)? {
+            for mut x_cluster in cluster_objects(&y_cluster, |(_, c)| Ok(c.hot(Hot::X0)?.clone()), tolerance, false)? {
                 sort_by_key(&mut x_cluster, |(_, c)| pos_key(c), pair_lt)?;
                 deduped.push(x_cluster.swap_remove(0));
             }

@@ -37,12 +37,27 @@ fn in_ranges(ranges: &[(u32, u32)], c: u32) -> bool {
 
 /// `ch.isspace()` (`Py_UNICODE_ISSPACE`).
 pub fn str_isspace(ch: char) -> bool {
-    in_ranges(tables::SPACE, ch as u32)
+    str_isspace_cp(ch as u32)
+}
+
+/// `chr(c).isspace()` for any code point (a surrogate is not a space).
+#[inline]
+pub fn str_isspace_cp(c: u32) -> bool {
+    if c < 0x80 {
+        return matches!(c, 0x09..=0x0d | 0x1c..=0x20);
+    }
+    in_ranges(tables::SPACE, c)
 }
 
 /// `ch.isprintable()` (`Py_UNICODE_ISPRINTABLE`).
 pub fn str_isprintable(ch: char) -> bool {
-    !in_ranges(tables::NONPRINTABLE, ch as u32)
+    str_isprintable_cp(ch as u32)
+}
+
+/// `chr(c).isprintable()` for any code point (a surrogate is not
+/// printable: the table holds U+D800..U+DFFF).
+pub fn str_isprintable_cp(c: u32) -> bool {
+    !in_ranges(tables::NONPRINTABLE, c)
 }
 
 /// `unicodedata.decimal(ch, None)` (`Py_UNICODE_TODECIMAL`).

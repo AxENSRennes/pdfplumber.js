@@ -29,7 +29,8 @@ order, for any value of the hash bits not chosen.
   ``set_add_entry``, ``set_table_resize`` and ``set_insert_clean`` of
   CPython 3.12). ``ok`` stays true when every set without NaN is any order,
   and every set with NaNs holds only ``NanPool`` objects (a NaN computed by
-  pdfplumber has an address nobody chose), each once, among ``int``,
+  pdfplumber has an address nobody chose; an object several items share
+  is one entry), among ``int``,
   ``float`` and ``bool`` values (``str`` and ``None`` hash by seed and
   address), and lists them last in their order of first occurrence under
   each of ``VARIANTS`` (other values of the hash bits above the 16 chosen).
@@ -44,6 +45,7 @@ order, for any value of the hash bits not chosen.
 
 from __future__ import annotations
 
+import struct
 import sys
 
 from pdfplumber.utils import clustering
@@ -160,6 +162,51 @@ def _is_nan(v) -> bool:
     return isinstance(v, float) and v != v
 
 
+def tag_nans(value):
+    """``value`` (nested dicts, lists and tuples) with each distinct NaN
+    object replaced by a NaN whose payload is its number (1, 2, ... in
+    order of first occurrence; bit 50 clear): the typed JSON keeps a
+    float's bits, so the Rust replay sees which NaNs are the same object
+    (``PyValue::float_with_identity``, "NaN identity" in
+    ``crates/pdfplumber/src/obj.rs``). Applied to the arguments of a case
+    only (Python has already run it): the payload of a NaN is not
+    observable by pdfplumber."""
+    tags: dict[int, float] = {}
+
+    def walk(v):
+        if isinstance(v, float) and v != v:
+            t = tags.get(id(v))
+            if t is None:
+                t = struct.unpack("<d", struct.pack("<Q", 0x7FF8000000000000 | (len(tags) + 1)))[0]
+                tags[id(v)] = t
+            return t
+        if type(v) is dict:
+            return {k: walk(x) for k, x in v.items()}
+        if type(v) is list:
+            return [walk(x) for x in v]
+        if type(v) is tuple:
+            return tuple(walk(x) for x in v)
+        return v
+
+    keep = []  # the NaN objects stay alive (their ids are the keys)
+
+    def keep_alive(v):
+        if isinstance(v, float) and v != v:
+            keep.append(v)
+        elif isinstance(v, (dict, list, tuple)):
+            for x in v.values() if isinstance(v, dict) else v:
+                keep_alive(x)
+
+    keep_alive(value)
+    return walk(value)
+
+
+def tagged(cases):
+    """``(tag_nans(args), out)`` of each ``(args, out)`` case."""
+    for args, out in cases:
+        yield tag_nans(args), out
+
+
 def _model_order(listed, nans) -> bool:
     """Every NaN after every other value, NaNs in the order ``nans``."""
     at = [k for k, v in enumerate(listed) if _is_nan(v)]
@@ -232,10 +279,11 @@ class SetOrderCheck:
         nans = []
         for v in values:
             if _is_nan(v):
-                if any(v is n for n in nans) or not NanPool.owns(v):
+                if not NanPool.owns(v):
                     self.ok = False
                     return
-                nans.append(v)
+                if not any(v is n for n in nans):  # a shared object: listed once
+                    nans.append(v)
             elif type(v) not in (int, float, bool):
                 self.ok = False
                 return

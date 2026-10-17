@@ -120,6 +120,14 @@
     "sha256": "fbf5c006c4599b77fd9fd20dc9e1617d27e604563a767f0991e66043e55a8ef4"
   },
   {
+    "id": "micro/lone-surrogates",
+    "localPath": "corpus/micro/lone-surrogates.pdf",
+    "source": "Generated micro-PDF",
+    "generator": "oracle/generate_micro_pdfs.py",
+    "size": 2495,
+    "sha256": "d4e08c4578df052667872efbc54b877e11cd4dbb3e68d025095454bc8ad05eec"
+  },
+  {
     "id": "micro/encrypted-password",
     "localPath": "corpus/micro/encrypted-password.pdf",
     "source": "Generated micro-PDF",

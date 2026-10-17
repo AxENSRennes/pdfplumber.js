@@ -63,10 +63,14 @@ lignes (préfixe d'étiquette, puis valeurs). Les valeurs sont écrites par
   `{"in": [<JSON typé>], "out": "<texte attendu>"}` par cas ;
   `crates/pdftrace/tests/canon_unit.rs` vérifie que Rust décode chaque valeur,
   écrit le même `canon` et ré-encode le même JSON typé, au caractère près.
-- Côté Rust, une `str` Python est un `value::PyStr` : un `String`, ou ses
-  points de code quand elle contient un surrogate (qu'UTF-8 ne peut pas
-  porter). Seul le harnais en a besoin aujourd'hui ; un module porté qui peut
-  produire un surrogate (`chr()` sur une valeur arbitraire) le signale.
+- Côté Rust, une `str` Python est un `value::PyStr` dans le harnais (un
+  `String`, ou ses points de code quand elle contient un surrogate), et un
+  `pycompat::PyStr` dans le code porté (octets `surrogatepass`) ; les deux se
+  convertissent sans perte (`value.rs`).
+- Une NaN des cas unitaires de `text_tables*` porte, dans sa charge utile,
+  le numéro de son objet Python dans le cas (`tag_nans` de
+  `oracle/unit/_nan_objects.py`) : le rejeu sait quelles valeurs sont le même
+  objet (identité des NaN, `crates/pdfplumber/src/obj.rs`).
 - `canon` est itératif (profondeur quelconque). Une structure cyclique ou un
   type inconnu lève `CanonError`, qui dérive de `BaseException` : une erreur du
   harnais n'est jamais rattrapée par le `except Exception` d'une étape ni
@@ -171,7 +175,7 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   | Générateur (`oracle/unit/`) | Modules Rust vérifiés | Rejeu | Contenu |
   |---|---|---|---|
   | `canon.py` | `pdftrace::{canon, typed_json}` | `canon_unit.rs` | `canon` et JSON typé (ci-dessus), valeurs imbriquées sur 2·10^5 à 10^6 niveaux |
-  | `pycompat.py` | `pycompat` | `pycompat_unit.rs` | sémantique CPython, `pow` de la libm, `hash()` numérique, limites de récursion |
+  | `pycompat.py` | `pycompat` | `pycompat_unit.rs` | sémantique CPython, `PyStr` (surrogates isolés, `unicodedata.normalize` NFC/NFKC/NFD/NFKD, `repr`, `json`, UTF-16), `pow` et `atan2` de la libm (`math.atan2`), `hash()` numérique, limites de récursion |
   | `exceptions.py` | `psexceptions`, `pdfexceptions`, `pycompat::err` | `exceptions_unit.rs` | classes d'exception de pdfminer et pdfplumber |
   | `pdftypes.py` | `pdftypes` | `pdftypes_unit.rs` | modèle d'objets, références, flux, déchiffrement, `uint_value`, objets imbriqués à la frontière des limites de récursion (`repr`/`str` en unités C, `resolve_all`/`decipher_all` en cadres) |
   | `psparser_base.py` | `psparser` | `psparser_base_unit.rs` | `PSStackParser` sur un fichier : `nexttoken`, `nextline`, `revreadlines`, `seek`, `pop` |
@@ -185,12 +189,12 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   | `crypto.py` | `arcfour`, `saslprep` (et sa NFKC 3.2.0), `utils::unpad_aes`, `pdfdocument::security` | `crypto_unit.rs` | RC4, `unpad_aes`, tables de `stringprep`, NFKC d'Unicode 3.2.0, `saslprep`, gestionnaires de sécurité générés (révisions 2 à 6, `/V` 0 à 6, `/CF`, `/StmF`/`/StrF`, mots de passe utilisateur et propriétaire), PDF chiffrés du corpus, cas profonds |
   | `cmaps.py` | `glyphlist`, `latin_enc`, `fontmetrics`, `encodingdb`, `cmapdb` | `cmaps_unit.rs` | tables, `name2unicode`, `get_encoding`, scripts d'appels sur chaque classe de `cmapdb`, toutes les CMaps prédéfinies lues par le fournisseur des fichiers compacts de `oracle/codegen/cmaps.py`, `CMapParser` sur un corpus adverse `--fuzz 3000` (`synthetic.json`) et, avec `--corpus`, sur chaque flux CMap embarqué de l'ensemble `all` (`corpus.json`) |
   | `fonts.py` | `pdffont` (`mod.rs`, `type1.rs`, `cff.rs`, `truetype.rs`, `frames.rs`, `unpack.rs`), cadres de `cmapdb` (`CMapDB`, `CMapParser`) | `fonts_unit.rs` | `get_widths`/`get_widths2` sur des tableaux générés (références manquantes ou cassées comprises), `getdict`, `CFFFont`, `TrueTypeFont` + `create_unicode_map` et `Type1FontHeaderParser` sur des programmes générés et mutés, dictionnaires de police générés passés par `PDFResourceManager().get_font(None, spec)` (toutes les classes, chaînes `Type0`, chaque CMap prédéfinie) avec attributs, `decode`, `to_unichr`, `char_width`, `char_disp`, `string_width` ; `depth` : pour chaque police et chaque requête, la profondeur limite (nombre de cadres en plus) mesurée par recherche dichotomique, rejouée au seuil et un cadre plus bas, police construite une fois avant (CMaps prédéfinies chargées) et, pour celles qui en chargent, caches de `CMapDB` vidés avant chaque construction (`get_font_cold` : premiers chargements) ou après la création d'un `PSStackParser` (`get_font@parsed` : le cache du logger de `psparser` rempli, comme par le parseur d'un document) ; `/ToUnicode` avec `usecmap` ; polices de documents chiffrés (`fonts` et `depth`) : chaque flux chiffré pour un gestionnaire de sécurité de chaque sorte (RC4 40 et 128 bits, V4 RC4/AES-128/identité, AES-256, clé refusée par AES), le cas portant `[docid, param, password]` et le rejeu déchiffrant par le gestionnaire porté ; avec `--corpus`, chaque police utilisée par les 20 premières pages de l'ensemble `all` (objets atteints, erreurs de `getobj`, chaînes affichées ; pour un document chiffré, copiés d'une seconde instance, flux encore chiffrés) et chaque programme embarqué (`corpus_fonts`, `corpus_programs`), et les frontières de récursion des premières polices de chaque document chiffré (`corpus_depth`) |
-  | `text_tables.py` | `pdfplumber::{obj, utils::{clustering, geometry, generic, text}, table}`, `pycompat::listsort` | `text_tables_unit.rs` | tri de CPython (timsort complet), opérateurs Python du modèle d'objets, `cluster_*`, géométrie, motifs de `extract_text_lines`, fonctions de `table.py`, `TableSettings.resolve`, pages adverses (`--fuzz`) passées par les opérations de page (`_plumber_ops.py`), pages aux coordonnées NaN (`_nan_objects.py`, ci-dessous) |
-  | `text_tables_real.py` | les mêmes | `text_tables_unit.rs` (`pages_real`) | opérations de page sur les premières pages de l'ensemble `quick` et sur des documents riches en tables ; les pages dont un caractère est un surrogate isolé sont écartées et listées dans `meta.json` |
+  | `text_tables.py` | `pdfplumber::{obj, utils::{clustering, geometry, generic, text}, table}`, `pycompat::listsort` | `text_tables_unit.rs` | tri de CPython (timsort complet), opérateurs Python du modèle d'objets, `cluster_*`, géométrie, motifs de `extract_text_lines`, fonctions de `table.py`, `TableSettings.resolve`, pages adverses (`--fuzz`) passées par les opérations de page (`_plumber_ops.py`), pages aux coordonnées NaN (`_nan_objects.py`, ci-dessous), dont des NaN qu'objets et arêtes partagent, pages aux caractères surrogates isolés, arguments de l'utilisateur de tout type (`extra_attrs`, `split_at_punctuation`, lignes explicites, `text_settings`, chaînes en coordonnées) |
+  | `text_tables_real.py` | les mêmes | `text_tables_unit.rs` (`pages_real`) | opérations de page sur les premières pages de l'ensemble `quick`, sur des documents riches en tables et sur `corpus/micro/lone-surrogates.pdf` du dépôt (caractères dont le texte est un surrogate isolé : `IdentityUnicodeMap`, `bfrange` de nombres) |
   | `document.py` | `pdfparser`, `pdfdocument` (xrefs, `getobj`, flux d'objets, mot de passe, plans, libellés, noms), `pdfpage`, `pdfplumber::page` (boîtes), `pdfinternals.resolve_all`, `pycompat::bytes_format`, le comptage des cadres (`psparser`, accesseurs, filtres, `pycompat::logging`) | `document_unit.rs` | traces des étapes `objects`, `streams`, `pages`, `psparser` sur `adv-objects` et `adv-pages` (régénérés d'abord ; fenêtres de profondeur autour de la limite des cadres comprises), `micro` et les petits fichiers de `quick` ; `objects` sur un `io.BytesIO` (erreurs de `seek`/`read` d'un `BytesIO`) ; `api` (`get_outlines`, `get_page_labels`, `lookup_name`, `get_dest`, `PDFPage.get_pages`, `repr` des pages) ; chaque trace dans un processus fils créé pour elle (`os.fork`), comme `verify` en lance un par trace, et `py_process.jsonl` (les noms internés au départ des fils), dont le rejeu repart ; `bytes % int` (formats générés, et les largeurs qu'aucune machine ne peut allouer : `MemoryError`) ; `PDFXRefFallback.PDFOBJ_CUE` sur chaque caractère Latin-1 |
 
   Les tables générées (`oracle/codegen/`) sont vérifiées par `--check` dans
-  `scripts/check.sh` : `libm_tables.py`, `saslprep_tables.py`,
+  `scripts/check.sh` : `libm_tables.py`, `atan2_tables.py`, `unicodedata_tables.py`, `saslprep_tables.py`,
   `pdfminer_tables.py` (`glyphlist`, `latin_enc`, `fontmetrics`), `pdffont_tables.py` (`NIBBLES`, `CFFFont.STANDARD_STRINGS`),
   `ccitt_tables.py`. Les CMaps prédéfinies converties par
   `oracle/codegen/cmaps.py` ne sont pas versionnées : elles vivent dans
@@ -485,6 +489,12 @@ compilation).
 scripts/heavy.sh scripts/mutants-ok.sh -f crates/pdfminer/src/arcfour.rs \
   --profile mutants -j 1 --timeout 60 -- --package=pdftrace --test=crypto_unit
 ```
+
+Dans le crate `pycompat` lui-même, la réécriture donne `Result<T,
+crate::PyErr>`. Avec `--in-diff`, le diff doit venir des fichiers réécrits
+(la même substitution `perl` appliquée à la version de base et à la
+version courante, puis `diff -u a/<fichier> b/<fichier>`) : un diff du
+dépôt ne correspond plus à la copie que voit cargo mutants.
 
 ## Définition de « fini » pour un module
 

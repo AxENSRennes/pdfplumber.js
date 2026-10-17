@@ -495,6 +495,11 @@ def adversarial_pages(rng):
                                      char_at(70, 700, text="\t"), char_at(80, 700, text="")]
     objs += word(10, 650, "   ")
     yield "blank", page_of(objs)
+    # lone surrogates (chr(cid) of IdentityUnicodeMap), Unicode spaces and
+    # a pair of surrogates in two chars: text, is_empty and get_text()
+    objs = word(10, 700, "a\ud800b\udfff") + word(10, 680, "　 ") + word(10, 660, "😀")
+    objs += [char_at(10, 640, text="\ud800́"), char_at(16, 640, text="\x85"), char_at(40, 640, text="\udbff")]
+    yield "surrogates", page_of(objs)
     # grids of equal boxes: equal distances, the heap orders them by id()
     for n, step in ((3, 40.0), (5, 30.0), (8, 25.0), (12, 40.0)):
         objs = []

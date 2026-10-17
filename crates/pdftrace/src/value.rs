@@ -57,10 +57,37 @@ impl PyStr {
     }
 }
 
-/// A UTF-16 surrogate code point (U+D800..U+DFFF).
-pub fn is_surrogate(c: u32) -> bool {
-    (0xd800..0xe000).contains(&c)
+/// The trace form of a `str` of the port.
+impl From<&pycompat::PyStr> for PyStr {
+    fn from(s: &pycompat::PyStr) -> PyStr {
+        match s.as_str() {
+            Some(text) => PyStr::Text(text.to_owned()),
+            None => PyStr::CodePoints(s.code_points().collect()),
+        }
+    }
 }
+
+/// The `str` of the port of a traced `str`.
+impl From<&PyStr> for pycompat::PyStr {
+    fn from(s: &PyStr) -> pycompat::PyStr {
+        match s {
+            PyStr::Text(text) => pycompat::PyStr::new(text),
+            PyStr::CodePoints(cps) => {
+                pycompat::PyStr::from_code_points(cps.iter().copied()).expect("code points of a str")
+            }
+        }
+    }
+}
+
+impl Value {
+    /// A `str` value of the port.
+    pub fn py_str(s: &pycompat::PyStr) -> Value {
+        Value::Str(PyStr::from(s))
+    }
+}
+
+/// A UTF-16 surrogate code point (U+D800..U+DFFF).
+pub use pycompat::pystr::is_surrogate;
 
 impl From<String> for PyStr {
     fn from(s: String) -> PyStr {
@@ -231,7 +258,7 @@ impl Value {
 
 impl From<&PyErr> for Value {
     fn from(e: &PyErr) -> Value {
-        Value::Exception { class: e.kind.trace_name(), message: PyStr::Text(e.message.clone()) }
+        Value::Exception { class: e.kind.trace_name(), message: PyStr::from(&e.py_message()) }
     }
 }
 

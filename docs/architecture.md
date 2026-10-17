@@ -77,9 +77,38 @@ observable, et seulement là.
   repli entier arbitraire) et `pycompat::Num` (`Int`/`Float`) suivent les règles
   d'arithmétique Python. Un code qui, upstream, ne voit que des floats peut
   utiliser `f64`, à condition de le justifier en commentaire.
-- **Texte** : `str` Python ↔ `String` Rust. Si un chemin upstream peut produire
-  un surrogate isolé (`chr()` sur une valeur arbitraire), le signaler et le
-  traiter explicitement (la trace le détecte).
+- **Texte** : `str` Python ↔ `pycompat::PyStr` (les octets de
+  `s.encode("utf-8", "surrogatepass")` : un surrogate isolé, que pdfminer
+  produit par `chr(cid)`, y tient comme en Python ; ordre, égalité,
+  concaténation et `in` sont ceux des octets, `as_str()` donne le `&str` d'un
+  texte sans surrogate). Le texte des objets (`LTChar`, valeurs et clés des
+  objets pdfplumber, `TextMap`, cellules de tables) et les messages
+  d'exception qui reprennent une `str` de l'utilisateur
+  (`PyErr::with_message`) l'utilisent ; une chaîne qui ne peut pas contenir
+  de surrogate (nom de classe, mot-clé de pdfminer) reste un `String`. Vers
+  JavaScript, `to_utf16`/`from_utf16` (un surrogate isolé est une unité
+  UTF-16 ; une paire valide se relit comme un seul caractère).
+- **Identité des NaN** : Python compare les éléments des conteneurs et les
+  clés de `set`/`dict` avec un raccourci d'identité (`x is y or x == y`) ;
+  une valeur NaN du modèle d'objets porte l'identité de son objet dans sa
+  charge utile (`PyValue::float` : un nouvel objet ; un clone : le même),
+  voir `obj.rs`, « NaN identity ». `PyValue::Float` tient un `PyFloat` au
+  champ privé : hors de `obj.rs`, un `float` ne se fabrique que par
+  `PyValue::float` (nouvel objet ; c'est ce qu'emploie un décodeur de
+  valeurs venues de JavaScript) ou `PyValue::float_with_identity` (cas
+  de test), jamais comme un NaN nu que toutes les valeurs partageraient.
+- **Taille des séquences** : `seq * n` (`str`, `bytes`, `tuple`, `list`)
+  lève les erreurs de CPython (`OverflowError`, `MemoryError` au-delà de
+  `PY_SSIZE_T_MAX`) et construit tout résultat de 4 Gio au plus (dans la
+  représentation du port, `obj::MAX_REPEAT_BYTES`). Au-delà, le port lève
+  `MemoryError` là où CPython tenterait l'allocation (refusée sur la
+  machine de l'oracle à partir d'environ 26 Gio) : écart accepté, puisque
+  `wasm32` ne peut adresser plus ; c'est ce que ferait CPython sur une
+  machine qui n'accorde pas l'allocation. Aucun cas généré ne tombe entre
+  les deux. Les boucles du texte en mise en page (`[x] * n`, `range(n)`
+  qui ajoute une ligne par tour) gardent leur garde de 10^7 tours
+  (`utils/text.rs`, `MAX_REPEAT`) : Python y bouclerait jusqu'à épuiser la
+  mémoire.
 - **Objets pdfplumber** (`T_obj`) : dictionnaires ordonnés à clés `str`, comme
   en Python. L'ordre des clés est celui de Python (ordre d'affectation de
   `__dict__` des objets `LT*`, puis ajouts de `process_object`). Les attributs
@@ -90,7 +119,12 @@ observable, et seulement là.
   `TypeError`, `AssertionError`, `ValueError`, `IndexError`, `zlib.error`,
   `struct.error`, `UnicodeDecodeError`, `RecursionError`, …) avec sa
   hiérarchie (`except PSException:` attrape `PSEOF`). Le message reproduit
-  `str(e)`. Les `try/except` upstream deviennent des `match` sur ces types.
+  `str(e)` ; quand il contient un surrogate isolé (une `str` de
+  l'utilisateur), `message` en est une copie avec U+FFFD, et seul
+  `PyErr::py_message()` est exact : tout ce qui montre `str(e)` (traces,
+  frontière JavaScript, en UTF-16 par `PyStr::to_utf16`) lit
+  `py_message()`. Les `try/except` upstream deviennent des `match` sur ces
+  types.
 - **Avertissements** (`logging`, `warnings.warn`) : leur texte est sans effet
   sur la sortie et remonte par un canal de diagnostics (option `onWarning`
   côté JS) ; leurs cadres Python comptent pour la profondeur de récursion
@@ -259,7 +293,9 @@ Tout ce qui imite Python vit ici, une seule fois, testé contre CPython :
 `sum()` 3.12 (Neumaier, ints exacts), `min`/`max` (premier à égalité),
 `float ** float` avec le `pow` de la bibliothèque C de l'oracle (glibc 2.39,
 variante FMA choisie sur un processeur x86-64 qui a FMA et AVX2, portée dans
-`pycompat::libm` : `f64::powf` n'est pas cette fonction en Wasm), le `hash()`
+`pycompat::libm` : `f64::powf` n'est pas cette fonction en Wasm), `math.atan2`
+(`m_atan2` de CPython puis l'`atan2` de la même glibc, variante FMA, porté
+dans `pycompat::libm` : `f64::atan2` est celui de musl en Wasm), le `hash()`
 numérique et les nombres comme clés de dict (`NumKey` : `3` trouve `3.0`),
 `round()` (arrondi bancaire décimal exact), `float.__repr__`, `int()` (limite de
 4 300 chiffres), conversions `int`→`float` (OverflowError), division réelle et

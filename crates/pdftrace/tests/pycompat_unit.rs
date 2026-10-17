@@ -217,6 +217,73 @@ fn pow() {
     });
 }
 
+/// `math.atan2(y, x)`: CPython's `m_atan2`, then the port of glibc's
+/// `atan2` (`pycompat::libm`), on every target.
+#[test]
+fn atan2() {
+    replay("atan2", |a| {
+        let (y, x) = (num(&a[0]).to_f64(), num(&a[1]).to_f64());
+        result(y.and_then(|y| Ok((y, x?))), |(y, x)| Value::Float(pycompat::libm::math_atan2(y, x)))
+    });
+}
+
+/// `pycompat::PyStr` and `unicodedata.normalize` on strings with lone
+/// surrogates, combining marks, Hangul and compatibility characters.
+#[test]
+fn pystr() {
+    use pycompat::unicodedata::NormalizationForm;
+    use pycompat::PyStr;
+    let s = |v: &Value| match v {
+        Value::Str(s) => PyStr::from(s),
+        other => panic!("not a str: {other:?}"),
+    };
+    let sv = |s: &PyStr| Value::py_str(s);
+    let usize_arg = |v: &Value| int(v) as usize;
+    replay("pystr", |a| {
+        let op = str_arg(&a[0]);
+        match op {
+            "normalize" => {
+                let x = s(&a[2]);
+                match NormalizationForm::parse(str_arg(&a[1])) {
+                    Some(form) => sv(&x.normalize(form)),
+                    None => result(pycompat::unicodedata::normalize_named(str_arg(&a[1]), &x), |r| sv(&r)),
+                }
+            }
+            "repr" => Value::str(s(&a[1]).repr()),
+            "json" => Value::str(s(&a[1]).json()),
+            "len" => Value::Int(PyInt::Small(s(&a[1]).len() as i64)),
+            "isspace" => Value::Bool(s(&a[1]).isspace()),
+            "strip" => sv(&s(&a[1]).strip()),
+            "split" => Value::List(s(&a[1]).split_whitespace().iter().map(sv).collect()),
+            "split_sep" => Value::List(s(&a[1]).split(&s(&a[2])).iter().map(sv).collect()),
+            "bytes" => Value::Bytes(s(&a[1]).as_bytes().to_vec()),
+            "utf16" => {
+                Value::List(s(&a[1]).to_utf16().into_iter().map(|u| Value::Int(PyInt::Small(i64::from(u)))).collect())
+            }
+            "from_utf16" => {
+                let Value::List(units) = &a[1] else { panic!("units") };
+                let units: Vec<u16> = units.iter().map(|u| int(u) as u16).collect();
+                sv(&PyStr::from_utf16(&units))
+            }
+            "from_surrogatepass" => {
+                let Value::Bytes(b) = &a[1] else { panic!("bytes") };
+                PyStr::from_surrogatepass_utf8(b).map_or(Value::None, |s| sv(&s))
+            }
+            "cmp" => {
+                let (x, y) = (s(&a[1]), s(&a[2]));
+                Value::List(vec![
+                    Value::Bool(x == y),
+                    Value::Bool(x < y),
+                    sv(&x.concat(&y)),
+                    Value::Bool(x.contains(&y)),
+                ])
+            }
+            "slice" => sv(&s(&a[1]).slice(usize_arg(&a[2]), usize_arg(&a[3]))),
+            other => panic!("{other}"),
+        }
+    });
+}
+
 #[test]
 fn compare() {
     replay("compare", |a| {
@@ -424,4 +491,44 @@ fn recursion_limits() {
             other => panic!("{other}"),
         }
     }
+}
+
+/// `PyErr::with_message`: a message with a lone surrogate keeps its exact
+/// text for `py_message()` (what traces and the JavaScript boundary show)
+/// and a U+FFFD copy in `message` (Rust-side checks only); any other
+/// message is plain text. (The messages themselves are oracle cases of
+/// `text_tables`, compared through `py_message`.)
+#[test]
+fn surrogate_error_message() {
+    use pycompat::{PyErr, PyStr};
+    let m = PyStr::from_code_points([0x61, 0xd800, 0x62]).unwrap();
+    let e = PyErr::with_message(ExcKind::KeyError, &m);
+    assert_eq!((e.kind, e.message.as_str()), (ExcKind::KeyError, "a\u{fffd}b"));
+    assert_eq!(e.py_message(), m);
+    let e = PyErr::with_message(ExcKind::ValueError, &PyStr::new("ab"));
+    assert_eq!(e.message, "ab");
+    assert!(e.surrogate_message.is_none());
+    assert_eq!(e.py_message(), PyStr::new("ab"));
+}
+
+/// The Rust conversions and comparisons of `PyStr` (port API, no Python
+/// counterpart): every constructor from Rust text gives the same `str`,
+/// `==` with Rust text, both ways, is equality of the text (a `str` with a
+/// surrogate equals no Rust text), and `{:?}` is `repr()` (`pystr` cases).
+#[test]
+fn pystr_rust_conversions() {
+    use pycompat::PyStr;
+    let s = PyStr::new("\u{e9}a");
+    assert_eq!(PyStr::from("\u{e9}a"), s);
+    assert_eq!(PyStr::from(String::from("\u{e9}a")), s);
+    assert_eq!(PyStr::from(&String::from("\u{e9}a")), s);
+    assert_eq!(PyStr::from(&s), s);
+    assert_eq!(PyStr::from('\u{e9}'), PyStr::new("\u{e9}"));
+    assert_eq!(PyStr::from('\u{1f600}').len(), 1);
+    assert!(s == *"\u{e9}a" && s == "\u{e9}a" && *"\u{e9}a" == s && "\u{e9}a" == s);
+    assert!(s != *"\u{e9}" && s != "a" && *"a" != s && "b" != s);
+    let sur = PyStr::from_code_points([0x61, 0xd800]).unwrap();
+    assert!(sur != *"a" && sur != "a\u{fffd}" && "a\u{fffd}" != sur);
+    assert_eq!(format!("{sur:?}"), "'a\\ud800'");
+    assert_eq!(format!("{s:?}"), s.repr());
 }

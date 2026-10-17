@@ -419,6 +419,63 @@ def broken_recovery() -> PDF:
     return pdf
 
 
+def lone_surrogates() -> PDF:
+    """Chars whose text is a lone surrogate: an ``IdentityUnicodeMap``
+    (``/ToUnicode /Identity-H``, a name) gives ``chr(cid)`` for CIDs
+    U+D800..U+DFFF, and a ``ToUnicode`` CMap whose ``bfrange`` destination
+    array holds a number gives ``chr(number)``. Lines and columns of them,
+    for the text and table operations."""
+    pdf = PDF()
+    descendant = pdf.add(
+        "<< /Type /Font /Subtype /CIDFontType2 /BaseFont /MicroIdentity /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> "
+        "/FontDescriptor << /Type /FontDescriptor /FontName /MicroIdentity /Flags 32 /Ascent 718 /Descent -207 /CapHeight 718 /ItalicAngle 0 /StemV 80 >> "
+        "/DW 600 >>"
+    )
+    identity = pdf.add(f"<< /Type /Font /Subtype /Type0 /BaseFont /MicroIdentity /Encoding /Identity-H /DescendantFonts [{descendant} 0 R] /ToUnicode /Identity-H >>")
+    cmap = "\n".join(
+        [
+            "/CIDInit /ProcSet findresource begin",
+            "12 dict begin",
+            "begincmap",
+            "/CMapName /MicroNumbers def",
+            "1 begincodespacerange",
+            "<0000> <FFFF>",
+            "endcodespacerange",
+            "1 beginbfchar",
+            "<0003> <0041>",
+            "endbfchar",
+            "2 beginbfrange",
+            "<0001> <0002> [55296 57343]",
+            "<0004> <0004> [56320]",
+            "endbfrange",
+            "endcmap",
+            "end",
+            "end",
+        ]
+    )
+    numbers_cmap = pdf.stream("", cmap)
+    numbers = pdf.add(f"<< /Type /Font /Subtype /Type0 /BaseFont /MicroNumbers /Encoding /Identity-H /DescendantFonts [{descendant} 0 R] /ToUnicode {numbers_cmap} 0 R >>")
+    lines = []
+    for row in range(4):
+        y = 300 - row * 20
+        lines.append(f"BT /F1 10 Tf 20 {y} Td <D800 0041 DFFF 0020 D83D DE00 0042> Tj 40 0 Td <DBFF 0043 0044> Tj ET")
+        lines.append(f"BT /F2 10 Tf 160 {y} Td <0001 0003 0002 0004> Tj 40 0 Td <0003 0001> Tj ET")
+    lines.append("BT /F1 10 Tf 20 200 Td <0041 0020 0042 0020 D800> Tj ET")
+    for k in range(5):
+        x = 20 + k * 50
+        lines.append(f"{x} 120 m {x} 180 l S")
+    for k in range(3):
+        y = 120 + k * 30
+        lines.append(f"20 {y} m 220 {y} l S")
+    lines.append("BT /F1 10 Tf 25 160 Td <D800> Tj 50 0 Td <0041 DC00> Tj 50 0 Td <DFFF DFFF> Tj ET")
+    lines.append("BT /F2 10 Tf 25 130 Td <0001> Tj 50 0 Td <0004 0003> Tj ET")
+    content_obj = pdf.stream("", "\n".join(lines))
+    page = pdf.add(f"<< /Type /Page /MediaBox [0 0 320 340] /Resources << /Font << /F1 {identity} 0 R /F2 {numbers} 0 R >> >> /Contents {content_obj} 0 R >>")
+    root = page_tree(pdf, page)
+    pdf.root = root  # type: ignore[attr-defined]
+    return pdf
+
+
 FIXTURES = {
     "text-operators.pdf": text_operators,
     "type3-simple.pdf": type3_simple,
@@ -435,6 +492,7 @@ FIXTURES = {
     "annotations-extended.pdf": annotations_extended,
     "images-advanced.pdf": images_advanced,
     "broken-recovery.pdf": broken_recovery,
+    "lone-surrogates.pdf": lone_surrogates,
 }
 
 

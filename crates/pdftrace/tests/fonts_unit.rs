@@ -89,7 +89,7 @@ use std::rc::{Rc, Weak};
 
 use pdfminer::casting::IterItem;
 use pdfminer::cmapdb::{AttrValue, CMapBase, CMapDB, DirCMapProvider, Unichr, UnicodeMap};
-use pdfminer::layout::{CharDisp, LTCharFont, LTPayload};
+use pdfminer::layout::{CharDisp, LTChar, LTCharFont, LTPayload};
 use pdfminer::pdfdocument::{security_handler_registry, PDFStandardSecurityHandler};
 use pdfminer::pdffont::cff::SidName;
 use pycompat::logging::disable as clear_logger_cache;
@@ -556,6 +556,24 @@ fn check_ltchar_font(font: &PDFFont) {
     assert_eq!(canon(&via), canon(&direct), "LTCharFont::get_descent");
 }
 
+/// `LTChar(..., font, ..., text=font.to_unichr(cid), ...)` (what
+/// `PDFLayoutAnalyzer.render_char` builds): the char's text is the font's
+/// (`Unichr` into the layout's `PyStr`, a lone surrogate included), which
+/// the report compares with Python. Fonts whose `LTChar` cannot be built
+/// (a vertical displacement that is not a number) are skipped here.
+fn check_ltchar_text(font: &PDFFont, cid: &PyInt, u: &Unichr) {
+    let Ok(textdisp) = font.char_disp(cid) else { return };
+    let (zero, one) = (Num::Int(PyInt::ZERO), Num::Int(PyInt::Small(1)));
+    let matrix = [one.clone(), zero.clone(), zero.clone(), one.clone(), zero.clone(), zero.clone()];
+    let gray = pdfminer::pdfcolor::predefined_colorspace("DeviceGray").expect("DeviceGray");
+    let built = recursion::with_depth(Depth::default(), || {
+        LTChar::<FP>::new(matrix, font, Num::Float(1.0), one, zero.clone(), u.clone(), zero, textdisp, gray, ())
+    });
+    if let Ok(ch) = built {
+        assert_eq!(canon(&Value::py_str(ch.get_text())), canon(&unichr(u)), "LTChar text of cid {cid}");
+    }
+}
+
 /// `decode_loop(font, s)` called through `attempt`.
 fn decode_loop(font: &PDFFont, s: &[u8]) -> PyResult<Vec<PyInt>> {
     in_frame(|| font.decode(s))
@@ -593,7 +611,10 @@ fn font_queries(font: &PDFFont, strings: &[Value], probes: &[Value]) -> Value {
         .map(|cid| {
             Value::List(vec![
                 Value::Int(cid.clone()),
-                res(font.to_unichr(cid), |u| unichr(&u)),
+                res(font.to_unichr(cid), |u| {
+                    check_ltchar_text(font, cid, &u);
+                    unichr(&u)
+                }),
                 call_seq(|| font.char_width(cid)),
                 res(font.char_disp(cid), |d| char_disp(&d)),
             ])

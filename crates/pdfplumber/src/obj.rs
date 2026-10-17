@@ -26,28 +26,78 @@
 //!   `object_type`, `y0`, `y1`) are found through a small index instead of
 //!   a scan.
 //!
-//! The identity of float objects is not part of a [`PyValue`]. CPython
-//! compares container items and looks up set and dict keys with an
-//! identity shortcut (`x is y or x == y`), so a NaN found again through the
-//! *same* object is equal to itself, and `hash(nan)` is its object's
-//! address. Here [`PyValue::py_eq`] never finds a NaN equal to anything;
-//! the places where pdfplumber meets a NaN again through the same object
-//! model it from where the value comes from:
+//! # NaN identity
 //!
-//! - `cluster_objects` (`utils/clustering.rs`): a key read from the item
-//!   (`itemgetter`) finds its own cluster, a computed one does not; the
-//!   order of the NaNs in `set(values)`, which in CPython follows their
-//!   addresses, is fixed (after the other values, in their order).
-//! - `intersections_to_cells` (`table.rs`): the bbox of one edge dict
-//!   ([`Obj::addr`]) is equal to itself.
+//! CPython compares container items, looks up set and dict keys and tests
+//! membership with an identity shortcut (`PyObject_RichCompareBool`: `x is
+//! y or x == y`), so a NaN is equal to itself *as the same object*, and
+//! `hash(nan)` is its object's address. The identity of a float matters
+//! only for a NaN (any other float equals itself), and a [`PyValue`]
+//! carries it in the NaN's payload: [`PyValue::float`] gives every NaN it
+//! makes a payload of its own (a new object, as each computation makes in
+//! Python), and a clone keeps it (the same object: `min()` returning one of
+//! its arguments, `itemgetter`, `dict(obj)` sharing the values). Then:
 //!
-//! Every other occurrence of a NaN is taken to be its own object, as
-//! pdfplumber computes each coordinate of each object. Not modeled (no
-//! real page gives them): two distinct objects sharing one NaN object (a
-//! dict copied by the user), and NaN cell coordinates in `Table.rows` and
-//! `Table.columns`, where Python looks a NaN up in a dict by identity. A
-//! `str` holding a lone surrogate cannot be represented (`str` is a Rust
-//! `str`).
+//! - `a == b` ([`PyValue::py_eq`]) is the operator: a NaN never equals
+//!   anything;
+//! - [`PyValue::eq_bool`] is `PyObject_RichCompareBool`: a NaN equals the
+//!   same object. The items of a `tuple` or `list` and the values of a
+//!   `dict` compare with it (also in `<`, which looks for the first items
+//!   that differ), as do [`HashKey`]s (sets and dicts) and `in`;
+//! - the order in which a `set` lists NaNs, which follows their addresses
+//!   in CPython, is fixed by the port where it matters
+//!   (`utils/clustering.rs`).
+//!
+//! A `float` value is a [`PyFloat`], whose field is private: it is made by
+//! [`PyValue::float`] or [`PyValue::float_with_identity`] (or copied from
+//! another value), so every NaN carries an identity; code outside this
+//! module cannot write a bare `f64::NAN`, which would be one object shared
+//! by every such NaN.
+//!
+//! Values made from outside (a JavaScript number, a value of a test case)
+//! are new objects, except that a NaN whose payload already carries an
+//! identity keeps it ([`PyValue::float_with_identity`]): the generators of
+//! the test cases write each distinct NaN object of a case with a payload
+//! of its own, so that sharing (`rect_to_edges` gives the edges of a rect
+//! its very coordinate objects) survives the serialization. Code that
+//! builds objects (the port of `page.py`) gives a NaN one identity per
+//! Python object and clones the value wherever Python shares the object
+//! (`LTChar.size` is its `height` or `width`, `bbox` holds `x0`...).
+//!
+//! Text is Python's `str` ([`PyStr`]): values and keys may hold lone
+//! surrogates (a char's text from `chr(cid)`, a key or value a user gives).
+//!
+//! # Mutation testing
+//!
+//! Wave 2 review (`cargo mutants` on the lines of `obj.rs`, `table.rs`,
+//! `utils/{text,clustering,geometry}.rs` changed since wave 1, `--in-diff`,
+//! with `--test=text_tables_unit -- --skip pages_real`; then
+//! `scripts/mutants-ok.sh` for the `Ok(..)` mutants): every mutant is caught
+//! except these, which change no result:
+//!
+//! - `intern`: the size cap of the interning table (`< 4096` made `<=`,
+//!   `==`, `>`), and `Hot::of` made `None` (its only caller is `intern`):
+//!   they only decide whether equal keys share one allocation.
+//! - `fresh_nan`: `|` made `^` (the quiet-NaN bits, the port's bit 50 and
+//!   the counter below it are disjoint).
+//! - `hash_num` made `true` or `false`: every number, or every other value,
+//!   then hashes alike; `HashKey` equality still decides, and equal values
+//!   still hash alike.
+//! - `table.rs`, `ordered_number` made `false` (or its float arm deleted):
+//!   it only enables the binary search of `edges_to_intersections`; without
+//!   it the scan is upstream's.
+//! - `table.rs`, `TableSettings::text_settings_kwargs`, the `!v.truthy()`
+//!   guard made `false`: `settings.text_settings or {}` on a false value
+//!   that is not a dict, which `TableSettings::new` and `resolve` never
+//!   leave (`__post_init__` makes `None` a dict and raises for every
+//!   other false value: `x in v` or `v[k] = ...` fails on `0`, `""`,
+//!   `[]`, `()`...; the `user_arg_cases` check these).
+//!
+//! The `Ok(..)` pass (diff made from the rewritten files): 79 mutants, 72
+//! caught; the 7 unviable ones (`Ok(Default::default())` for types without
+//! a default) were replaced by hand with concrete values (`num_operands`,
+//! `set_clusters`, `clusters`, `cluster_objects`, `WordMap::to_textmap`),
+//! and each fails the replay.
 
 use rustc_hash::FxHashMap as HashMap;
 use std::cell::RefCell;
@@ -57,37 +107,93 @@ use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
 use pdfminer::pdftypes::PDFObject;
-use pycompat::float::float_div;
+use pycompat::float::{float_div, float_from_bytes, float_from_str};
 use pycompat::repr::{bytes_repr, float_repr, str_repr};
-use pycompat::{exc, Num, PyErr, PyInt, PyResult};
+use pycompat::{exc, Num, PyErr, PyInt, PyResult, PyStr};
 
 // -- keys ---------------------------------------------------------------------
 
 thread_local! {
-    static INTERNED: RefCell<HashMap<Box<str>, Rc<str>>> = RefCell::new(HashMap::default());
-    static HOT_KEYS: [Rc<str>; HOT_N] = std::array::from_fn(|i| Rc::from(HOT[i].name()));
+    static INTERNED: RefCell<HashMap<Box<[u8]>, PyStr>> = RefCell::new(HashMap::default());
+    static HOT_KEYS: [PyStr; HOT_N] = std::array::from_fn(|i| PyStr::new(HOT[i].name()));
+}
+
+/// A dict key: a `str`, given as Rust text or as a [`PyStr`].
+pub trait Key {
+    /// The key's bytes (`surrogatepass` UTF-8, as [`PyStr::as_bytes`]).
+    fn key_bytes(&self) -> &[u8];
+    /// The key as a stored `str` (interned when it is Rust text).
+    fn to_key(&self) -> PyStr;
+}
+
+impl Key for str {
+    fn key_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+    fn to_key(&self) -> PyStr {
+        intern(self)
+    }
+}
+
+impl Key for String {
+    fn key_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+    fn to_key(&self) -> PyStr {
+        intern(self)
+    }
+}
+
+impl Key for PyStr {
+    fn key_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+    fn to_key(&self) -> PyStr {
+        match self.as_str() {
+            Some(s) => intern(s),
+            None => self.clone(),
+        }
+    }
+}
+
+impl Key for Rc<str> {
+    fn key_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+    fn to_key(&self) -> PyStr {
+        intern(self)
+    }
+}
+
+impl<K: Key + ?Sized> Key for &K {
+    fn key_bytes(&self) -> &[u8] {
+        (**self).key_bytes()
+    }
+    fn to_key(&self) -> PyStr {
+        (**self).to_key()
+    }
 }
 
 /// A shared copy of a dict key (keys repeat across thousands of objects).
-pub fn intern(key: &str) -> Rc<str> {
+pub fn intern(key: &str) -> PyStr {
     if let Some(h) = Hot::of(key) {
         return hot_key(h);
     }
     INTERNED.with(|m| {
         let mut m = m.borrow_mut();
-        if let Some(k) = m.get(key) {
+        if let Some(k) = m.get(key.as_bytes()) {
             return k.clone();
         }
-        let k: Rc<str> = Rc::from(key);
+        let k = PyStr::new(key);
         if m.len() < 4096 {
-            m.insert(Box::from(key), k.clone());
+            m.insert(Box::from(key.as_bytes()), k.clone());
         }
         k
     })
 }
 
 /// The shared copy of a hot key.
-fn hot_key(h: Hot) -> Rc<str> {
+fn hot_key(h: Hot) -> PyStr {
     HOT_KEYS.with(|keys| keys[h as usize].clone())
 }
 
@@ -152,29 +258,37 @@ impl Hot {
     }
 
     pub fn of(key: &str) -> Option<Hot> {
+        Hot::of_bytes(key.as_bytes())
+    }
+
+    /// The hot key whose bytes are `key`.
+    pub fn of_bytes(key: &[u8]) -> Option<Hot> {
         Some(match key {
-            "x0" => Hot::X0,
-            "top" => Hot::Top,
-            "x1" => Hot::X1,
-            "bottom" => Hot::Bottom,
-            "doctop" => Hot::Doctop,
-            "width" => Hot::Width,
-            "height" => Hot::Height,
-            "text" => Hot::Text,
-            "upright" => Hot::Upright,
-            "size" => Hot::Size,
-            "orientation" => Hot::Orientation,
-            "object_type" => Hot::ObjectType,
-            "y0" => Hot::Y0,
-            "y1" => Hot::Y1,
+            b"x0" => Hot::X0,
+            b"top" => Hot::Top,
+            b"x1" => Hot::X1,
+            b"bottom" => Hot::Bottom,
+            b"doctop" => Hot::Doctop,
+            b"width" => Hot::Width,
+            b"height" => Hot::Height,
+            b"text" => Hot::Text,
+            b"upright" => Hot::Upright,
+            b"size" => Hot::Size,
+            b"orientation" => Hot::Orientation,
+            b"object_type" => Hot::ObjectType,
+            b"y0" => Hot::Y0,
+            b"y1" => Hot::Y1,
             _ => return None,
         })
     }
 }
 
 /// `KeyError(key)` for a `str` key: `str(e)` is the key's `repr`.
-pub fn key_error(key: &str) -> PyErr {
-    exc::KeyError(str_repr(key))
+pub fn key_error(key: &(impl Key + ?Sized)) -> PyErr {
+    match std::str::from_utf8(key.key_bytes()) {
+        Ok(s) => exc::KeyError(str_repr(s)),
+        Err(_) => exc::KeyError(key.to_key().repr()),
+    }
 }
 
 // -- values -------------------------------------------------------------------
@@ -185,8 +299,9 @@ pub enum PyValue {
     None,
     Bool(bool),
     Int(PyInt),
-    Float(f64),
-    Str(Rc<str>),
+    /// A `float` (see [`PyFloat`]).
+    Float(PyFloat),
+    Str(PyStr),
     Bytes(Rc<[u8]>),
     Tuple(Rc<[PyValue]>),
     List(Rc<[PyValue]>),
@@ -195,6 +310,30 @@ pub enum PyValue {
     /// (`PSLiteral`, `PSKeyword`, `PDFStream`, `PDFObjRef`, and the `list`
     /// and `dict` objects of a PDF structure, which keep their identity).
     Pdf(PDFObject),
+}
+
+/// The value of a Python `float` object. A NaN carries its object's
+/// identity in its payload (see "NaN identity" in the module
+/// documentation); the field is private so that no code outside this
+/// module writes a NaN without one: values are made by [`PyValue::float`]
+/// and [`PyValue::float_with_identity`], and copying one keeps its object.
+///
+/// ```compile_fail
+/// // a bare NaN would be one object shared by every such value
+/// let v = pdfplumber::obj::PyValue::Float(pdfplumber::obj::PyFloat(f64::NAN));
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PyFloat(f64);
+
+impl PyFloat {
+    /// `0.0`
+    pub const ZERO: PyFloat = PyFloat(0.0);
+
+    /// The number (a NaN with its identity payload).
+    #[inline]
+    pub fn get(self) -> f64 {
+        self.0
+    }
 }
 
 /// `None`. (A default lets cargo mutants replace a function returning a
@@ -215,15 +354,41 @@ impl From<Num> for PyValue {
     fn from(n: Num) -> PyValue {
         match n {
             Num::Int(i) => PyValue::Int(i),
-            Num::Float(x) => PyValue::Float(x),
+            Num::Float(x) => PyValue::float(x),
         }
     }
 }
 
+/// A new `float` object ([`PyValue::float`]).
 impl From<f64> for PyValue {
     fn from(x: f64) -> PyValue {
-        PyValue::Float(x)
+        PyValue::float(x)
     }
+}
+
+/// The payload bit of the NaN identities the port makes; the generators of
+/// test cases use payloads without it.
+const FRESH_NAN: u64 = 1 << 50;
+
+thread_local! {
+    static NAN_COUNTER: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// The payload of a NaN (the mantissa bits below the quiet bit): its
+/// identity, 0 for none.
+#[inline]
+fn nan_payload(x: f64) -> u64 {
+    x.to_bits() & ((1 << 51) - 1)
+}
+
+/// A quiet NaN with a payload no other NaN of this thread has.
+fn fresh_nan() -> f64 {
+    let k = NAN_COUNTER.with(|c| {
+        let k = c.get().wrapping_add(1) & (FRESH_NAN - 1);
+        c.set(k);
+        k
+    });
+    f64::from_bits(0x7ff8_0000_0000_0000 | FRESH_NAN | k)
 }
 
 impl From<i64> for PyValue {
@@ -240,13 +405,19 @@ impl From<bool> for PyValue {
 
 impl From<&str> for PyValue {
     fn from(s: &str) -> PyValue {
-        PyValue::Str(Rc::from(s))
+        PyValue::Str(PyStr::new(s))
     }
 }
 
 impl From<String> for PyValue {
     fn from(s: String) -> PyValue {
-        PyValue::Str(Rc::from(s))
+        PyValue::Str(PyStr::new(&s))
+    }
+}
+
+impl From<PyStr> for PyValue {
+    fn from(s: PyStr) -> PyValue {
+        PyValue::Str(s)
     }
 }
 
@@ -288,7 +459,25 @@ impl CmpOp {
 impl PyValue {
     /// A `str` value.
     pub fn str(s: &str) -> PyValue {
-        PyValue::Str(Rc::from(s))
+        PyValue::Str(PyStr::new(s))
+    }
+
+    /// A new `float` object: a NaN gets an identity of its own (see the
+    /// module documentation).
+    #[inline]
+    pub fn float(x: f64) -> PyValue {
+        PyValue::Float(PyFloat(if x.is_nan() { fresh_nan() } else { x }))
+    }
+
+    /// A `float` from outside the port: a NaN whose payload holds an
+    /// identity (non-zero, without the port's own bit) keeps it, any other
+    /// NaN is a new object.
+    pub fn float_with_identity(x: f64) -> PyValue {
+        let payload = nan_payload(x);
+        if x.is_nan() && (payload == 0 || payload & FRESH_NAN != 0) {
+            return PyValue::Float(PyFloat(fresh_nan()));
+        }
+        PyValue::Float(PyFloat(x))
     }
 
     /// A `tuple` value.
@@ -308,7 +497,7 @@ impl PyValue {
             PDFObject::Null => PyValue::None,
             PDFObject::Bool(b) => PyValue::Bool(b),
             PDFObject::Int(i) => PyValue::Int(i),
-            PDFObject::Float(x) => PyValue::Float(x),
+            PDFObject::Float(x) => PyValue::float(x),
             PDFObject::Bytes(b) => PyValue::Bytes(b),
             other => PyValue::Pdf(other),
         }
@@ -366,7 +555,7 @@ impl PyValue {
             PyValue::None => false,
             PyValue::Bool(b) => *b,
             PyValue::Int(i) => !i.is_zero(),
-            PyValue::Float(x) => *x != 0.0,
+            PyValue::Float(PyFloat(x)) => *x != 0.0,
             PyValue::Str(s) => !s.is_empty(),
             PyValue::Bytes(b) => !b.is_empty(),
             PyValue::Tuple(t) | PyValue::List(t) => !t.is_empty(),
@@ -380,7 +569,7 @@ impl PyValue {
     #[inline]
     pub fn as_num(&self) -> Option<Num> {
         match self {
-            PyValue::Float(x) => Some(Num::Float(*x)),
+            PyValue::Float(PyFloat(x)) => Some(Num::Float(*x)),
             PyValue::Int(i) => Some(Num::Int(i.clone())),
             PyValue::Bool(b) => Some(Num::Int(PyInt::Small(i64::from(*b)))),
             PyValue::Pdf(_) => self.as_python()?.as_num(),
@@ -388,8 +577,17 @@ impl PyValue {
         }
     }
 
-    /// The text of a `str`.
+    /// The text of a `str` without surrogates (a `str` with one is equal
+    /// to no Rust text).
     pub fn as_str(&self) -> Option<&str> {
+        match self {
+            PyValue::Str(s) => s.as_str(),
+            _ => None,
+        }
+    }
+
+    /// A `str`.
+    pub fn as_pystr(&self) -> Option<&PyStr> {
         match self {
             PyValue::Str(s) => Some(s),
             _ => None,
@@ -422,8 +620,8 @@ impl PyValue {
             PyValue::Int(i) => {
                 let _ = write!(out, "{i}");
             }
-            PyValue::Float(x) => out.push_str(&float_repr(*x)),
-            PyValue::Str(s) => out.push_str(&str_repr(s)),
+            PyValue::Float(PyFloat(x)) => out.push_str(&float_repr(*x)),
+            PyValue::Str(s) => out.push_str(&s.repr()),
             PyValue::Bytes(b) => out.push_str(&bytes_repr(b)),
             PyValue::Tuple(t) => {
                 out.push('(');
@@ -454,7 +652,7 @@ impl PyValue {
                     if i > 0 {
                         out.push_str(", ");
                     }
-                    out.push_str(&str_repr(k));
+                    out.push_str(&k.repr());
                     out.push_str(": ");
                     v.write_repr(out);
                 }
@@ -468,18 +666,30 @@ impl PyValue {
     }
 
     /// `str(v)` (`repr` except for `str` itself).
-    pub fn py_str(&self) -> String {
+    pub fn py_str(&self) -> PyStr {
         match self {
-            PyValue::Str(s) => s.to_string(),
-            other => other.repr(),
+            PyValue::Str(s) => s.clone(),
+            other => PyStr::from(other.repr()),
         }
     }
 
     // -- ==, <, hash ------------------------------------------------------------
 
-    /// `a == b` (no identity shortcut: see the module documentation).
+    /// `a is b or a == b` (`PyObject_RichCompareBool`): `==` with the
+    /// identity shortcut, which only a NaN can tell apart (see the module
+    /// documentation; a `dict` is equal to itself through [`Obj::py_eq`]).
+    #[inline]
+    pub fn eq_bool(&self, other: &PyValue) -> bool {
+        if let (PyValue::Float(PyFloat(a)), PyValue::Float(PyFloat(b))) = (self, other) {
+            return a == b || (a.is_nan() && a.to_bits() == b.to_bits());
+        }
+        self.py_eq(other)
+    }
+
+    /// `a == b`, the operator: a NaN equals nothing; the items of
+    /// containers compare with [`PyValue::eq_bool`].
     pub fn py_eq(&self, other: &PyValue) -> bool {
-        if let (PyValue::Float(a), PyValue::Float(b)) = (self, other) {
+        if let (PyValue::Float(PyFloat(a)), PyValue::Float(PyFloat(b))) = (self, other) {
             return a == b;
         }
         if let Some((a, b)) = self.as_python2(other) {
@@ -493,7 +703,7 @@ impl PyValue {
             (PyValue::Str(a), PyValue::Str(b)) => a == b,
             (PyValue::Bytes(a), PyValue::Bytes(b)) => a == b,
             (PyValue::Tuple(a), PyValue::Tuple(b)) | (PyValue::List(a), PyValue::List(b)) => {
-                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.py_eq(y))
+                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.eq_bool(y))
             }
             (PyValue::Dict(a), PyValue::Dict(b)) => a.py_eq(b),
             (PyValue::Pdf(a), PyValue::Pdf(b)) => a == b,
@@ -504,7 +714,7 @@ impl PyValue {
     /// `a < b`, `a <= b`, `a > b` or `a >= b`, with CPython's `TypeError`
     /// for unorderable types.
     pub fn compare(&self, other: &PyValue, op: CmpOp) -> PyResult<bool> {
-        if let (PyValue::Float(a), PyValue::Float(b)) = (self, other) {
+        if let (PyValue::Float(PyFloat(a)), PyValue::Float(PyFloat(b))) = (self, other) {
             return Ok(match op {
                 CmpOp::Lt => a < b,
                 CmpOp::Le => a <= b,
@@ -519,13 +729,13 @@ impl PyValue {
             return Ok(a.py_cmp(&b).is_some_and(|o| op.holds(o)));
         }
         match (self, other) {
-            (PyValue::Str(a), PyValue::Str(b)) => Ok(op.holds(a.as_ref().cmp(b.as_ref()))),
+            (PyValue::Str(a), PyValue::Str(b)) => Ok(op.holds(a.cmp(b))),
             (PyValue::Bytes(a), PyValue::Bytes(b)) => Ok(op.holds(a.as_ref().cmp(b.as_ref()))),
             (PyValue::Tuple(a), PyValue::Tuple(b)) | (PyValue::List(a), PyValue::List(b)) => {
                 // tuplerichcompare / list_richcompare: the first items that
                 // differ decide, else the lengths.
                 for (x, y) in a.iter().zip(b.iter()) {
-                    if !x.py_eq(y) {
+                    if !x.eq_bool(y) {
                         return x.compare(y, op);
                     }
                 }
@@ -586,9 +796,9 @@ impl PyValue {
         }
     }
 
-    /// The numbers of a binary operation, or its error: a sequence
-    /// operation that Python would perform (`str + str`, `str * int`) is
-    /// outside the model.
+    /// The numbers of a binary operation, or its error (the sequence
+    /// operations, `str + str` or `list * int`, are [`PyValue::add`]'s and
+    /// [`PyValue::mul`]'s).
     fn num_operands(&self, op: &str, other: &PyValue) -> PyResult<(Num, Num)> {
         if let Some((a, b)) = self.as_python2(other) {
             return a.num_operands(op, &b);
@@ -596,22 +806,8 @@ impl PyValue {
         match (self.as_num(), other.as_num()) {
             (Some(a), Some(b)) => Ok((a, b)),
             _ => {
-                let seq = |v: &PyValue| {
-                    matches!(v, PyValue::Str(_) | PyValue::Bytes(_) | PyValue::Tuple(_) | PyValue::List(_))
-                };
-                let same_seq = op == "+" && seq(self) && self.type_name() == other.type_name();
-                let repeat = op == "*"
-                    && ((seq(self) && matches!(other, PyValue::Int(_) | PyValue::Bool(_)))
-                        || (seq(other) && matches!(self, PyValue::Int(_) | PyValue::Bool(_))));
-                if same_seq || repeat {
-                    return Err(PyErr::not_ported(&format!(
-                        "{} {op} {} on sequences",
-                        self.type_name(),
-                        other.type_name()
-                    )));
-                }
-                if op == "*" && (seq(self) || seq(other)) {
-                    let non_int = if seq(self) { other } else { self };
+                if op == "*" && (self.is_sequence() || other.is_sequence()) {
+                    let non_int = if self.is_sequence() { other } else { self };
                     return Err(exc::TypeError(format!(
                         "can't multiply sequence by non-int of type '{}'",
                         non_int.type_name()
@@ -622,11 +818,93 @@ impl PyValue {
         }
     }
 
+    /// A `str`, `bytes`, `tuple` or `list` (the sequences with `+` and `*`).
+    fn is_sequence(&self) -> bool {
+        matches!(self, PyValue::Str(_) | PyValue::Bytes(_) | PyValue::Tuple(_) | PyValue::List(_))
+    }
+
+    /// `a + b` of two sequences of the same type (`unicode_concatenate`,
+    /// `bytes_concat`, `tuple_concat`, `list_concat`), `None` for other
+    /// operands.
+    fn seq_concat(&self, other: &PyValue) -> Option<PyResult<PyValue>> {
+        if let Some((a, b)) = self.as_python2(other) {
+            return a.seq_concat(&b);
+        }
+        Some(Ok(match (self, other) {
+            (PyValue::Str(a), PyValue::Str(b)) => PyValue::Str(a.concat(b)),
+            // (the operands exist: no size beyond what memory holds)
+            (PyValue::Bytes(a), PyValue::Bytes(b)) => PyValue::Bytes(a.iter().chain(b.iter()).copied().collect()),
+            (PyValue::Tuple(a), PyValue::Tuple(b)) => PyValue::Tuple(a.iter().chain(b.iter()).cloned().collect()),
+            (PyValue::List(a), PyValue::List(b)) => PyValue::List(a.iter().chain(b.iter()).cloned().collect()),
+            _ => return None,
+        }))
+    }
+
+    /// `seq * n` or `n * seq` for a sequence and an `int` (`bool`
+    /// included), `None` for other operands. `n` must fit a `Py_ssize_t`
+    /// (`OverflowError`); `n <= 0` gives an empty sequence; a result longer
+    /// than `PY_SSIZE_T_MAX` raises CPython's error (`OverflowError` for
+    /// `str` and `bytes`, `MemoryError` for `tuple` and `list`); a result
+    /// beyond [`MAX_REPEAT_BYTES`] raises `MemoryError` (where CPython
+    /// would try to allocate it).
+    fn seq_repeat(&self, other: &PyValue) -> Option<PyResult<PyValue>> {
+        if let Some((a, b)) = self.as_python2(other) {
+            return a.seq_repeat(&b);
+        }
+        let (seq, n) = match (self, other) {
+            (s, PyValue::Int(_) | PyValue::Bool(_)) if s.is_sequence() => (s, other),
+            (PyValue::Int(_) | PyValue::Bool(_), s) if s.is_sequence() => (s, self),
+            _ => return None,
+        };
+        Some(seq.repeat(n))
+    }
+
+    fn repeat(&self, n: &PyValue) -> PyResult<PyValue> {
+        let n = match n {
+            PyValue::Bool(b) => i64::from(*b),
+            PyValue::Int(i) => {
+                i.as_i64().ok_or_else(|| exc::OverflowError("cannot fit 'int' into an index-sized integer"))?
+            }
+            _ => unreachable!("an int"),
+        };
+        let n = n.max(0) as u64;
+        let len = match self {
+            PyValue::Str(s) => s.len(),
+            PyValue::Bytes(b) => b.len(),
+            PyValue::Tuple(t) | PyValue::List(t) => t.len(),
+            _ => unreachable!("a sequence"),
+        } as u64;
+        if n > 0 && len > i64::MAX as u64 / n {
+            return Err(match self {
+                PyValue::Str(_) => exc::OverflowError("repeated string is too long"),
+                PyValue::Bytes(_) => exc::OverflowError("repeated bytes are too long"),
+                _ => exc::MemoryError(""),
+            });
+        }
+        let (units, item_size) = match self {
+            PyValue::Str(s) => (s.as_bytes().len() as u64, 1),
+            PyValue::Bytes(_) => (len, 1),
+            _ => (len, std::mem::size_of::<PyValue>() as u64),
+        };
+        check_repeat_size(units, n, item_size)?;
+        let n = n as usize;
+        Ok(match self {
+            PyValue::Str(s) => PyValue::Str(s.repeat(n)),
+            PyValue::Bytes(b) => PyValue::Bytes(Rc::from(b.repeat(n))),
+            PyValue::Tuple(t) => PyValue::Tuple(t.iter().cloned().cycle().take(t.len() * n).collect()),
+            PyValue::List(t) => PyValue::List(t.iter().cloned().cycle().take(t.len() * n).collect()),
+            _ => unreachable!("a sequence"),
+        })
+    }
+
     /// `a + b`
     #[inline]
     pub fn add(&self, other: &PyValue) -> PyResult<PyValue> {
-        if let (PyValue::Float(a), PyValue::Float(b)) = (self, other) {
-            return Ok(PyValue::Float(a + b));
+        if let (PyValue::Float(PyFloat(a)), PyValue::Float(PyFloat(b))) = (self, other) {
+            return Ok(PyValue::float(a + b));
+        }
+        if let Some(r) = self.seq_concat(other) {
+            return r;
         }
         let (a, b) = self.num_operands("+", other)?;
         Ok(a.add(&b)?.into())
@@ -635,8 +913,8 @@ impl PyValue {
     /// `a - b`
     #[inline]
     pub fn sub(&self, other: &PyValue) -> PyResult<PyValue> {
-        if let (PyValue::Float(a), PyValue::Float(b)) = (self, other) {
-            return Ok(PyValue::Float(a - b));
+        if let (PyValue::Float(PyFloat(a)), PyValue::Float(PyFloat(b))) = (self, other) {
+            return Ok(PyValue::float(a - b));
         }
         let (a, b) = self.num_operands("-", other)?;
         Ok(a.sub(&b)?.into())
@@ -644,8 +922,11 @@ impl PyValue {
 
     /// `a * b`
     pub fn mul(&self, other: &PyValue) -> PyResult<PyValue> {
-        if let (PyValue::Float(a), PyValue::Float(b)) = (self, other) {
-            return Ok(PyValue::Float(a * b));
+        if let (PyValue::Float(PyFloat(a)), PyValue::Float(PyFloat(b))) = (self, other) {
+            return Ok(PyValue::float(a * b));
+        }
+        if let Some(r) = self.seq_repeat(other) {
+            return r;
         }
         let (a, b) = self.num_operands("*", other)?;
         Ok(a.mul(&b)?.into())
@@ -653,8 +934,8 @@ impl PyValue {
 
     /// `a / b`
     pub fn truediv(&self, other: &PyValue) -> PyResult<PyValue> {
-        if let (PyValue::Float(a), PyValue::Float(b)) = (self, other) {
-            return Ok(PyValue::Float(float_div(*a, *b)?));
+        if let (PyValue::Float(PyFloat(a)), PyValue::Float(PyFloat(b))) = (self, other) {
+            return Ok(PyValue::float(float_div(*a, *b)?));
         }
         let (a, b) = self.num_operands("/", other)?;
         Ok(a.truediv(&b)?.into())
@@ -676,17 +957,24 @@ impl PyValue {
         }
     }
 
-    /// `float(a)` for a number; other types are outside the model
-    /// (`float("1.5")` parses).
+    /// `float(a)`: a number, or the parse of a `str` or `bytes`
+    /// (`PyFloat_FromString`).
     pub fn to_float(&self) -> PyResult<PyValue> {
         if let Some(p) = self.as_python() {
             return p.to_float();
         }
         match self {
+            // float(x) of a float is x itself (PyNumber_Float)
             PyValue::Float(x) => Ok(PyValue::Float(*x)),
-            PyValue::Int(i) => Ok(PyValue::Float(i.to_f64()?)),
-            PyValue::Bool(b) => Ok(PyValue::Float(f64::from(u8::from(*b)))),
-            PyValue::Str(_) | PyValue::Bytes(_) => Err(PyErr::not_ported("float() of a string")),
+            PyValue::Int(i) => Ok(PyValue::float(i.to_f64()?)),
+            PyValue::Bool(b) => Ok(PyValue::float(f64::from(u8::from(*b)))),
+            PyValue::Str(s) => match s.as_str() {
+                Some(text) => Ok(PyValue::float(float_from_str(text)?)),
+                // _PyUnicode_TransformDecimalAndSpaceToASCII stops at the
+                // surrogate (neither a space nor a digit): no parse
+                None => Err(exc::ValueError(format!("could not convert string to float: {}", s.repr()))),
+            },
+            PyValue::Bytes(b) => Ok(PyValue::float(float_from_bytes(b)?)),
             other => Err(exc::TypeError(format!(
                 "float() argument must be a string or a real number, not '{}'",
                 other.type_name()
@@ -740,6 +1028,127 @@ pub fn py_sum<'a>(items: impl IntoIterator<Item = &'a PyValue>) -> PyResult<PyVa
     }
 }
 
+/// The largest repetition result the port builds, in bytes of its own
+/// representation: the address space of `wasm32`, where no larger block
+/// can exist. Python builds whatever its allocator grants (`MemoryError`
+/// when the allocation is refused, which on the oracle machine happens
+/// from about 26 GiB on, see `pdfminer::utils`); the port raises
+/// `MemoryError` from 4 GiB on, as CPython would on a machine whose
+/// allocator cannot grant more (an accepted deviation, `architecture.md`).
+/// Below, the port allocates as Python does.
+pub const MAX_REPEAT_BYTES: u64 = 1 << 32;
+
+/// `MemoryError` for a repetition of `len * n` items of `item_size` bytes
+/// each beyond [`MAX_REPEAT_BYTES`].
+fn check_repeat_size(len: u64, n: u64, item_size: u64) -> PyResult<()> {
+    match len.checked_mul(n).and_then(|k| k.checked_mul(item_size)) {
+        Some(bytes) if bytes <= MAX_REPEAT_BYTES => Ok(()),
+        _ => Err(exc::MemoryError("")),
+    }
+}
+
+/// The items of `iter(v)` (a `for` loop, `list(v)`, unpacking, `*v`):
+/// `None` when `v` is not iterable (each caller raises its own
+/// `TypeError`). A `str` gives its characters, `bytes` its ints, a `dict`
+/// its keys. A `PDFStream` iterates through `__getitem__`, whose
+/// `self.attrs[0]` raises `KeyError(0)`.
+pub fn py_iter(v: &PyValue) -> Option<PyResult<Vec<PyValue>>> {
+    if let PyValue::Pdf(PDFObject::Stream(stream)) = v {
+        return Some(Err(stream_missing_attribute(stream, "0")));
+    }
+    if let Some(p) = v.as_python() {
+        return py_iter(&p);
+    }
+    Some(Ok(match v {
+        PyValue::Str(s) => s.code_points().map(|c| PyValue::Str(PyStr::from_code_point(c))).collect(),
+        PyValue::Bytes(b) => b.iter().map(|&x| PyValue::from(i64::from(x))).collect(),
+        PyValue::Tuple(t) | PyValue::List(t) => t.to_vec(),
+        PyValue::Dict(d) => d.keys().map(|k| PyValue::Str(k.clone())).collect(),
+        _ => return None,
+    }))
+}
+
+/// The `PDFKeyError` of `PDFStream.__getitem__` for a missing attribute
+/// (`str(e)` is the `repr()` of its message, as for any `KeyError`).
+fn stream_missing_attribute(stream: &pdfminer::pdftypes::PDFStream, name: &str) -> PyErr {
+    stream.missing_attribute(name)
+}
+
+/// `v[i]` for an `int` index `i >= 0` (`BBOX_ORIGIN_KEYS` reads a bbox so):
+/// a `str` gives its character, `bytes` an `int`, a `dict` (whose keys
+/// are `str`) raises `KeyError`, a `PDFStream` its `PDFKeyError`.
+pub fn py_getitem_index(v: &PyValue, i: usize) -> PyResult<PyValue> {
+    if let PyValue::Pdf(PDFObject::Stream(stream)) = v {
+        return Err(stream_missing_attribute(stream, &i.to_string()));
+    }
+    if let Some(p) = v.as_python() {
+        return py_getitem_index(&p, i);
+    }
+    match v {
+        PyValue::Tuple(t) => t.get(i).cloned().ok_or_else(|| exc::IndexError("tuple index out of range")),
+        PyValue::List(t) => t.get(i).cloned().ok_or_else(|| exc::IndexError("list index out of range")),
+        PyValue::Str(s) => s
+            .code_points()
+            .nth(i)
+            .map(|c| PyValue::Str(PyStr::from_code_point(c)))
+            .ok_or_else(|| exc::IndexError("string index out of range")),
+        PyValue::Bytes(b) => {
+            b.get(i).map(|&x| PyValue::from(i64::from(x))).ok_or_else(|| exc::IndexError("index out of range"))
+        }
+        PyValue::Dict(_) => Err(exc::KeyError(i.to_string())),
+        other => Err(exc::TypeError(format!("'{}' object is not subscriptable", other.type_name()))),
+    }
+}
+
+/// `item in container` (`PySequence_Contains`): a substring test for a
+/// `str` (whose left operand must be a `str`) and for `bytes`, `==` with
+/// each item (after an identity check, see the module documentation) for
+/// a `tuple` or `list`, a key look-up for a `dict` and for a `PDFStream`
+/// (`__contains__`, on its attributes); `TypeError` for a container that is
+/// not iterable.
+pub fn py_contains(container: &PyValue, item: &PyValue) -> PyResult<bool> {
+    if let Some(p) = item.as_python() {
+        return py_contains(container, &p);
+    }
+    if let PyValue::Pdf(PDFObject::Stream(stream)) = container {
+        // PDFStream.__contains__: `name in self.attrs`
+        check_hashable(item)?;
+        return Ok(match item {
+            PyValue::Str(k) => k.as_str().is_some_and(|k| stream.attrs.get(k).is_some()),
+            _ => false, // the keys are str
+        });
+    }
+    if let Some(p) = container.as_python() {
+        return py_contains(&p, item);
+    }
+    match container {
+        PyValue::Str(s) => match item {
+            PyValue::Str(sub) => Ok(s.contains(sub)),
+            other => {
+                Err(exc::TypeError(format!("'in <string>' requires string as left operand, not {}", other.type_name())))
+            }
+        },
+        PyValue::Bytes(b) => match item {
+            PyValue::Bytes(sub) => Ok(sub.is_empty() || b.windows(sub.len()).any(|w| w == &sub[..])),
+            PyValue::Int(i) => match i.as_i64() {
+                Some(x @ 0..=255) => Ok(b.contains(&(x as u8))),
+                _ => Err(exc::ValueError("byte must be in range(0, 256)")),
+            },
+            PyValue::Bool(x) => Ok(b.contains(&u8::from(*x))),
+            other => Err(exc::TypeError(format!("a bytes-like object is required, not '{}'", other.type_name()))),
+        },
+        PyValue::Tuple(t) | PyValue::List(t) => Ok(t.iter().any(|x| x.eq_bool(item))),
+        PyValue::Dict(d) => {
+            check_hashable(item)?;
+            Ok(match item {
+                PyValue::Str(k) => d.contains(k),
+                _ => false, // the keys are str
+            })
+        }
+        other => Err(exc::TypeError(format!("argument of type '{}' is not iterable", other.type_name()))),
+    }
+}
+
 // -- hashing ------------------------------------------------------------------
 
 /// A value used as a `dict` key or `set` member: Python's `hash()` and
@@ -755,7 +1164,9 @@ impl HashKey {
     }
 }
 
-fn check_hashable(v: &PyValue) -> PyResult<()> {
+/// `hash(v)` succeeds: `TypeError("unhashable type: ...")` for a `list` or
+/// `dict` (also inside a `tuple`).
+pub fn check_hashable(v: &PyValue) -> PyResult<()> {
     if let Some(p) = v.as_python() {
         return check_hashable(&p);
     }
@@ -773,7 +1184,7 @@ fn check_hashable(v: &PyValue) -> PyResult<()> {
 fn hash_num<H: Hasher>(v: &PyValue, state: &mut H) -> bool {
     const TWO_63: f64 = 9_223_372_036_854_775_808.0;
     match v {
-        PyValue::Float(x) => {
+        PyValue::Float(PyFloat(x)) => {
             if x.fract() == 0.0 && *x >= -TWO_63 && *x < TWO_63 {
                 state.write_u8(0);
                 state.write_i64(*x as i64);
@@ -830,9 +1241,10 @@ fn hash_value<H: Hasher>(v: &PyValue, state: &mut H) {
     }
 }
 
+/// Set and dict keys compare with the identity shortcut.
 impl PartialEq for HashKey {
     fn eq(&self, other: &HashKey) -> bool {
-        self.0.py_eq(&other.0)
+        self.0.eq_bool(&other.0)
     }
 }
 
@@ -848,7 +1260,7 @@ impl Hash for HashKey {
 
 #[derive(Clone)]
 struct ObjData {
-    items: Vec<(Rc<str>, PyValue)>,
+    items: Vec<(PyStr, PyValue)>,
     /// Position + 1 of each [`Hot`] key in `items` (0: absent).
     hot: [u32; HOT_N],
 }
@@ -878,11 +1290,11 @@ impl Obj {
 
     /// `dict(pairs)`: a repeated key keeps its first position and its last
     /// value.
-    pub fn from_pairs<K: AsRef<str>>(pairs: impl IntoIterator<Item = (K, PyValue)>) -> Obj {
+    pub fn from_pairs<K: Key>(pairs: impl IntoIterator<Item = (K, PyValue)>) -> Obj {
         let pairs = pairs.into_iter();
         let mut o = Obj(Rc::new(ObjData { items: Vec::with_capacity(pairs.size_hint().0), hot: [0; HOT_N] }));
         for (k, v) in pairs {
-            o.set(k.as_ref(), v);
+            o.set(&k, v);
         }
         o
     }
@@ -890,13 +1302,6 @@ impl Obj {
     /// Same dict object (`a is b`).
     pub fn ptr_eq(&self, other: &Obj) -> bool {
         Rc::ptr_eq(&self.0, &other.0)
-    }
-
-    /// The address of the shared dict (`id(obj)`), valid while this `Obj`
-    /// lives. Copies that share it hold the very same values, as a dict
-    /// copied in Python (`dict(obj)`) holds the same value objects.
-    pub fn addr(&self) -> *const () {
-        Rc::as_ptr(&self.0) as *const ()
     }
 
     pub fn len(&self) -> usize {
@@ -908,15 +1313,16 @@ impl Obj {
     }
 
     /// `(key, value)` pairs, in order.
-    pub fn items(&self) -> &[(Rc<str>, PyValue)] {
+    pub fn items(&self) -> &[(PyStr, PyValue)] {
         &self.0.items
     }
 
-    fn position(&self, key: &str) -> Option<usize> {
-        if let Some(h) = Hot::of(key) {
+    fn position(&self, key: &(impl Key + ?Sized)) -> Option<usize> {
+        let key = key.key_bytes();
+        if let Some(h) = Hot::of_bytes(key) {
             return self.hot_position(h);
         }
-        self.0.items.iter().position(|(k, _)| k.as_ref() == key)
+        self.0.items.iter().position(|(k, _)| k.as_bytes() == key)
     }
 
     #[inline]
@@ -928,7 +1334,7 @@ impl Obj {
     }
 
     /// `obj.get(key)`
-    pub fn get(&self, key: &str) -> Option<&PyValue> {
+    pub fn get(&self, key: &(impl Key + ?Sized)) -> Option<&PyValue> {
         self.position(key).map(|p| &self.0.items[p].1)
     }
 
@@ -939,7 +1345,7 @@ impl Obj {
     }
 
     /// `obj[key]`
-    pub fn item(&self, key: &str) -> PyResult<&PyValue> {
+    pub fn item(&self, key: &(impl Key + ?Sized)) -> PyResult<&PyValue> {
         self.get(key).ok_or_else(|| key_error(key))
     }
 
@@ -950,16 +1356,17 @@ impl Obj {
     }
 
     /// `key in obj`
-    pub fn contains(&self, key: &str) -> bool {
+    pub fn contains(&self, key: &(impl Key + ?Sized)) -> bool {
         self.position(key).is_some()
     }
 
     /// `obj[key] = value` (copies a shared dict first).
-    pub fn set(&mut self, key: &str, value: PyValue) {
-        let hot = Hot::of(key);
+    pub fn set(&mut self, key: &(impl Key + ?Sized), value: PyValue) {
+        let bytes = key.key_bytes();
+        let hot = Hot::of_bytes(bytes);
         let position = match hot {
             Some(h) => self.hot_position(h),
-            None => self.0.items.iter().position(|(k, _)| k.as_ref() == key),
+            None => self.0.items.iter().position(|(k, _)| k.as_bytes() == bytes),
         };
         if let Some(p) = position {
             Rc::make_mut(&mut self.0).items[p].1 = value;
@@ -971,18 +1378,18 @@ impl Obj {
                 data.items.push((hot_key(h), value));
                 data.hot[h as usize] = data.items.len() as u32;
             }
-            None => data.items.push((intern(key), value)),
+            None => data.items.push((key.to_key(), value)),
         }
     }
 
     /// `del obj[key]` (`KeyError` when absent).
-    pub fn remove(&mut self, key: &str) -> PyResult<PyValue> {
+    pub fn remove(&mut self, key: &(impl Key + ?Sized)) -> PyResult<PyValue> {
         let p = self.position(key).ok_or_else(|| key_error(key))?;
         let data = Rc::make_mut(&mut self.0);
         let (_, v) = data.items.remove(p);
         data.hot = [0; HOT_N];
         for (i, (k, _)) in data.items.iter().enumerate() {
-            if let Some(h) = Hot::of(k) {
+            if let Some(h) = Hot::of_bytes(k.as_bytes()) {
                 data.hot[h as usize] = i as u32 + 1;
             }
         }
@@ -990,15 +1397,15 @@ impl Obj {
     }
 
     /// `obj.update(pairs)`
-    pub fn update<K: AsRef<str>>(&mut self, pairs: impl IntoIterator<Item = (K, PyValue)>) {
+    pub fn update<K: Key>(&mut self, pairs: impl IntoIterator<Item = (K, PyValue)>) {
         for (k, v) in pairs {
-            self.set(k.as_ref(), v);
+            self.set(&k, v);
         }
     }
 
     /// The keys, in order.
-    pub fn keys(&self) -> impl Iterator<Item = &str> {
-        self.0.items.iter().map(|(k, _)| k.as_ref())
+    pub fn keys(&self) -> impl Iterator<Item = &PyStr> {
+        self.0.items.iter().map(|(k, _)| k)
     }
 
     /// `a == b` for dicts: same keys, equal values (order-insensitive).
@@ -1008,7 +1415,7 @@ impl Obj {
             // whose identity shortcut makes a dict equal to itself.
             return true;
         }
-        self.len() == other.len() && self.0.items.iter().all(|(k, v)| other.get(k).is_some_and(|w| v.py_eq(w)))
+        self.len() == other.len() && self.0.items.iter().all(|(k, v)| other.get(k).is_some_and(|w| v.eq_bool(w)))
     }
 }
 
@@ -1024,13 +1431,11 @@ pub fn bbox_value(b: &Bbox) -> PyValue {
 /// `x0, top, x1, bottom = value`: a bbox from a `tuple`/`list` of four
 /// items (`ValueError` for another length, `TypeError` for a non-sequence).
 pub fn bbox_from_value(v: &PyValue) -> PyResult<Bbox> {
-    if let Some(p) = v.as_python() {
-        return bbox_from_value(&p);
-    }
-    let Some(items) = v.as_seq() else {
+    let Some(items) = py_iter(v) else {
         return Err(exc::TypeError(format!("cannot unpack non-iterable {} object", v.type_name())));
     };
-    match items {
+    let items = items?;
+    match &items[..] {
         [a, b, c, d] => Ok([a.clone(), b.clone(), c.clone(), d.clone()]),
         _ if items.len() > 4 => Err(exc::ValueError("too many values to unpack (expected 4)")),
         _ => Err(exc::ValueError(format!("not enough values to unpack (expected 4, got {})", items.len()))),

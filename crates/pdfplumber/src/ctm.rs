@@ -9,15 +9,9 @@
 //!   Python's (`int ** 2` stays an int; a float goes through the oracle's
 //!   C `pow`, `pycompat::libm`), `math.sqrt` is correctly rounded on every
 //!   target (IEEE-754 square root).
-//! - `skew_x`/`skew_y`: `math.atan2`, CPython's `m_atan2` (its own handling
-//!   of NaNs, infinities and zeros) and then the C library's `atan2`. No
-//!   port of glibc's `atan2` exists in `pycompat::libm` yet, so the finite
-//!   case calls Rust's `f64::atan2`: the C library's function natively
-//!   (glibc on Linux: the oracle's results), but musl's algorithm on
-//!   WebAssembly (`compiler-builtins`' `libm` and WASI's libc), which
-//!   differs from glibc in the last bit for about 17 % of random inputs
-//!   (measured on 10^6 pairs). That is the risk until `atan2` joins
-//!   `pycompat::libm`; pdfplumber itself never calls these properties.
+//! - `skew_x`/`skew_y`: `math.atan2`, CPython's `m_atan2` and then the C
+//!   library's `atan2`, both in `pycompat::libm` (a port of the oracle's
+//!   glibc `atan2`: the same bits on every target, WebAssembly included).
 
 use pycompat::{exc, Num, PyInt, PyResult};
 
@@ -41,36 +35,10 @@ fn math_sqrt(x: &Num) -> PyResult<f64> {
     Ok(x.sqrt())
 }
 
-/// `math.atan2(y, x)` (`m_atan2` of CPython's `mathmodule.c`).
+/// `math.atan2(y, x)`: `float()` of each argument, then `m_atan2`.
 fn math_atan2(y: &Num, x: &Num) -> PyResult<f64> {
     let (y, x) = (y.to_f64()?, x.to_f64()?);
-    let pi = std::f64::consts::PI;
-    if x.is_nan() || y.is_nan() {
-        return Ok(f64::NAN);
-    }
-    if y.is_infinite() {
-        if x.is_infinite() {
-            return Ok(if x.is_sign_positive() {
-                // atan2(+-inf, +inf) == +-pi/4
-                (0.25 * pi).copysign(y)
-            } else {
-                // atan2(+-inf, -inf) == +-pi*3/4
-                (0.75 * pi).copysign(y)
-            });
-        }
-        // atan2(+-inf, x) == +-pi/2 for finite x
-        return Ok((0.5 * pi).copysign(y));
-    }
-    if x.is_infinite() || y == 0.0 {
-        return Ok(if x.is_sign_positive() {
-            // atan2(+-y, +inf) = atan2(+-0, +x) = +-0.
-            0.0f64.copysign(y)
-        } else {
-            // atan2(+-y, -inf) = atan2(+-0., -x) = +-pi.
-            pi.copysign(y)
-        });
-    }
-    Ok(y.atan2(x))
+    Ok(pycompat::libm::math_atan2(y, x))
 }
 
 /// `pow(v, 2)`

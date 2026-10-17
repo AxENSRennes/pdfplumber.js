@@ -63,8 +63,9 @@ use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use pycompat::pystr::PyStrBuilder;
 use pycompat::recursion::{eval_entry, py_frame, Guard};
-use pycompat::{exc, Num, PyInt, PyResult};
+use pycompat::{exc, Num, PyInt, PyResult, PyStr};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::casting::IterItem;
@@ -690,7 +691,7 @@ impl<P: LTPayload> LTImage<P> {
 /// analysis (a space between words, a newline after a line).
 #[derive(Clone, Debug)]
 pub struct LTAnno {
-    pub _text: String,
+    pub _text: PyStr,
 }
 
 impl LTAnno {
@@ -699,11 +700,11 @@ impl LTAnno {
 
     // pdfminer/layout.py:340 LTAnno.__init__
     pub fn new(text: &str) -> LTAnno {
-        LTAnno { _text: text.to_owned() }
+        LTAnno { _text: PyStr::new(text) }
     }
 
     // pdfminer/layout.py:343 LTAnno.get_text
-    pub fn get_text(&self) -> &str {
+    pub fn get_text(&self) -> &PyStr {
         &self._text
     }
 }
@@ -711,7 +712,9 @@ impl LTAnno {
 /// pdfminer/layout.py:347 `LTChar`: an actual letter of the text.
 #[derive(Clone)]
 pub struct LTChar<P: LTPayload> {
-    pub _text: String,
+    /// A Python `str`: `chr(cid)` of an `IdentityUnicodeMap` can be a lone
+    /// surrogate.
+    pub _text: PyStr,
     pub matrix: Matrix,
     pub fontname: P::FontName,
     pub ncs: Rc<PDFColorSpace>,
@@ -751,7 +754,7 @@ impl<P: LTPayload> LTChar<P> {
         fontsize: Num,
         scaling: Num,
         rise: Num,
-        text: String,
+        text: impl Into<PyStr>,
         textwidth: Num,
         textdisp: CharDisp,
         ncs: Rc<PDFColorSpace>,
@@ -802,7 +805,7 @@ impl<P: LTPayload> LTChar<P> {
         let comp = LTComponent::new([x0, y0, x1, y1])?;
         let size = if font.is_vertical() { comp.width.clone() } else { comp.height.clone() };
         Ok(LTChar {
-            _text: text,
+            _text: text.into(),
             matrix,
             fontname,
             ncs,
@@ -816,7 +819,7 @@ impl<P: LTPayload> LTChar<P> {
     }
 
     // pdfminer/layout.py:404 LTChar.get_text
-    pub fn get_text(&self) -> &str {
+    pub fn get_text(&self) -> &PyStr {
         &self._text
     }
 }
@@ -841,7 +844,7 @@ impl<P: LTPayload> Clone for TextLineElement<P> {
 
 impl<P: LTPayload> TextLineElement<P> {
     /// `obj.get_text()`, a frame (`LTChar.get_text`/`LTAnno.get_text`).
-    fn get_text_into(&self, out: &mut String) -> PyResult<()> {
+    fn get_text_into(&self, out: &mut PyStrBuilder) -> PyResult<()> {
         leaf_frame()?;
         out.push_str(match self {
             TextLineElement::Char(c) => c.get_text(),
@@ -949,18 +952,18 @@ impl<P: LTPayload> LTTextLine<P> {
     /// The text of the elements, with the frames of `get_text`, of
     /// `__iter__`, of the generator expression (resumed by `str.join`, from
     /// C) and of the `cast()` and `get_text()` it calls.
-    pub fn get_text(&self) -> PyResult<String> {
+    pub fn get_text(&self) -> PyResult<PyStr> {
         let _frame = py_frame()?;
         leaf_frame()?; // LTContainer.__iter__
         leaf_frame()?; // creating the generator
-        let mut out = String::new();
+        let mut out = PyStrBuilder::new();
         for obj in &self._objs {
             let _gen = c_called_frame()?;
             leaf_frame()?; // typing.cast
             obj.get_text_into(&mut out)?;
         }
         drop(c_called_frame()?); // StopIteration
-        Ok(out)
+        Ok(out.finish())
     }
 
     // pdfminer/layout.py:494 LTTextLine.is_empty
@@ -970,8 +973,7 @@ impl<P: LTPayload> LTTextLine<P> {
         if self.comp.is_empty() {
             return Ok(true);
         }
-        let text = self.get_text()?;
-        Ok(!text.is_empty() && text.chars().all(pycompat::text::str_isspace))
+        Ok(self.get_text()?.isspace())
     }
 
     // pdfminer/layout.py:482 LTTextLine.analyze
@@ -1098,18 +1100,18 @@ impl<P: LTPayload> LTTextBox<P> {
     }
 
     // pdfminer/layout.py:459 LTTextContainer.get_text
-    pub fn get_text(&self) -> PyResult<String> {
+    pub fn get_text(&self) -> PyResult<PyStr> {
         let _frame = py_frame()?;
         leaf_frame()?; // LTContainer.__iter__
         leaf_frame()?; // creating the generator
-        let mut out = String::new();
+        let mut out = PyStrBuilder::new();
         for line in &self._objs {
             let _gen = c_called_frame()?;
             leaf_frame()?; // typing.cast
             out.push_str(&line.borrow().get_text()?);
         }
         drop(c_called_frame()?);
-        Ok(out)
+        Ok(out.finish())
     }
 
     // pdfminer/layout.py:647 LTTextBoxHorizontal.analyze
@@ -1176,7 +1178,7 @@ impl<P: LTPayload> TextGroupElement<P> {
     }
 
     /// `obj.get_text()`
-    pub fn get_text(&self) -> PyResult<String> {
+    pub fn get_text(&self) -> PyResult<PyStr> {
         match self {
             TextGroupElement::Box(b) => b.borrow().get_text(),
             TextGroupElement::Group(g) => g.borrow().get_text(),
@@ -1236,18 +1238,18 @@ impl<P: LTPayload> LTTextGroup<P> {
     }
 
     // pdfminer/layout.py:459 LTTextContainer.get_text
-    pub fn get_text(&self) -> PyResult<String> {
+    pub fn get_text(&self) -> PyResult<PyStr> {
         let _frame = py_frame()?;
         leaf_frame()?; // LTContainer.__iter__
         leaf_frame()?; // creating the generator
-        let mut out = String::new();
+        let mut out = PyStrBuilder::new();
         for obj in &self._objs {
             let _gen = c_called_frame()?;
             leaf_frame()?; // typing.cast
             out.push_str(&obj.get_text()?);
         }
         drop(c_called_frame()?);
-        Ok(out)
+        Ok(out.finish())
     }
 
     // pdfminer/layout.py:674 LTTextGroupLRTB.analyze
