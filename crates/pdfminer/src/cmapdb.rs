@@ -1097,13 +1097,13 @@ impl<'a> PSStackParser<CMapParserExt<'a>> {
     }
 
     /// The objects of the stack, emptied (`[obj for (__, obj) in self.popall()]`).
-    fn popall_objects(&mut self) -> Vec<PDFObject> {
-        self.popall().into_iter().map(|(_, obj)| obj).collect()
+    fn popall_objects(&mut self) -> PyResult<Vec<PDFObject>> {
+        Ok(self.popall()?.into_iter().map(|(_, obj)| obj).collect())
     }
 
     /// The `KEYWORD_ENDCIDRANGE` branch of `do_keyword`.
     fn end_cid_range(&mut self) -> PyResult<()> {
-        let objs = self.popall_objects();
+        let objs = self.popall_objects()?;
         for triple in choplist(3, &objs) {
             let PDFObject::Bytes(start_byte) = &triple[0] else {
                 self.warn_once("The start object of begincidrange is not a byte.");
@@ -1145,7 +1145,7 @@ impl<'a> PSStackParser<CMapParserExt<'a>> {
 
     /// The `KEYWORD_ENDBFRANGE` branch of `do_keyword`.
     fn end_bf_range(&mut self) -> PyResult<()> {
-        let objs = self.popall_objects();
+        let objs = self.popall_objects()?;
         for triple in choplist(3, &objs) {
             let PDFObject::Bytes(start_byte) = &triple[0] else {
                 self.warn_once("The start object is not a byte.");
@@ -1221,7 +1221,7 @@ impl PSStackParserExt for CMapParserExt<'_> {
             p.ext.keywords;
         if token == begincmap {
             p.ext.in_cmap = true;
-            p.popall();
+            p.popall()?;
             return Ok(());
         } else if token == endcmap {
             p.ext.in_cmap = false;
@@ -1235,7 +1235,7 @@ impl PSStackParserExt for CMapParserExt<'_> {
         if token == def {
             // (the `except PSSyntaxError` of upstream catches nothing: with
             // STRICT off, literal_name never raises it)
-            let entries = p.pop(2);
+            let entries = p.pop(2)?;
             let [(_, k), (_, v)] = <[_; 2]>::try_from(entries).map_err(|entries: Vec<_>| {
                 exc::ValueError(format!("not enough values to unpack (expected 2, got {})", entries.len()))
             })?;
@@ -1245,7 +1245,7 @@ impl PSStackParserExt for CMapParserExt<'_> {
 
         if token == usecmap {
             // (as for `def`, the `except PSSyntaxError` catches nothing)
-            let Some((_, cmapname)) = p.pop(1).pop() else {
+            let Some((_, cmapname)) = p.pop(1)?.pop() else {
                 return Err(exc::ValueError("not enough values to unpack (expected 1, got 0)"));
             };
             match CMapDB::get_cmap(&literal_name(&cmapname)?) {
@@ -1257,7 +1257,7 @@ impl PSStackParserExt for CMapParserExt<'_> {
         }
 
         if [begincodespacerange, endcodespacerange, begincidrange].contains(&token) {
-            p.popall();
+            p.popall()?;
             return Ok(());
         }
 
@@ -1266,12 +1266,12 @@ impl PSStackParserExt for CMapParserExt<'_> {
         }
 
         if token == begincidchar {
-            p.popall();
+            p.popall()?;
             return Ok(());
         }
 
         if token == endcidchar {
-            let objs = p.popall_objects();
+            let objs = p.popall_objects()?;
             for pair in choplist(2, &objs) {
                 let cid = match &pair[0] {
                     PDFObject::Int(i) => i.clone(),
@@ -1286,7 +1286,7 @@ impl PSStackParserExt for CMapParserExt<'_> {
         }
 
         if token == beginbfrange {
-            p.popall();
+            p.popall()?;
             return Ok(());
         }
 
@@ -1295,12 +1295,12 @@ impl PSStackParserExt for CMapParserExt<'_> {
         }
 
         if token == beginbfchar {
-            p.popall();
+            p.popall()?;
             return Ok(());
         }
 
         if token == endbfchar {
-            let objs = p.popall_objects();
+            let objs = p.popall_objects()?;
             for pair in choplist(2, &objs) {
                 if let (PDFObject::Bytes(cid), PDFObject::Bytes(_)) = (&pair[0], &pair[1]) {
                     p.ext.cmap.add_cid2unichr(nunpack(cid), &pair[1])?;
@@ -1310,11 +1310,11 @@ impl PSStackParserExt for CMapParserExt<'_> {
         }
 
         if token == beginnotdefrange || token == endnotdefrange {
-            p.popall();
+            p.popall()?;
             return Ok(());
         }
 
-        p.push((pos, PDFObject::Keyword(token)));
+        p.push((pos, PDFObject::Keyword(token)))?;
         Ok(())
     }
 }

@@ -8,7 +8,12 @@
 //! (`table_len`) without storing their bytes, which Python keeps (up to
 //! ~4 KB each).
 
+use pycompat::logging::Logger;
+use pycompat::recursion::{c_called_leaf, eval_entry, leaf, py_frame};
 use pycompat::{exc, PyResult};
+
+/// `logger = logging.getLogger(__name__)` of `pdfminer/lzw.py`.
+static LOG: Logger = Logger::new("pdfminer.lzw");
 
 /// Codes are at most 12 bits: entries at this index or above are never
 /// read.
@@ -97,11 +102,13 @@ impl<'a> LZWDecoder<'a> {
         } else if code == 257 {
         } else if self.prevbuf.as_ref().is_none_or(|p| p.is_empty()) {
             x = self.entry(code)?; // assume not None
+            leaf(1)?; // cast(bytes, ...)
             self.prevbuf = Some(x.clone());
         } else {
             let prevbuf = self.prevbuf.take().expect("checked above");
             if code < self.table_len {
                 x = self.entry(code)?; // assume not None
+                leaf(1)?; // cast(bytes, ...)
                 let mut e = prevbuf.clone();
                 e.extend(x.first());
                 self.append(e);
@@ -110,6 +117,7 @@ impl<'a> LZWDecoder<'a> {
                 e.extend(prevbuf.first());
                 self.append(e);
                 x = self.entry(code)?;
+                leaf(1)?; // cast(bytes, ...)
             } else {
                 self.prevbuf = Some(prevbuf);
                 return Ok(None); // raise CorruptDataError
@@ -127,15 +135,30 @@ impl<'a> LZWDecoder<'a> {
 
     // pdfminer/lzw.py:81 LZWDecoder.run
     /// The concatenation of what the generator yields (`b"".join(...)`).
+    /// The generator consumed by `b"".join(...)`: each step resumes it from
+    /// C (its frame), logs the previous output (after the first), reads a
+    /// code and feeds it, each a frame one level down. (An exception ends
+    /// `lzwdecode` with it: the decoder's state no longer matters then.)
     pub fn run(&mut self) -> PyResult<Vec<u8>> {
         let mut out = Vec::new();
-        // (readbits raises PDFEOFError at the end, caught as EOFError)
-        while let Ok(code) = self.readbits(self.nbits) {
+        let mut after_yield = false;
+        loop {
+            let _entry = eval_entry()?;
+            let _frame = py_frame()?;
+            if after_yield {
+                // logger.debug("nbits=%d, code=%d, output=%r, table=%r", ...)
+                LOG.debug()?;
+            }
+            // (readbits raises PDFEOFError at the end, caught as EOFError)
+            leaf(1)?; // self.readbits(self.nbits)
+            let Ok(code) = self.readbits(self.nbits) else { break };
+            let _feed = py_frame()?;
             match self.feed(code as usize)? {
                 // just ignore corrupt data and stop yielding there
                 None => break,
                 Some(x) => out.extend_from_slice(&x),
             }
+            after_yield = true;
         }
         Ok(out)
     }
@@ -143,5 +166,10 @@ impl<'a> LZWDecoder<'a> {
 
 // pdfminer/lzw.py:103 lzwdecode
 pub fn lzwdecode(data: &[u8]) -> PyResult<Vec<u8>> {
+    let _frame = py_frame()?;
+    // LZWDecoder(fp) (its __init__ called from C), then .run() creates the
+    // generator
+    c_called_leaf()?;
+    leaf(1)?;
     LZWDecoder::new(data).run()
 }

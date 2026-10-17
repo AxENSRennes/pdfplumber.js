@@ -65,18 +65,20 @@ fn run(data: &[u8], ops: &[Value]) -> Value {
             "tokens" => until_error(limit, || p.nexttoken(), |t| entry(&t)),
             "nextline" => result(p.nextline(), line),
             "lines" => until_error(limit, || p.nextline(), line),
-            "revreadlines" => result(p.revreadlines().map(|lines| lines.take(limit).collect::<Vec<_>>()), |l| {
-                Value::List(l.into_iter().map(Value::Bytes).collect())
-            }),
+            "revreadlines" => {
+                result(p.revreadlines().and_then(|lines| lines.take(limit).collect::<PyResult<Vec<_>>>()), |l| {
+                    Value::List(l.into_iter().map(Value::Bytes).collect())
+                })
+            }
             "nextobject" => result(p.nextobject(), |e| entry(&e)),
             "pop" => {
-                let popped = p.pop(arg() as usize);
+                let popped = p.pop(arg() as usize).expect("no recursion limit here");
                 Value::List(popped.iter().map(entry).collect())
             }
-            "popall" => Value::List(p.popall().iter().map(entry).collect()),
+            "popall" => Value::List(p.popall().expect("no recursion limit here").iter().map(entry).collect()),
             "add_results" => {
-                let popped = p.pop(arg() as usize);
-                p.add_results(popped);
+                let popped = p.pop(arg() as usize).expect("no recursion limit here");
+                p.add_results(popped).expect("no recursion limit here");
                 Value::List(p.results.iter().map(entry).collect())
             }
             "stack" => Value::List(vec![

@@ -15,6 +15,7 @@ use pycompat::{ExcKind, PyErr, PyResult};
 /// the `StopIteration` itself escapes (a caller running inside a
 /// generator would see it turned into that `RuntimeError` too).
 pub fn rldecode(data: &[u8]) -> PyResult<Vec<u8>> {
+    let _frame = pycompat::recursion::py_frame()?;
     let mut decoded_array: Vec<u8> = Vec::new();
     let mut data_iter = data.iter().copied();
     loop {
@@ -23,6 +24,9 @@ pub fn rldecode(data: &[u8]) -> PyResult<Vec<u8>> {
             break;
         }
         if length < 128 {
+            // the generator expression, resumed by extend() (from C): a
+            // frame one level down at each step
+            pycompat::recursion::c_called_leaf()?;
             for _ in 0..=length {
                 let Some(b) = data_iter.next() else {
                     return Err(PyErr::new(ExcKind::RuntimeError, "generator raised StopIteration"));

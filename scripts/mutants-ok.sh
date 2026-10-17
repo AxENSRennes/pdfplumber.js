@@ -54,7 +54,12 @@ git -C "$SRC" ls-files -z --cached --others --exclude-standard \
 for f in "${files[@]}"; do
   # PyResult<T> -> Result<T, pycompat::PyErr>, T with any nesting of <> (a
   # recursive pattern; a `->` inside T would end it early: checked below).
-  perl -0pi -e 's/(?<![A-Za-z0-9_:])(?:pycompat::)?PyResult(<((?:[^<>]++|(?1))*)>)/Result<$2, pycompat::PyErr>/g' "$WS/$f"
+  # Inside the pycompat crate itself, the error type is crate::PyErr.
+  case "$f" in
+    crates/pycompat/*) err=crate::PyErr ;;
+    *) err=pycompat::PyErr ;;
+  esac
+  ERR="$err" perl -0pi -e 's/(?<![A-Za-z0-9_:])(?:pycompat::)?PyResult(<((?:[^<>]++|(?1))*)>)/Result<$2, $ENV{ERR}>/g' "$WS/$f"
   if grep -n 'PyResult<' "$WS/$f"; then
     echo "mutants-ok.sh: $f: PyResult<..> left after the rewrite (a '->' inside the type?)" >&2
     exit 2

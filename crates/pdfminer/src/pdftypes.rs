@@ -542,11 +542,15 @@ impl Renderer {
     /// by C.
     fn stream(&mut self, s: &PDFStream, unit: Guard) -> PyResult<()> {
         let method = python_method()?;
-        let objid = {
-            let _unit = recursion::c_call(WHILE_REPR)?;
-            match s.objid() {
-                Some(i) => i.py_str()?,
-                None => "None".to_owned(),
+        let objid = match s.objid() {
+            // PyObject_Repr of another id ([`ObjId`]) takes its own unit
+            Some(id) if id.as_int().is_none() => id.repr()?,
+            id => {
+                let _unit = recursion::c_call(WHILE_REPR)?;
+                match id.as_ref().and_then(ObjId::as_int) {
+                    Some(i) => i.py_str()?,
+                    None => "None".to_owned(),
+                }
             }
         };
         // len(self.data): a builtin call
@@ -708,10 +712,138 @@ impl PDFObjRef {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Object ids
+
+/// A Python object used as an object id: an argument of
+/// `PDFDocument.getobj`, a key of `PDFXRef.offsets` and of the document's
+/// caches, `PDFStream.objid`.
+///
+/// Upstream's object ids are ints, except where `PDFXRefFallback` stores the
+/// object an object stream holds at an id position as it is (`5.5`, `True`,
+/// a name, a reference...) and where `PDFXRefStream` yields `start + i` for
+/// whatever `start` its `/Index` holds: any hashable value can reach
+/// `getobj`, which stores it in the stream it returns (`set_objid`). `==`
+/// and `hash()` are Python's (`docs/architecture.md`, "Résolution des
+/// références"): numbers by value across `bool`/`int`/`float`
+/// (`1 == 1.0 == True`), `bytes` by content, `None` equal to itself,
+/// literals, keywords, references and streams by identity (no `__eq__`
+/// upstream). A list or a dict is unhashable ([`ObjId::new`]). The id keeps
+/// the object it was made from (`5.0` stays a float in a trace), as a dict
+/// keeps its first key.
+#[derive(Clone)]
+pub struct ObjId(PDFObject);
+
+impl ObjId {
+    /// The id of `obj`, or `TypeError("unhashable type: 'list'")` (what
+    /// `hash(obj)` raises).
+    pub fn new(obj: PDFObject) -> PyResult<ObjId> {
+        match obj {
+            PDFObject::List(_) | PDFObject::Dict(_) => {
+                Err(exc::TypeError(format!("unhashable type: '{}'", obj.type_name())))
+            }
+            obj => Ok(ObjId(obj)),
+        }
+    }
+
+    /// The id of an int.
+    pub fn int(i: PyInt) -> ObjId {
+        ObjId(PDFObject::Int(i))
+    }
+
+    /// The object.
+    pub fn obj(&self) -> &PDFObject {
+        &self.0
+    }
+
+    /// The id when it is an `int` (not a `bool`).
+    pub fn as_int(&self) -> Option<&PyInt> {
+        match &self.0 {
+            PDFObject::Int(i) => Some(i),
+            _ => None,
+        }
+    }
+
+    /// `str(objid)`
+    pub fn py_str(&self) -> PyResult<String> {
+        self.0.py_str()
+    }
+
+    /// `repr(objid)`
+    pub fn repr(&self) -> PyResult<String> {
+        self.0.repr()
+    }
+}
+
+impl From<PyInt> for ObjId {
+    fn from(i: PyInt) -> ObjId {
+        ObjId::int(i)
+    }
+}
+
+impl PartialEq for ObjId {
+    fn eq(&self, other: &ObjId) -> bool {
+        match (self.0.as_num(), other.0.as_num()) {
+            (Some(a), Some(b)) => a.py_eq(&b),
+            (Some(_), None) | (None, Some(_)) => false,
+            (None, None) => match (&self.0, &other.0) {
+                (PDFObject::Bytes(a), PDFObject::Bytes(b)) => a == b,
+                (a, b) => same_object(a, b),
+            },
+        }
+    }
+}
+
+impl Eq for ObjId {}
+
+impl std::hash::Hash for ObjId {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        if let Some(n) = self.0.as_num() {
+            // A NaN cannot be parsed (the tokenizer reads no "nan"); its hash
+            // would be its identity: any constant keeps Hash and Eq
+            // consistent.
+            state.write_i64(n.py_hash().unwrap_or(0));
+            return;
+        }
+        match &self.0 {
+            PDFObject::Null => state.write_u8(0),
+            PDFObject::Bytes(b) => {
+                state.write_u8(1);
+                b.hash(state);
+            }
+            PDFObject::Literal(lit) => {
+                state.write_u8(2);
+                lit.hash(state);
+            }
+            PDFObject::Keyword(kwd) => {
+                state.write_u8(3);
+                kwd.hash(state);
+            }
+            PDFObject::Ref(r) => {
+                state.write_u8(4);
+                std::ptr::hash(Rc::as_ptr(&r.0), state);
+            }
+            PDFObject::Stream(s) => {
+                state.write_u8(5);
+                std::ptr::hash(Rc::as_ptr(s), state);
+            }
+            _ => unreachable!("numbers are hashed above; lists and dicts are not ids"),
+        }
+    }
+}
+
+impl fmt::Debug for ObjId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 // pdfminer/pdftypes.py:107 resolve1
 /// Resolves an object. If this is an array or dictionary, it may still
-/// contain some indirect objects inside.
+/// contain some indirect objects inside. Takes its Python frame (as do the
+/// accessors below, which call it).
 pub fn resolve1(x: &PDFObject, default: &PDFObject) -> PyResult<PDFObject> {
+    let _frame = recursion::py_frame()?;
     let mut x = x.clone();
     while let PDFObject::Ref(r) = &x {
         x = r.resolve(default)?;
@@ -762,14 +894,15 @@ pub fn resolve_all(x: &PDFObject, default: &PDFObject) -> PyResult<PDFObject> {
 }
 
 /// `decipher(objid, genno, data, attrs)`: the document's decryption
-/// callback (`DecipherCallable`).
-pub type DecipherCallable = Rc<dyn Fn(&PyInt, &PyInt, &[u8], Option<&PDFDict>) -> PyResult<Vec<u8>>>;
+/// callback (`DecipherCallable`). `objid` is whatever `getobj` was called
+/// with, or a stream's `objid` ([`ObjId`]).
+pub type DecipherCallable = Rc<dyn Fn(&ObjId, &PyInt, &[u8], Option<&PDFDict>) -> PyResult<Vec<u8>>>;
 
 // pdfminer/pdftypes.py:134 decipher_all
 /// Recursively deciphers the given object: lists are rebuilt, dicts are
 /// updated in place. One Python frame per level (the callback counts its
 /// own).
-pub fn decipher_all(decipher: &DecipherCallable, objid: &PyInt, genno: &PyInt, x: &PDFObject) -> PyResult<PDFObject> {
+pub fn decipher_all(decipher: &DecipherCallable, objid: &ObjId, genno: &PyInt, x: &PDFObject) -> PyResult<PDFObject> {
     let _frame = recursion::py_frame()?;
     match x {
         PDFObject::Bytes(b) => {
@@ -804,6 +937,7 @@ pub fn decipher_all(decipher: &DecipherCallable, objid: &PyInt, genno: &PyInt, x
 /// `int_value(x)` with `STRICT = False`, as Python returns it: the `int`,
 /// a `bool` (an `int` subclass, which passes the check), or the int 0.
 pub fn int_value_obj(x: &PDFObject) -> PyResult<PDFObject> {
+    let _frame = recursion::py_frame()?;
     Ok(match resolve1_none(x)? {
         x @ (PDFObject::Int(_) | PDFObject::Bool(_)) => x,
         // With settings.STRICT, PDFTypeError(f"Integer required: {x!r}").
@@ -815,17 +949,24 @@ pub fn int_value_obj(x: &PDFObject) -> PyResult<PDFObject> {
 /// from Python's `True`/`False` in `repr()` and type checks (use
 /// [`int_value_obj`] where the value is shown).
 pub fn int_value(x: &PDFObject) -> PyResult<PyInt> {
-    Ok(match int_value_obj(x)? {
-        PDFObject::Int(i) => i,
-        PDFObject::Bool(b) => PyInt::Small(i64::from(b)),
+    Ok(int_of(&int_value_obj(x)?))
+}
+
+/// The value of an `int` or a `bool` (what [`int_value_obj`] returns) as a
+/// number (not a Python call).
+pub fn int_of(x: &PDFObject) -> PyInt {
+    match x {
+        PDFObject::Int(i) => i.clone(),
+        PDFObject::Bool(b) => PyInt::Small(i64::from(*b)),
         _ => unreachable!("int_value_obj returns an int or a bool"),
-    })
+    }
 }
 
 // pdfminer/pdftypes.py:157 float_value
 /// `float_value(x)` with `STRICT = False`: the float, or 0.0 (an int is not
 /// a float here).
 pub fn float_value(x: &PDFObject) -> PyResult<f64> {
+    let _frame = recursion::py_frame()?;
     Ok(match resolve1_none(x)? {
         PDFObject::Float(f) => f,
         _ => 0.0,
@@ -836,6 +977,7 @@ pub fn float_value(x: &PDFObject) -> PyResult<f64> {
 /// `num_value(x)` with `STRICT = False`: the int or float, or the int 0. A
 /// `bool` is returned as 0/1 (see [`int_value`]).
 pub fn num_value(x: &PDFObject) -> PyResult<Num> {
+    let _frame = recursion::py_frame()?;
     Ok(resolve1_none(x)?.as_num().unwrap_or(Num::Int(PyInt::ZERO)))
 }
 
@@ -844,12 +986,9 @@ pub fn num_value(x: &PDFObject) -> PyResult<Num> {
 /// number: `int_value(x)` when it is positive (a `True` stays `True`), else
 /// that value plus `2**n_bits` (an int).
 pub fn uint_value(x: &PDFObject, n_bits: u32) -> PyResult<PDFObject> {
+    let _frame = recursion::py_frame()?;
     let xi = int_value_obj(x)?;
-    let value = match &xi {
-        PDFObject::Int(i) => i.clone(),
-        PDFObject::Bool(b) => PyInt::Small(i64::from(*b)),
-        _ => unreachable!("int_value_obj returns an int or a bool"),
-    };
+    let value = int_of(&xi);
     if value > PyInt::ZERO {
         return Ok(xi);
     }
@@ -860,6 +999,7 @@ pub fn uint_value(x: &PDFObject, n_bits: u32) -> PyResult<PDFObject> {
 // pdfminer/pdftypes.py:184 str_value
 /// `str_value(x)` with `STRICT = False`: the bytes, or `b""`.
 pub fn str_value(x: &PDFObject) -> PyResult<PyBytes> {
+    let _frame = recursion::py_frame()?;
     Ok(match resolve1_none(x)? {
         PDFObject::Bytes(b) => b,
         _ => Rc::from(&[][..]),
@@ -869,6 +1009,7 @@ pub fn str_value(x: &PDFObject) -> PyResult<PyBytes> {
 // pdfminer/pdftypes.py:193 list_value
 /// `list_value(x)` with `STRICT = False`: the list, or a new empty list.
 pub fn list_value(x: &PDFObject) -> PyResult<PDFList> {
+    let _frame = recursion::py_frame()?;
     Ok(match resolve1_none(x)? {
         PDFObject::List(l) => l,
         _ => PDFList::default(),
@@ -878,6 +1019,7 @@ pub fn list_value(x: &PDFObject) -> PyResult<PDFList> {
 // pdfminer/pdftypes.py:202 dict_value
 /// `dict_value(x)` with `STRICT = False`: the dict, or a new empty dict.
 pub fn dict_value(x: &PDFObject) -> PyResult<PDFDict> {
+    let _frame = recursion::py_frame()?;
     Ok(match resolve1_none(x)? {
         PDFObject::Dict(d) => d,
         _ => PDFDict::new(),
@@ -888,14 +1030,22 @@ pub fn dict_value(x: &PDFObject) -> PyResult<PDFDict> {
 /// `stream_value(x)` with `STRICT = False`: the stream, or a new empty
 /// stream `PDFStream({}, b"")`.
 pub fn stream_value(x: &PDFObject) -> PyResult<Rc<PDFStream>> {
+    let _frame = recursion::py_frame()?;
     Ok(match resolve1_none(x)? {
         PDFObject::Stream(s) => s,
-        _ => Rc::new(PDFStream::new(PDFDict::new(), Rc::from(&[][..]), None)),
+        _ => {
+            // PDFStream({}, b""): its __init__, called from C
+            recursion::c_called_leaf()?;
+            Rc::new(PDFStream::new(PDFDict::new(), Rc::from(&[][..]), None))
+        }
     })
 }
 
 // ---------------------------------------------------------------------------
 // Flate fallback
+
+/// `logger = logging.getLogger(__name__)` of `pdfminer/pdftypes.py`.
+static LOG: pycompat::logging::Logger = pycompat::logging::Logger::new("pdfminer.pdftypes");
 
 // pdfminer/pdftypes.py:221 decompress_corrupted
 /// Called on some data that can't be properly decoded because of CRC
@@ -904,6 +1054,7 @@ pub fn stream_value(x: &PDFObject) -> PyResult<Rc<PDFStream>> {
 /// the first `zlib.error` is returned, unless that error comes before the
 /// last 4 bytes (the Adler-32 trailer), where it is raised.
 pub fn decompress_corrupted(data: &[u8]) -> PyResult<Vec<u8>> {
+    let _frame = recursion::py_frame()?;
     let mut d = zlib::Decompress::new(zlib::MAX_WBITS)?;
     let mut result_str = Vec::new();
     // i: the number of bytes decompressed without error
@@ -916,6 +1067,7 @@ pub fn decompress_corrupted(data: &[u8]) -> PyResult<Vec<u8>> {
                     return Err(e);
                 }
                 // logger.warning("Data-loss while decompressing corrupted data")
+                LOG.warning()?;
                 break;
             }
             Err(e) => return Err(e),
@@ -935,7 +1087,7 @@ pub struct PDFStream {
     /// `self.decipher`
     pub decipher: Option<DecipherCallable>,
     data: RefCell<Option<PyBytes>>,
-    objid: RefCell<Option<PyInt>>,
+    objid: RefCell<Option<ObjId>>,
     genno: RefCell<Option<PyInt>>,
 }
 
@@ -953,13 +1105,16 @@ impl PDFStream {
     }
 
     // pdfminer/pdftypes.py:258 PDFStream.set_objid
-    pub fn set_objid(&self, objid: PyInt, genno: PyInt) {
-        *self.objid.borrow_mut() = Some(objid);
+    /// `objid` is an int, or any id `getobj` was called with ([`ObjId`]).
+    /// (Not counted: callers that run it as Python take its frame, see
+    /// [`recursion::leaf`].)
+    pub fn set_objid(&self, objid: impl Into<ObjId>, genno: PyInt) {
+        *self.objid.borrow_mut() = Some(objid.into());
         *self.genno.borrow_mut() = Some(genno);
     }
 
     /// `self.objid`
-    pub fn objid(&self) -> Option<PyInt> {
+    pub fn objid(&self) -> Option<ObjId> {
         self.objid.borrow().clone()
     }
 
@@ -978,8 +1133,12 @@ impl PDFStream {
         self.rawdata.borrow().clone()
     }
 
-    fn objid_repr(&self) -> String {
-        self.objid.borrow().as_ref().map_or_else(|| "None".to_owned(), |i| i.to_string())
+    /// `str(self.objid)`
+    fn objid_str(&self) -> PyResult<String> {
+        match self.objid() {
+            Some(id) => id.py_str(),
+            None => Ok("None".to_owned()),
+        }
     }
 
     // pdfminer/pdftypes.py:262 PDFStream.__repr__
@@ -993,21 +1152,37 @@ impl PDFStream {
         self.attrs.contains_key(name)
     }
 
-    fn missing_attribute(&self, name: &str) -> PyErr {
+    /// The error of `stream[name]` for a missing `name` (`name` as `str()`
+    /// writes it).
+    pub fn missing_attribute(&self, name: &str) -> PyErr {
+        let objid = match self.objid_str() {
+            Ok(objid) => objid,
+            Err(e) => return e,
+        };
         // str() of a KeyError is the repr() of its argument.
-        let msg = format!("PDF stream object {} does not have attribute '{name}'", self.objid_repr());
+        let msg = format!("PDF stream object {objid} does not have attribute '{name}'");
         exc::PDFKeyError(str_repr(&msg))
     }
 
     // pdfminer/pdftypes.py:275 PDFStream.__getitem__
-    /// `stream[name]`
+    /// `stream[name]`, with its frame (a Python method called from C:
+    /// `BINARY_SUBSCR` calls it directly, without a C recursion unit).
     pub fn getitem(&self, name: &str) -> PyResult<PDFObject> {
+        recursion::leaf(1)?;
         self.attrs.get(name).ok_or_else(|| self.missing_attribute(name))
     }
 
     // pdfminer/pdftypes.py:283 PDFStream.get
+    /// `stream.get(name, default)` (its frame is the caller's to count:
+    /// [`PDFStream::get_counted`]).
     pub fn get(&self, name: &str, default: &PDFObject) -> PDFObject {
         self.attrs.get(name).unwrap_or_else(|| default.clone())
+    }
+
+    /// [`PDFStream::get`] with its Python frame.
+    pub fn get_counted(&self, name: &str, default: &PDFObject) -> PyResult<PDFObject> {
+        recursion::leaf(1)?;
+        Ok(self.get(name, default))
     }
 
     // pdfminer/pdftypes.py:286 PDFStream.get_any
@@ -1023,7 +1198,10 @@ impl PDFStream {
     // pdfminer/pdftypes.py:292 PDFStream.get_filters
     /// The `(filter, params)` pairs, both resolved.
     pub fn get_filters(&self) -> PyResult<Vec<(PDFObject, PDFObject)>> {
+        let _frame = recursion::py_frame()?;
+        recursion::leaf(1)?; // get_any
         let filters = resolve1_none(&self.get_any(&["F", "Filter"], PDFObject::List(PDFList::default())))?;
+        recursion::leaf(1)?; // get_any
         let params =
             resolve1_none(&self.get_any(&["DP", "DecodeParms", "FDecodeParms"], PDFObject::Dict(PDFDict::new())))?;
         if !filters.is_truthy() {
@@ -1045,6 +1223,7 @@ impl PDFStream {
 
     // pdfminer/pdftypes.py:309 PDFStream.decode
     pub fn decode(&self) -> PyResult<()> {
+        let _frame = recursion::py_frame()?;
         let rawdata = self.rawdata.borrow().clone();
         let Some(rawdata) = rawdata.filter(|_| self.data.borrow().is_none()) else {
             let show = |b: &Option<PyBytes>| b.as_ref().map_or_else(|| "None".to_owned(), |b| bytes_repr(b));
@@ -1103,15 +1282,21 @@ impl PDFStream {
                 return Err(exc::PDFNotImplementedError(format!("Unsupported filter: {}", f.repr()?)));
             }
             // apply predictors
-            if params.is_truthy() && params.py_contains_str("Predictor")? {
+            if params.is_truthy() && {
+                if let PDFObject::Stream(_) = params {
+                    // PDFStream.__contains__, called from C
+                    recursion::c_called_leaf()?;
+                }
+                params.py_contains_str("Predictor")?
+            } {
                 // params.get(name, default): a dict, or a stream
-                let get = |name: &str, default: i64| -> PDFObject {
+                let get = |name: &str, default: i64| -> PyResult<PDFObject> {
                     let default = PDFObject::Int(PyInt::Small(default));
-                    match params {
+                    Ok(match params {
                         PDFObject::Dict(d) => d.get(name).unwrap_or(default),
-                        PDFObject::Stream(s) => s.get(name, &default),
+                        PDFObject::Stream(s) => s.get_counted(name, &default)?,
                         _ => unreachable!("only a dict or a stream contains a str key"),
-                    }
+                    })
                 };
                 let predictor = match params {
                     PDFObject::Dict(d) => d.get("Predictor").expect("checked by `in`"),
@@ -1119,21 +1304,21 @@ impl PDFStream {
                     _ => unreachable!("only a dict or a stream contains a str key"),
                 };
                 let pred_obj = int_value_obj(&predictor)?;
-                let pred = int_value(&pred_obj)?;
+                let pred = int_of(&pred_obj);
                 if pred == PyInt::Small(1) {
                     // no predictor
                 } else if pred == PyInt::Small(2) {
                     // TIFF predictor 2
-                    let colors = int_value(&get("Colors", 1))?;
-                    let columns = int_value(&get("Columns", 1))?;
-                    let raw_bits_per_component = get("BitsPerComponent", 8);
+                    let colors = int_value(&get("Colors", 1)?)?;
+                    let columns = int_value(&get("Columns", 1)?)?;
+                    let raw_bits_per_component = get("BitsPerComponent", 8)?;
                     let bitspercomponent = int_value_obj(&raw_bits_per_component)?;
                     data = apply_tiff_predictor(&colors, &columns, &bitspercomponent, &data)?.into();
                 } else if pred >= PyInt::Small(10) {
                     // PNG predictor
-                    let colors = int_value(&get("Colors", 1))?;
-                    let columns = int_value(&get("Columns", 1))?;
-                    let raw_bits_per_component = get("BitsPerComponent", 8);
+                    let colors = int_value(&get("Colors", 1)?)?;
+                    let columns = int_value(&get("Columns", 1)?)?;
+                    let raw_bits_per_component = get("BitsPerComponent", 8)?;
                     let bitspercomponent = int_value_obj(&raw_bits_per_component)?;
                     data = apply_png_predictor(&pred, &colors, &columns, &bitspercomponent, &data)?.into();
                 } else {
@@ -1149,6 +1334,7 @@ impl PDFStream {
 
     // pdfminer/pdftypes.py:399 PDFStream.get_data
     pub fn get_data(&self) -> PyResult<PyBytes> {
+        let _frame = recursion::py_frame()?;
         if self.data.borrow().is_none() {
             self.decode()?;
         }

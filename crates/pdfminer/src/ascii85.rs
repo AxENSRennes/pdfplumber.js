@@ -57,8 +57,13 @@ fn strip_end(data: &[u8]) -> &[u8] {
 /// letters. Leading `<~` or `~` and trailing `~` or `~>` are stripped,
 /// then `base64.a85decode` decodes the rest (`ValueError` on bad input).
 pub fn ascii85decode(data: &[u8]) -> PyResult<Vec<u8>> {
+    let _frame = pycompat::recursion::py_frame()?;
     let data = strip_start(data);
     let data = strip_end(data);
+    // base64.a85decode (a Python function, which calls
+    // _bytes_from_decode_data first)
+    let _a85decode = pycompat::recursion::py_frame()?;
+    pycompat::recursion::leaf(1)?;
     a85decode(data)
 }
 
@@ -67,6 +72,7 @@ pub fn ascii85decode(data: &[u8]) -> PyResult<Vec<u8>> {
 /// number of digits before it gets a `0`), `binascii.unhexlify` decodes
 /// (`binascii.Error` on an odd length or a non-hexadecimal digit).
 pub fn asciihexdecode(data: &[u8]) -> PyResult<Vec<u8>> {
+    let _frame = pycompat::recursion::py_frame()?;
     let mut data: Vec<u8> = data.iter().copied().filter(|&c| !bytes_isspace(c)).collect();
     if let Some(idx) = data.iter().position(|&c| c == b'>') {
         data.truncate(idx);

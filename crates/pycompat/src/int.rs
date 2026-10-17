@@ -128,6 +128,15 @@ impl fmt::Display for PyInt {
 impl PyInt {
     pub const ZERO: PyInt = PyInt::Small(0);
 
+    /// `int.from_bytes(s, "big", signed=False)`, in linear time (as
+    /// CPython's `_PyLong_FromByteArray`).
+    pub fn from_bytes_be(s: &[u8]) -> PyInt {
+        if s.len() <= 7 || (s.len() == 8 && s[0] < 0x80) {
+            return PyInt::Small(s.iter().fold(0i64, |acc, &b| (acc << 8) | i64::from(b)));
+        }
+        PyInt::from(BigInt::from_bytes_be(Sign::Plus, s))
+    }
+
     pub fn to_bigint(&self) -> BigInt {
         match self {
             PyInt::Small(v) => BigInt::from(*v),

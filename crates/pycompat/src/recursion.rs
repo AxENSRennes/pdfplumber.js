@@ -132,6 +132,22 @@ pub fn py_frames(n: u32) -> PyResult<Guard> {
     Ok(take(n, 0))
 }
 
+/// `n` nested frames of calls that return at once (a leaf function and
+/// the ones it calls): only checked, as the call would raise
+/// `RecursionError` before doing anything.
+pub fn leaf(n: u32) -> PyResult<()> {
+    drop(py_frames(n)?);
+    Ok(())
+}
+
+/// A leaf Python function called from C (a class's `__init__` run by
+/// `type.__call__`, a lambda run by `re.sub`): the evaluation loop entry
+/// and its frame, only checked.
+pub fn c_called_leaf() -> PyResult<()> {
+    let _entry = eval_entry()?;
+    leaf(1)
+}
+
 /// `Py_EnterRecursiveCall(what)`: one C unit, or `RecursionError` with
 /// `what` appended to the message (`" while getting the repr of an
 /// object"`) when all are in use.

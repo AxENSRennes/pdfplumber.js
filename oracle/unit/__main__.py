@@ -53,6 +53,9 @@ GENERATORS: dict[str, tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]] = {
     "text_tables": (("meta.json",), ((),)),
     # every page operation on the quick set and sample documents (minutes)
     "text_tables_real": (("meta.json",), ((),)),
+    # the adversarial corpora adv-objects and adv-pages (written first), then
+    # the stage traces of the document layer on them, micro and small quick files (minutes)
+    "document": (("meta.json",), ((),)),
 }
 
 

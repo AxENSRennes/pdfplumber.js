@@ -82,6 +82,8 @@ fn parse_args(mut argv: impl Iterator<Item = String>) -> Result<Option<Args>, St
 
 fn trace(stage: &Stage, args: &Args, pdf: &[u8], out: &mut dyn Write) -> io::Result<()> {
     let run = stage.run.expect("checked by main");
+    // each trace of the oracle runs in a new process
+    pdftrace::stages::py_process::set_for_stage(stage.name);
     run(&StageInput { pdf, password: &args.password, max_pages: args.max_pages }, out)
 }
 

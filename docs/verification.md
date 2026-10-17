@@ -117,12 +117,14 @@ bord par le cache) et le format de chaque ligne. Règles communes :
   cadres sous l'appelant, trois au premier appel d'un niveau sur un logger,
   `_acquireLock` remplissant le cache), ce qui décide où tombe une
   `RecursionError` dans une récursion profonde (`create_pages` journalise à
-  chaque nœud). Coupée, elle coûte exactement ce que coûte la configuration
-  par défaut (aucun gestionnaire, niveau WARNING) : la référence est un
-  utilisateur sans configuration de logging ; une configuration DEBUG
-  exécute des gestionnaires et peut avancer la `RecursionError`. Le port
-  compte ces cadres comme les autres (« Profondeur de récursion » de
-  `architecture.md`).
+  chaque nœud). Coupée, elle coûte ce que coûte la configuration par
+  défaut (aucun gestionnaire, niveau WARNING) pour un appel `debug` ou
+  `info` ; un appel `warning` ou `error` passe par défaut au gestionnaire
+  `lastResort` (davantage de cadres), coupé il n'en coûte que deux ou trois :
+  la référence des traces, et du port, est la journalisation coupée. Une
+  configuration DEBUG exécute des gestionnaires et peut avancer la
+  `RecursionError`. Le port compte ces cadres comme les autres
+  (`pycompat::logging`, « Profondeur de récursion » de `architecture.md`).
 - `oracle.stages.entry_depth()` mesure la profondeur (cadres Python, unités
   C restantes, `oracle/depth.py`) où s'exécute le corps d'une fonction
   d'étape ; `pdftrace::stages::STAGE_ENTRY` la reprend et un test unitaire
@@ -179,6 +181,7 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   | `cmaps.py` | `glyphlist`, `latin_enc`, `fontmetrics`, `encodingdb`, `cmapdb` | `cmaps_unit.rs` | tables, `name2unicode`, `get_encoding`, scripts d'appels sur chaque classe de `cmapdb`, toutes les CMaps prédéfinies lues par le fournisseur des fichiers compacts de `oracle/codegen/cmaps.py`, `CMapParser` sur un corpus adverse `--fuzz 3000` (`synthetic.json`) et, avec `--corpus`, sur chaque flux CMap embarqué de l'ensemble `all` (`corpus.json`) |
   | `text_tables.py` | `pdfplumber::{obj, utils::{clustering, geometry, generic, text}, table}`, `pycompat::listsort` | `text_tables_unit.rs` | tri de CPython (timsort complet), opérateurs Python du modèle d'objets, `cluster_*`, géométrie, motifs de `extract_text_lines`, fonctions de `table.py`, `TableSettings.resolve`, pages adverses (`--fuzz`) passées par les opérations de page (`_plumber_ops.py`), pages aux coordonnées NaN (`_nan_objects.py`, ci-dessous) |
   | `text_tables_real.py` | les mêmes | `text_tables_unit.rs` (`pages_real`) | opérations de page sur les premières pages de l'ensemble `quick` et sur des documents riches en tables ; les pages dont un caractère est un surrogate isolé sont écartées et listées dans `meta.json` |
+  | `document.py` | `pdfparser`, `pdfdocument` (xrefs, `getobj`, flux d'objets, mot de passe, plans, libellés, noms), `pdfpage`, `pdfplumber::page` (boîtes), `pdfinternals.resolve_all`, `pycompat::bytes_format`, le comptage des cadres (`psparser`, accesseurs, filtres, `pycompat::logging`) | `document_unit.rs` | traces des étapes `objects`, `streams`, `pages`, `psparser` sur `adv-objects` et `adv-pages` (régénérés d'abord ; fenêtres de profondeur autour de la limite des cadres comprises), `micro` et les petits fichiers de `quick` ; `objects` sur un `io.BytesIO` (erreurs de `seek`/`read` d'un `BytesIO`) ; `api` (`get_outlines`, `get_page_labels`, `lookup_name`, `get_dest`, `PDFPage.get_pages`, `repr` des pages) ; chaque trace dans un processus fils créé pour elle (`os.fork`), comme `verify` en lance un par trace, et `py_process.jsonl` (les noms internés au départ des fils), dont le rejeu repart ; `bytes % int` (formats générés, et les largeurs qu'aucune machine ne peut allouer : `MemoryError`) ; `PDFXRefFallback.PDFOBJ_CUE` sur chaque caractère Latin-1 |
 
   Les tables générées (`oracle/codegen/`) sont vérifiées par `--check` dans
   `scripts/check.sh` : `libm_tables.py`, `saslprep_tables.py`,
@@ -325,6 +328,47 @@ mal typés. Pour chaque étape, `oracle/adversarial/<étape>.py` génère des PD
 qui interrogeaient Python, sont une bonne source d'idées
 (`git show legacy-pdfjs:test/lowlevel/`).
 
+Générateurs actuels (chacun s'exécute comme module, `python -m
+oracle.adversarial.objects` ; `oracle/unit/document.py` les relance avant
+d'écrire ses cas) :
+
+- `oracle/adversarial/objects.py` → `adv-objects` (333 PDF) : tables xref
+  cassées ou absentes (repli `PDFXRefFallback` et son motif d'en-tête),
+  offsets faux, `startxref` invalide, flux xref aux `/W`, `/Index`,
+  prédicteurs et champs atypiques (flottants, noms, chaînes, négatifs),
+  flux d'objets aux `/N`, `/First`, index et références imbriquées
+  anormaux (ids flottants, booléens, noms, références dans le repli),
+  chaînes et boucles `/Prev`/`/XRefStm`, mises à jour incrémentales,
+  trailer ou `/Root` absents, déchets avant `%PDF` et après `%%EOF`, fins
+  de ligne `\r` seules et `\r\n`, `/Length` indirects, négatifs, énormes,
+  dans un tableau non fermé ou égaux au flux lui-même (`RecursionError`),
+  en-têtes d'objets discordants, frontières de blocs de 4 096 octets, et
+  chaque chiffrement standard (RC4 40/56/128, AES-128, filtres Identity et
+  V2, AES-256 révisions 5 et 6) avec le mot de passe utilisateur,
+  propriétaire, faux ou vide (mots de passe dans `manifest.json`) ;
+  `cases_depth` : chaînes `/Prev` (tables, flux xref, flux en bas) et de
+  `/Length` de part et d'autre du premier niveau qui échoue en Python,
+  `obj`/`endobj` dans un flux d'objets, le mot-clé `stream` en fin de
+  fichier, `/Length` autour de `PY_SSIZE_T_MAX - 33` (`MemoryError`,
+  `OverflowError`), un champ de flux xref de 100 000 octets, un id flottant
+  déchiffré (`struct.error`) et un id booléen (`True`, un entier pour
+  `struct.pack`).
+- `oracle/adversarial/pages.py` → `adv-pages` : héritage (`/Resources`,
+  `/MediaBox`, `/CropBox`, `/Rotate`, depuis les nœuds et le catalogue),
+  boucles et partages dans l'arbre, `/Kids` absents ou atypiques (entiers,
+  dicts, flux, noms), repli sans `/Pages`, arbres profonds jusqu'à la
+  limite de récursion, toutes sortes de `/Rotate` (dont `bytes % 360`), de
+  boîtes et de `/Contents`, cycles de références (`MalformedPDFException`
+  de pdfplumber), libellés de pages de tous les styles, plans, arbres de
+  noms et destinations ; `cases_depth` : pour chaque forme de récursion
+  (arbre de pages, avec chaque chemin le plus profond possible au dernier
+  niveau : journalisation, flux, nom interné pour la première fois, xref
+  de repli, chiffrement, un flux d'objets par nœud avec chaque filtre ;
+  arbre de nombres des libellés ; `resolve_all` de pdfplumber ; plans et
+  arbre de noms par `api_trace`), une fenêtre de longueurs autour du
+  premier niveau qui échoue en Python (`docs/architecture.md`,
+  « Profondeur de récursion »).
+
 ## Mutations
 
 `cargo mutants` (crate `cargo-mutants`) mute le code Rust d'un module
@@ -339,8 +383,10 @@ règles :
 
 - **Plafond mémoire et créneaux** : chaque `cargo mutants`, génération de
   corpus adverse ou passe sur un ensemble complet passe par
-  `scripts/heavy.sh <commande>`. Le script attend l'un des deux créneaux
-  partagés par tous les worktrees (`.cache/locks/`), puis lance la commande
+  `scripts/heavy.sh <commande>`. Le script attend l'un des `HEAVY_SLOTS`
+  créneaux partagés par tous les worktrees (`.cache/locks/` ; exporter
+  `HEAVY_SLOTS=1` : depuis l'incident d'octobre 2026, les travaux lourds
+  passent un à un sur la machine), puis lance la commande
   dans `systemd-run --user --scope --quiet -p MemoryMax=5G -p MemorySwapMax=0
   -p OOMPolicy=continue`. Pour `cargo mutants`, utiliser `-j 1 --timeout 20`.
   Les tests corrects restent sous 250 Mo. `OOMPolicy=continue` : le noyau
@@ -367,20 +413,31 @@ règles :
   des boucles de `utils/text.rs` et `table.rs`.
 
 Les tests à donner à `cargo mutants` pour un module sont ses rejeux
-(colonne « Rejeu » du tableau des générateurs) :
-`--test-package pdftrace --cargo-test-arg=--test=<rejeu>` (plusieurs
-`--test` au besoin, par exemple `utils_unit` et `layout_unit` pour
+(colonne « Rejeu » du tableau des générateurs), en arguments de `cargo
+test` après `--` : `-- --package=pdftrace --test=<rejeu>` (cargo-mutants
+27.1 lance `cargo test --package=<crate mutée> -- …` : les formes
+`--test-package pdftrace --cargo-test-arg=--test=<rejeu>` et
+`--test-workspace=true` ne changent pas le paquet testé, la référence
+échoue sur « cargo test failed in an unmutated tree » et rien n'est
+testé ; vérifier dans `mutants.out/log/baseline.log` que la commande
+contient `--package=pdftrace --test=<rejeu>`). Plusieurs `--test` au
+besoin, par exemple `utils_unit` et `layout_unit` pour
 `utils.rs`, `filters_unit` et `zlib_unit` pour `pycompat::zlib`), et pour
 les fichiers partagés tous les rejeux qui les exercent (`utils.rs` :
 `utils_unit`, `layout_unit`, `filters_unit`, `crypto_unit` ; `pdftypes.rs` :
-`pdftypes_unit`, `filters_unit`).
+`pdftypes_unit`, `filters_unit`, `document_unit` ; `pdfparser.rs`,
+`pdfdocument/*.rs`, `pdfpage.rs`, `pdfplumber/src/page.rs`,
+`utils/pdfinternals.rs`, `pycompat/src/bytes_format.rs` : `document_unit`).
 
 ```sh
-systemd-run --user --scope --quiet -p MemoryMax=5G -p MemorySwapMax=0 -p OOMPolicy=continue \
-  cargo mutants -f crates/pdfminer/src/psparser.rs -E "ProgressGuard|check_progress|read_position" \
-  --test-package pdftrace --cargo-test-arg=--test=psparser_unit \
-  --profile mutants -j 1 --timeout 20
+HEAVY_SLOTS=1 scripts/heavy.sh cargo mutants -f crates/pdfminer/src/psparser.rs \
+  -E "ProgressGuard|check_progress|read_position" \
+  --profile mutants -j 1 --timeout 20 -- --package=pdftrace --test=psparser_unit
 ```
+
+Pour un fichier dont seule une partie a changé (le comptage des cadres
+ajouté à `psparser.rs`, `pdftypes.rs`, aux filtres), `--in-diff
+<diff>` limite la passe aux lignes du diff.
 
 **Passe `Ok(..)` des fonctions qui renvoient `PyResult`.** cargo-mutants
 (27.1) ne reconnaît un `Result` qu'à son nom : pour l'alias

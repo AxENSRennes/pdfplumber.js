@@ -17,7 +17,7 @@ use pdfminer::pdfdocument::{
     security_handler_registry, PDFStandardSecurityHandler, SecurityHandlerClass, PASSWORD_PADDING,
 };
 use pdfminer::pdftypes::{
-    decipher_all, int_value, DecipherCallable, PDFDict, PDFList, PDFObjRef, PDFObject, PDFResolver, PDFStream,
+    decipher_all, int_value, DecipherCallable, ObjId, PDFDict, PDFList, PDFObjRef, PDFObject, PDFResolver, PDFStream,
 };
 use pdfminer::psparser::{LIT_bytes, KWD, LIT};
 use pdfminer::saslprep::{saslprep, ucd_3_2_0_normalize_nfkc, StringprepTable};
@@ -409,7 +409,7 @@ fn run_handler_case(
         .iter()
         .map(|item| {
             let item = list_arg(item);
-            let (objid, genno, data) = (int_arg(&item[0]), int_arg(&item[1]), bytes_arg(&item[2]));
+            let (objid, genno, data) = (&ObjId::int(int_arg(&item[0]).clone()), int_arg(&item[1]), bytes_arg(&item[2]));
             let attrs = match &item[3] {
                 Value::None => None,
                 Value::Dict(items) => Some(dict(items, None)),
@@ -471,7 +471,7 @@ fn deep() {
             Value::None => h.decipher(),
             Value::Dict(items) => {
                 let attrs = dict(items, None);
-                Rc::new(move |objid: &PyInt, genno: &PyInt, data: &[u8], _attrs: Option<&PDFDict>| {
+                Rc::new(move |objid: &ObjId, genno: &PyInt, data: &[u8], _attrs: Option<&PDFDict>| {
                     let _frame = recursion::py_frame()?;
                     h.decrypt(objid, genno, data, Some(&attrs))
                 })
@@ -489,7 +489,7 @@ fn deep() {
         for _ in 0..n {
             x = PDFObject::List(PDFList::new(vec![x]));
         }
-        recursion::with_depth(base, || match decipher_all(&callback, &PyInt::Small(1), &PyInt::ZERO, &x) {
+        recursion::with_depth(base, || match decipher_all(&callback, &ObjId::int(PyInt::Small(1)), &PyInt::ZERO, &x) {
             Ok(obj) => Value::str(sha256_hex(canon_obj(&obj).as_bytes())),
             Err(e) => exc_value(&e),
         })
@@ -522,7 +522,7 @@ fn methods() {
             "decrypt" => {
                 let mut h = PDFStandardSecurityHandler::bare(SecurityHandlerClass::PDFStandardSecurityHandlerV5);
                 h.key = Some(Rc::from(bytes_arg(&a[2])));
-                let (objid, genno, data) = (int_arg(&a[3]), int_arg(&a[4]), bytes_arg(&a[5]));
+                let (objid, genno, data) = (&ObjId::int(int_arg(&a[3]).clone()), int_arg(&a[4]), bytes_arg(&a[5]));
                 let r = match str_arg(&a[1]) {
                     "decrypt_rc4" => h.decrypt_rc4(objid, genno, data),
                     "decrypt_aes128" => h.decrypt_aes128(objid, genno, data),
