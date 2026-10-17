@@ -66,6 +66,32 @@
 //!
 //! Text is Python's `str` ([`PyStr`]): values and keys may hold lone
 //! surrogates (a char's text from `chr(cid)`, a key or value a user gives).
+//!
+//! # Mutation testing
+//!
+//! Wave 2 review (`cargo mutants` on the lines of `obj.rs`, `table.rs`,
+//! `utils/{text,clustering,geometry}.rs` changed since wave 1, `--in-diff`,
+//! with `--test=text_tables_unit -- --skip pages_real`; then
+//! `scripts/mutants-ok.sh` for the `Ok(..)` mutants): every mutant is caught
+//! except these, which change no result:
+//!
+//! - `intern`: the size cap of the interning table (`< 4096` made `<=`,
+//!   `==`, `>`), and `Hot::of` made `None` (its only caller is `intern`):
+//!   they only decide whether equal keys share one allocation.
+//! - `fresh_nan`: `|` made `^` (the quiet-NaN bits, the port's bit 50 and
+//!   the counter below it are disjoint).
+//! - `hash_num` made `true` or `false`: every number, or every other value,
+//!   then hashes alike; `HashKey` equality still decides, and equal values
+//!   still hash alike.
+//! - `table.rs`, `ordered_number` made `false` (or its float arm deleted):
+//!   it only enables the binary search of `edges_to_intersections`; without
+//!   it the scan is upstream's.
+//! - `table.rs`, `TableSettings::text_settings_kwargs`, the `!v.truthy()`
+//!   guard made `false`: `settings.text_settings or {}` on a false value
+//!   that is not a dict, which `TableSettings::new` and `resolve` never
+//!   leave (`__post_init__` makes `None` a dict and raises for every
+//!   other false value: `x in v` or `v[k] = ...` fails on `0`, `""`,
+//!   `[]`, `()`...; the `user_arg_cases` check these).
 
 use rustc_hash::FxHashMap as HashMap;
 use std::cell::RefCell;
