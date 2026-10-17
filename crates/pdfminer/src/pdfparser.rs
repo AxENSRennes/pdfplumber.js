@@ -20,9 +20,7 @@
 //! A `BufferedReader.read(n)` beyond its buffer allocates `n` bytes before
 //! reading (`_bufferedreader_read_generic`), so a huge `/Length` raises
 //! `MemoryError` when that allocation fails: the port makes the same
-//! allocation ([`FileKind::read_size`]), natively (virtual memory, never
-//! touched, as Python's); on wasm32, where growing the memory is for good,
-//! only a size beyond the address space fails. Not modeled: a `seek`
+//! allocation ([`FileKind::read_size`], `pycompat::memory::probe`). Not modeled: a `seek`
 //! beyond the largest file size of the file system (2**44 on ext4) raises
 //! `OSError` in Python only.
 //!
@@ -105,7 +103,7 @@ impl FileKind {
                 if self == FileKind::BufferedReader && n > BUFFER_SIZE {
                     // PyBytes_FromStringAndSize(NULL, n): MemoryError when
                     // the allocation fails
-                    allocation_probe(n)?;
+                    pycompat::memory::probe(n as u128)?;
                 }
                 Ok(Some(usize::try_from(n).unwrap_or(usize::MAX)))
             }
@@ -116,19 +114,6 @@ impl FileKind {
 /// `io.DEFAULT_BUFFER_SIZE`, the buffer of `open(path, "rb")`: a read of
 /// more bytes than it holds allocates the whole result first.
 const BUFFER_SIZE: i64 = 8192;
-
-/// Whether an allocation of `n` bytes succeeds, as CPython's `malloc` of a
-/// new bytes object: `MemoryError` if not. Natively the memory is asked
-/// for and given back untouched (no page is used); on wasm32 growing the
-/// memory cannot be undone, so only a size beyond the address space fails.
-fn allocation_probe(n: i64) -> PyResult<()> {
-    let n = usize::try_from(n).ok().filter(|&n| n <= isize::MAX as usize).ok_or_else(|| exc::MemoryError(""))?;
-    if cfg!(target_family = "wasm") {
-        return Ok(());
-    }
-    let mut probe: Vec<u8> = Vec::new();
-    probe.try_reserve_exact(n).map_err(|_| exc::MemoryError(""))
-}
 
 /// The keywords `do_keyword` tests, copied from the statics once.
 #[derive(Clone, Copy)]

@@ -382,7 +382,45 @@ def cases_depth() -> list[Case]:
     window("outline-first", lambda n: outline_chain(n, "first"), 984)
     window("outline-next", lambda n: outline_chain(n, "next"), 984)
     window("names-kids", names_chain, 984)
+    # an error of the file object (an object at a negative offset) under
+    # get_page_labels and lookup_name: neither PDFTypeError nor KeyError, it
+    # is not turned into PDFNoPageLabels / PDFKeyError
+    out.append(("labels-ref-negative-offset", negative_offset(labels_doc(Ref(4), extra={4: {"Nums": [0, {"S": Name("D")}]}}), 4), None))
+    out.append(("names-ref-negative-offset", negative_offset(outline_doc({**NAMES, 34: {"Dests": Ref(30)}},
+                                                                        {"Names": Ref(34)}), 34), None))
+    # no /Pages: the scan goes through every xref (a page listed by the
+    # older section only), and an error other than PDFObjectNotFound ends it
+    base = build({3: page(MediaBox=BOX), 4: {"Title": b"x"}}, root=None)
+    out.append(("no-pages-scan-older-xref", update_section(base, {5: b"<< /Producer (update) >>"}), None))
+    out.append(("no-pages-scan-negative-offset", negative_offset(build({3: page(MediaBox=BOX), 4: {"Title": b"x"}}, root=None), 3), None))
     return out
+
+
+def update_section(base: bytes, objs: dict[int, bytes]) -> bytes:
+    """``base`` plus an incremental update: ``objs`` and an xref section
+    listing only them, whose trailer's /Prev is the previous section."""
+    prev = int(base[base.rindex(b"startxref"):].split()[1])
+    out = bytearray(base)
+    offs = {}
+    for n, body in sorted(objs.items()):
+        offs[n] = len(out)
+        out += b"%d 0 obj\n" % n + body + b"\nendobj\n"
+    x = len(out)
+    out += b"xref\n"
+    for n in sorted(offs):
+        out += b"%d 1\n%010d 00000 n \n" % (n, offs[n])
+    out += b"trailer\n<< /Size 60 /Root 1 0 R /Prev %d >>\nstartxref\n%d\n%%%%EOF\n" % (prev, x)
+    return bytes(out)
+
+
+def negative_offset(data: bytes, num: int) -> bytes:
+    """``data`` with the xref entry of object ``num`` at offset -9 (the
+    xref table of ``classic()``: one subsection from 0, 20-byte entries)."""
+    x = data.rindex(b"\nxref\n") + 1
+    first = data.index(b"\n", x + 5) + 1
+    entry = first + 20 * num
+    assert data[entry + 11:entry + 18] == b"00000 n", data[entry:entry + 20]
+    return data[:entry] + b"-000000009" + data[entry + 10:]
 
 
 def cases_attrs() -> list[Case]:
@@ -520,6 +558,8 @@ def cases_outlines() -> list[Case]:
     variant("missing-objects", {22: None, 24: None})
     variant("names-limits-int", {32: {"Limits": [1, 2], "Names": [b"a", 1]}})
     variant("names-limits-three", {32: {"Limits": [b"a", b"b", b"c"], "Names": [b"a", 1]}})
+    variant("names-limits-one", {32: {"Limits": [b"a"], "Names": [b"a", 1]}})
+    variant("names-limits-empty", {32: {"Limits": [], "Names": [b"a", 1]}})
     variant("names-key-list", {32: {"Names": [[1], 2, b"a", 3]}})
     variant("names-odd", {32: {"Names": [b"a", 1, b"b"]}})
     variant("names-kids-loop", {30: {"Kids": [Ref(30)]}})

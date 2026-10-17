@@ -44,7 +44,7 @@ import sys
 from collections.abc import Callable, Iterator
 from typing import Any
 
-from pdfminer.pdfdocument import PDFDocument, PDFXRefFallback
+from pdfminer.pdfdocument import PDFDocument, PDFTextExtractionNotAllowed, PDFXRefFallback
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfparser import PDFParser
 
@@ -123,6 +123,9 @@ def api_trace(path: str, password: str | None, max_pages: int) -> Iterator[str]:
         lookup <cat> <key> <value or exception>
         dest <name> <value or exception>
         getpages <pagenos> <maxpages> <[pageid, ...] or exception>
+        getpages-checked <[pageid, ...] or exception>  (check_extractable=True; the
+                                                        class alone for PDFTextExtractionNotAllowed,
+                                                        whose message holds the file name)
     """
     with open(path, "rb") as fp:
         doc = PDFDocument(PDFParser(fp), password=password or "")
@@ -166,6 +169,14 @@ def api_trace(path: str, password: str | None, max_pages: int) -> Iterator[str]:
             except Exception as e:
                 value = canon(e)
             yield line("getpages", sorted(pagenos) if pagenos else None, maxpages) + " " + value
+        fp.seek(0)
+        try:
+            value = canon([p.pageid for p in PDFPage.get_pages(fp, None, 0, password or "", check_extractable=True)])
+        except PDFTextExtractionNotAllowed:
+            value = "PDFTextExtractionNotAllowed"
+        except Exception as e:
+            value = canon(e)
+        yield "getpages-checked " + value
 
 
 def in_child(fn: Callable[[], Any]) -> Any:

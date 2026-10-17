@@ -28,7 +28,7 @@ use pdftrace::stages::{self, objects, StageInput};
 use pdftrace::unit::UnitData;
 use pdftrace::value::{PyStr, Value};
 use pycompat::bytes_format::bytes_mod_int;
-use pycompat::PyResult;
+use pycompat::{ExcKind, PyResult};
 
 /// `OUTLINES_MAX`, `LABELS_MAX` of the generator.
 const OUTLINES_MAX: usize = 60;
@@ -140,6 +140,26 @@ fn api_trace(input: &StageInput<'_>, out: &mut dyn Write) -> io::Result<()> {
             };
             lines.line("getpages", &[&pagenos, &maxpages.to_string(), &value]);
         }
+        let checked = (|| -> PyResult<Vec<Value>> {
+            let pages = PDFPage::get_pages(
+                Rc::from(input.pdf),
+                FileKind::BufferedReader,
+                "<_io.BufferedReader>",
+                None,
+                0,
+                input.password,
+                true,
+                true,
+            )?;
+            pages.map(|p| p.map(|p| Value::from(&p.pageid))).collect()
+        })();
+        let value = match checked {
+            Ok(ids) => canon(&Value::List(ids)),
+            // the class alone (the message holds the file name)
+            Err(e) if e.is_instance(ExcKind::PDFTextExtractionNotAllowed) => "PDFTextExtractionNotAllowed".to_owned(),
+            Err(e) => canon_exc(&e),
+        };
+        lines.push(format!("getpages-checked {value}"));
         Ok(())
     })
 }

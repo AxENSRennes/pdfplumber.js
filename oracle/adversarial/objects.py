@@ -106,6 +106,13 @@ def cases_basic() -> list[Case]:
     # the xref table
     x = data.index(b"xref\n")
     out.append(("xref-keyword-missing", data[:x] + data[x + 5:], None))
+    # read_xref_from reads the rest of the "xref" line: a subsection header on
+    # it is lost
+    out.append(("xref-header-same-line", replace_once(data, b"xref\n0 7\n", b"xref 0 7\n"), None))
+    # the first token at startxref raises something else than PSEOF (an
+    # octal escape above 255): not turned into PDFNoValidXRef
+    k = data.rindex(b"startxref")
+    out.append(("startxref-to-bad-octal", data[:k] + b"(\\400)\n" + startxref(k), None))
     out.append(("xref-bad-subsection", replace_once(data, b"0 7\n", b"0 7 9\n"), None))
     out.append(("xref-subsection-letters", replace_once(data, b"0 7\n", b"0 x\n"), None))
     out.append(("xref-count-short", replace_once(data, b"0 7\n", b"0 4\n"), None))
@@ -300,7 +307,9 @@ def cases_headers() -> list[Case]:
     for label, head in [("other-number", b"9 0 obj"), ("float-number", b"5.0 0 obj"), ("bool-number", b"true 0 obj"),
                         ("genno-other", b"5 7 obj"), ("no-obj", b"5 0 R"), ("tokens-before-obj", b"x 5 0 obj"),
                         ("one-token-before", b"5 obj"), ("name", b"/A 0 obj"), ("obj-glued", b"5 0obj"),
-                        ("string-number", b"(5) 0 obj")]:
+                        ("string-number", b"(5) 0 obj"),
+                        # the hack recovers (x[-2] is the id), or takes the genno
+                        ("hack-recovers", b"x y z 5 obj"), ("hack-takes-genno", b"a b c 5 0 obj")]:
         doc = base_doc()
         doc.objects = [o for o in doc.objects if o.num != 5]
         doc.add_raw(5, head + b"\n<</Type /Font /Subtype /Type1 /BaseFont /Times-Roman>>\nendobj\n")
@@ -658,6 +667,18 @@ def cases_depth() -> list[Case]:
     body += (b"3 0 obj\n<< /Type /XRef /Size 3 /Index [1 2] /W [1 %d 1] /Root 1 0 R /Filter /FlateDecode /Length %d >>\nstream\n"
              % (wide, len(data)) + data + b"\nendstream\nendobj\n")
     out.append(("xrefstream-wide-field", body + startxref(x), None))
+    # /W of sequences: get_pos repeats fl1 + fl2 + fl3 by the index
+    # (entlen * index) before slicing with it; at the index where the size
+    # overflows (OverflowError for bytes and str, MemoryError for a list) and
+    # one below (an allocation no machine can make: MemoryError)
+    for label, w in [("bytes", b"[(a) (b) (c)]"), ("str", b"<< /a 1 /b 2 /c 3 >>"), ("list", b"[[1] [2] [3]]")]:
+        for objid in (9223372036854775807 // 3, 9223372036854775807 // 3 + 1):
+            body = (b"%PDF-1.5\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+                    b"2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n")
+            x = len(body)
+            body += (b"3 0 obj\n<< /Type /XRef /Size 3 /Index [0 9223372036854775807] /W " + w +
+                     b" /Root %d 0 R /Length 6 >>\nstream\nabcdef\nendstream\nendobj\n" % objid)
+            out.append((f"xrefstream-w-{label}-repeat-{objid}", body + startxref(x), None))
     # a float id deciphered (struct.error for RC4/AES-128 with a string)
     for label, r, cfm in [("rc4", 3, None), ("aes128", 4, "AESV2"), ("identity", 4, None), ("aes256", 6, None)]:
         out.append((f"fallback-float-id-{label}", fallback_float_id(r, cfm, b"<< /Later true >>"), None))
