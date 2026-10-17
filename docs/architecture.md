@@ -190,10 +190,12 @@ deux). Règles :
   profond est chaque fois un autre chemin (journalisation, flux, nom
   interné pour la première fois, flux d'objets et chaque filtre,
   déchiffrement, xref de repli, arbres de nombres et de noms, plans,
-  `resolve_all`). Restent à compter les modules portés plus tard
-  (`pdfinterp` hors `PDFContentParser`, `pdffont`, `layout`) et les appels
-  d'un code porté avant ce comptage (`cmapdb` : ses fonctions ne prennent
-  pas encore leur cadre).
+  `resolve_all`). `pdffont` compte les siens (vague 2), `cmapdb` ceux de
+  `CMapDB` et de `CMapParser`, et `pdffont::frames` ceux du code qu'il
+  appelle sans comptage (`casting`, requêtes de `cmapdb`, `encodingdb`) ;
+  ces cas sont vérifiés aux seuils par `fonts_unit` (`depth`,
+  `corpus_depth`). Restent à compter `pdfinterp` hors `PDFContentParser`,
+  `pdfdevice`, `converter`, `layout` et la couche pdfplumber.
 - Le harnais fixe la profondeur de départ (`with_depth`) à celle que
   l'oracle a mesurée au même point d'appel ; le code porté ne la fixe jamais.
 
