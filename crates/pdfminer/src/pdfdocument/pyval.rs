@@ -229,23 +229,22 @@ pub fn entry_bounds(entlen: &PyVal, index: &PyVal) -> PyResult<(PyInt, PyInt)> {
                     _ => exc::MemoryError(""),
                 });
             }
-            if count > 0 && size > 0 {
-                // the bytes of one item: a byte, a character of the str's
-                // kind (PEP 393), a pointer of the list (CPython on 64 bits)
-                let unit: u128 = match entlen {
-                    PyVal::Str(s) => match s.chars().map(u32::from).max().unwrap_or(0) {
-                        0..=0xff => 1,
-                        0x100..=0xffff => 2,
-                        _ => 4,
-                    },
-                    PyVal::Obj(PDFObject::List(_)) => 8,
-                    _ => 1,
-                };
-                let repeated = (size as u128) * (count as u128);
-                // entlen * index, then offset + entlen
-                pycompat::memory::probe(repeated * unit)?;
-                pycompat::memory::probe((repeated + size as u128) * unit)?;
-            }
+            // the bytes of one item: a byte, a character of the str's kind
+            // (PEP 393), a pointer of the list (CPython on 64 bits)
+            let unit: u128 = match entlen {
+                PyVal::Str(s) => match s.chars().map(u32::from).max().unwrap_or(0) {
+                    0..=0xff => 1,
+                    0x100..=0xffff => 2,
+                    _ => 4,
+                },
+                PyVal::Obj(PDFObject::List(_)) => 8,
+                _ => 1,
+            };
+            // a sequence repeated by a negative int is empty
+            let repeated = (size as u128) * (count.max(0) as u128);
+            // entlen * index, then offset + entlen
+            pycompat::memory::probe(repeated * unit)?;
+            pycompat::memory::probe((repeated + size as u128) * unit)?;
             Err(slice_error())
         }
     }

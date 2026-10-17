@@ -674,9 +674,10 @@ def cases_depth() -> list[Case]:
     # /W of sequences: get_pos repeats fl1 + fl2 + fl3 by the index
     # (entlen * index) before slicing with it; at the index where the size
     # overflows (OverflowError for bytes and str, MemoryError for a list) and
-    # one below (an allocation no machine can make: MemoryError)
+    # one below (an allocation no machine can make: MemoryError), and the
+    # first entry (index 0: an empty repetition, then TypeError)
     for label, w in [("bytes", b"[(a) (b) (c)]"), ("str", b"<< /a 1 /b 2 /c 3 >>"), ("list", b"[[1] [2] [3]]")]:
-        for objid in (9223372036854775807 // 3, 9223372036854775807 // 3 + 1):
+        for objid in (0, 9223372036854775807 // 3, 9223372036854775807 // 3 + 1):
             body = (b"%PDF-1.5\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
                     b"2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n")
             x = len(body)
