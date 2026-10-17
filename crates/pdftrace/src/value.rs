@@ -87,9 +87,7 @@ impl Value {
 }
 
 /// A UTF-16 surrogate code point (U+D800..U+DFFF).
-pub fn is_surrogate(c: u32) -> bool {
-    (0xd800..0xe000).contains(&c)
-}
+pub use pycompat::pystr::is_surrogate;
 
 impl From<String> for PyStr {
     fn from(s: String) -> PyStr {

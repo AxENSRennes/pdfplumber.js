@@ -219,10 +219,7 @@ fn check_growth(len: usize, limit: usize) {
     debug_assert!(len <= limit, "runaway growth: {len} > {limit}");
 }
 
-/// A UTF-16 surrogate code point (U+D800..U+DFFF).
-fn is_surrogate(c: u32) -> bool {
-    (0xd800..0xe000).contains(&c)
-}
+use pycompat::pystr::is_surrogate;
 
 /// `bytes.decode("UTF-16BE", "ignore")`: CPython's UTF-16 decoder
 /// (`Objects/stringlib/codecs.h` `utf16_decode`) skipping what it reports:
