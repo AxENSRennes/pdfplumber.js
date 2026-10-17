@@ -887,6 +887,15 @@ fn sequence_repeat_address_space_limit() {
     assert_eq!(ok.as_str().map(str::len), Some(20_000_000));
     let ok = PyValue::tuple([PyValue::None]).mul(&PyValue::from(10_000_001i64)).unwrap();
     assert_eq!(ok.as_seq().map(<[PyValue]>::len), Some(10_000_001));
+    drop(ok);
+    // a str or bytes item is one byte (not a PyValue): one more item than a
+    // tuple may hold is built (about 180 MB, freed at once)
+    let n = limit / item + 1;
+    let ok = PyValue::str("a").mul(&PyValue::from(n)).unwrap();
+    assert_eq!(ok.as_pystr().map(pycompat::PyStr::len), Some(n as usize));
+    drop(ok);
+    let ok = PyValue::Bytes(std::rc::Rc::from(&b"a"[..])).mul(&PyValue::from(n)).unwrap();
+    assert!(matches!(&ok, PyValue::Bytes(b) if b.len() == n as usize));
 }
 
 /// The resource guard of layout text: `for i in range(n)` that appends a
@@ -1041,5 +1050,7 @@ fn debug_is_repr() {
     assert_eq!(format!("{o:?}"), "{'x0': 1.0, 'k': (1, 0.5, 'a')}");
     // the From conversions of the API
     assert_eq!(PyValue::from("a").repr(), "'a'");
+    assert_eq!(PyValue::from(pycompat::PyStr::from_code_points([0x61, 0xd800]).unwrap()).repr(), "'a\\ud800'");
+    assert_eq!(PyValue::from(String::from("b")).repr(), "'b'");
     assert!(matches!(PyValue::from(o.clone()), PyValue::Dict(d) if d.ptr_eq(&o)));
 }
