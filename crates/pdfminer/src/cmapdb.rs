@@ -192,12 +192,6 @@ impl From<Unichr> for pycompat::PyStr {
     }
 }
 
-impl From<&Unichr> for pycompat::PyStr {
-    fn from(u: &Unichr) -> pycompat::PyStr {
-        u.to_pystr()
-    }
-}
-
 impl From<String> for Unichr {
     fn from(s: String) -> Unichr {
         Unichr::Text(s.into())
