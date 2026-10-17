@@ -77,6 +77,7 @@ QUICK_MAX_BYTES = 60_000
 SEED = 7
 OUTLINES_MAX = 60
 LABELS_MAX = 12
+PAGES_MAX = 12
 
 
 @terminated
@@ -126,6 +127,8 @@ def api_trace(path: str, password: str | None, max_pages: int) -> Iterator[str]:
         getpages-checked <[pageid, ...] or exception>  (check_extractable=True; the
                                                         class alone for PDFTextExtractionNotAllowed,
                                                         whose message holds the file name)
+        page <f"{page!r}">                             (PDFPage.__repr__, at most PAGES_MAX)
+        pages <exception or "end">
     """
     with open(path, "rb") as fp:
         doc = PDFDocument(PDFParser(fp), password=password or "")
@@ -177,6 +180,17 @@ def api_trace(path: str, password: str | None, max_pages: int) -> Iterator[str]:
         except Exception as e:
             value = canon(e)
         yield "getpages-checked " + value
+        fp.seek(0)
+        try:
+            n = 0
+            for page in PDFPage.get_pages(fp, None, 0, password or ""):
+                yield line("page", f"{page!r}")
+                n += 1
+                if n >= PAGES_MAX:
+                    break
+            yield "pages end"
+        except Exception as e:
+            yield "pages " + canon(e)
 
 
 def in_child(fn: Callable[[], Any]) -> Any:

@@ -143,6 +143,16 @@ mod tests {
         disable();
         with_depth(Depth { py: PY_RECURSION_LIMIT - 2, c: 0 }, || {
             assert!(A.debug().is_err(), "disable() cleared the cache");
+            assert!(A.info().is_err());
+            assert!(A.error().is_err());
+        });
+        with_depth(Depth { py: PY_RECURSION_LIMIT - 3, c: 0 }, || {
+            A.info().expect("three frames fit");
+            A.error().expect("three frames fit");
+        });
+        with_depth(Depth { py: PY_RECURSION_LIMIT - 1, c: 0 }, || {
+            assert!(A.info().is_err(), "a cached level takes two frames");
+            assert!(A.error().is_err());
         });
     }
 }

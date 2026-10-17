@@ -30,9 +30,10 @@ use pdftrace::value::{PyStr, Value};
 use pycompat::bytes_format::bytes_mod_int;
 use pycompat::{ExcKind, PyResult};
 
-/// `OUTLINES_MAX`, `LABELS_MAX` of the generator.
+/// `OUTLINES_MAX`, `LABELS_MAX`, `PAGES_MAX` of the generator.
 const OUTLINES_MAX: usize = 60;
 const LABELS_MAX: usize = 12;
+const PAGES_MAX: usize = 12;
 
 fn str_value(s: &str) -> Value {
     Value::Str(PyStr::from(s))
@@ -160,6 +161,35 @@ fn api_trace(input: &StageInput<'_>, out: &mut dyn Write) -> io::Result<()> {
             Err(e) => canon_exc(&e),
         };
         lines.push(format!("getpages-checked {value}"));
+        let pages = PDFPage::get_pages(
+            Rc::from(input.pdf),
+            FileKind::BufferedReader,
+            "<_io.BufferedReader>",
+            None,
+            0,
+            input.password,
+            true,
+            false,
+        );
+        let mut error = None;
+        match pages {
+            Err(e) => error = Some(e),
+            Ok(pages) => {
+                for page in pages.take(PAGES_MAX) {
+                    match page.and_then(|p| p.repr()) {
+                        Ok(r) => lines.line("page", &[&canon(&str_value(&r))]),
+                        Err(e) => {
+                            error = Some(e);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        lines.push(match error {
+            Some(e) => format!("pages {}", canon_exc(&e)),
+            None => "pages end".to_owned(),
+        });
         Ok(())
     })
 }

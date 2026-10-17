@@ -14,7 +14,7 @@ use std::rc::Rc;
 use std::sync::LazyLock;
 
 use pycompat::logging::Logger;
-use pycompat::recursion::{eval_entry, leaf, py_frame, Guard};
+use pycompat::recursion::{c_call, eval_entry, leaf, py_frame, Guard};
 use pycompat::{exc, ExcKind, PyErr, PyInt, PyResult};
 
 use crate::casting::IterItem;
@@ -154,9 +154,19 @@ impl PDFPage {
     }
 
     // pdfminer/pdfpage.py:80 PDFPage.__repr__
+    /// `PyObject_Repr(page)` (the `!r` of an f-string): a C unit, the
+    /// evaluation loop entered from C and the frame of `__repr__`, whose
+    /// f-string takes the repr of the resources (a dict) and of the
+    /// mediabox (a tuple of floats).
     pub fn repr(&self) -> PyResult<String> {
+        let _unit = c_call(" while getting the repr of an object")?;
+        let _entry = eval_entry()?;
+        let _frame = py_frame()?;
+        let resources = self.resources.repr()?;
+        let _tuple = c_call(" while getting the repr of an object")?;
+        drop(c_call(" while getting the repr of an object")?); // a float
         let mediabox = self.mediabox.map(pycompat::repr::float_repr).join(", ");
-        Ok(format!("<PDFPage: Resources={}, MediaBox=({mediabox})>", self.resources.repr()?))
+        Ok(format!("<PDFPage: Resources={resources}, MediaBox=({mediabox})>"))
     }
 
     // pdfminer/pdfpage.py:91 PDFPage.create_pages
