@@ -117,13 +117,18 @@ bord par le cache) et le format de chaque ligne. Règles communes :
   cadres sous l'appelant, trois au premier appel d'un niveau sur un logger,
   `_acquireLock` remplissant le cache), ce qui décide où tombe une
   `RecursionError` dans une récursion profonde (`create_pages` journalise à
-  chaque nœud). Coupée, elle coûte ce que coûte la configuration par
-  défaut (aucun gestionnaire, niveau WARNING) pour un appel `debug` ou
-  `info` ; un appel `warning` ou `error` passe par défaut au gestionnaire
-  `lastResort` (davantage de cadres), coupé il n'en coûte que deux ou trois :
-  la référence des traces, et du port, est la journalisation coupée. Une
-  configuration DEBUG exécute des gestionnaires et peut avancer la
-  `RecursionError`. Le port compte ces cadres comme les autres
+  chaque nœud). La référence est donc la journalisation coupée
+  (`logging.disable(logging.CRITICAL)`), comme l'exécute l'oracle et comme
+  se comporte l'API JS, qui n'émet aucun message. Ce n'est pas la
+  configuration par défaut d'un utilisateur (aucun gestionnaire, niveau
+  WARNING) : `log.debug` et `log.info` y coûtent la même chose, mais
+  `log.warning` y est actif et exécute `_log`, `findCaller`, `makeRecord` et
+  le gestionnaire `lastResort`, bien plus profonds (12 cadres sous
+  l'appelant de l'avertissement de `PDFFont._parse_bbox`, contre 4 coupée),
+  et dont la profondeur dépend des arguments formatés ; une configuration
+  DEBUG fait de même pour chaque `log.debug`. Près de la limite, ces
+  configurations peuvent avancer la `RecursionError` : non modélisé. Le port
+  compte les cadres de la journalisation coupée comme les autres
   (`pycompat::logging`, « Profondeur de récursion » de `architecture.md`).
 - `oracle.stages.entry_depth()` mesure la profondeur (cadres Python, unités
   C restantes, `oracle/depth.py`) où s'exécute le corps d'une fonction
@@ -179,13 +184,14 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   | `ccitt_corpus.py` | `ccitt` | `ccitt_unit.rs` (`corpus`) | chaque appel de `ccittfaxdecode` que pdfminer fait sur l'ensemble `all` (flux et images en ligne) ; les appels de plus de `CALL_TIMEOUT_S` s en Python sont écartés et listés dans `meta.json` |
   | `crypto.py` | `arcfour`, `saslprep` (et sa NFKC 3.2.0), `utils::unpad_aes`, `pdfdocument::security` | `crypto_unit.rs` | RC4, `unpad_aes`, tables de `stringprep`, NFKC d'Unicode 3.2.0, `saslprep`, gestionnaires de sécurité générés (révisions 2 à 6, `/V` 0 à 6, `/CF`, `/StmF`/`/StrF`, mots de passe utilisateur et propriétaire), PDF chiffrés du corpus, cas profonds |
   | `cmaps.py` | `glyphlist`, `latin_enc`, `fontmetrics`, `encodingdb`, `cmapdb` | `cmaps_unit.rs` | tables, `name2unicode`, `get_encoding`, scripts d'appels sur chaque classe de `cmapdb`, toutes les CMaps prédéfinies lues par le fournisseur des fichiers compacts de `oracle/codegen/cmaps.py`, `CMapParser` sur un corpus adverse `--fuzz 3000` (`synthetic.json`) et, avec `--corpus`, sur chaque flux CMap embarqué de l'ensemble `all` (`corpus.json`) |
+  | `fonts.py` | `pdffont` (`mod.rs`, `type1.rs`, `cff.rs`, `truetype.rs`, `frames.rs`, `unpack.rs`), cadres de `cmapdb` (`CMapDB`, `CMapParser`) | `fonts_unit.rs` | `get_widths`/`get_widths2` sur des tableaux générés (références manquantes ou cassées comprises), `getdict`, `CFFFont`, `TrueTypeFont` + `create_unicode_map` et `Type1FontHeaderParser` sur des programmes générés et mutés, dictionnaires de police générés passés par `PDFResourceManager().get_font(None, spec)` (toutes les classes, chaînes `Type0`, chaque CMap prédéfinie) avec attributs, `decode`, `to_unichr`, `char_width`, `char_disp`, `string_width` ; `depth` : pour chaque police et chaque requête, la profondeur limite (nombre de cadres en plus) mesurée par recherche dichotomique, rejouée au seuil et un cadre plus bas, police construite une fois avant (CMaps prédéfinies chargées) et, pour celles qui en chargent, caches de `CMapDB` vidés avant chaque construction (`get_font_cold` : premiers chargements) ou après la création d'un `PSStackParser` (`get_font@parsed` : le cache du logger de `psparser` rempli, comme par le parseur d'un document) ; `/ToUnicode` avec `usecmap` ; polices de documents chiffrés (`fonts` et `depth`) : chaque flux chiffré pour un gestionnaire de sécurité de chaque sorte (RC4 40 et 128 bits, V4 RC4/AES-128/identité, AES-256, clé refusée par AES), le cas portant `[docid, param, password]` et le rejeu déchiffrant par le gestionnaire porté ; avec `--corpus`, chaque police utilisée par les 20 premières pages de l'ensemble `all` (objets atteints, erreurs de `getobj`, chaînes affichées ; pour un document chiffré, copiés d'une seconde instance, flux encore chiffrés) et chaque programme embarqué (`corpus_fonts`, `corpus_programs`), et les frontières de récursion des premières polices de chaque document chiffré (`corpus_depth`) |
   | `text_tables.py` | `pdfplumber::{obj, utils::{clustering, geometry, generic, text}, table}`, `pycompat::listsort` | `text_tables_unit.rs` | tri de CPython (timsort complet), opérateurs Python du modèle d'objets, `cluster_*`, géométrie, motifs de `extract_text_lines`, fonctions de `table.py`, `TableSettings.resolve`, pages adverses (`--fuzz`) passées par les opérations de page (`_plumber_ops.py`), pages aux coordonnées NaN (`_nan_objects.py`, ci-dessous) |
   | `text_tables_real.py` | les mêmes | `text_tables_unit.rs` (`pages_real`) | opérations de page sur les premières pages de l'ensemble `quick` et sur des documents riches en tables ; les pages dont un caractère est un surrogate isolé sont écartées et listées dans `meta.json` |
   | `document.py` | `pdfparser`, `pdfdocument` (xrefs, `getobj`, flux d'objets, mot de passe, plans, libellés, noms), `pdfpage`, `pdfplumber::page` (boîtes), `pdfinternals.resolve_all`, `pycompat::bytes_format`, le comptage des cadres (`psparser`, accesseurs, filtres, `pycompat::logging`) | `document_unit.rs` | traces des étapes `objects`, `streams`, `pages`, `psparser` sur `adv-objects` et `adv-pages` (régénérés d'abord ; fenêtres de profondeur autour de la limite des cadres comprises), `micro` et les petits fichiers de `quick` ; `objects` sur un `io.BytesIO` (erreurs de `seek`/`read` d'un `BytesIO`) ; `api` (`get_outlines`, `get_page_labels`, `lookup_name`, `get_dest`, `PDFPage.get_pages`, `repr` des pages) ; chaque trace dans un processus fils créé pour elle (`os.fork`), comme `verify` en lance un par trace, et `py_process.jsonl` (les noms internés au départ des fils), dont le rejeu repart ; `bytes % int` (formats générés, et les largeurs qu'aucune machine ne peut allouer : `MemoryError`) ; `PDFXRefFallback.PDFOBJ_CUE` sur chaque caractère Latin-1 |
 
   Les tables générées (`oracle/codegen/`) sont vérifiées par `--check` dans
   `scripts/check.sh` : `libm_tables.py`, `saslprep_tables.py`,
-  `pdfminer_tables.py` (`glyphlist`, `latin_enc`, `fontmetrics`),
+  `pdfminer_tables.py` (`glyphlist`, `latin_enc`, `fontmetrics`), `pdffont_tables.py` (`NIBBLES`, `CFFFont.STANDARD_STRINGS`),
   `ccitt_tables.py`. Les CMaps prédéfinies converties par
   `oracle/codegen/cmaps.py` ne sont pas versionnées : elles vivent dans
   `<cache>/cmap/<empreinte>/`, que le générateur `cmaps.py` remplit et
@@ -290,6 +296,25 @@ Mode d'emploi détaillé : [`oracle/README.md`](../oracle/README.md).
   dépôt) donne l'emplacement de `corpus/`, `upstream/` et `.cache`
   (`PDFPLUMBER_CACHE` peut désigner un autre cache). Dans un worktree Git, elle
   pointe vers le dépôt principal, qui contient les PDF téléchargés et le venv.
+
+### Mesurer une profondeur de cadres
+
+Le port modélise par des constantes les cadres Python que des appels de la
+bibliothèque standard prennent quand ils ne dépendent pas de l'entrée
+(`_load_data` de `cmapdb`). `oracle/depth_probe.py` les mesure : un crochet
+de profil (`sys.setprofile`) ne garde que deux entiers, profondeur courante
+et maximale (`max_depth`), et ne copie les noms de la pile qu'à chaque
+nouveau maximum (`deepest_path`). Ne jamais copier la pile à chaque appel :
+une sonde qui le faisait a atteint 18 Go et gelé la machine. Toute sonde
+tourne sous limites explicites ; `prlimit` prend des octets (`--as=4G`
+pose une limite de 4 octets et tout plante au démarrage) :
+
+```sh
+timeout 15m prlimit --as=4294967296 -- $PDFPLUMBER_ROOT/.venv/bin/python -m oracle.depth_probe cmaps
+```
+
+Les constantes mesurées sont aussi vérifiées par les cas de l'ensemble
+`depth` de `oracle/unit/fonts.py` (premiers chargements, `get_font_cold`).
 
 ## Ensembles de PDF (`oracle/corpus.py`)
 

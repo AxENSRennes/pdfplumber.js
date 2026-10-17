@@ -225,9 +225,33 @@ Décisions prises avant le port de `pdfparser.py` et `pdfdocument.py` :
   cœur ; un chargement paresseux côté navigateur se fait avant l'analyse
   (le cœur signale le nom manquant et l'analyse est relancée).
 - `Type1FontHeaderParser` met dans `results` des paires `(cid, nom)` dont
-  `cid` est un `int` Python quelconque : le parseur générique reçoit un type
-  de résultat associé (`PSStackParserExt::Result`) plutôt qu'un encodage dans
-  `PDFObject`.
+  `cid` est un `int` Python quelconque : le port garde ces paires dans l'état
+  du parseur (`Type1Header::pairs`, dans le même ordre) et pose une entrée
+  témoin dans `results` (seul `do_keyword` en ajoute, `flush` ne fait rien,
+  le parseur ne repositionne qu'à sa création), sans changer `psparser`.
+- `pdffont::get_font` est la partie de `PDFResourceManager.get_font` qui
+  crée la police (aiguillage sur `/Subtype`, polices `Type0`) et prend le
+  cadre de `get_font` ; le cache par `objid` reste à `PDFResourceManager`
+  (`pdfinterp`), qui l'appelle.
+- Profondeur dans `pdffont` : chaque fonction portée prend son cadre ;
+  `pdftypes` (accesseurs, `resolve1`, `PDFStream.get_data` jusqu'aux
+  filtres) et `psparser` (parseurs, `literal_name`, internement) comptent
+  les leurs, et `pdffont::frames` prend ceux des appels vers du code qui ne
+  les compte pas encore (`casting`, `get_unichr`/`decode` de `cmapdb`,
+  `EncodingDB.get_encoding`/`name2unicode`). Quand un de ces modules
+  comptera ses cadres, l'aide correspondante disparaît. Les appels de
+  journalisation prennent les leurs par `pycompat::logging`. `cmapdb`
+  compte les siens pour `CMapDB` (`get_cmap`, `get_unicode_map`,
+  `_load_data` avec les cadres de la bibliothèque standard qu'il exécute :
+  4 sous `_load_data` pour un nom absent, `os.path.realpath`, et 8 pour le
+  premier chargement d'un fichier, `json.load` lisant l'en-tête gzip,
+  mesurés pour chaque fichier de pdfminer) et pour `CMapParser`
+  (construction, `run`, `do_keyword`, `_warn_once`). Non modélisés
+  (documentés dans `cmapdb.rs` et `pdffont/mod.rs`) : les cadres de
+  `add_cid2unichr` et du générateur `choplist` sous `do_keyword`, jamais
+  plus profonds que la construction du parseur, qui vient avant ; l'import
+  du codec UTF-16 au premier `bytes.decode("UTF-16BE")` d'un processus
+  Python.
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 

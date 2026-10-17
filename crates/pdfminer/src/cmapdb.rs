@@ -61,11 +61,45 @@
 //!
 //! # Recursion depth
 //!
-//! Like `psparser` and `pdfinterp`, these functions do not count Python
-//! frames yet (`docs/architecture.md`): the interpreter port brings them to
-//! depth. `use_cmap`'s recursive `copy` and `add_code2cid` could only reach
-//! the frame limit through codes of about 1 000 characters, which pdfminer
-//! never builds (it never calls `add_code2cid`).
+//! A font is built at the depth of the page or Form XObject that uses it
+//! (`pdffont`), so a `RecursionError` can happen while a CMap is loaded or
+//! a `/ToUnicode` stream parsed. These count their Python frames
+//! (`docs/architecture.md`, "Profondeur de récursion"):
+//!
+//! - [`CMapDB::get_cmap`], [`CMapDB::get_unicode_map`] and
+//!   [`CMapDB::load_data`], `_load_data` with the frames of the standard
+//!   library it runs, which are those of the oracle's CPython 3.12 on its
+//!   files: when the name is not found, `os.path.realpath` ->
+//!   `_joinrealpath` -> `isabs` (or `join`) -> `_get_sep`, 4 frames below
+//!   `_load_data` (`$CMAP_PATH` unset, no symbolic link on the paths:
+//!   a name whose path goes through one depends on the machine, as
+//!   [`resolve_cmap_name`] says); when it is found (the first load of a
+//!   predefined CMap), `json.load` -> `GzipFile.read` -> `_compression`'s
+//!   `readall` -> `GzipFile.read` -> `_read_gzip_header` (twice) ->
+//!   `_read_exact` -> `GzipFile.read`, 8 frames below, for every file of
+//!   pdfminer's data (measured by a profile hook that counts the depth of
+//!   each call, `oracle/depth_probe.py`); the `log.debug`
+//!   calls take their frames where they are, for the logger cache;
+//! - the `CMapParser` methods: its construction (its `__init__`; the
+//!   `PSStackParser.__init__` it calls counts its own, as every `psparser`
+//!   method does: `nextobject`, `nexttoken`, `popall`, `pop`, `KWD`/`LIT`
+//!   interning, their `log.debug`), `run`, `do_keyword`, `_warn_once` and
+//!   its `log.warning`.
+//!
+//! Not modeled: the frames of `UnicodeMap.add_cid2unichr` and the
+//! `name2unicode` it calls, and of the `choplist` generator of
+//! `do_keyword`: they reach at most 7 frames below the caller of `run`,
+//! never deeper than the parser's construction (7 frames, 8 the first time
+//! the `psparser` logger is asked since its cache was cleared), which comes
+//! first; only `usecmap` (through `get_cmap`) goes deeper. Also not modeled: the
+//! import of the UTF-16 codec by the first `bytes.decode("UTF-16BE")` of a
+//! Python process (`importlib`, 15 frames below `run`), a property of the
+//! process's history. The query methods (`get_unichr`, `decode`) do not
+//! count theirs: their caller, `pdffont`, does (`pdffont::frames`).
+//! `CMap.use_cmap` (`usecmap` in a stream parsed into a `CMap`, which
+//! `pdffont` never does: its parser fills a `FileUnicodeMap`, whose
+//! `use_cmap` does nothing) does not count its recursive `copy`, nor does
+//! `add_code2cid`, which pdfminer never calls.
 
 use std::cell::RefCell;
 use std::fmt::Write as _;
@@ -76,6 +110,8 @@ use std::sync::{Arc, LazyLock, PoisonError, RwLock};
 use indexmap::IndexMap;
 use num_bigint::BigUint;
 use pycompat::io::{BytesIO, Pos};
+use pycompat::logging::Logger;
+use pycompat::recursion;
 use pycompat::repr::str_repr;
 use pycompat::{exc, ExcKind, PyErr, PyInt, PyResult};
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
@@ -84,6 +120,20 @@ use crate::encodingdb::{name2unicode, py_chr};
 use crate::pdftypes::PDFObject;
 use crate::psparser::{literal_name, LiteralName, PSKeyword, PSStackParser, PSStackParserExt, KWD};
 use crate::utils::choplist;
+
+/// `log = logging.getLogger(__name__)` of `pdfminer/cmapdb.py`.
+static LOG: Logger = Logger::new("pdfminer.cmapdb");
+
+/// The frames below `CMapDB._load_data` of the deepest call of a search
+/// that finds nothing (module documentation): `realpath` -> `_joinrealpath`
+/// -> `isabs` -> `_get_sep`.
+const SEARCH_FRAMES: u32 = 4;
+
+/// The frames below `CMapDB._load_data` of the deepest call of a load
+/// (module documentation): `json.load` -> `GzipFile.read` -> `readall` ->
+/// `GzipFile.read` -> `_read_gzip_header` -> `_read_gzip_header` ->
+/// `_read_exact` -> `GzipFile.read`.
+const LOAD_FRAMES: u32 = 8;
 
 // ---------------------------------------------------------------------------
 // Values
@@ -969,17 +1019,36 @@ impl CMapDB {
         }
     }
 
+    /// Empties the caches of this thread (`CMapDB._cmap_cache.clear()`,
+    /// `CMapDB._umap_cache.clear()`): the state of a new Python process,
+    /// for tests of the first load.
+    pub fn clear_caches() {
+        CMAP_CACHE.with(|c| c.borrow_mut().clear());
+        UMAP_CACHE.with(|c| c.borrow_mut().clear());
+    }
+
     // pdfminer/cmapdb.py:249 CMapDB._load_data
-    /// The data of the predefined CMap `name`, or `CMapNotFound(name)`.
+    /// The data of the predefined CMap `name`, or `CMapNotFound(name)`;
+    /// with the frames of the standard library calls of a search that fails
+    /// or a file that loads (see the module documentation).
     pub fn load_data(name: &str) -> PyResult<CMapModule> {
+        let _frame = recursion::py_frame()?;
         let name = name.replace('\0', "");
+        // log.debug("loading: %r", name)
+        LOG.debug()?;
         let provider = CMapDB::provider()?;
         if let (Some(provider), Some(stem)) = (provider, resolve_cmap_name(&name)) {
             if let Some(data) = provider.load(&stem) {
+                // log.debug("loading JSON: %r", json_path), then the
+                // deepest frames: json.load reading the gzip header
+                LOG.debug()?;
+                drop(recursion::py_frames(LOAD_FRAMES)?);
                 return CMapModule::parse(&name, &data)
                     .map_err(|e| exc::ValueError(format!("corrupt compact CMap {stem:?}: {e}")));
             }
         }
+        // the deepest frames of the search: os.path.realpath
+        drop(recursion::py_frames(SEARCH_FRAMES)?);
         Err(PyErr::new(ExcKind::CMapDB_CMapNotFound, name))
     }
 
@@ -987,18 +1056,27 @@ impl CMapDB {
     /// The CMap `name`: an identity CMap (a new one each time), or the
     /// predefined CMap, loaded once and cached.
     pub fn get_cmap(name: &str) -> PyResult<Rc<dyn CMapBase>> {
+        let _frame = recursion::py_frame()?;
         let wmode = |w: i64| Attrs::from_iter([("WMode".to_owned(), AttrValue::from(w))]);
+        let identity = |cmap: IdentityCMap| -> PyResult<Rc<dyn CMapBase>> {
+            // IdentityCMap(WMode=...): CMapBase.__init__, run from C
+            let _entry = recursion::eval_entry()?;
+            drop(recursion::py_frame()?);
+            Ok(Rc::new(cmap))
+        };
         match name {
-            "Identity-H" => return Ok(Rc::new(IdentityCMap::new(wmode(0)))),
-            "Identity-V" => return Ok(Rc::new(IdentityCMap::new(wmode(1)))),
-            "OneByteIdentityH" => return Ok(Rc::new(IdentityCMap::new_byte(wmode(0)))),
-            "OneByteIdentityV" => return Ok(Rc::new(IdentityCMap::new_byte(wmode(1)))),
+            "Identity-H" => return identity(IdentityCMap::new(wmode(0))),
+            "Identity-V" => return identity(IdentityCMap::new(wmode(1))),
+            "OneByteIdentityH" => return identity(IdentityCMap::new_byte(wmode(0))),
+            "OneByteIdentityV" => return identity(IdentityCMap::new_byte(wmode(1))),
             _ => {}
         }
         if let Some(cmap) = CMAP_CACHE.with(|c| c.borrow().get(name).cloned()) {
             return Ok(cmap);
         }
         let data = CMapDB::load_data(name)?;
+        // (PyCMap(name, data) and the __init__ it chains to are shallower
+        // than load_data's frames)
         let cmap = Rc::new(CMap::new_py(name, &data)?);
         CMAP_CACHE.with(|c| c.borrow_mut().insert(name.to_owned(), cmap.clone()));
         Ok(cmap)
@@ -1009,6 +1087,7 @@ impl CMapDB {
     /// (`Adobe-Japan1`...), horizontal or vertical; both are loaded once and
     /// cached.
     pub fn get_unicode_map(name: &str, vertical: bool) -> PyResult<Rc<UnicodeMap>> {
+        let _frame = recursion::py_frame()?;
         if let Some(umap) = UMAP_CACHE.with(|c| c.borrow().get(name).map(|maps| maps[usize::from(vertical)].clone())) {
             return Ok(umap);
         }
@@ -1072,8 +1151,11 @@ pub const WARNING_PREFIX: &str = "Ignoring (part of) ToUnicode map because the P
 
 impl<'a> PSStackParser<CMapParserExt<'a>> {
     // pdfminer/cmapdb.py:317 CMapParser.__init__
-    /// `CMapParser(cmap, fp)`.
+    /// `CMapParser(cmap, fp)`: takes the frame of `__init__` (a caller
+    /// instantiating the class from Python code takes the evaluation loop
+    /// entry of `type.__call__`).
     pub fn new(cmap: &'a mut dyn CMapBase, fp: BytesIO) -> PyResult<CMapParser<'a>> {
+        let _frame = recursion::py_frame()?;
         PSStackParser::init(Some(fp), CMapParserExt { cmap, in_cmap: true, warnings: Vec::new(), keywords: *KEYWORDS })
     }
 
@@ -1081,6 +1163,7 @@ impl<'a> PSStackParser<CMapParserExt<'a>> {
     /// Parses the whole stream into the map (until `PSEOF`, the only error
     /// it ignores).
     pub fn run(&mut self) -> PyResult<()> {
+        let _frame = recursion::py_frame()?;
         match self.nextobject() {
             Err(e) if e.is_instance(ExcKind::PSEOF) => Ok(()),
             Err(e) => Err(e),
@@ -1089,11 +1172,14 @@ impl<'a> PSStackParser<CMapParserExt<'a>> {
     }
 
     // pdfminer/cmapdb.py:498 CMapParser._warn_once
-    /// Warn once for each unique message.
-    fn warn_once(&mut self, msg: &str) {
+    /// Warn once for each unique message (`log.warning`).
+    fn warn_once(&mut self, msg: &str) -> PyResult<()> {
+        let _frame = recursion::py_frame()?;
         if !self.ext.warnings.iter().any(|w| w == msg) {
             self.ext.warnings.push(msg.to_owned());
+            LOG.warning()?;
         }
+        Ok(())
     }
 
     /// The objects of the stack, emptied (`[obj for (__, obj) in self.popall()]`).
@@ -1106,30 +1192,30 @@ impl<'a> PSStackParser<CMapParserExt<'a>> {
         let objs = self.popall_objects()?;
         for triple in choplist(3, &objs) {
             let PDFObject::Bytes(start_byte) = &triple[0] else {
-                self.warn_once("The start object of begincidrange is not a byte.");
+                self.warn_once("The start object of begincidrange is not a byte.")?;
                 continue;
             };
             let PDFObject::Bytes(end_byte) = &triple[1] else {
-                self.warn_once("The end object of begincidrange is not a byte.");
+                self.warn_once("The end object of begincidrange is not a byte.")?;
                 continue;
             };
             let cid = match &triple[2] {
                 PDFObject::Int(i) => i.clone(),
                 PDFObject::Bool(b) => PyInt::Small(i64::from(*b)),
                 _ => {
-                    self.warn_once("The cid object of begincidrange is not a byte.");
+                    self.warn_once("The cid object of begincidrange is not a byte.")?;
                     continue;
                 }
             };
             if start_byte.len() != end_byte.len() {
-                self.warn_once("The start and end byte of begincidrange have different lengths.");
+                self.warn_once("The start and end byte of begincidrange have different lengths.")?;
                 continue;
             }
             let split = start_byte.len().saturating_sub(4);
             let (start_prefix, svar) = start_byte.split_at(split);
             let (end_prefix, evar) = end_byte.split_at(split);
             if start_prefix != end_prefix {
-                self.warn_once("The prefix of the start and end byte of begincidrange are not the same.");
+                self.warn_once("The prefix of the start and end byte of begincidrange are not the same.")?;
                 continue;
             }
             let start = nunpack(svar).as_i64().expect("at most 4 bytes");
@@ -1148,15 +1234,15 @@ impl<'a> PSStackParser<CMapParserExt<'a>> {
         let objs = self.popall_objects()?;
         for triple in choplist(3, &objs) {
             let PDFObject::Bytes(start_byte) = &triple[0] else {
-                self.warn_once("The start object is not a byte.");
+                self.warn_once("The start object is not a byte.")?;
                 continue;
             };
             let PDFObject::Bytes(end_byte) = &triple[1] else {
-                self.warn_once("The end object is not a byte.");
+                self.warn_once("The end object is not a byte.")?;
                 continue;
             };
             if start_byte.len() != end_byte.len() {
-                self.warn_once("The start and end byte have different lengths.");
+                self.warn_once("The start and end byte have different lengths.")?;
                 continue;
             }
             let start = nunpack(start_byte);
@@ -1169,7 +1255,7 @@ impl<'a> PSStackParser<CMapParserExt<'a>> {
                     if PyInt::from(code.len()) != count {
                         self.warn_once(
                             "The difference between the start and end offsets does not match the code length.",
-                        );
+                        )?;
                     }
                     // zip(range(start, end + 1), code)
                     let mut cid = start;
@@ -1217,6 +1303,7 @@ impl PSStackParserExt for CMapParserExt<'_> {
     /// ToUnicode CMaps: see Section 5.9.2 - ToUnicode CMaps of the PDF
     /// Reference.
     fn do_keyword(p: &mut PSStackParser<Self>, pos: Pos, token: PSKeyword) -> PyResult<()> {
+        let _frame = recursion::py_frame()?;
         let [begincmap, endcmap, usecmap, def, begincodespacerange, endcodespacerange, begincidrange, endcidrange, begincidchar, endcidchar, beginbfrange, endbfrange, beginbfchar, endbfchar, beginnotdefrange, endnotdefrange] =
             p.ext.keywords;
         if token == begincmap {

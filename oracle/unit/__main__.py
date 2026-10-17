@@ -50,6 +50,8 @@ GENERATORS: dict[str, tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]] = {
     "ccitt_corpus": (("meta.json",), ((),)),
     # generated cases (seconds), then the embedded CMaps of the real corpus (minutes)
     "cmaps": (("meta.json", "synthetic.json", "corpus.json"), ((), ("--corpus",))),
+    # generated cases and depth boundaries (minutes), then the fonts of the real corpus (minutes)
+    "fonts": (("meta.json", "generated.json", "corpus.json"), ((), ("--corpus",))),
     "text_tables": (("meta.json",), ((),)),
     # every page operation on the quick set and sample documents (minutes)
     "text_tables_real": (("meta.json",), ((),)),

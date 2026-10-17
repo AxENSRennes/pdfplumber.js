@@ -192,6 +192,20 @@ Lecture :
   étapes `objects`, `streams`, `pages`, `psparser` côté Rust, à parité sur
   `all` et sur les corpus adverses `adv-objects`/`adv-pages` ; rejeu
   `document_unit`.
+- **Vague 2, polices** (branche `wave2/fonts`) : `pdffont` complet
+  (`pdffont/` : classes de police, `get_widths`/`get_widths2`,
+  `Type1FontHeaderParser`, `getdict`/`CFFFont`, `TrueTypeFont`, et la
+  création de police de `PDFResourceManager.get_font`), vérifié par
+  `oracle/unit/fonts.py` (cas générés, seuils de profondeur, polices et
+  programmes embarqués du corpus réel) rejoué par `fonts_unit.rs` : tout
+  identique (13 397 cas générés dont 2 079 seuils de profondeur, 4 083
+  polices et 1 971 programmes des 20 premières pages de `all`), mutations
+  sans survivant non justifié (rapport en tête de `fonts_unit.rs`).
+  `cmapdb` compte désormais les cadres de `CMapDB` et de `CMapParser`
+  (chargement d'une CMap prédéfinie compris, mesuré par
+  `oracle/depth_probe.py`), et le modèle des caches de logger est
+  `pycompat::logging`. L'étape PDF `fonts` attend l'interpréteur (codes
+  affichés) : vague suivante.
 - **Vagues suivantes**, dans l'ordre des dépendances :
   1. `pdfparser`, `pdfdocument` (xref, repli, flux d'objets, mot de passe
      via les gestionnaires déjà portés), `pdfpage` : étapes `objects`,
