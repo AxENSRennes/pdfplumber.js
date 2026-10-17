@@ -183,58 +183,44 @@ Lecture :
     `geometry`, `utils/text.py` (mots, `TextMap`, `extract_text`, layout)
     et `table.py` complets, testés sur des pages synthétiques et réelles ;
     `pycompat::listsort` (timsort de CPython, utilisé aussi par le layout).
-- **Vague 2, document** (branche `wave2/document`) : `pdfparser`
-  (`PDFParser`, `PDFStreamParser`), `pdfdocument` (xrefs table/flux/repli,
-  `getobj` et flux d'objets, mot de passe, plans, libellés, noms,
-  destinations), `pdfpage` (`create_pages` paresseux, héritage, repli),
-  `pdftypes::ObjId`, `pycompat::bytes_format`, et de pdfplumber les boîtes
-  de `Page.__init__` (`page.rs` partiel) et `pdfinternals.resolve_all` ;
-  étapes `objects`, `streams`, `pages`, `psparser` côté Rust, à parité sur
-  `all` et sur les corpus adverses `adv-objects`/`adv-pages` ; rejeu
-  `document_unit`.
-- **Vague 2, polices** (branche `wave2/fonts`) : `pdffont` complet
-  (`pdffont/` : classes de police, `get_widths`/`get_widths2`,
-  `Type1FontHeaderParser`, `getdict`/`CFFFont`, `TrueTypeFont`, et la
-  création de police de `PDFResourceManager.get_font`), vérifié par
-  `oracle/unit/fonts.py` (cas générés, seuils de profondeur, polices et
-  programmes embarqués du corpus réel) rejoué par `fonts_unit.rs` : tout
-  identique (13 397 cas générés dont 2 079 seuils de profondeur, 4 083
-  polices et 1 971 programmes des 20 premières pages de `all`), mutations
-  sans survivant non justifié (rapport en tête de `fonts_unit.rs`).
-  `cmapdb` compte désormais les cadres de `CMapDB` et de `CMapParser`
-  (chargement d'une CMap prédéfinie compris, mesuré par
-  `oracle/depth_probe.py`), et le modèle des caches de logger est
-  `pycompat::logging`. L'étape PDF `fonts` attend l'interpréteur (codes
-  affichés) : vague suivante.
-- **Vague 2, `str` et couche texte** (branche `wave2/strings`) :
-  `pycompat::PyStr` (la `str` de Python, surrogates isolés compris, octets
-  `surrogatepass`) dans le modèle d'objets, `LTChar`/`LTAnno`, `TextMap` et
-  les tables ; `unicodedata.normalize` (Unicode 15.0) ; les arguments de
-  l'utilisateur de tout type (`extra_attrs`, `split_at_punctuation`, lignes
-  explicites, `text_settings`, `+`/`*` de séquences, `float(str)`) comme en
-  Python ; identité des NaN portée par leur charge utile ; `atan2` de glibc
-  dans `pycompat::libm` (même résultat en Wasm).
-- **Vague 2, chantier `wasm-js`** (branche `wave2/wasm-js`) : l'infrastructure
-  WebAssembly et JavaScript avant la couche page
-  ([`js-runtime.md`](js-runtime.md)) : ABI sans `wasm-bindgen`, handles,
-  résultats en binaire `PJB1` (choisi par mesure contre JSON dans Node,
-  Chromium, Firefox et WebKit), erreurs Python vers JS (MRO vérifié contre
-  CPython), canal de diagnostics (`pycompat::diagnostics`), CMaps
-  prédéfinies paresseuses (`dist/cmaps`, relance déterministe), paquet
-  `js/` (Node, navigateur, worker, squelette de l'API publique), décision
-  sur `search` (sémantique `RegExp`), tests Node et navigateurs
-  (`scripts/check-browsers.sh`).
+- **Vague 2** (octobre 2026, fusionnée dans `rewrite/rust-core` après
+  revue et correction de chaque branche) :
+  - document : `pdfparser`, `pdfdocument` (xrefs table/flux/repli,
+    `getobj`, flux d'objets, mot de passe, plans, libellés, noms,
+    destinations), `pdfpage` (`create_pages` paresseux), `pdftypes::ObjId`,
+    `pycompat::bytes_format`, boîtes de `Page.__init__` ; comptage exact des
+    cadres dans `psparser`, `pdftypes`, les filtres et le document
+    (`pycompat::logging`, noms internés par processus) ;
+  - polices : `pdffont` complet et la création de police de
+    `PDFResourceManager.get_font` ; `cmapdb` compte les cadres de `CMapDB`
+    et `CMapParser`. À l'intégration, les compensations que `pdffont` et
+    `cmapdb` prenaient pour `psparser`/`pdftypes` ont été retirées (ils
+    comptent désormais les leurs) : les seuils de profondeur restent
+    identiques ;
+  - `str` : `pycompat::PyStr` (surrogates isolés compris) dans le modèle
+    d'objets, `LTChar`/`LTAnno`, `TextMap`, les tables et la frontière JS
+    (arguments et messages d'erreur compris) ; `unicodedata.normalize`,
+    `atan2` de glibc, arguments utilisateur de tout type, identité des NaN ;
+    le texte de `to_unichr` entre tel quel dans `LTChar` ;
+  - Wasm/JS ([`js-runtime.md`](js-runtime.md)) : ABI sans `wasm-bindgen`,
+    format `PJB1`, erreurs avec MRO, diagnostics, CMaps paresseuses, paquet
+    `js/` (Node, navigateur, worker) ; fournisseur de CMaps installé par
+    chaque point d'entrée (Wasm, tests natifs et WASI, `pdftrace
+    --cmap-dir`).
+  Vérification à l'intégration : `scripts/check.sh` vert (natif,
+  `wasm32-wasip1` sous Node, build `dist`, tests JS) ; `oracle.verify`
+  identique sur `psparser`, `objects`, `streams`, `pages` pour `all` (1 853
+  fichiers), `adv-objects` (333) et `adv-pages` (285) ;
+  `scripts/check-browsers.sh` : 102 tests verts (Chromium, Firefox, WebKit).
 - **Vagues suivantes**, dans l'ordre des dépendances :
-  1. `pdfparser`, `pdfdocument` (xref, repli, flux d'objets, mot de passe
-     via les gestionnaires déjà portés), `pdfpage` : étapes `objects`,
-     `streams`, `pages` ;
-  2. `pdffont` (sur `cmapdb`/`encodingdb`/`fontmetrics`) : étape `fonts` ;
-  3. `pdfinterp`, `pdfdevice`, `converter` (`PDFPageAggregator` vers
-     `layout`) : étapes `interp`, `layout` ;
-  4. pdfplumber `page`, `pdf`, `container`, `structure`, `convert` :
+  1. `pdfinterp`, `pdfdevice`, `converter` (`PDFPageAggregator` vers
+     `layout`) : étapes `fonts`, `interp`, `layout` (comptage des cadres de
+     l'interpréteur, ordre des `id()` du layout) ;
+  2. pdfplumber `page`, `pdf`, `container`, `structure`, `convert` :
      étapes `plumber_*`, en réutilisant `text`/`table` déjà portés ;
-  5. le Wasm et l'API JS (frontière à gros grain, fournisseur de CMaps par
-     `fetch`, `search` à la sémantique de `re`).
-  Les questions ouvertes laissées par la vague 1 sont notées dans les
-  en-têtes des modules et dans `architecture.md` (`search`, fournisseur de
-  CMaps ; `atan2` est porté depuis, vague 2).
+  3. l'API JS publique sur la couche page (`pdf.pages`, objets, texte,
+     tables), sur l'infrastructure Wasm/JS déjà en place.
+  Les questions ouvertes sont notées dans les en-têtes des modules, dans
+  `architecture.md` et dans `js-runtime.md` (`search` suit la sémantique
+  `RegExp` de JS, choix documenté ; `atan2` et le fournisseur de CMaps sont
+  réglés).

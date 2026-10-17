@@ -583,8 +583,23 @@ fn malformed_arguments_raise_and_never_panic() {
     twice.extend_from_slice(&[0, 0, 0, 0, 1, 0, 0, 0, 0, 0xd8, 0, 0]);
     assert_eq!(m(&twice), "malformed PJB1 block: string index");
     let mut many = special.clone();
-    many[24] = 0xff; // more strings with a surrogate than the block can hold
+    many[24] = 0xff; // more strings with a surrogate than strings
     assert_eq!(m(&many), "malformed PJB1 block: string counts");
+    // `k` strings with a surrogate, each at least 8 bytes (index, length):
+    // one more than the 16 bytes after the empty blob can hold is refused
+    // before anything is read or allocated for them (a hostile count of
+    // 2^30 would ask for 8 GiB of slots)
+    let specials = |k: u32| {
+        let mut b = header(&[0x07, 0, 0, 0]);
+        b[8] = 20;
+        b.extend_from_slice(&k.to_le_bytes());
+        b.extend_from_slice(&k.to_le_bytes());
+        b.extend_from_slice(&[0; 4 + 16]);
+        b
+    };
+    assert_eq!(m(&specials(3)), "malformed PJB1 block: string counts");
+    assert_eq!(m(&specials(1 << 30)), "malformed PJB1 block: string counts");
+    assert_eq!(m(&specials(2)), "malformed PJB1 block: string index", "two strings claiming index 0");
     let mut overlap = header(&[0x03, 1, 0, 0, 0]); // an I32 that runs into the table at 18
     overlap[8] = 18;
     overlap.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0]);
