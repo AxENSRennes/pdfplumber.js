@@ -212,6 +212,11 @@ Lecture :
   identique sur `psparser`, `objects`, `streams`, `pages` pour `all` (1 853
   fichiers), `adv-objects` (333) et `adv-pages` (285) ;
   `scripts/check-browsers.sh` : 102 tests verts (Chromium, Firefox, WebKit).
+  Mutations sur le code modifié à l'intégration (`--in-diff`, `-j 1`) :
+  `crates/wasm` 87 + 19 mutants, `pdffont`/`cmapdb` 100, `pdftrace` 3, puis
+  passes `Ok(..)` (12 et 22) et 9 mutants à la main pour les types sans
+  `Default` : deux survivants, tués (borne du nombre de chaînes à
+  surrogate de `read_table`) ou supprimés (`From<&Unichr>` sans appelant).
 - **Vagues suivantes**, dans l'ordre des dépendances :
   1. `pdfinterp`, `pdfdevice`, `converter` (`PDFPageAggregator` vers
      `layout`) : étapes `fonts`, `interp`, `layout` (comptage des cadres de
