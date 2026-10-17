@@ -510,3 +510,25 @@ fn surrogate_error_message() {
     assert!(e.surrogate_message.is_none());
     assert_eq!(e.py_message(), PyStr::new("ab"));
 }
+
+/// The Rust conversions and comparisons of `PyStr` (port API, no Python
+/// counterpart): every constructor from Rust text gives the same `str`,
+/// `==` with Rust text, both ways, is equality of the text (a `str` with a
+/// surrogate equals no Rust text), and `{:?}` is `repr()` (`pystr` cases).
+#[test]
+fn pystr_rust_conversions() {
+    use pycompat::PyStr;
+    let s = PyStr::new("\u{e9}a");
+    assert_eq!(PyStr::from("\u{e9}a"), s);
+    assert_eq!(PyStr::from(String::from("\u{e9}a")), s);
+    assert_eq!(PyStr::from(&String::from("\u{e9}a")), s);
+    assert_eq!(PyStr::from(&s), s);
+    assert_eq!(PyStr::from('\u{e9}'), PyStr::new("\u{e9}"));
+    assert_eq!(PyStr::from('\u{1f600}').len(), 1);
+    assert!(s == *"\u{e9}a" && s == "\u{e9}a" && *"\u{e9}a" == s && "\u{e9}a" == s);
+    assert!(s != *"\u{e9}" && s != "a" && *"a" != s && "b" != s);
+    let sur = PyStr::from_code_points([0x61, 0xd800]).unwrap();
+    assert!(sur != *"a" && sur != "a\u{fffd}" && "a\u{fffd}" != sur);
+    assert_eq!(format!("{sur:?}"), "'a\\ud800'");
+    assert_eq!(format!("{s:?}"), s.repr());
+}
