@@ -317,6 +317,44 @@ la couche page ajoutera l'interpréteur et les polices. Budget (brotli) :
   seule fois en mémoire, absence de fuite de tampons.
 - `scripts/check.sh` : noms de CMaps, build (sans `wasm-opt`), types, vitest,
   budget. `scripts/check-browsers.sh` : build complet puis Playwright.
+- **Mutations** (`docs/verification.md`), sur tout `crates/wasm/src` et sur
+  le code de la frontière dans `crates/pdfplumber` (libération de
+  `PyValue`, `TextMap::search_with`, `resolved`), tests du paquet
+  `pdfplumber-wasm` :
+
+  ```sh
+  scripts/heavy.sh cargo mutants -f crates/wasm/src/{abi,cmaps,errors,handles,ops,strings}.rs \
+    -f crates/wasm/src/wire/{binary,json,mod}.rs -f crates/pdfplumber/src/{obj,table,utils/text}.rs \
+    -F '^crates/wasm/src/|take_items|Drop for PyValue|search_with|replace resolved|in resolved' \
+    --test-package pdfplumber-wasm --profile mutants -j 1 --timeout 20
+  scripts/heavy.sh scripts/mutants-ok.sh -f <les fichiers de crates/wasm/src> \
+    --profile mutants -j 1 --timeout 20 -- --package=pdfplumber-wasm
+  ```
+
+  896 mutants : 538 détectés, 311 non compilables (les `PyResult::new(..)`,
+  voir la passe `Ok(..)`), 1 délai dépassé (`mro` dont la linéarisation ne
+  termine plus : une boucle, détectée), 46 survivants. Tués depuis par un
+  test : les valeurs de `test_values` (épinglées en Rust comme
+  `expectedTestValues` les attend en JS), le repli `CMap()` de
+  `doc_cmap_decode` sur `CMapNotFound` seulement, U+10FFFF et les positions
+  d'erreur de l'UTF-8 généralisé (vérifiés en reposant à la main onze de
+  ces mutants dans une copie : tous détectés ; la relance `cargo mutants`
+  ciblée n'a pas obtenu le créneau lourd, tenu des heures par d'autres
+  chantiers) ; la
+  borne de `group_index` (redondante avec `search_with`) est retirée.
+  Équivalents, notés dans le code : les `|`/`^` sur des bits disjoints
+  (`handles.rs`, `varint`, `column_kind`, `strings.rs`), la capacité
+  réservée d'une table (une indication), `>`/`>=` sur un infini
+  (`json.rs`), les raccourcis `Utf8`/`Utf16` de `PyStrRef` (même résultat
+  par le chemin général), la garde `KeyError` de `cmap_unichr` (seule
+  erreur possible des tables chargées). Passe `Ok(..)` : 93 mutants, 2
+  survivants (`ObjectsPage::bbox`, `BinWriter::table` → `Ok(false)`) tués
+  par des lignes explicites numériques (`js_runtime.py`) et un test du
+  format table ; relancée sur `ops.rs` et `wire/binary.rs` : 70 mutants,
+  63 détectés, 7 non compilables, aucun survivant ; `enter` → `Ok(())`
+  boucle sur une valeur cyclique (délai, détecté). Les corps `Ok(vec![])`
+  et `Ok(vec![Obj::new()])` de `TextMap::search_with` ont été posés à la
+  main : les rejeux échouent.
 - **Navigateurs sur cette machine** : Chromium 148, Firefox 150 (Nightly de
   Playwright) et WebKit 26.4 de Playwright 1.60 ; Firefox 158 du système pour
   les mesures. WebKit manque de bibliothèques système (GStreamer, libwoff2,
