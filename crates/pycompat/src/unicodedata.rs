@@ -12,6 +12,25 @@
 //! `oracle/unit/pycompat.py`, `normalize`, hold normalized inputs too).
 //! pdfplumber normalizes the text of each char when `unicode_norm` is set
 //! (`pdfplumber/page.py`, `Page.process_object`).
+//!
+//! Mutation testing (`cargo mutants -f crates/pycompat/src/unicodedata.rs
+//! --profile mutants -j 1 -- --package=pdftrace --test=pycompat_unit
+//! --test=canon_unit`, review of wave 2): 159 mutants, every one caught
+//! or timed out except these, equivalent for every input:
+//!
+//! - `is_nfc_first` and `is_nfc_last` made `true`: they only skip a
+//!   [`compose`] look-up, and the composition table holds exactly the
+//!   pairs whose first is an NFC first and whose last an NFC last (CPython's
+//!   `comp_data` is 0 for every other pair), so the look-up finds nothing
+//!   where they are false; a non-first then never composes, and the scan
+//!   that follows it only advances `i1`.
+//! - `i1 += 1` made `*= 1` in the not-combinable branch of `nfc_nfkc`: the
+//!   loop meets the same mark again with `comb == comb1`, which is the
+//!   blocked branch, and that one advances `i1`.
+//!
+//! The trailing-jamo bounds of the Hangul composition (`T_BASE < c` and
+//! `c < T_BASE + T_COUNT` made `<=`) are killed by the cases `가`
+//! followed by `ᆧ` or `ᇃ`.
 
 use crate::pystr::{PyStr, PyStrBuilder};
 use crate::unicodedata_tables as tables;
