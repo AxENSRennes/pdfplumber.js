@@ -744,7 +744,7 @@ fn lookup(d: &PDFDict, cat: &str, key: &PyVal) -> PyResult<PDFObject> {
         let limits = list_value(&limits)?.to_vec();
         let [k1, k2]: [PDFObject; 2] = match limits.len() {
             2 => limits.try_into().map_err(|_| exc::ValueError(""))?,
-            n if n < 2 => return Err(exc::ValueError(format!("not enough values to unpack (expected 2, got {n})"))),
+            n @ (0 | 1) => return Err(exc::ValueError(format!("not enough values to unpack (expected 2, got {n})"))),
             _ => return Err(exc::ValueError("too many values to unpack (expected 2)")),
         };
         if key.compare(&PyVal::Obj(k1), "<")? || PyVal::Obj(k2).compare(key, "<")? {
