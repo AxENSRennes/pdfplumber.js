@@ -508,10 +508,27 @@ fn run(
     pycompat::re_cache::set_compiled(SUBPATH_PATTERN, compiled);
     pycompat::logging::disable();
     let is_inline = |name: &str| case.inline.contains(name);
-    let mut dev =
-        recursion::with_depth(base, || PDFPageAggregatorWithMarkedContent::create(rsrcmgr.clone(), pageno, lp.clone()))
-            .expect("the device");
     let mut out: Vec<String> = Vec::new();
+    // the callers of the device's class and of get_result: the base's
+    // first level, unless the case gives another depth
+    let caller = |key: &str| {
+        let Value::Dict(items) = &args[1] else { panic!("a process dict") };
+        let py = items
+            .iter()
+            .find(|(k, _)| k.as_str() == Some(key))
+            .map_or(base.py + 1, |(_, v)| u32::try_from(int(v)).expect("a depth"));
+        Depth { py, c: base.c }
+    };
+    let created = recursion::with_depth(caller("device_py"), || {
+        PDFPageAggregatorWithMarkedContent::create(rsrcmgr.clone(), pageno, lp.clone())
+    });
+    let mut dev = match created {
+        Ok(dev) => dev,
+        Err(e) => {
+            out.push(line("device", &[exc(&e)]));
+            return out.join("\n") + "\n";
+        }
+    };
     let mut raw: Option<RawDump> = None;
     for (i, (py, call)) in calls.iter().enumerate() {
         if let (Call::EndPage(_), Some(_)) = (call, &lp) {
@@ -542,27 +559,28 @@ fn run(
             Ok(None) => {}
         }
     }
-    let result = recursion::with_depth(base, || page_aggregator::get_result(&dev).map(|_| ()));
+    let result = recursion::with_depth(caller("result_py"), || page_aggregator::get_result(&dev).map(|_| ()));
     if let Err(e) = &result {
         out.push(line("result", &[exc(e)]));
     }
     let agg = &mut dev.aggregator;
+    // the page get_result returned (none when it raised)
+    let got = if result.is_ok() { agg.result.as_ref() } else { None };
     match (&lp, raw) {
         (None, _) => {
-            if let Some(page) = &agg.result {
+            if let Some(page) = got {
                 out.extend(RawDump::new(&page.layout._objs, &is_inline).write(page));
             }
         }
         (Some(_), Some(raw)) => {
-            let page = match &agg.result {
-                Some(page) => {
-                    out.extend(analyzed(page, &raw));
-                    page
-                }
-                None => match &agg.analyzer.cur_item {
-                    Some(CurItem::Page(page)) => page,
-                    _ => panic!("an analysis without a page"),
-                },
+            if let Some(page) = got {
+                out.extend(analyzed(page, &raw));
+            }
+            // the analyzed page: Python's `device.cur_item`, which end_page
+            // moved to `result` here
+            let page = match (&agg.result, &agg.analyzer.cur_item) {
+                (Some(page), _) | (None, Some(CurItem::Page(page))) => page,
+                _ => panic!("an analysis without a page"),
             };
             let ranks = id_ranks(page, &raw.index, &mut *agg.analyzer.ids);
             out.push(ids_line(&ranks));

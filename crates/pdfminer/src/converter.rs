@@ -72,7 +72,7 @@
 //! subpath recurses once (a subpath has one `m`). `log.debug` of
 //! `handle_undefined_char` takes its frames through `pycompat::logging`
 //! (`Logger::new("pdfminer.converter")`). A device's class call is
-//! [`PDFPageAggregator::create`] (and pdfplumber's).
+//! `pdfplumber::page::PDFPageAggregatorWithMarkedContent::create`.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -82,9 +82,7 @@ use pycompat::recursion::{c_called_leaf, leaf, py_frame};
 use pycompat::{exc, Num, PyErr, PyInt, PyResult, PyStr};
 
 use crate::layout::{apply_matrix_rect_counted, LTChar, OriginalPathSegment};
-use crate::layout::{
-    class_call, CreationOrder, IdSource, LAParams, LTCurve, LTFigure, LTImage, LTItem, LTPage, LTPayload,
-};
+use crate::layout::{CreationOrder, IdSource, LAParams, LTCurve, LTFigure, LTImage, LTItem, LTPage, LTPayload};
 use crate::pdfcolor::PDFColorSpace;
 use crate::pdfdevice::{text_device, ObjSeq, PDFDevice, PDFDeviceAttrs, PDFTextDevice, PDFTextSeq};
 use crate::pdffont::{FontName, PDFFont};
@@ -594,23 +592,10 @@ pub struct PDFPageAggregator<P: InterpPayload> {
 
 impl<P: InterpPayload> PDFPageAggregator<P> {
     // pdfminer/converter.py:275 PDFPageAggregator.__init__
-    /// The attributes (no frame: see [`Self::create`]).
+    /// The attributes, without the frames of the class call (a subclass's
+    /// class call takes them: [`Self::init_frames`]).
     pub fn new(rsrcmgr: Rc<PDFResourceManager>, pageno: PyInt, laparams: Option<LAParams>) -> PDFPageAggregator<P> {
         PDFPageAggregator { analyzer: PDFLayoutAnalyzer::new(rsrcmgr, pageno, laparams), result: None }
-    }
-
-    // pdfminer/converter.py:275 PDFPageAggregator.__init__
-    /// `PDFPageAggregator(rsrcmgr, pageno=pageno, laparams=laparams)`: the
-    /// class call (its C unit and evaluation loop entry), `__init__`'s
-    /// frame and those of the base `__init__`s, then the attributes.
-    pub fn create(
-        rsrcmgr: Rc<PDFResourceManager>,
-        pageno: PyInt,
-        laparams: Option<LAParams>,
-    ) -> PyResult<PDFPageAggregator<P>> {
-        let _call = class_call()?;
-        Self::init_frames()?;
-        Ok(PDFPageAggregator::new(rsrcmgr, pageno, laparams))
     }
 
     /// The frames of `PDFPageAggregator.__init__` (its own, then

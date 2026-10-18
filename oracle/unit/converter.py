@@ -29,7 +29,9 @@ Input ``[name, process, fonts, gstates, base, pageno, calls, runs]``:
 - ``process``: ``{"re_compiled": bool}``, whether ``re`` has compiled
   ``m[^m]+`` (``PDFLayoutAnalyzer.paint_path``'s pattern) when the run starts
   (``re.purge()`` otherwise); the logger caches are cleared before each run
-  (``logging.disable``), once the fonts are built;
+  (``logging.disable``), once the fonts are built; ``device_py`` and
+  ``result_py``, when present, are the depths of the callers of the
+  device's class and of ``get_result`` (else the base's first level);
 - ``fonts``: the font of each ``render_char``, by the SHA-256 of its dump in
   ``<set>_fonts.jsonl`` (lines ``[sha, [spec, table, errors, cipher]]``, the
   cases of ``oracle/unit/fonts.py``: a font dictionary, the objects it reaches
@@ -68,7 +70,8 @@ Input ``[name, process, fonts, gstates, base, pageno, calls, runs]``:
 
 Output: for each run, the canonical text of what it produced, through
 ``canon_or_hash`` (the text, or ``sha256:<hex>:<length>`` when it is longer
-than ``INLINE_LIMIT``; ``--dump SET INDEX RUN`` prints it): ``adv <i>
+than ``INLINE_LIMIT``; ``--dump SET INDEX RUN`` prints it): ``device
+<exception>`` when the class call raises (nothing follows), ``adv <i>
 <advance>`` for each ``render_char``, ``raised <i> <exception>`` for the call
 that raised (the replay stops there: the interpreter never catches a
 device's exception), then ``result <exception>`` when ``get_result`` raises,
@@ -601,8 +604,15 @@ def run_case(replay: Replay, laparams: dict | None) -> tuple[str, list | None, d
     if base["py"] != REPLAY_DEPTH:  # pragma: no cover
         raise AssertionError(f"run_case at depth {base['py']}")
     lp = None if laparams is None else LAParams(**laparams)
-    device = PDFPageAggregatorWithMarkedContent(_RSRCMGR, pageno=replay.pageno, laparams=lp)
     out: list[str] = []
+    # Page.layout creates the device and calls get_result here, unless the
+    # case gives their callers another depth ("device_py", "result_py")
+    try:
+        device = _call_at(replay.process.get("device_py", REPLAY_DEPTH + 1) - REPLAY_DEPTH - 1,
+                          PDFPageAggregatorWithMarkedContent, (_RSRCMGR, replay.pageno, lp))
+    except Exception as e:
+        out.append(line("device", e))
+        return "\n".join(out) + "\n", None, base
     raw = None
     for i, (kind, py, args) in enumerate(replay.calls):
         if kind == "end_page" and lp is not None and not device._stack \
@@ -617,7 +627,7 @@ def run_case(replay: Replay, laparams: dict | None) -> tuple[str, list | None, d
             out.append(line("adv", i, result))
     ids = None
     try:
-        page = device.get_result()
+        page = _call_at(replay.process.get("result_py", REPLAY_DEPTH + 1) - REPLAY_DEPTH - 1, device.get_result, ())
     except Exception as e:
         out.append(line("result", e))
         page = None
@@ -1369,6 +1379,31 @@ def depth_probes(fonts: dict[str, list[FontRef]]):
         g.call("end_page")
 
     yield "begin_page", first_page, None, True
+
+    def huge_page(g, py):
+        g.call("begin_page", (0.0, 0.0, 612.0, 792.0), (1, 0, 0, 1, HUGE, 0), py=py)
+        g.call("end_page")
+
+    # an OverflowError of apply_matrix_rect, raised below begin_page's frame
+    yield "begin_page huge", huge_page, None, True
+    # the device's class call and get_result, from deeper callers
+    yield "device", first_page, None, True
+    yield "get_result", first_page, None, True
+
+    def huge_char(g, py):
+        page(g)
+        g.char("standard", 65, matrix=(10.0, 0.0, 0.0, 10.0, HUGE, 0.0), py=py, fontsize=1.0, scaling=1.0, rise=0)
+        g.call("end_page")
+
+    yield "render_char huge", huge_char, None, True
+
+    def huge_figure(g, py):
+        page(g)
+        g.begin_figure(bbox=[0, 0, HUGE, 10], matrix=[1.0, 0, 0, 1.0, 0, 0], py=py)
+        g.call("end_figure", "Fm0", False)
+        g.call("end_page")
+
+    yield "begin_figure huge", huge_figure, None, True
     yield "set_ctm", probe(page, lambda g, py: g.call("set_ctm", (1, 0, 0, 1, 0, 0), py=py)), None, True
     yield "end_page", probe(page, lambda g, py: g.call("end_page", py=py), end=False), None, True
 
@@ -1436,7 +1471,13 @@ def depth_cases(rng, table: dict[str, list]):
     def build(make, py, config, re_compiled):
         g = Gen(random.Random(0), fonts)
         make(g, py)
-        return place_depths(g.case("probe", configs=[config], re_compiled=re_compiled))
+        case = place_depths(g.case("probe", configs=[config], re_compiled=re_compiled))
+        if name in ("device", "get_result"):
+            # the probe is the call of the device's class or of get_result,
+            # py frames below the replay's first level
+            case[6][0][1] = case[6][1][1] = REPLAY_DEPTH + 1
+            case[1]["device_py" if name == "device" else "result_py"] = REPLAY_DEPTH + 1 + py
+        return case
 
     for name, make, config, re_compiled in depth_probes(fonts):
 
