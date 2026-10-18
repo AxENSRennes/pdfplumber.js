@@ -1440,7 +1440,7 @@ def depth_probes(fonts: dict[str, list[FontRef]]):
 
     yield "render_image", probe(in_figure, image), None, True
     yield "render_image outside", probe(page, lambda g, py: g.image(py=py)), None, True
-    for shape in ("", "l", "ml", "mlh", "mlllh", "mllll", "mlc", "mlmlh", "mmlh", "mlllhml"):
+    for shape in ("", "l", "ml", "mlh", "mlllh", "mllll", "mlc", "mlmlh", "mmlh", "mlllhml", "mm", "mmm"):
         for compiled in ((True, False) if shape.count("m") > 1 else (True,)):
             yield f"paint_path {shape!r} {compiled}", probe(
                 page, lambda g, py, s=shape: g.paint(g.path(s, special=0), py=py)), None, compiled
