@@ -297,9 +297,7 @@ pub mod marked_content {
     pub fn tag_cur_item<D: MarkedContent + ?Sized>(dev: &mut D) -> PyResult<()> {
         let _frame = py_frame()?;
         let Some(item) = dev.analyzer().cur_item.as_ref() else {
-            return Err(exc::AttributeError(
-                "'PDFPageAggregatorWithMarkedContent' object has no attribute 'cur_item'",
-            ));
+            return Err(exc::AttributeError("'PDFPageAggregatorWithMarkedContent' object has no attribute 'cur_item'"));
         };
         if let Some(cur_obj) = item.last() {
             let marked = dev.marked();

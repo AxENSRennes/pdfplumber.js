@@ -81,8 +81,10 @@ use pycompat::logging::Logger;
 use pycompat::recursion::{c_called_leaf, leaf, py_frame};
 use pycompat::{exc, Num, PyErr, PyInt, PyResult, PyStr};
 
-use crate::layout::{class_call, CreationOrder, IdSource, LAParams, LTCurve, LTFigure, LTImage, LTItem, LTPage, LTPayload};
 use crate::layout::{apply_matrix_rect_counted, LTChar, OriginalPathSegment};
+use crate::layout::{
+    class_call, CreationOrder, IdSource, LAParams, LTCurve, LTFigure, LTImage, LTItem, LTPage, LTPayload,
+};
 use crate::pdfcolor::PDFColorSpace;
 use crate::pdfdevice::{text_device, ObjSeq, PDFDevice, PDFDeviceAttrs, PDFTextDevice, PDFTextSeq};
 use crate::pdffont::{FontName, PDFFont};
