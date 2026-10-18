@@ -3,6 +3,9 @@
 //! pdfminer's `PDFTextDevice`) on the adversarial corpus `adv-interp` (its
 //! depth windows included), `micro` and small files of `quick`.
 //!
+//! The depth windows are also replayed from the deeper stage entries the
+//! generator traced them from (`with_stage_entry`).
+//!
 //! A difference prints the case and the first differing line of the
 //! trace. `INTERP_ONLY=<substring>` restricts the cases to the file names
 //! containing it.
@@ -16,11 +19,13 @@ use std::fs;
 use std::sync::Arc;
 
 use pdfminer::cmapdb::{CMapDB, DirCMapProvider};
+use pdftrace::stages::common::with_stage_entry;
 use pdftrace::stages::py_process::{self, PyProcess};
 use pdftrace::stages::{self, StageInput};
 use pdftrace::typed_json::{self, Json};
 use pdftrace::unit::{cache_dir, UnitData};
 use pdftrace::value::Value;
+use pycompat::recursion::{Depth, C_RECURSION_LIMIT};
 
 /// Opens the data and installs the provider of the predefined CMaps.
 fn open() -> UnitData {
@@ -57,6 +62,17 @@ fn generator_process(data: &UnitData) -> PyProcess {
     }
 }
 
+/// The `{"py": .., "c_left": ..}` depth of a case.
+fn depth(v: &Value) -> Depth {
+    let Value::Dict(items) = v else { panic!("a depth: {v:?}") };
+    let field = |name: &str| {
+        let v = items.iter().find(|(k, _)| k.as_str() == Some(name)).map(|(_, v)| v).expect("a depth field");
+        let Value::Int(i) = v else { panic!("an int: {v:?}") };
+        u32::try_from(i.as_i64().expect("small")).expect("a depth")
+    };
+    Depth { py: field("py"), c: C_RECURSION_LIMIT - field("c_left") }
+}
+
 fn first_difference(expected: &str, got: &str) -> String {
     for (i, (e, g)) in expected.lines().zip(got.lines()).enumerate() {
         if e != g {
@@ -82,8 +98,10 @@ fn stage_traces() {
     let mut failures = Vec::new();
     let mut n = 0;
     let mut depth_cases = 0;
+    let mut deeper_entries = 0;
     for (args, expected) in data.cases("stages") {
-        let [Value::Str(name), Value::Bytes(pdf), password, Value::Str(what), Value::Int(max_pages)] = &args[..] else {
+        let [Value::Str(name), Value::Bytes(pdf), password, Value::Str(what), Value::Int(max_pages), entry] = &args[..]
+        else {
             panic!("bad case {args:?}");
         };
         let name = name.as_str().expect("a file name");
@@ -99,7 +117,13 @@ fn stage_traces() {
         let what = what.as_str().expect("a stage");
         let run = stages::lookup(what).and_then(|s| s.run).expect("an implemented stage");
         let mut out = Vec::new();
-        run(&input, &mut out).expect("write to memory");
+        match entry {
+            Value::None => run(&input, &mut out).expect("write to memory"),
+            entry => {
+                deeper_entries += 1;
+                with_stage_entry(depth(entry), || run(&input, &mut out)).expect("write to memory")
+            }
+        }
         let got = String::from_utf8(out).expect("ASCII");
         let Value::Str(expected) = &expected else { panic!("bad output") };
         let expected = expected.as_str().expect("ASCII");
@@ -114,6 +138,7 @@ fn stage_traces() {
     if only.is_none() {
         assert!(n > 500, "only {n} traces");
         assert!(depth_cases > 50, "only {depth_cases} traces reach the recursion limit");
+        assert!(deeper_entries > 100, "only {deeper_entries} traces from a deeper entry");
     }
     assert!(
         failures.is_empty(),

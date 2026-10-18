@@ -1,7 +1,7 @@
 //! Helpers shared by the stages, the Rust side of
 //! `oracle/stages/_common.py`.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::io::{self, Write};
 use std::rc::Rc;
@@ -12,7 +12,7 @@ use pdfminer::pdfinterp::{PDFPageInterpreter, PDFResourceManager};
 use pdfminer::pdfpage::PDFPage;
 use pdfminer::pdfparser::FileKind;
 use pdfminer::pdftypes::{ObjId, PDFObject};
-use pycompat::recursion::{py_frame, py_frames, with_depth};
+use pycompat::recursion::{py_frame, py_frames, with_depth, Depth};
 use pycompat::{PyErr, PyResult};
 
 use super::{StageInput, STAGE_ENTRY};
@@ -41,6 +41,23 @@ impl Lines {
     }
 }
 
+thread_local! {
+    /// The depth [`terminated`] runs a stage body from on this thread
+    /// ([`with_stage_entry`]), `None` for the oracle's (`STAGE_ENTRY`).
+    static ENTRY: Cell<Option<Depth>> = const { Cell::new(None) };
+}
+
+/// Runs `f` with the stage bodies starting at `entry` instead of the
+/// oracle's stage entry depth: a unit replay of a trace that its generator
+/// computed from a deeper call site (`oracle/unit/interp.py`, the depth
+/// windows from 1 or 2 more frames).
+pub fn with_stage_entry<R>(entry: Depth, f: impl FnOnce() -> R) -> R {
+    let previous = ENTRY.with(|e| e.replace(Some(entry)));
+    let result = f();
+    ENTRY.with(|e| e.set(previous));
+    result
+}
+
 /// `terminated`: runs a stage body from the oracle's stage entry depth and
 /// ends the trace with `!end`, or with the line of the exception that
 /// escaped the body. As the oracle, it starts from a new Python process
@@ -49,7 +66,8 @@ pub fn terminated(out: &mut dyn Write, body: impl FnOnce(&mut Lines) -> PyResult
     super::py_process::start();
     pycompat::logging::disable();
     let mut lines = Lines::default();
-    let result = with_depth(STAGE_ENTRY, || body(&mut lines));
+    let entry = ENTRY.with(Cell::get).unwrap_or(STAGE_ENTRY);
+    let result = with_depth(entry, || body(&mut lines));
     match result {
         Ok(()) => lines.push("!end"),
         Err(e) => lines.push(canon_exc(&e)),

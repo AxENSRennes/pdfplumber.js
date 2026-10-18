@@ -700,7 +700,8 @@ def vertical_font(b: Builder) -> dict:
 def depth_kinds() -> dict[str, Any]:
     """The chains of ``cases_depth``, by the path of their deepest point."""
     helv = {"Font": {"F": HELVETICA}}
-    image = b"BI /W 1 /H 1 ID x EI"
+    # EI must be followed by a white space (else the parser reads to the end)
+    image = b"BI /W 1 /H 1 ID x EI\n"
     return {
         # the getobj of the last form, under the do_Do of the one before
         "uncached": lambda n: form_chain(n, b"0 0 m 5 5 l", precache=0),
