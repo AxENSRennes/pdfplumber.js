@@ -49,7 +49,7 @@
 //! (`PDFContentParser`), `pdftypes`, `pdffont` and `cmapdb` count their
 //! own. The device's methods are called with their own frames
 //! (`pdfdevice`). The `fonts`, `interp` and `layout` stages and the
-//! `adv-content` corpus check the boundary: windows of nesting depths
+//! `adv-interp` corpus check the boundary: windows of nesting depths
 //! around the first one that fails in Python, the deepest point being each
 //! time another path (an operator's warning, a font created in the deepest
 //! form, a char, an inline image, a path with several subpaths, a

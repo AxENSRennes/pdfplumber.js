@@ -92,9 +92,9 @@ Chaque étape a un nom stable, une implémentation Python
 | `objects` | xref (type, trailer, `get_pos` de chaque entrée), catalogue, info, chiffrement, puis chaque objet indirect résolu (`getobj`), erreurs comprises |
 | `streams` | chaque flux : filtres, paramètres, données décodées (`x#…`) ou exception |
 | `pages` | arbre des pages : attributs hérités, boîtes, rotation, ressources, contenus, libellés ; boîtes de la `Page` pdfplumber (TrimBox/BleedBox/ArtBox comprises), `doctop` |
-| `fonts` | chaque police utilisée : type, métriques, et pour chaque code rencontré `decode`, `to_unichr`, `char_width`, `char_disp` |
-| `interp` | appels au périphérique (`begin_figure`, `paint_path`, `render_char`, `render_image`, balises) avec l'état graphique |
-| `layout` | arbre `LTPage` complet, avec et sans `laparams` |
+| `fonts` | les polices obtenues par l'interpréteur (le `fontmap` de la page, les entrées ajoutées au cache du `PDFResourceManager`) : classe et attributs, puis, pour chaque chaîne affichée, `decode` et, par code, `to_unichr`, `char_width`, `char_disp` |
+| `interp` | chaque appel de l'interpréteur au périphérique de pdfplumber (`set_ctm`, pages, figures, `paint_path`, `render_image`, `render_string`/`render_char` et l'avance rendue, balises), avec les états graphique et texte, et où remontent les exceptions |
+| `layout` | le `LTPage` brut (`laparams=None`, le défaut de pdfplumber) puis analysé (`LAParams()`), tous attributs (`mcid`, `tag` compris), et le rang des `id()` de l'analyse (`ids`) |
 | `plumber_objects` | `page.objects` de pdfplumber, tous attributs, plus boîtes et `doctop` |
 | `plumber_text` | `extract_text` (simple, `layout=True`, options), `extract_words`, `extract_text_lines`, `search`, `dedupe_chars` |
 | `plumber_tables` | `find_tables`/`extract_tables` pour les stratégies `lines`, `lines_strict`, `text`, `explicit` |
@@ -143,6 +143,17 @@ bord par le cache) et le format de chaque ligne. Règles communes :
 - Une étape par page traite les `--max-pages` premières pages (20 par défaut,
   0 = toutes), créées paresseusement : le générateur `create_pages` n'est plus
   relancé après la dernière page demandée.
+- Les étapes `fonts`, `interp` et `layout` mènent les pages comme pdfplumber
+  (un `PDFResourceManager` par document, un
+  `PDFPageAggregatorWithMarkedContent` et un `PDFPageInterpreter` par page,
+  `process_page` ; `architecture.md`, « Vague 3 »). `interp` et `fonts`
+  observent les appels par une sous-classe du périphérique (point
+  d'extension, pas de rustine), qui n'écrit rien pendant l'interprétation ;
+  `layout` n'ajoute aucune surcharge et analyse le `LTPage` brut à la
+  profondeur où `end_page` l'analyserait. Une adresse mémoire ne figure dans
+  aucune trace : les noms `str(id(obj))` des images en ligne deviennent
+  `inline{"n": k}`, et l'étape `layout` écrit le rang des `id()` de son
+  analyse (lignes `ids`), que `pdftrace` relit (`ORACLE_INPUT`, ci-dessous).
 
 Les modules sans PDF en entrée (filtres, inflate, chiffrement, parseur de
 CMap, analyse de mise en page, tables à partir de bords) ont aussi des **tests
@@ -258,6 +269,12 @@ Mode d'emploi détaillé : [`oracle/README.md`](../oracle/README.md).
   écrit `DIR/<sha256 du PDF>.txt` pour une liste de fichiers. Code de sortie 2 :
   étape non implémentée. `pdftrace --list-stages` liste les étapes, suivies de
   `(not implemented)` tant qu'elles ne le sont pas.
+- `pdftrace --oracle-dir DIR` : pour une étape dont le module Python
+  déclare `ORACLE_INPUT` (`layout`), la trace de l'oracle de chaque fichier
+  (`DIR/<sha256>.txt`, ou `.pw-<12 hexa>.txt`, nommée comme le cache), que le
+  Rust lit (`StageInput::oracle`) ; `verify` la passe toujours pour ces
+  étapes, et les autres étapes la refusent. Sans elle, `layout` analyse
+  avec l'ordre par défaut de la bibliothèque (`CreationOrder`).
 - Les deux outils acceptent aussi `--option=valeur` ; `verify` et le cache
   passent toujours le mot de passe sous la forme `--password=P` (un mot de
   passe peut commencer par `-`). Avec `--out`, `pdftrace` ajoute après
@@ -331,7 +348,7 @@ Les constantes mesurées sont aussi vérifiées par les cas de l'ensemble
 | `pdfjs` | `upstream/pdfjs/test/pdfs` (937 PDF, beaucoup de cas tordus) |
 | `quick` | tout `micro`, plus les fichiers de `all` dont le SHA-256 commence par un octet < 18 (~7 %, 149 PDF aujourd'hui) : l'appartenance ne dépend que du contenu du fichier, en ajouter n'en retire aucun |
 | `all` | tout ce qui précède (1 852 PDF distincts aujourd'hui) |
-| `adv-<étape>` | corpus adverse généré pour une étape (voir plus bas) |
+| `adv-<étape>` | corpus adverse généré pour une étape (voir plus bas) ; plusieurs étapes peuvent vérifier le même (`adv-interp` : `fonts`, `interp`, `layout`) |
 
 Un fichier est tout `*.pdf` (casse ignorée) des dossiers, récursivement, en
 ordre de chemin relatif. Les fichiers identiques sont dédoublonnés par SHA-256

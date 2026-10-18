@@ -56,8 +56,9 @@ docs/                      stratégie, architecture, vérification, API publique
 4. **Aucun cas spécial** : pas de nom de police, d'empreinte de fichier, de
    seuil ou de constante sans contrepartie upstream citée. Un écart se corrige à
    sa cause.
-5. Les parties de pdfminer/pdfplumber **hors périmètre** (sorties HTML/XML/hOCR
-   de `converter.py`, `high_level.py`, `image.py`/ImageWriter, `display.py`
+5. Les parties de pdfminer/pdfplumber **hors périmètre** (les convertisseurs
+   texte/HTML/XML/hOCR de `converter.py` et `PDFConverter`, `TagExtractor` de
+   `pdfdevice.py`, `high_level.py`, `image.py`/ImageWriter, `display.py`
    et le rendu, `repair.py` qui appelle Ghostscript, `cli.py`) ne sont pas
    portées. Tout le reste de ce qu'utilise `pdfplumber.open(...)` l'est,
    y compris `laparams`, la structure balisée, les annotations, le chiffrement.
@@ -288,6 +289,177 @@ Décisions prises avant le port de `pdfparser.py` et `pdfdocument.py` :
   plus profonds que la construction du parseur, qui vient avant ; l'import
   du codec UTF-16 au premier `bytes.decode("UTF-16BE")` d'un processus
   Python.
+
+## Vague 3 : interpréteur, périphériques, convertisseur
+
+Base commune : branche `wave3/base` (étapes Python `fonts`, `interp`,
+`layout` ; squelettes Rust qui compilent, corps `todo!()`). Deux chantiers
+parallèles, INTERP et CONVERTER, partent de cette base et ne modifient pas
+le contrat ci-dessous sans accord (un changement d'une étape Python
+invalide son cache et celui des étapes qui en dépendent).
+
+### Décisions
+
+- **Pilotage** : celui de pdfplumber. Un `PDFResourceManager` par document
+  (pdfplumber/pdf.py:28 `PDF.__init__`, à sa ligne 53, `caching=True`) ;
+  pour chaque page un `PDFPageAggregatorWithMarkedContent(rsrcmgr,
+  pageno=..., laparams=...)` et un `PDFPageInterpreter(rsrcmgr, device)`,
+  puis `process_page` (pdfplumber/page.py:256 `Page.layout`). Le
+  gestionnaire de ressources fait partie de l'état du document : un appel
+  nul du protocole des CMaps paresseuses (`crates/wasm/src/cmaps.rs`) le
+  jette avec les polices qu'il a mises en cache (une police construite sans
+  sa CMap garde un `CMap()` vide). L'interpréteur ne rattrape rien qui
+  masquerait ce signal (ce n'est pas une exception : le fournisseur note le
+  nom).
+- **`id()` du layout** : l'étape `layout` écrit, pour l'analyse qu'elle
+  trace, le rang des `id()` des boîtes et groupes du résultat (lignes
+  `ids`, clés `[min_char, n_boxes, rang]` de `oracle/unit/layout.py`).
+  Le module déclare `ORACLE_INPUT` ; `oracle.verify` passe alors à
+  `pdftrace` `--oracle-dir <cache de l'étape>`, et le Rust lit la trace de
+  l'oracle (`StageInput::oracle`, `stages::layout::oracle_ids`) pour
+  analyser avec un `IdSource` injecté (le `RecordedIds` de
+  `layout_unit.rs`, à déplacer dans la bibliothèque) : la parité est
+  exacte. La bibliothèque et l'API JS gardent `CreationOrder`. À mesurer
+  et noter ici une fois l'étape identique : la proportion de pages de
+  `all` où `CreationOrder` seul donne le résultat de Python (`pdftrace
+  --stage layout` sans `--oracle-dir`, comparé page à page) ; c'est une
+  statistique, pas un critère de parité.
+- **Images en ligne** : pdfminer/pdfinterp.py:1309 `PDFPageInterpreter.do_EI`
+  les nomme `str(id(obj))`, une adresse mémoire. Les traces écrivent
+  `inline{"n": k}` (`k` : rang d'apparition dans la page). Le port leur
+  donne un nom déterministe, `pdfinterp::inline_image_name(k)` =
+  `"inline-<k>"`, `k` comptant les images en ligne de l'interprétation
+  d'une page (compteur partagé par les sous-interpréteurs,
+  `PDFPageInterpreter::inline_images`) : écart documenté, qui atteint
+  `LTFigure.name`, `LTImage.name` et le `name` des images de pdfplumber.
+  Python repère ces noms par le site d'appel (`do_EI`), Rust par les noms
+  qu'il a donnés ; les deux ne divergent que si un PDF nomme une XObject
+  `inline-<k>`.
+- **Hors périmètre** : `PDFConverter`, `TextConverter`, `HTMLConverter`,
+  `XMLConverter`, `HOCRConverter` et `pdfdevice.TagExtractor`
+  (en-têtes de `converter.rs` et `pdfdevice.rs`).
+- **Classes Python en Rust** (`pdfdevice.rs`, « Classes, overrides and
+  `super()` ») : une classe = une structure d'attributs + des traits
+  d'accès (`PDFDevice::attrs`, `LayoutAnalyzer::analyzer`,
+  `PageAggregator::aggregator`, `MarkedContent::marked`) ; une méthode =
+  une méthode de trait dont le corps est une fonction libre générique du
+  module de sa classe (`pdfdevice::device`, `pdfdevice::text_device`,
+  `converter::layout_analyzer`, `converter::page_aggregator`,
+  `pdfplumber::page::marked_content`). Une sous-classe appelle la fonction
+  de sa base comme Python appelle `super()`, et les appels sur `self` de ces
+  fonctions (`render_char` depuis `render_string_horizontal`,
+  `paint_path` par sous-chemin, `receive_layout`) atteignent la classe la
+  plus dérivée, y compris les périphériques de trace de `pdftrace`.
+- **Profondeur** : chaque méthode prend son cadre ; la récursion des Form
+  XObjects (`execute` → `func(*args)` = `do_Do` → `subinterp` →
+  `render_contents` → `execute`) compte, à chaque niveau, l'entrée de la
+  boucle d'évaluation de `func(*args)` (`CALL_FUNCTION_EX`, à mesurer avec
+  `oracle/depth_probe.py`), les appels de classe (`PDFTextState()`,
+  `dup`, les objets `LT*` du convertisseur : à compter dans `layout.rs`,
+  qui ne compte aujourd'hui que son analyse), le générateur de
+  `CMap.decode` repris par la boucle de `render_string_*`, et les appels de
+  journalisation (`pycompat::logging`, `pdfminer.pdfinterp`,
+  `pdfminer.pdfdevice`, `pdfminer.converter`). Les étapes `interp` et
+  `fonts` ajoutent les cadres de leurs surcharges Python (un par appel
+  surchargé), que leurs périphériques Rust prennent aussi ; l'étape
+  `layout` n'en ajoute aucun (analyse à la profondeur de `end_page`,
+  vérifié par une sonde bornée).
+
+### Contrat entre les chantiers
+
+Fixé dans `wave3/base` (signatures, champs, sémantique documentés dans le
+code) :
+
+- `pdfminer::pdfdevice` : `PDFDevice` (`attrs`, `close`, `set_ctm`,
+  `begin_tag`/`end_tag`/`do_tag` avec `props: Option<&PDFStackT>`,
+  `begin_page`/`end_page(&PDFPage)`, `begin_figure(name: &str, bbox:
+  &ObjSeq, matrix: &ObjSeq)`, `end_figure`, `paint_path(&PDFGraphicState,
+  stroke, fill, evenodd, &[PathSegment])` sur l'état vivant,
+  `render_image(name, &Rc<PDFStream>)`, `render_string(&mut PDFTextState,
+  &PDFTextSeq, &Rc<PDFColorSpace>, &Rc<PDFGraphicState>)`, la copie de
+  `do_TJ` partagée par les caractères), `PDFTextDevice`
+  (`render_string_horizontal`/`_vertical` → `Point`, `render_char(Matrix,
+  &Rc<PDFFont>, fontsize, scaling, rise: &Num, cid: &PyInt, ncs,
+  graphicstate) -> PyResult<Num>`), `ObjSeq` (liste du PDF ou tuple de
+  l'interpréteur), `PDFDeviceAttrs`, `PDFTextSeq = PDFObject`.
+- `pdfminer::pdfinterp` : `PDFTextState`, `PDFGraphicState` (champs dans
+  l'ordre de `__dict__`, `DICT_KEYS`), `StandardColor`, `Color`,
+  `PDFStackT`, `PDFResourceManager` (`new`, `get_font(Option<&PyInt>,
+  &PDFDict) -> Rc<PDFFont>`, `cached_fonts()`), `PDFPageInterpreter`
+  (`new(Rc<PDFResourceManager>, Rc<RefCell<dyn PDFDevice>>)`,
+  `process_page`, `render_contents`, `execute`, `fontmap`,
+  `inline_images`), `inline_image_name`.
+- `pdfminer::converter` : `InterpPayload` (`FontName` de `pdffont`,
+  `GraphicState = Rc<PDFGraphicState>`, `Color`), `MinerPayload`,
+  `PDFLayoutAnalyzer` (dont `ids: Box<dyn IdSource>`), `CurItem`,
+  `LayoutAnalyzer`, `PDFPageAggregator`, `PageAggregator`, les fonctions de
+  `layout_analyzer` et `page_aggregator` ;
+  `pdfplumber::page` : `PlumberPayload`, `MarkedContentAttr`,
+  `MarkedContentState`, `MarkedContent`, `PDFPageAggregatorWithMarkedContent`,
+  `marked_content`.
+- `pdftrace` : `StageInput::oracle`, `Stage::oracle_input`,
+  `--oracle-dir`, `stages::common::page_layout` (le corps de
+  `Page.layout`), `stages::interp::{Call, TracingDevice}`,
+  `stages::layout::oracle_ids`.
+- Les étapes Python `oracle/stages/{interp,fonts,layout}.py` sont la
+  spécification (formats en tête de chaque fichier) ; mesures sur `quick`
+  (150 fichiers, `-j 3`) : `interp` 31 s (89 s cumulées, 54 Mo de traces),
+  `fonts` 20 s (59 s, 9 Mo), `layout` 39 s (107 s, 141 Mo) ; sur `all`
+  (×12) : environ 18, 12 et 22 min cumulées et 0,7, 0,1 et 1,7 Go de
+  cache. Les fichiers les plus lents de `quick` (`pdfjs-issue5509.pdf`
+  ≈ 20 s, `highlights.pdf` ≈ 10 s) restent sous le délai de 120 s ; sur
+  `all`, construire le cache avec `--oracle-only --timeout 600` et lister
+  les délais.
+
+### Chantier INTERP
+
+`pdfinterp.rs` (tout sauf `PDFContentParser`), `pdfdevice.rs`, la
+dispatch des opérateurs (`execute` : mêmes noms, mêmes arités, mots-clés
+`T_a`, `_q`… compris), le comptage des cadres de l'interpréteur ; les
+étapes Rust `fonts` et `interp` (`FontsDevice`, `TracingDevice`, le
+rapport `font_attrs` déplacé de `fonts_unit.rs` dans la bibliothèque) ;
+le corpus adverse `oracle/adversarial/interp.py` → `adv-interp`
+(`oracle/corpus.py` nomme un corpus adverse d'après une étape ; celui-ci
+est vérifié par `fonts`, `interp` et `layout`, `--set adv-interp`) : chaque opérateur avec des
+opérandes manquants, en trop, de tout type (`safe_*` qui échouent,
+`TJ` sur un nombre, des `bytes`, un dict, un flux), `q`/`Q` déséquilibrés,
+`Tf` inconnu, couleurs et motifs (`SCN`/`scn` avec 0 à 5 composantes,
+`Pattern`), `BI`/`ID`/`EI` (filtres, `~>`), `Do` absent, image ou Form
+sans `/BBox`, `/Matrix`/`/BBox` atypiques, Form sans `/Resources`,
+références circulaires de flux, `BMC`/`BDC`/`EMC` déséquilibrés,
+polices `Type0` verticales et Type 3 ; `cases_depth` : imbrications de
+Form XObjects autour du premier niveau qui échoue en Python, le point le
+plus profond étant chaque fois un autre chemin (avertissement d'un
+opérateur, police créée au niveau le plus profond, caractère, image en
+ligne, chemin à plusieurs sous-chemins, référence circulaire refusée).
+Tant que CONVERTER n'est pas fusionné, INTERP peut vérifier
+l'interpréteur avec un générateur unitaire qui le mène sur un
+`PDFTextDevice` enregistreur (sans convertisseur : `render_char` rend 0).
+
+### Chantier CONVERTER
+
+`converter.rs` (`PDFLayoutAnalyzer`, `PDFPageAggregator`),
+`PDFPageAggregatorWithMarkedContent` (`pdfplumber/src/page.rs`), le
+comptage des cadres des constructeurs `LT*` dans `layout.rs`, l'étape Rust
+`layout` (vidage brut et analysé partagé avec `layout_unit.rs`,
+`RecordedIds` dans la bibliothèque, repli au-delà des rangs connus) et un
+générateur unitaire qui n'a pas besoin de l'interpréteur :
+`oracle/unit/converter.py` → `crates/pdftrace/tests/converter_unit.rs`. Il
+mène en Python les pages réelles (`quick`, `upstream`) et les PDF de
+`adv-interp` avec le `TracingDevice` de l'étape `interp` et enregistre,
+en JSON typé, la suite des appels que l'interpréteur fait au
+périphérique (profondeur d'imbrication 0 : les appels internes de
+l'analyseur sont rejoués par le Rust), avec, pour chacun, la profondeur
+de récursion Python du point d'appel (`at_depth`), les états
+(`Named("PDFGraphicState", …)`, couleurs, espaces de couleur), les
+flux d'images (attributs et données) et les polices sous la forme des cas
+de `oracle/unit/fonts.py` (`[spec, table, errors]`, reconstruites en Rust
+par le chargeur de `fonts_unit.rs`, à déplacer dans la bibliothèque) ; en
+sortie : le résultat de chaque `render_char`, l'exception d'un appel, et
+le `LTPage` brut puis analysé (`LAParams()` et les configurations de
+`layout.py`, avec les `id()` de Python). Le Rust rejoue chaque appel sur
+`PDFPageAggregatorWithMarkedContent` depuis la profondeur enregistrée,
+une `Rc<PDFGraphicState>` par `render_string` d'origine.
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 

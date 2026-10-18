@@ -48,8 +48,9 @@ $PY -m oracle.trace --stage objects --password user corpus/micro/encrypted-passw
 $PY -m oracle.trace --stage pages --max-pages 0 some.pdf    # 0 = every page
 ```
 
-Stages today: `psparser`, `objects`, `streams`, `pages` (the list is
-`oracle/stages/`). Paged stages stop after `--max-pages` pages (default 20).
+Stages today: `psparser`, `objects`, `streams`, `pages`, `fonts`, `interp`,
+`layout` (the list is `oracle/stages/`; the last three drive the pages as
+pdfplumber does, see `docs/architecture.md`, "Vague 3"). Paged stages stop after `--max-pages` pages (default 20).
 The output is ASCII; it ends with `!end`, or with the exception that stopped
 the stage (`!PDFPasswordIncorrect("")`). Exit status 0 whenever a trace was
 written.
@@ -76,6 +77,10 @@ $PY -m oracle.verify --stage psparser --set quick
 $PY -m oracle.verify --stage objects --set all -j 3 --json > objects.json
 $PY -m oracle.verify --stage pages --files a.pdf b.pdf --pdftrace target/debug/pdftrace
 ```
+
+For a stage whose module sets `ORACLE_INPUT` (`layout`: Python's `id()`
+order of its analysis), `verify` also passes `--oracle-dir <the stage's
+cache directory>`, where `pdftrace` reads the oracle's trace of each file.
 
 `verify` builds the missing oracle traces (`-j` processes, default 3;
 `--timeout` 120 s per file, recorded as `!Timeout <limit>`), runs

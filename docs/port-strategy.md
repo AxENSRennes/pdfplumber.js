@@ -227,6 +227,13 @@ Lecture :
   un `LTChar` pour chaque `to_unichr` et compte ce qu'il vérifie : 40 910
   (dont 113 surrogates isolés) sur `fonts` et 106 769 (dont 28) sur
   `corpus_fonts`, avec un plancher par test.
+- **Vague 3** (en cours, octobre 2026) : base `wave3/base` partagée par
+  deux chantiers parallèles (INTERP, CONVERTER ; plan et contrat dans
+  `architecture.md`, « Vague 3 ») : côté Python, les étapes `fonts`,
+  `interp`, `layout` (la spécification), mesurées sur `quick` ; côté Rust,
+  les interfaces de `pdfdevice`, `pdfinterp`, `converter` et du
+  périphérique de pdfplumber, en squelettes qui compilent, et
+  `pdftrace --oracle-dir` (les `id()` de Python pour l'étape `layout`).
 - **Vagues suivantes**, dans l'ordre des dépendances :
   1. `pdfinterp`, `pdfdevice`, `converter` (`PDFPageAggregator` vers
      `layout`) : étapes `fonts`, `interp`, `layout` (comptage des cadres de
