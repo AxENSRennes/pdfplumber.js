@@ -68,5 +68,6 @@ pub fn set_for_stage(stage: &str) {
 pub fn start() {
     PROCESS.with(|p| {
         py_symbols_reset(p.borrow().symbols());
+        pdfminer::pdfinterp::reset_process_state();
     });
 }

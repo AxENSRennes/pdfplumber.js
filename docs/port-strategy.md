@@ -234,6 +234,11 @@ Lecture :
   les interfaces de `pdfdevice`, `pdfinterp`, `converter` et du
   périphérique de pdfplumber, en squelettes qui compilent, et
   `pdftrace --oracle-dir` (les `id()` de Python pour l'étape `layout`).
+  Chantier INTERP (branche `wave3/interp`) : `pdfinterp` et `pdfdevice`
+  complets, cadres comptés ; étapes Rust `fonts`, `interp` (en attente du
+  convertisseur) et `fonts_text`, `interp_text` (sur `PDFTextDevice`,
+  Python et Rust) ; corpus adverse `adv-interp` et rejeu `interp_unit`
+  (résultats et mesures : `architecture.md`, « Vague 3 », « Réalisation »).
 - **Vagues suivantes**, dans l'ordre des dépendances :
   1. `pdfinterp`, `pdfdevice`, `converter` (`PDFPageAggregator` vers
      `layout`) : étapes `fonts`, `interp`, `layout` (comptage des cadres de

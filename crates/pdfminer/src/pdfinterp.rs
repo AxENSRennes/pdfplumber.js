@@ -181,10 +181,40 @@ impl PSStackParser<ContentStreams> {
         }
         // strip the last part
         data.truncate(data.len().saturating_sub(target.len() + 1));
+        eol_sub_frames()?;
         let end = strip_trailing_eol(&data);
         data.truncate(end);
         Ok((pos, data))
     }
+}
+
+thread_local! {
+    /// Whether the process compiled the pattern of `get_inline_data`'s
+    /// `re.sub` (`re._compile`'s cache; a new process starts without it).
+    static EOL_PATTERN_COMPILED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// The frames of `re.sub(rb"(\x0d\x0a|[\x0d\x0a])$", b"", data)`:
+/// `re.sub` and `re._compile`, and, the first time in a process, the
+/// compilation of the pattern below them (`sre_compile.compile`,
+/// `sre_parse.parse` down to `Tokenizer.__next`: 11 frames from `re.sub`,
+/// measured with `oracle/depth_probe.py` on CPython 3.12). The pattern is
+/// cached once compiled (the cache of `re` holds 512 patterns, more than
+/// pdfminer and pdfplumber compile: never evicted). [`reset_process_state`]
+/// is a new process.
+fn eol_sub_frames() -> PyResult<()> {
+    if EOL_PATTERN_COMPILED.with(Cell::get) {
+        return leaf(2);
+    }
+    leaf(11)?;
+    EOL_PATTERN_COMPILED.with(|c| c.set(true));
+    Ok(())
+}
+
+/// The state of a new Python process for this module: the pattern of
+/// `get_inline_data` not compiled yet.
+pub fn reset_process_state() {
+    EOL_PATTERN_COMPILED.with(|c| c.set(false));
 }
 
 /// `re.sub(rb"(\x0d\x0a|[\x0d\x0a])$", b"", data)`, as the length to keep.

@@ -1,8 +1,9 @@
 //! The `pdftrace` command line: `--cmap-dir` (the predefined CMap provider
 //! of the process).
 //!
-//! No stage loads a predefined CMap yet (the `fonts` and `interp` stages
-//! come with the interpreter): what is checked here is that a valid
+//! The stage run here loads no predefined CMap (the `fonts` and `interp`
+//! stages do, checked by `oracle.verify` with `PDFPLUMBER_CMAP_DIR`): what
+//! is checked here is that a valid
 //! directory is accepted without changing a trace, and that an invalid one
 //! is a usage error. Runs natively only (WASI has no processes).
 

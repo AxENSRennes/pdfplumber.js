@@ -632,11 +632,18 @@ def cases_xobjects() -> list[Case]:
 
 
 def form_chain(n: int, deepest: bytes, deepest_res: dict | None = None, link: bytes = b"/X Do",
-               cycle: bool = False) -> bytes:
+               cycle: bool = False, precache: int = 4) -> bytes:
     """A page drawing form 1, which draws form 2, ... down to form ``n``,
     whose content is ``deepest`` (with ``deepest_res``); each form draws
     the next with ``link``. ``cycle``: the deepest form also draws the
-    first one (refused as circular)."""
+    first one (refused as circular).
+
+    The page first draws form ``n - precache`` (and so the last forms) at
+    its own depth: their objects are then in the document's cache and their
+    data decoded, so that resolving and parsing them in the deep chain is
+    shallow, and the deepest point of the chain is the content of the last
+    form (otherwise it is the ``getobj`` of the last form's stream, under
+    the ``do_Do`` of the form before it, whatever the last form does)."""
     b = Builder()
     font = b.obj(HELVETICA)
     refs = [b.reserve() for _ in range(n)]
@@ -646,13 +653,48 @@ def form_chain(n: int, deepest: bytes, deepest_res: dict | None = None, link: by
             res = {"XObject": {"X": refs[i + 1]}}
         else:
             content = deepest + (b" /Top Do" if cycle else b"")
-            res = dict(deepest_res or {})
+            res = dict(deepest_res(b) if callable(deepest_res) else (deepest_res or {}))
             if cycle:
                 res["XObject"] = {"Top": refs[0]}
         b.put(ref, {"Type": Name("XObject"), "Subtype": Name("Form"), "BBox": [0, 0, 10, 10], "Resources": res},
               content)
-    b.page(b"/X Do BT /F1 10 Tf (after) Tj ET", {"XObject": {"X": refs[0]}, "Font": {"F1": font}})
+    xobjects = {"X": refs[0]}
+    content = b"/X Do BT /F1 10 Tf (after) Tj ET"
+    if 0 < precache < n:
+        xobjects["Pre"] = refs[n - 1 - precache]
+        content = b"/Pre Do " + content
+    b.page(content, {"XObject": xobjects, "Font": {"F1": font}})
     return b.build()
+
+
+TOUNICODE = (b"/CIDInit /ProcSet findresource begin 12 dict begin begincmap /CMapName /T def "
+             b"1 begincodespacerange <00> <FF> endcodespacerange 2 beginbfchar <61> <0041> <62> <0042> endbfchar "
+             b"1 beginbfrange <63> <65> <0043> endbfrange endcmap CMapName currentdict /CMap defineresource pop end end")
+
+TYPE1_PROGRAM = (b"%!PS-AdobeFont-1.0: Test 001\n/FontName /Test def\n/Encoding 256 array\n"
+                 b"0 1 255 {1 index exch /.notdef put} for\ndup 97 /a put\ndup 98 /b put\nreadonly def\n"
+                 b"currentfile eexec\n")
+
+
+def tounicode_font(b: Builder) -> dict:
+    return {"Font": {"F": b.obj({**HELVETICA, "ToUnicode": b.stream(TOUNICODE)})}}
+
+
+def type1_program_font(b: Builder) -> dict:
+    program = b.stream(TYPE1_PROGRAM, Length1=len(TYPE1_PROGRAM), Length2=0, Length3=0)
+    desc = b.obj({"Type": Name("FontDescriptor"), "FontName": Name("Test"), "Flags": 4,
+                  "FontBBox": [0, 0, 500, 700], "FontFile": program})
+    return {"Font": {"F": b.obj({"Type": Name("Font"), "Subtype": Name("Type1"), "BaseFont": Name("Test"),
+                                 "FirstChar": 97, "LastChar": 98, "Widths": [500, 600], "FontDescriptor": desc})}}
+
+
+def predefined_cmap_font(b: Builder) -> dict:
+    return {"Font": {"F": type0(b, Name("UniJIS-UCS2-H"))}}
+
+
+def vertical_font(b: Builder) -> dict:
+    return {"Font": {"F": type0(b, Name("Identity-V"), W2=[1, [-1000, 500, 880]])}}
+
 
 
 def depth_kinds() -> dict[str, Any]:
@@ -660,18 +702,37 @@ def depth_kinds() -> dict[str, Any]:
     helv = {"Font": {"F": HELVETICA}}
     image = b"BI /W 1 /H 1 ID x EI"
     return {
+        # the getobj of the last form, under the do_Do of the one before
+        "uncached": lambda n: form_chain(n, b"0 0 m 5 5 l", precache=0),
         "plain": lambda n: form_chain(n, b"0 0 m 5 5 l"),
         "warning": lambda n: form_chain(n, b"(x) w"),
+        "operand-warnings": lambda n: form_chain(n, b"(a) (b) m (c) G /x 1 2 rg 1 (y) 3 4 K (z) Tc"),
         "font": lambda n: form_chain(n, b"BT /F 10 Tf ET", helv),
+        "unknown-font": lambda n: form_chain(n, b"BT /Nope 10 Tf (a) Tj ET"),
+        "font-tounicode": lambda n: form_chain(n, b"BT /F 10 Tf (abc) Tj ET", tounicode_font),
+        "font-type1-program": lambda n: form_chain(n, b"BT /F 10 Tf (ab) Tj ET", type1_program_font),
+        "font-predefined-cmap": lambda n: form_chain(n, b"BT /F 10 Tf <3042> Tj ET", predefined_cmap_font),
         "char": lambda n: form_chain(n, b"BT /F 10 Tf (a) Tj ET", helv),
+        "char-quote": lambda n: form_chain(n, b"BT /F 10 Tf 1 2 (a) \" (b) ' ET", helv),
+        "char-vertical": lambda n: form_chain(n, b"BT /F 10 Tf <00010002> Tj ET", vertical_font),
         "text-seq": lambda n: form_chain(n, b"BT /F 10 Tf [(a) /x 5] TJ ET", helv),
+        # PDFKeyError at the deepest form (not precached: the page would stop there)
+        "text-seq-stream": lambda n: form_chain(n, b"BT /F 10 Tf BI /W 1 /H 1 /F /A85 ID z~> TJ ET", helv, precache=0),
         "inline-image": lambda n: form_chain(n, image),
+        # the first inline image of the process: re.sub compiles its pattern
+        "inline-image-first": lambda n: form_chain(n, image, precache=0),
+        "image-xobject": lambda n: form_chain(n, b"/Im Do", lambda b: {"XObject": {"Im": b.stream(
+            b"\x00", Subtype=Name("Image"), Width=1, Height=1)}}),
         "subpaths": lambda n: form_chain(n, b"0 0 m 5 5 l 6 6 m 7 7 l S"),
         "state": lambda n: form_chain(n, b"q 2 0 0 2 0 0 cm 1 w Q"),
         "color": lambda n: form_chain(n, b"/Pattern cs /P scn 0.1 0.2 0.3 /P scn"),
-        "tag": lambda n: form_chain(n, b"/Span << /MCID 1 >> BDC EMC"),
+        "color-sc": lambda n: form_chain(n, b"/DeviceRGB cs 0.1 0.2 0.3 sc (x) 0.2 0.3 sc /DeviceCMYK CS 1 2 3 SC"),
+        "colorspace-resource": lambda n: form_chain(n, b"/C cs 0.5 scn", lambda b: {"ColorSpace": {
+            "C": [Name("ICCBased"), b.stream(b"", N=1)], "D": [Name("DeviceN"), [Name("a")]]}}),
+        "tag": lambda n: form_chain(n, b"/Span << /MCID 1 >> BDC EMC /T MP"),
         "cycle": lambda n: form_chain(n, b"0 0 m 5 5 l S", cycle=True),
         "link-matrix": lambda n: form_chain(n, b"0 0 m 5 5 l S", link=b"q 1 0 0 1 1 1 cm /X Do Q"),
+        "link-text": lambda n: form_chain(n, b"0 0 m 5 5 l S", link=b"BT /X Do ET"),
     }
 
 

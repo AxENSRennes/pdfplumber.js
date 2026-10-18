@@ -94,6 +94,7 @@ Chaque étape a un nom stable, une implémentation Python
 | `pages` | arbre des pages : attributs hérités, boîtes, rotation, ressources, contenus, libellés ; boîtes de la `Page` pdfplumber (TrimBox/BleedBox/ArtBox comprises), `doctop` |
 | `fonts` | les polices obtenues par l'interpréteur (le `fontmap` de la page, les entrées ajoutées au cache du `PDFResourceManager`) : classe et attributs, puis, pour chaque chaîne affichée, `decode` et, par code, `to_unichr`, `char_width`, `char_disp` |
 | `interp` | chaque appel de l'interpréteur au périphérique de pdfplumber (`set_ctm`, pages, figures, `paint_path`, `render_image`, `render_string`/`render_char` et l'avance rendue, balises), avec les états graphique et texte, et où remontent les exceptions |
+| `fonts_text`, `interp_text` | `fonts` et `interp` sur le `PDFTextDevice` de pdfminer (`render_char` rend `0`) au lieu du périphérique de pdfplumber : l'interpréteur vérifié sans convertisseur (`oracle/stages/interp_text.py`) |
 | `layout` | le `LTPage` brut (`laparams=None`, le défaut de pdfplumber) puis analysé (`LAParams()`), tous attributs (`mcid`, `tag` compris), et le rang des `id()` de l'analyse (`ids`) |
 | `plumber_objects` | `page.objects` de pdfplumber, tous attributs, plus boîtes et `doctop` |
 | `plumber_text` | `extract_text` (simple, `layout=True`, options), `extract_words`, `extract_text_lines`, `search`, `dedupe_chars` |
@@ -203,6 +204,7 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   | `text_tables.py` | `pdfplumber::{obj, utils::{clustering, geometry, generic, text}, table}`, `pycompat::listsort` | `text_tables_unit.rs` | tri de CPython (timsort complet), opérateurs Python du modèle d'objets, `cluster_*`, géométrie, motifs de `extract_text_lines`, fonctions de `table.py`, `TableSettings.resolve`, pages adverses (`--fuzz`) passées par les opérations de page (`_plumber_ops.py`), pages aux coordonnées NaN (`_nan_objects.py`, ci-dessous), dont des NaN qu'objets et arêtes partagent, pages aux caractères surrogates isolés, arguments de l'utilisateur de tout type (`extra_attrs`, `split_at_punctuation`, lignes explicites, `text_settings`, chaînes en coordonnées) |
   | `text_tables_real.py` | les mêmes | `text_tables_unit.rs` (`pages_real`) | opérations de page sur les premières pages de l'ensemble `quick`, sur des documents riches en tables et sur `corpus/micro/lone-surrogates.pdf` du dépôt (caractères dont le texte est un surrogate isolé : `IdentityUnicodeMap`, `bfrange` de nombres) |
   | `document.py` | `pdfparser`, `pdfdocument` (xrefs, `getobj`, flux d'objets, mot de passe, plans, libellés, noms), `pdfpage`, `pdfplumber::page` (boîtes), `pdfinternals.resolve_all`, `pycompat::bytes_format`, le comptage des cadres (`psparser`, accesseurs, filtres, `pycompat::logging`) | `document_unit.rs` | traces des étapes `objects`, `streams`, `pages`, `psparser` sur `adv-objects` et `adv-pages` (régénérés d'abord ; fenêtres de profondeur autour de la limite des cadres comprises), `micro` et les petits fichiers de `quick` ; `objects` sur un `io.BytesIO` (erreurs de `seek`/`read` d'un `BytesIO`) ; `api` (`get_outlines`, `get_page_labels`, `lookup_name`, `get_dest`, `PDFPage.get_pages`, `repr` des pages) ; chaque trace dans un processus fils créé pour elle (`os.fork`), comme `verify` en lance un par trace, et `py_process.jsonl` (les noms internés au départ des fils), dont le rejeu repart ; `bytes % int` (formats générés, et les largeurs qu'aucune machine ne peut allouer : `MemoryError`) ; `PDFXRefFallback.PDFOBJ_CUE` sur chaque caractère Latin-1 |
+  | `interp.py` | `pdfinterp` (tout le module), `pdfdevice` | `interp_unit.rs` | traces des étapes `interp_text` et `fonts_text` sur `adv-interp` (régénéré d'abord, fenêtres de profondeur comprises), `micro` et les petits fichiers de `quick`, chaque trace dans un processus fils (`py_process.jsonl`), CMaps prédéfinies du `cmap_dir` de `meta.json` |
   | `js_runtime.py` | `crates/wasm` (`errors`, `cmaps`, `ops`, `wire`) | `crates/wasm/tests/js_runtime_unit.rs` (et les tests JS de `js/test/shared/`, Node et navigateurs) | MRO de chaque classe d'exception, CMaps prédéfinies par le protocole paresseux, texte, mots, `dedupe_chars`, `TextMap.search`/lignes, tables sur des objets de pages réelles ; documents CJK pour la couche page |
 
   Les tables générées (`oracle/codegen/`) sont vérifiées par `--check` dans
@@ -400,6 +402,30 @@ d'écrire ses cas) :
   `OverflowError`), un champ de flux xref de 100 000 octets, un id flottant
   déchiffré (`struct.error`) et un id booléen (`True`, un entier pour
   `struct.pack`).
+- `oracle/adversarial/interp.py` → `adv-interp` (vérifié par `interp_text`,
+  `fonts_text`, `interp`, `fonts` et `layout`) : chaque opérateur de
+  l'interpréteur sans opérande, avec un de moins, un de trop, et chaque
+  position recevant chaque sorte de valeur du parseur de contenu (entiers,
+  grands entiers, flottants infinis, booléens, `null`, noms, chaînes,
+  chaînes numériques `(nan)`/`(1e400)` que `float()` lit, tableaux,
+  dicts), mots-clés écrits comme les méthodes (`T_a`, `_q`) ou décodés vers
+  un opérateur (`q\x80`) ; `Tz`/`TL`/`Ts`/`Tc`/`Tw` extrêmes, `TJ` sur
+  tout objet (nombre, chaîne, nom, dict, flux d'image en ligne `~>`),
+  espacement des mots mono- et multi-octets, `'` et `"` ; polices Type 3
+  aux `/FontMatrix` atypiques, `Type0` verticales (`/W2`, `/DW2`), CMap
+  prédéfinie ou inconnue, polices absentes ou mal typées, cache par
+  `objid` ; chaque espace de couleur (`ICCBased` et son `/N` de tout type,
+  `DeviceN`, `Indexed`, `Separation`, `Pattern`, tableau vide), `scn` de 0
+  à 5 composantes, motifs colorés et non colorés ; chemins et peintures,
+  `cm` dégénérés, `q`/`Q` déséquilibrés ; images en ligne aux frontières
+  de blocs de 4 096 octets, coupées entre deux flux, mal formées ;
+  `BMC`/`BDC`/`EMC`/`MP`/`DP` déséquilibrés et toutes sortes de
+  propriétés ; Form XObjects aux `/BBox`, `/Matrix`, `/Resources`
+  atypiques, cycles, tableaux de contenus aux membres cassés ;
+  `cases_depth` : chaînes de Form XObjects autour du premier niveau qui
+  échoue, cherché par dichotomie pour `interp_text`, `interp` et `fonts`,
+  avec 26 chemins différents au point le plus profond
+  (`docs/architecture.md`, « Vague 3 »).
 - `oracle/adversarial/pages.py` → `adv-pages` : héritage (`/Resources`,
   `/MediaBox`, `/CropBox`, `/Rotate`, depuis les nœuds et le catalogue),
   boucles et partages dans l'arbre, `/Kids` absents ou atypiques (entiers,
@@ -474,7 +500,9 @@ les fichiers partagés tous les rejeux qui les exercent (`utils.rs` :
 `utils_unit`, `layout_unit`, `filters_unit`, `crypto_unit` ; `pdftypes.rs` :
 `pdftypes_unit`, `filters_unit`, `document_unit` ; `pdfparser.rs`,
 `pdfdocument/*.rs`, `pdfpage.rs`, `pdfplumber/src/page.rs`,
-`utils/pdfinternals.rs`, `pycompat/src/bytes_format.rs` : `document_unit`).
+`utils/pdfinternals.rs`, `pycompat/src/bytes_format.rs` : `document_unit` ;
+`pdfinterp.rs` : `interp_unit`, `psparser_unit`, `document_unit` ;
+`pdfdevice.rs` : `interp_unit`).
 
 ```sh
 HEAVY_SLOTS=1 scripts/heavy.sh cargo mutants -f crates/pdfminer/src/psparser.rs \

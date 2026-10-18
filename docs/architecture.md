@@ -195,8 +195,12 @@ deux). Règles :
   `CMapDB` et de `CMapParser`, et `pdffont::frames` ceux du code qu'il
   appelle sans comptage (`casting`, requêtes de `cmapdb`, `encodingdb`) ;
   ces cas sont vérifiés aux seuils par `fonts_unit` (`depth`,
-  `corpus_depth`). Restent à compter `pdfinterp` hors `PDFContentParser`,
-  `pdfdevice`, `converter`, `layout` et la couche pdfplumber.
+  `corpus_depth`). `pdfinterp` et `pdfdevice` comptent les leurs (vague 3,
+  chantier INTERP, ci-dessous : les fonctions de `casting` et de `utils`
+  qu'ils appellent, les méthodes de `PDFStream` appelées depuis le C, la
+  compilation du motif de `re.sub` de `get_inline_data`), vérifiés aux
+  seuils par `adv-interp` ; restent `converter`, les constructeurs de
+  `layout` et la couche pdfplumber.
 - Le harnais fixe la profondeur de départ (`with_depth`) à celle que
   l'oracle a mesurée au même point d'appel ; le code porté ne la fixe jamais.
 
@@ -435,6 +439,69 @@ ligne, chemin à plusieurs sous-chemins, référence circulaire refusée).
 Tant que CONVERTER n'est pas fusionné, INTERP peut vérifier
 l'interpréteur avec un générateur unitaire qui le mène sur un
 `PDFTextDevice` enregistreur (sans convertisseur : `render_char` rend 0).
+
+#### Réalisation (branche `wave3/interp`)
+
+- `pdfinterp.rs` : tout `pdfinterp.py` (`PDFTextState`, `PDFGraphicState`,
+  couleurs, `PDFResourceManager` avec son cache et `get_cmap`,
+  `PDFPageInterpreter` : chaque `do_*` avec son nom et son arité, table
+  `Op` de `execute` construite comme `"do_" + name.replace(...)`, donc
+  `T_a`, `_q`, `q\x80` compris). `pop(n)` du `SCN`/`scn` suit Python sur
+  un `ncomponents` quelconque (`/N` brut d'un `ICCBased` : `0.0`, `True`,
+  entier négatif ou énorme, référence, nom : `TypeError` de `-n` ou de la
+  tranche). `self.resources.copy()` d'une Form sans `/Resources` copie un
+  dict ou une liste, lève `AttributeError` sinon (inatteignable : une page
+  dont les ressources ne sont pas un dict n'a pas de Form à dessiner).
+- `pdfdevice.rs` : `PDFDevice`, `PDFTextDevice` (`render_string`,
+  `render_string_horizontal`/`_vertical` partagent une boucle,
+  `text_seq_items` itère `seq` comme Python : liste, `bytes` en entiers,
+  clés d'un dict, `PDFKeyError` du `__getitem__(0)` d'un flux, `TypeError`
+  sinon).
+- **CTM** : le contrat garde `Matrix` (des nombres). `do_Do` multiplie la
+  `/Matrix` de la Form par la CTM sans contrôle ; un élément `bytes` ou
+  `list` donnerait une CTM de séquences, mais le `begin_figure` de
+  pdfplumber (`LTFigure`) lève `TypeError` avant pour toute telle matrice
+  (`utils::ObjMatrix`). Pour un autre périphérique, le port lève
+  `TypeError` dans `do_Do` (limite documentée dans `PDFPageInterpreter`).
+- **Cadres** : chaque méthode prend le sien ; `func(*args)` prend une
+  entrée de boucle d'évaluation (mesuré : 2 unités C de plus pour un
+  opérateur à arguments, aucune pour `func()`) ; les fonctions de
+  `casting` (`safe_float` 1, `safe_int` 1, `safe_matrix` 2, `safe_rgb` et
+  `safe_cmyk` 3), `utils.mult_matrix`/`translate_matrix`, `keyword_name`,
+  `font.is_multibyte()`/`is_vertical()` sont vérifiées par `leaf` ;
+  `PDFStream.__contains__` (depuis le C) par `c_called_leaf`. Le
+  `re.sub` de `PDFContentParser.get_inline_data` prend 2 cadres, et 11 à
+  la première compilation de son motif dans un processus (mesuré avec
+  `oracle/depth_probe.py`) : état de processus
+  (`pdfinterp::reset_process_state`, appelé par
+  `pdftrace::stages::py_process::start`). Le chantier CONVERTER a annoncé
+  un `pycompat::re_cache` pour ses propres motifs : à unifier à la jonction.
+- **Étapes sans convertisseur** : `interp` et `fonts` (Rust, écrites contre
+  le contrat) ont besoin de `PDFPageAggregatorWithMarkedContent`. Pour
+  vérifier l'interpréteur seul, deux étapes de plus,
+  `oracle/stages/interp_text.py` et `fonts_text.py` : les mêmes lignes, sur
+  `PDFTextDevice` (`render_char` rend `0`) ; leur `TextDevice` a le
+  constructeur de la classe de pdfplumber et lève `TypeError("figure
+  matrix is not numbers")` dans `begin_figure` là où `LTFigure` lèverait
+  (ci-dessus). Les surcharges, enregistrements et le formateur sont
+  partagés (`stages::interp::{traced, PageFormatter, run_with}`,
+  `stages::fonts::run_with`, rapport de police `pdftrace::fonts_report`,
+  sorti de `fonts_unit.rs`).
+- **Corpus adverse** `oracle/adversarial/interp.py` → `adv-interp` (le nom
+  de la base : `oracle/corpus.py` n'accepte que `adv-<étape>`) et
+  générateur unitaire `oracle/unit/interp.py` → `interp_unit.rs`.
+  `cases_depth` : chaînes de Form XObjects dont la page dessine d'abord
+  les dernières (objets en cache, données décodées : le point le plus
+  profond devient le contenu de la dernière Form plutôt que le `getobj`
+  de son flux), pour 26 chemins (opérateurs avec avertissement, police
+  créée — Helvetica, `/ToUnicode`, programme Type 1, CMap prédéfinie —,
+  caractère, police verticale, `TJ` sur un flux, image en ligne — et la
+  première du processus, qui compile le motif —, image XObject,
+  sous-chemins, `q`/`cm`/`Q`, couleurs, ressource d'espace de couleur,
+  balises, cycle refusé, liens dans `q`/`cm` et dans `BT`) ; le premier
+  niveau qui échoue est cherché par dichotomie pour `interp_text`,
+  `interp` et `fonts` (processus fils), la fenêtre couvre de deux niveaux
+  avant à un après pour chacun.
 
 ### Chantier CONVERTER
 
