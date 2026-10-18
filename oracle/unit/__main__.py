@@ -62,6 +62,9 @@ GENERATORS: dict[str, tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]] = {
     # bisected on the oracle: minutes), then the traces of the interp_text
     # and fonts_text stages on it, micro and small quick files (minutes)
     "interp": (("meta.json",), ((),)),
+    # interp_text with a device whose methods descend 60 frames, each file of
+    # adv-interp swept from a range of entry depths (minutes)
+    "interp_deep": (("meta.json",), ((),)),
     # what the JavaScript tests replay through the WebAssembly boundary (seconds)
     "js_runtime": (("meta.json",), ((),)),
 }
