@@ -29,7 +29,10 @@ pub fn decode_text(s: TextArg<'_>) -> PyResult<String> {
     let _frame = py_frame()?;
     if let TextArg::Bytes(b) = &s {
         if let Some(body) = b.strip_prefix(b"\xfe\xff") {
-            // str(s[2:], "utf-16be", "ignore")
+            // str(s[2:], "utf-16be", "ignore"): not one of PyUnicode_Decode's
+            // fast paths, so the codec registry's decoder runs,
+            // encodings.utf_16_be.decode, a Python function called from C
+            pycompat::recursion::c_called_leaf()?;
             let units = body.as_chunks::<2>().0.iter().map(|p| u16::from_be_bytes(*p));
             return Ok(char::decode_utf16(units).filter_map(Result::ok).collect());
         }

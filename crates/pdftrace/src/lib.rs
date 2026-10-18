@@ -10,6 +10,8 @@
 //!   `oracle/unit/*.py` (the replay tests are in `tests/`).
 
 pub mod canon;
+pub mod font_case;
+pub mod layout_dump;
 pub mod plumber;
 pub mod stages;
 pub mod typed_json;
