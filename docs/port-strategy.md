@@ -234,6 +234,12 @@ Lecture :
   les interfaces de `pdfdevice`, `pdfinterp`, `converter` et du
   périphérique de pdfplumber, en squelettes qui compilent, et
   `pdftrace --oracle-dir` (les `id()` de Python pour l'étape `layout`).
+  Chantier CONVERTER (`wave3/converter`) : `converter.rs`, le
+  périphérique de pdfplumber et les cadres des constructeurs du layout
+  portés, vérifiés sans l'interpréteur par `oracle/unit/converter.py`
+  (suites d'appels générées, frontières de récursion, appels des 20
+  premières pages de `all`) ; l'étape Rust `layout` est écrite et attend
+  l'interpréteur (chantier INTERP).
 - **Vagues suivantes**, dans l'ordre des dépendances :
   1. `pdfinterp`, `pdfdevice`, `converter` (`PDFPageAggregator` vers
      `layout`) : étapes `fonts`, `interp`, `layout` (comptage des cadres de

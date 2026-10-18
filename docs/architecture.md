@@ -327,7 +327,8 @@ invalide son cache et celui des étapes qui en dépendent).
   et noter ici une fois l'étape identique : la proportion de pages de
   `all` où `CreationOrder` seul donne le résultat de Python (`pdftrace
   --stage layout` sans `--oracle-dir`, comparé page à page) ; c'est une
-  statistique, pas un critère de parité.
+  statistique, pas un critère de parité. Première mesure, sur le rejeu du
+  corpus de `oracle/unit/converter.py` : 93,8 % (« Chantier CONVERTER »).
 - **Images en ligne** : pdfminer/pdfinterp.py:1309 `PDFPageInterpreter.do_EI`
   les nomme `str(id(obj))`, une adresse mémoire. Les traces écrivent
   `inline{"n": k}` (`k` : rang d'apparition dans la page). Le port leur
@@ -516,6 +517,14 @@ une `Rc<PDFGraphicState>` par `render_string` d'origine.
   ligne `raw` montre donc `x""` dans le rejeu) ; l'ensemble réel est
   `all` (vingt premières pages), pas `quick`/`upstream` ; `adv-interp`
   s'y ajoutera à la jonction.
+- **Statistique `CreationOrder`** (mesurée par le rejeu du corpus,
+  `CONVERTER_CREATION_ORDER=1 cargo test --release -p pdftrace --test
+  converter_unit corpus`, en attendant l'étape `layout` complète) : sur les
+  3 657 pages des vingt premières pages de `all`, l'analyse
+  `LAParams()` avec l'ordre par défaut de la bibliothèque donne le
+  résultat de Python (lignes `ids` exclues) sur 3 430 pages (93,8 %) ;
+  les 227 autres ont des paires de boîtes à égale distance que l'ordre des
+  `id()` de Python départage autrement.
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 

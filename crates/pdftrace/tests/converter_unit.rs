@@ -663,5 +663,6 @@ fn check_marker(data: &UnitData, name: &str) {
 #[test]
 fn corpus() {
     check_marker(&open(), "corpus");
-    replay("corpus", 1000, true);
+    // the CreationOrder statistic (a second analysis of each page) on demand
+    replay("corpus", 3000, std::env::var_os("CONVERTER_CREATION_ORDER").is_some());
 }
