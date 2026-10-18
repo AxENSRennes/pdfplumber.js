@@ -183,6 +183,7 @@ Generators (registered in `unit/__main__.py`; each one's Rust replay is
 | `psparser` | `PDFContentParser` on the content streams of the `all` set, and with `--fuzz 4000` on an adversarial corpus | `psparser` |
 | `utils` | pdfminer `utils`, `casting`, `data_structures`, `pdfcolor`; pdfplumber `ctm` | `utils` |
 | `layout` | `LT*` objects and the layout analysis under several `LAParams`, on real and adversarial raw pages (minutes) | `layout` |
+| `converter` | `PDFLayoutAnalyzer`, `PDFPageAggregator`, pdfplumber's `PDFPageAggregatorWithMarkedContent` and the layout constructors, on sequences of device calls replayed without the interpreter (generated, recursion boundaries; with `--corpus`, the calls of the first 20 pages of the `all` set, minutes: `scripts/heavy.sh`), outputs in the `layout` stage's format | `converter` |
 | `zlib` | CPython's `zlib` decompression on zlib 1.3 | `zlib` |
 | `filters` | the stream filters, predictors and `PDFStream.get_data`, on generated cases and every stream of the `all` set (minutes) | `filters` |
 | `ccitt` | `pdfminer/ccitt.py` (trees, parser methods, generated G4 streams, deep cases) | `ccitt` |

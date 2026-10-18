@@ -379,7 +379,7 @@ fn unpack_calls(v: &Value) -> Vec<Value> {
 fn expand_path(c: &[Value]) -> Vec<Value> {
     let Value::Bytes(packed) = &c[7] else { panic!("packed coordinates") };
     let data = pycompat::zlib::decompress(packed).expect("zlib data");
-    let mut coords = data.chunks_exact(8).map(|w| f64::from_le_bytes(<[u8; 8]>::try_from(w).expect("8 bytes")));
+    let mut coords = data.as_chunks::<8>().0.iter().map(|w| f64::from_le_bytes(*w));
     let path = c[6]
         .as_str()
         .expect("the operators")

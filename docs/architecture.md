@@ -195,8 +195,12 @@ deux). Règles :
   `CMapDB` et de `CMapParser`, et `pdffont::frames` ceux du code qu'il
   appelle sans comptage (`casting`, requêtes de `cmapdb`, `encodingdb`) ;
   ces cas sont vérifiés aux seuils par `fonts_unit` (`depth`,
-  `corpus_depth`). Restent à compter `pdfinterp` hors `PDFContentParser`,
-  `pdfdevice`, `converter`, `layout` et la couche pdfplumber.
+  `corpus_depth`). La vague 3 compte `converter`, le périphérique de
+  pdfplumber (`page.rs`), les constructeurs des objets bruts de `layout`
+  et `decode_text` (chantier CONVERTER, vérifiés par le jeu `depth` de
+  `oracle/unit/converter.py`) ; restent `pdfinterp` hors
+  `PDFContentParser` et `pdfdevice` (chantier INTERP), l'analyse du
+  layout hors de ses récursions, et le reste de la couche pdfplumber.
 - Le harnais fixe la profondeur de départ (`with_depth`) à celle que
   l'oracle a mesurée au même point d'appel ; le code porté ne la fixe jamais.
 
@@ -460,6 +464,58 @@ le `LTPage` brut puis analysé (`LAParams()` et les configurations de
 `layout.py`, avec les `id()` de Python). Le Rust rejoue chaque appel sur
 `PDFPageAggregatorWithMarkedContent` depuis la profondeur enregistrée,
 une `Rc<PDFGraphicState>` par `render_string` d'origine.
+
+#### Réalisé (branche `wave3/converter`)
+
+- `converter.rs`, `PDFPageAggregatorWithMarkedContent` (`page.rs`,
+  `marked_content`) et les corps triviaux de `pdfdevice::device`
+  (`set_ctm` et les méthodes qui ne font que `pass` : le rejeu en a
+  besoin ; INTERP les reprend tels quels à la jonction) sont portés,
+  fonction par fonction, avec leurs cadres. Mesures (sondes bornées, puis
+  frontières vérifiées par le générateur) : un appel de classe Python
+  prend **trois** unités C (celle de `_PyObject_MakeTpCall` et l'entrée de
+  la boucle d'évaluation de `__init__` : `layout::class_call`), alors que
+  le code des vagues précédentes n'en compte que deux
+  (`PDFContentParser::new`, `PDFPage::new`, `c_called_leaf` des
+  `__init__`) ; sans effet tant que la limite C n'est pas approchée (elle
+  ne l'est par aucun corpus), noté pour une reprise ; `super().m(*args,
+  **kwargs)` de pdfplumber est un appel depuis le C (deux unités, une
+  entrée de boucle) ; le premier `re.finditer(r"m[^m]+", …)` d'un processus
+  compile le motif, huit cadres sous `PDFLayoutAnalyzer.paint_path`
+  (`pycompat::re_cache`, remis à zéro au début de chaque trace par
+  `stages::py_process::start`) ; `decode_text` prend les cadres de ses deux
+  générateurs, et le décodeur `utf-16be` (`encodings.utf_16_be.decode`,
+  appelé depuis le C) pour une chaîne qui commence par `\xfe\xff`.
+- Écarts d'état non observables, documentés dans `converter.rs`
+  (« Errors ») : après une exception d'un périphérique, l'interpréteur ne
+  rattrape rien et pdfplumber jette le périphérique, donc `begin_figure`
+  empile l'élément courant une fois la figure construite et `end_page`
+  passe la page à `receive_layout` (Python la garde dans `cur_item`).
+- Changements du contrat : `LTChar::new` prend le résultat de
+  `char_width` tel quel (`Operand` : une police Type 3 dont la
+  `/FontMatrix` tient une séquence lève l'exception de Python dans
+  `__init__`, après les cadres de l'appel de classe) ;
+  `PDFPageAggregator::create` et `PDFPageAggregatorWithMarkedContent::create`
+  sont l'appel de classe (cadres de la chaîne des `__init__`), `new` reste
+  sans cadre ; `CurItem::{add, last, type_str}`.
+- L'analyse d'une page (`group_objects`, `group_textlines`,
+  `group_textboxes`) ne compte toujours pas les cadres de ce qu'elle
+  appelle (`layout.rs`, « Recursion ») : `end_page` ne l'appelle jamais
+  près de la limite depuis l'interpréteur (`process_page` est peu
+  profond) ; les frontières de `end_page` sont vérifiées sur des pages
+  sans caractères.
+- `pdftrace::font_case` (le chargeur des polices de `fonts_unit.rs`,
+  déplacé) et `pdftrace::layout_dump` (les lignes de l'étape `layout` :
+  `_RawDump`, `_analyzed`, `id_ranks`, et `RecordedIds`, que
+  `layout_unit.rs` utilise aussi) ; l'étape Rust `layout` est écrite
+  (`stages/layout.rs`, `run: Some`) et attend l'interpréteur.
+- `oracle/unit/converter.py` → `converter_unit.rs` (natif et WASI) : voir
+  `verification.md`. Les états graphiques sont partagés par valeur (une
+  `Rc` par valeur distincte d'un cas : l'identité n'est pas observable) et
+  les flux d'images vidés de leurs données (`LTImage` ne les lit pas ; la
+  ligne `raw` montre donc `x""` dans le rejeu) ; l'ensemble réel est
+  `all` (vingt premières pages), pas `quick`/`upstream` ; `adv-interp`
+  s'y ajoutera à la jonction.
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 

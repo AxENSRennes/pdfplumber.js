@@ -415,8 +415,10 @@ pub mod layout_analyzer {
         let mut transformed_path: Vec<OriginalPathSegment> = Vec::with_capacity(path.len());
         for (op, coords) in path {
             let mut points = Vec::with_capacity(coords.len() / 2);
-            for pair in coords.chunks_exact(2) {
-                let pt = [Num::Float(pair[0].to_f64()?), Num::Float(pair[1].to_f64()?)];
+            // zip(operation[1::2], operation[2::2]): the pairs, an odd last
+            // coordinate left out
+            for [x, y] in coords.as_chunks::<2>().0 {
+                let pt = [Num::Float(x.to_f64()?), Num::Float(y.to_f64()?)];
                 points.push(apply_pt(a.device.ctm.as_ref(), &pt)?);
             }
             transformed_path.push((*op, points));

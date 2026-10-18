@@ -1,6 +1,6 @@
 """Differential cases for crates/pdfminer/src/converter.rs (``pdfminer/converter.py``
-``PDFLayoutAnalyzer``, ``PDFPageAggregator``) and pdfplumber/page.py:110
-``PDFPageAggregatorWithMarkedContent`` (``crates/pdfplumber/src/page.rs``),
+``PDFLayoutAnalyzer``, ``PDFPageAggregator``) and
+pdfplumber/page.py:110 PDFPageAggregatorWithMarkedContent (``crates/pdfplumber/src/page.rs``),
 with the constructors of the raw layout objects (``crates/pdfminer/src/layout.rs``),
 computed by pdfminer without its interpreter.
 

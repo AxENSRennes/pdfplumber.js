@@ -20,8 +20,9 @@ use pdfminer::layout::{
 };
 use pdfminer::pdfcolor::PDFColorSpace;
 use pdfminer::pdftypes::{PDFObject, PDFResolver, PDFStream};
-use pdfminer::utils::{mult_matrix_obj, Operand, PlaneItem, SeqKind};
+use pdfminer::utils::{mult_matrix_obj, Operand, SeqKind};
 use pdftrace::canon::{canon, canon_exc};
+use pdftrace::layout_dump::RecordedIds;
 use pdftrace::unit::UnitData;
 use pdftrace::value::{PyStr, Value};
 use pycompat::recursion;
@@ -494,57 +495,7 @@ impl TreeDumper<'_> {
 // ---------------------------------------------------------------------------
 // ids
 
-/// The `id()` order Python's boxes and groups had, by their smallest char
-/// index and number of boxes.
-struct RecordedIds<'a> {
-    ranks: HashMap<(i64, i64), u64>,
-    index: &'a HashMap<usize, i64>,
-    /// The ids already given, by object (the contents of a box or group
-    /// never change once it is made).
-    given: HashMap<usize, u64>,
-}
-
-impl RecordedIds<'_> {
-    fn key(&self, obj: &TextGroupElement<TP>) -> (i64, i64) {
-        match obj {
-            TextGroupElement::Box(b) => {
-                let b = b.borrow();
-                let min = b
-                    ._objs
-                    .iter()
-                    .flat_map(|l| {
-                        l.borrow()
-                            ._objs
-                            .iter()
-                            .filter_map(|o| match o {
-                                TextLineElement::Char(c) => Some(self.index[&ptr(c)]),
-                                TextLineElement::Anno(_) => None,
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .min()
-                    .expect("a box has chars");
-                (min, 1)
-            }
-            TextGroupElement::Group(g) => {
-                let keys: Vec<(i64, i64)> = g.borrow()._objs.iter().map(|c| self.key(c)).collect();
-                (keys.iter().map(|k| k.0).min().expect("children"), keys.iter().map(|k| k.1).sum())
-            }
-        }
-    }
-}
-
-impl IdSource<TP> for RecordedIds<'_> {
-    fn id(&mut self, obj: &TextGroupElement<TP>) -> u64 {
-        if let Some(id) = self.given.get(&obj.plane_id()) {
-            return *id;
-        }
-        let key = self.key(obj);
-        let id = *self.ranks.get(&key).unwrap_or_else(|| panic!("no Python id for the box or group {key:?}"));
-        self.given.insert(obj.plane_id(), id);
-        id
-    }
-}
+// The `id()` order Python's boxes and groups had: `pdftrace::layout_dump::RecordedIds`.
 
 // ---------------------------------------------------------------------------
 // LAParams
@@ -634,14 +585,14 @@ fn replay_layout(name: &str) {
             let mut b = Builder { weak: weak.clone(), order: Vec::new() };
             let mut page = b.page(&args[1]);
             let index: HashMap<usize, i64> = b.order.iter().enumerate().map(|(i, p)| (*p, i as i64)).collect();
-            let ranks = items(&run[2])
+            let ranks: Vec<[i64; 3]> = items(&run[2])
                 .iter()
                 .map(|r| {
                     let r = items(r);
-                    ((int_arg(&r[0]), int_arg(&r[1])), int_arg(&r[2]) as u64)
+                    [int_arg(&r[0]), int_arg(&r[1]), int_arg(&r[2])]
                 })
                 .collect();
-            let mut ids = RecordedIds { ranks, index: &index, given: HashMap::new() };
+            let mut ids = RecordedIds::new(&ranks, index.clone());
             let out = recursion::with_depth(depth(&run[1]), || page.analyze_with_ids(&lp, &mut ids));
             let actual = match out {
                 Ok(()) => canon(&TreeDumper { index: &index }.page(&page)),
