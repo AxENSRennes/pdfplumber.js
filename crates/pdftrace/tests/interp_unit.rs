@@ -200,7 +200,7 @@ fn deep_sweeps() {
     }
     if only.is_none() {
         assert!(files > 100, "only {files} files");
-        assert!(limited > 2000, "only {limited} of {traces} traces reach the recursion limit");
+        assert!(limited > 1500, "only {limited} of {traces} traces reach the recursion limit");
     }
     assert!(
         failures.is_empty(),

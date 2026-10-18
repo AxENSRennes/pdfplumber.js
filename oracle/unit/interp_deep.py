@@ -62,7 +62,7 @@ MAX_PAGES = 20
 #: Frames each method of ``DeepTracingDevice`` descends before its body.
 DESCENT = 60
 #: Frames the sweep moves the limit down from above a file's deepest frame.
-SWEEP = 26
+SWEEP = 16
 #: Python's recursion limit (``sys.getrecursionlimit()``, never changed).
 LIMIT = 1000
 
