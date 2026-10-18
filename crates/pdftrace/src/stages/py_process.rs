@@ -64,10 +64,15 @@ pub fn set_for_stage(stage: &str) {
     set(PyProcess::new(&symbols));
 }
 
-/// Starts a trace from the process state of this thread.
+/// Starts a trace from the process state of this thread: its interned
+/// symbols, and what a new process has not done yet (the pattern of
+/// `get_inline_data` not compiled, `CMapDB`'s caches empty: a predefined
+/// CMap loaded by an earlier trace would otherwise be found in the cache,
+/// fewer frames down than Python's first load).
 pub fn start() {
     PROCESS.with(|p| {
         py_symbols_reset(p.borrow().symbols());
         pdfminer::pdfinterp::reset_process_state();
+        pdfminer::cmapdb::CMapDB::clear_caches();
     });
 }

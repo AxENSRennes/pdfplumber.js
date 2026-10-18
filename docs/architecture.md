@@ -522,10 +522,7 @@ l'interpréteur avec un générateur unitaire qui le mène sur un
   `DESCENT` = 60 cadres) rend chaque appel au périphérique plus profond que
   tout ce qui le précède sur sa page (chaque page a son périphérique et
   son interpréteur : un `RecursionError` n'arrête que sa page), et chaque
-  fichier de `adv-interp` (hors `depth-*`) est tracé depuis 17 entrées
-  successives (générateurs imbriqués, profondeur du corps de l'étape
-  enregistrée) qui font monter la limite d'un cadre à la fois depuis
-  au-dessus du point le plus profond du fichier. Restent invisibles, par
+  fichier de `adv-interp` (hors `depth-*`) est tracé avec l'interprétation de ses pages (`page_layout`) descendue de 17 profondeurs successives (`down`), qui font monter la limite d'un cadre à la fois depuis au-dessus du point le plus profond des pages ; sans descente, de chaque profondeur jusqu'au cadre de `page_layout` (`begin_page`, `init_resources`, `init_state`). Le document est ouvert et les lignes écrites à la profondeur de l'étape : leur mise en forme a ses propres cadres, que le port ne compte pas. Restent invisibles, par
   construction, les cadres plus courts que le parseur du même `execute`
   et qui ne sont sur aucun chemin vers le périphérique (`push`, `pop`,
   `keyword_name`, `safe_*`, `mult_matrix` de `do_cm`, journalisation des

@@ -16,7 +16,8 @@
 //! entries the generators traced them from (`with_stage_entry`).
 //!
 //! A difference prints the case and the first differing line of the
-//! trace. `INTERP_ONLY=<substring>` restricts the cases to the file names
+//! trace (`INTERP_DUMP=<dir>`: the differing traces of `deep_sweeps` are
+//! written there). `INTERP_ONLY=<substring>` restricts the cases to the file names
 //! containing it.
 //!
 //! The generator computes each trace in a process forked for it, whose
@@ -203,6 +204,10 @@ fn deep_sweeps() {
             }
             let Value::Str(digest) = digest else { panic!("a digest") };
             if sha256_hex(got.as_bytes()) != digest.as_str().expect("hex") {
+                if let Some(dir) = std::env::var_os("INTERP_DUMP") {
+                    let path = std::path::Path::new(&dir).join(format!("{name}-{descent}-{n}.txt"));
+                    fs::write(path, &got).expect("INTERP_DUMP is a writable directory");
+                }
                 let at = if i == 0 { first_difference(first, &got) } else { "trace digest".to_owned() };
                 failures.push(format!("{name} [descent {descent}, {n} frames deeper]: {at}"));
             }
