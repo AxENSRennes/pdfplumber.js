@@ -1272,6 +1272,17 @@ def adversarial_cases(rng, table: dict[str, list]):
             g.char(kind)
         g.call("end_page")
         yield g.case(f"chars {kind}")
+    # one-char boxes in a row, the gaps growing: the groups chain, a tree
+    # higher than GROUP_TEXT_HEIGHT (its get_text() left out of the lines)
+    for n in (60, 140):
+        g = Gen(rng, {"standard": fonts["standard"][:1]})  # one font: the same box height
+        g.begin(ctm=(1.0, 0.0, 0.0, 1.0, 0.0, 0.0), mediabox=(0.0, 0.0, 5000.0, 300.0))
+        x = 10.0
+        for i in range(n):
+            g.char("standard", 99, matrix=(10.0, 0.0, 0.0, 10.0, x, 100.0), fontsize=1.0, scaling=1.0, rise=0)
+            x += 10.0 + 13.0 + i * 0.25
+        g.call("end_page")
+        yield g.case(f"chain {n}", configs=({},))
     # tags of every kind before every kind of object
     g = Gen(rng, fonts)
     g.begin()

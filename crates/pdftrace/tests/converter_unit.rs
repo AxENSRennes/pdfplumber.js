@@ -480,15 +480,26 @@ fn dispatch(dev: &mut PDFPageAggregatorWithMarkedContent, call: &Call) -> PyResu
     }
 }
 
-/// One run of a case: its output text. With `oracle_ids`, the analysis
-/// has Python's `id()` order (else the library's, `CreationOrder`).
+/// The `id()` of the boxes and groups of a run's analysis.
+#[derive(Clone, Copy, PartialEq)]
+enum Ids {
+    /// Python's (`RecordedIds` of the run's ranking)
+    Oracle,
+    /// `RecordedIds` of no ranking: every id is a fallback one, given in
+    /// the order objects are first seen, as `CreationOrder` gives them
+    NoRanks,
+    /// The library's default, `CreationOrder`
+    Default,
+}
+
+/// One run of a case: its output text, the analysis with the `ids` given.
 fn run(
     rsrcmgr: &Rc<PDFResourceManager>,
     case: &Case<'_>,
     calls: &[(u32, Call)],
     args: &[Value],
     run: &[Value],
-    oracle_ids: bool,
+    ids: Ids,
 ) -> String {
     let base = depth(&args[4]);
     let pageno = py_int(&args[5]);
@@ -513,8 +524,10 @@ fn run(
                         [int(&r[0]), int(&r[1]), int(&r[2])]
                     })
                     .collect();
-                if oracle_ids {
-                    a.ids = Box::new(RecordedIds::new(&ranks, raw_index(&p.layout._objs)));
+                match ids {
+                    Ids::Oracle => a.ids = Box::new(RecordedIds::new(&ranks, raw_index(&p.layout._objs))),
+                    Ids::NoRanks => a.ids = Box::new(RecordedIds::new(&[], raw_index(&p.layout._objs))),
+                    Ids::Default => {}
                 }
                 raw = Some(RawDump::new(&p.layout._objs, &is_inline));
             }
@@ -596,10 +609,16 @@ fn replay(set: &str, min_cases: usize, creation_order: bool) {
         let calls = calls(&mut case, &doc, &unpack_calls(&args[6]));
         for (k, (r, expected)) in items(&args[7]).iter().zip(items(expected)).enumerate() {
             runs_total += 1;
-            let text = run(&rsrcmgr, &case, &calls, args, items(r), true);
+            let text = run(&rsrcmgr, &case, &calls, args, items(r), Ids::Oracle);
+            if !creation_order && !matches!(&items(r)[0], Value::None) {
+                // RecordedIds' fallback ids are CreationOrder's
+                let fallback = run(&rsrcmgr, &case, &calls, args, items(r), Ids::NoRanks);
+                let default = run(&rsrcmgr, &case, &calls, args, items(r), Ids::Default);
+                assert_eq!(fallback, default, "{set} #{index}: RecordedIds without ranks is not CreationOrder");
+            }
             if creation_order && matches!(&items(r)[0], Value::Dict(d) if d.is_empty()) {
                 let without_ids = |t: &str| t.lines().filter(|l| !l.starts_with("ids ")).collect::<Vec<_>>().join("\n");
-                let default = run(&rsrcmgr, &case, &calls, args, items(r), false);
+                let default = run(&rsrcmgr, &case, &calls, args, items(r), Ids::Default);
                 analyzed_runs += 1;
                 same_with_creation_order += usize::from(without_ids(&default) == without_ids(&text));
             }
@@ -638,6 +657,15 @@ fn replay(set: &str, min_cases: usize, creation_order: bool) {
              (LAParams())"
         );
     }
+}
+
+/// A trace starts from a new Python process: no pattern of `re` compiled
+/// (`stages::py_process::start`).
+#[test]
+fn a_trace_starts_with_no_pattern_compiled() {
+    pycompat::re_cache::set_compiled(SUBPATH_PATTERN, true);
+    pdftrace::stages::py_process::start();
+    assert!(!pycompat::re_cache::is_compiled(SUBPATH_PATTERN));
 }
 
 #[test]
