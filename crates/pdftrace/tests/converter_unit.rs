@@ -325,13 +325,99 @@ fn bool_arg(v: &Value) -> bool {
     matches!(v, Value::Bool(true))
 }
 
+/// The `render_char` calls of a `chars` call (the generator's `expand`):
+/// `[kind, py, (a, b, c, d), font, fontsize, scaling, rise, ncs, gstate,
+/// packed]`, `packed` the zlib-compressed columns of `e`, `f` (f64) and
+/// the cids (i64), little-endian.
+fn expand(c: &[Value]) -> Vec<Vec<Value>> {
+    let Value::Bytes(packed) = &c[9] else { panic!("packed chars") };
+    let data = pycompat::zlib::decompress(packed).expect("zlib data");
+    let n = data.len() / 24;
+    let word = |k: usize| <[u8; 8]>::try_from(&data[8 * k..8 * k + 8]).expect("8 bytes");
+    (0..n)
+        .map(|i| {
+            let mut matrix = items(&c[2]).to_vec();
+            matrix.push(Value::Float(f64::from_le_bytes(word(i))));
+            matrix.push(Value::Float(f64::from_le_bytes(word(n + i))));
+            let cid = Value::Int(PyInt::Small(i64::from_le_bytes(word(2 * n + i))));
+            vec![
+                Value::str("render_char"),
+                c[1].clone(),
+                Value::Tuple(matrix),
+                c[3].clone(),
+                c[4].clone(),
+                c[5].clone(),
+                c[6].clone(),
+                cid,
+                c[7].clone(),
+                c[8].clone(),
+            ]
+        })
+        .collect()
+}
+
+/// The calls of a written case: a list, or the zlib-compressed text of
+/// their typed JSON (the generator's `pack_calls`).
+fn unpack_calls(v: &Value) -> Vec<Value> {
+    match v {
+        Value::Bytes(packed) => {
+            let text = pycompat::zlib::decompress(packed).expect("zlib data");
+            let json = typed_json::parse_json(std::str::from_utf8(&text).expect("ASCII")).expect("JSON");
+            let mut calls = typed_json::from_json(&json).expect("typed calls");
+            match &mut calls {
+                Value::List(calls) => std::mem::take(calls),
+                other => panic!("calls: {other:?}"),
+            }
+        }
+        v => items(v).to_vec(),
+    }
+}
+
+/// The `paint_path` call of a `path` call: `[kind, py, gstate, stroke,
+/// fill, evenodd, ops, packed]`, `packed` the zlib-compressed coordinates
+/// (f64, little-endian), as many for each operator as it takes.
+fn expand_path(c: &[Value]) -> Vec<Value> {
+    let Value::Bytes(packed) = &c[7] else { panic!("packed coordinates") };
+    let data = pycompat::zlib::decompress(packed).expect("zlib data");
+    let mut coords = data.chunks_exact(8).map(|w| f64::from_le_bytes(<[u8; 8]>::try_from(w).expect("8 bytes")));
+    let path = c[6]
+        .as_str()
+        .expect("the operators")
+        .chars()
+        .map(|op| {
+            let n = match op {
+                'm' | 'l' => 2,
+                'c' => 6,
+                'v' | 'y' => 4,
+                'h' => 0,
+                other => panic!("operator {other}"),
+            };
+            let mut seg = vec![Value::str(op.to_string())];
+            seg.extend(coords.by_ref().take(n).map(Value::Float));
+            Value::Tuple(seg)
+        })
+        .collect();
+    let mut out = vec![Value::str("paint_path")];
+    out.extend(c[1..6].iter().cloned());
+    out.push(Value::List(path));
+    out
+}
+
 /// The calls of a case, with their depth.
 fn calls(case: &mut Case<'_>, doc: &Rc<PDFDocument>, values: &[Value]) -> Vec<(u32, Call)> {
     let binder = case.binder;
-    values
+    let mut expanded: Vec<Vec<Value>> = Vec::with_capacity(values.len());
+    for c in values {
+        let c = items(c);
+        match c[0].as_str() {
+            Some("chars") => expanded.extend(expand(c)),
+            Some("path") => expanded.push(expand_path(c)),
+            _ => expanded.push(c.to_vec()),
+        }
+    }
+    expanded
         .iter()
         .map(|c| {
-            let c = items(c);
             let py = u32::try_from(int(&c[1])).expect("a depth");
             let call = match c[0].as_str().expect("a kind") {
                 "set_ctm" => Call::SetCtm(nums(&c[2])),
@@ -498,7 +584,7 @@ fn replay(set: &str, min_cases: usize) {
         };
         let gstates: Vec<Rc<PDFGraphicState>> = items(&args[3]).iter().map(|f| Rc::new(case.gstate(f))).collect();
         case.gstates = gstates;
-        let calls = calls(&mut case, &doc, items(&args[6]));
+        let calls = calls(&mut case, &doc, &unpack_calls(&args[6]));
         for (k, (r, expected)) in items(&args[7]).iter().zip(items(expected)).enumerate() {
             runs_total += 1;
             let text = run(&rsrcmgr, &case, &calls, args, items(r));

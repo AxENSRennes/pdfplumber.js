@@ -135,10 +135,12 @@ import os
 import random
 import re
 import signal
+import struct
 import sys
+import zlib
 from typing import Any
 
-from pdfminer.layout import LAParams, LTPage
+from pdfminer.layout import LAParams, LTImage, LTPage
 from pdfminer.pdfcolor import PDFColorSpace
 from pdfminer.pdfinterp import PDFGraphicState, PDFPageInterpreter, PDFResourceManager
 from pdfminer.pdfpage import PDFPage
@@ -334,10 +336,118 @@ class CaseBuilder:
             raise AssertionError(kind)
 
 
+def _packable(c: list) -> bool:
+    """Whether a ``render_char`` call can join a ``chars`` call: float
+    ``e``, ``f`` and an int cid that fits an ``i64``."""
+    matrix, cid = c[2], c[7]
+    return (type(matrix[4]) is float and type(matrix[5]) is float and type(cid) is int
+            and -2**63 <= cid < 2**63)
+
+
+def _chars_key(c: list) -> str:
+    return canon([c[1], c[2][:4], c[3], c[4], c[5], c[6], c[8], c[9]])
+
+
+def compact(calls: list) -> list:
+    """The calls with each run of ``render_char`` calls that differ only by
+    ``e``, ``f`` and the cid (the chars of a string) as one ``["chars", py,
+    (a, b, c, d), font, fontsize, scaling, rise, ncs, gstate, packed]``,
+    ``packed`` the zlib-compressed little-endian columns of ``e`` (f64),
+    ``f`` (f64) and the cids (i64): the corpus's chars take a tenth of their
+    typed JSON. A ``paint_path`` call whose coordinates are all floats is
+    ``["path", py, gstate, stroke, fill, evenodd, ops, packed]``, ``ops``
+    the operators, ``packed`` the compressed coordinates (f64). ``expand``
+    restores the calls (the outputs number them)."""
+    out: list = []
+    run: list = []
+
+    def flush():
+        if len(run) == 1:
+            out.append(run[0])
+        elif run:
+            first = run[0]
+            n = len(run)
+            packed = struct.pack(f"<{n}d", *(c[2][4] for c in run)) + struct.pack(f"<{n}d", *(c[2][5] for c in run)) \
+                + struct.pack(f"<{n}q", *(c[7] for c in run))
+            out.append(["chars", first[1], tuple(first[2][:4]), first[3], first[4], first[5], first[6], first[8],
+                        first[9], zlib.compress(packed, 9)])
+        run.clear()
+
+    for c in calls:
+        if c[0] == "render_char" and _packable(c) and (not run or _chars_key(run[0]) == _chars_key(c)):
+            run.append(c)
+            continue
+        flush()
+        if c[0] == "render_char" and _packable(c):
+            run.append(c)
+        elif c[0] == "paint_path" and all(seg[0] in _NCOORDS and len(seg) == 1 + _NCOORDS[seg[0]]
+                                          and all(type(x) is float for x in seg[1:]) for seg in c[6]):
+            coords = [x for seg in c[6] for x in seg[1:]]
+            ops = "".join(seg[0] for seg in c[6])
+            out.append(["path", *c[1:6], ops, zlib.compress(struct.pack(f"<{len(coords)}d", *coords), 9)])
+        else:
+            out.append(c)
+    flush()
+    return out
+
+
+#: The coordinates of each path operator.
+_NCOORDS = {"m": 2, "l": 2, "c": 6, "v": 4, "y": 4, "h": 0}
+
+
+def expand(calls: list) -> list:
+    """The calls of a case, ``chars`` calls expanded (``compact``)."""
+    out: list = []
+    for c in calls:
+        if c[0] == "path":
+            _, py, gs, stroke, fill, evenodd, ops, packed = c
+            data = zlib.decompress(packed)
+            coords = struct.unpack(f"<{len(data) // 8}d", data)
+            path, k = [], 0
+            for op in ops:
+                n = _NCOORDS[op]
+                path.append((op, *coords[k:k + n]))
+                k += n
+            out.append(["paint_path", py, gs, stroke, fill, evenodd, path])
+            continue
+        if c[0] != "chars":
+            out.append(c)
+            continue
+        _, py, abcd, font, fontsize, scaling, rise, ncs, gs, packed = c
+        data = zlib.decompress(packed)
+        n = len(data) // 24
+        es = struct.unpack_from(f"<{n}d", data, 0)
+        fs = struct.unpack_from(f"<{n}d", data, 8 * n)
+        cids = struct.unpack_from(f"<{n}q", data, 16 * n)
+        for e, f, cid in zip(es, fs, cids, strict=True):
+            out.append(["render_char", py, (*abcd, e, f), font, fontsize, scaling, rise, cid, ncs, gs])
+    return out
+
+
+#: Calls whose typed JSON is longer are written compressed.
+PACK_CALLS = 4000
+
+
+def pack_calls(case: list) -> list:
+    """The case as written: its calls, when long, as the zlib-compressed
+    text of their typed JSON (``bytes``)."""
+    text = encoded(case[6])
+    if len(text) <= PACK_CALLS:
+        return case
+    return [*case[:6], zlib.compress(text.encode("ascii"), 9), case[7]]
+
+
+def unpack_calls(calls: Any) -> list:
+    """The calls of a written case (``pack_calls``)."""
+    if isinstance(calls, bytes):
+        return decoded(zlib.decompress(calls).decode("ascii"))
+    return calls
+
+
 def new_case(name: str, builder: CaseBuilder, pageno: int, configs: list, re_compiled: bool = True) -> list:
     """A case whose calls' depths are relative (``place_depths``) and whose
     base and ids ``finish`` fills in."""
-    return [name, {"re_compiled": re_compiled}, builder.fonts, builder.gstates, None, pageno, builder.calls,
+    return [name, {"re_compiled": re_compiled}, builder.fonts, builder.gstates, None, pageno, compact(builder.calls),
             [[c, None] for c in configs]]
 
 
@@ -419,14 +529,15 @@ class Replay:
 
     def __init__(self, case: list, fonts_table: dict[str, list]) -> None:
         _name, self.process, font_shas, gstates, _base, self.pageno, calls, _runs = case
+        calls = unpack_calls(calls)
         self.fonts = [build_font(sha, fonts_table[sha]) for sha in font_shas]
         self.colorspaces: dict[str, PDFColorSpace] = {}
         self.gstates = [self._gstate(fields) for fields in gstates]
         self.inline_streams: dict[int, PDFStream] = {}
-        for c in calls:
+        for c in expand(calls):
             if c[0] == "render_image" and isinstance(c[2], Named):
                 self.inline_streams.setdefault(c[2].fields["n"], c[3])
-        self.calls = [self._call(c) for c in calls]
+        self.calls = [self._call(c) for c in expand(calls)]
 
     def _colorspace(self, v: list) -> PDFColorSpace:
         key = canon(v)
@@ -713,6 +824,30 @@ class FileFonts:
         return sha
 
 
+def emptied_dump(page) -> list[str]:
+    """The ``raw`` lines of the interpretation's page with its images'
+    streams emptied as the cases carry them (their data swapped out for
+    the dump, then back: the objects keep their identity, which names
+    inline images)."""
+    saved = []
+    stack = [obj.stream for obj, _ in _RawDump(page).objects if isinstance(obj, LTImage)]
+    while stack:
+        v = stack.pop()
+        if isinstance(v, PDFStream):
+            saved.append((v, v.rawdata, v.data))
+            v.rawdata, v.data = b"", None
+            stack.extend(v.attrs.values())
+        elif isinstance(v, list):
+            stack.extend(v)
+        elif isinstance(v, dict):
+            stack.extend(v.values())
+    try:
+        return _RawDump(page).write(page)
+    finally:
+        for s, rawdata, data in reversed(saved):
+            s.rawdata, s.data = rawdata, data
+
+
 class Timeout(Exception):
     pass
 
@@ -767,8 +902,8 @@ def collect_file(args):
                 args_c, outs, texts = done
                 if result is not None:
                     replayed = [t for t in texts[0].splitlines() if not t.startswith("adv ")]
-                    stats["replay_differs"] += replayed != _RawDump(result).write(result)
-                out.append((encoded(args_c), encoded(outs)))
+                    stats["replay_differs"] += replayed != emptied_dump(result)
+                out.append((encoded(pack_calls(args_c)), encoded(outs)))
                 for sha in args_c[2]:
                     if sha not in fonts_out:
                         fonts_out[sha] = encoded([sha, fonts.table[sha]])
@@ -1326,7 +1461,7 @@ def generated_set(name: str, cases_of, rng) -> int:
             continue
         args, outs, _ = done
         fonts_used.update(args[2])
-        lines.append((encoded(args), encoded(outs)))
+        lines.append((encoded(pack_calls(args)), encoded(outs)))
     write_jsonl(f"{name}_fonts", [(encoded([sha, table[sha]]), "null") for sha in sorted(fonts_used)])
     return write_jsonl(name, lines)
 
