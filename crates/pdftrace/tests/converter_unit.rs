@@ -480,13 +480,15 @@ fn dispatch(dev: &mut PDFPageAggregatorWithMarkedContent, call: &Call) -> PyResu
     }
 }
 
-/// One run of a case: its output text.
+/// One run of a case: its output text. With `oracle_ids`, the analysis
+/// has Python's `id()` order (else the library's, `CreationOrder`).
 fn run(
     rsrcmgr: &Rc<PDFResourceManager>,
     case: &Case<'_>,
     calls: &[(u32, Call)],
     args: &[Value],
     run: &[Value],
+    oracle_ids: bool,
 ) -> String {
     let base = depth(&args[4]);
     let pageno = py_int(&args[5]);
@@ -511,7 +513,9 @@ fn run(
                         [int(&r[0]), int(&r[1]), int(&r[2])]
                     })
                     .collect();
-                a.ids = Box::new(RecordedIds::new(&ranks, raw_index(&p.layout._objs)));
+                if oracle_ids {
+                    a.ids = Box::new(RecordedIds::new(&ranks, raw_index(&p.layout._objs)));
+                }
                 raw = Some(RawDump::new(&p.layout._objs, &is_inline));
             }
         }
@@ -557,8 +561,12 @@ fn run(
     text
 }
 
-/// Replays the cases of a set; panics with the first differences.
-fn replay(set: &str, min_cases: usize) {
+/// Replays the cases of a set; panics with the first differences. With
+/// `creation_order`, also counts the runs of `LAParams()` whose analysis
+/// with the library's default ids (`CreationOrder`) gives Python's result
+/// (the `ids` line left out): the statistic of `docs/architecture.md`
+/// ("Vague 3").
+fn replay(set: &str, min_cases: usize, creation_order: bool) {
     let data = open();
     let fonts = load_fonts(&data, set);
     let doc = document();
@@ -566,6 +574,7 @@ fn replay(set: &str, min_cases: usize) {
     let dump_dir = std::env::var_os("CONVERTER_DUMP_DIR");
     let mut failures = Vec::new();
     let mut runs_total = 0;
+    let (mut analyzed_runs, mut same_with_creation_order) = (0, 0);
     let n = for_each_case(&data, set, |index, args, expected| {
         let (_font_doc, binder) = pdftrace::font_case::load_doc(&Value::List(vec![]), &Value::List(vec![]), None);
         let font_list: Vec<Rc<PDFFont>> = items(&args[2])
@@ -587,7 +596,13 @@ fn replay(set: &str, min_cases: usize) {
         let calls = calls(&mut case, &doc, &unpack_calls(&args[6]));
         for (k, (r, expected)) in items(&args[7]).iter().zip(items(expected)).enumerate() {
             runs_total += 1;
-            let text = run(&rsrcmgr, &case, &calls, args, items(r));
+            let text = run(&rsrcmgr, &case, &calls, args, items(r), true);
+            if creation_order && matches!(&items(r)[0], Value::Dict(d) if d.is_empty()) {
+                let without_ids = |t: &str| t.lines().filter(|l| !l.starts_with("ids ")).collect::<Vec<_>>().join("\n");
+                let default = run(&rsrcmgr, &case, &calls, args, items(r), false);
+                analyzed_runs += 1;
+                same_with_creation_order += usize::from(without_ids(&default) == without_ids(&text));
+            }
             let actual = canon_or_hash(&text);
             let expected = expected.as_str().expect("an output");
             if actual != expected {
@@ -617,16 +632,22 @@ fn replay(set: &str, min_cases: usize) {
         failures.iter().filter(|f| !f.is_empty()).cloned().collect::<Vec<_>>().join("\n")
     );
     println!("{set}: {n} cases, {runs_total} runs");
+    if creation_order {
+        println!(
+            "{set}: CreationOrder gives Python's analysis on {same_with_creation_order} of {analyzed_runs} pages \
+             (LAParams())"
+        );
+    }
 }
 
 #[test]
 fn adversarial() {
-    replay("adversarial", 200);
+    replay("adversarial", 200, false);
 }
 
 #[test]
 fn depth_boundaries() {
-    replay("depth", 400);
+    replay("depth", 400, false);
 }
 
 /// Checks the marker `<name>.json` that `--corpus` writes after a run.
@@ -642,5 +663,5 @@ fn check_marker(data: &UnitData, name: &str) {
 #[test]
 fn corpus() {
     check_marker(&open(), "corpus");
-    replay("corpus", 1000);
+    replay("corpus", 1000, true);
 }
