@@ -8,6 +8,10 @@
 //! a range of entries that moves the recursion limit one frame at a time
 //! through the paths to the device calls.
 //!
+//! `resource_manager_get_cmap` replays `PDFResourceManager.get_cmap`
+//! (`api.jsonl`), which no page calls, by name and from every depth near
+//! the recursion limit.
+//!
 //! The depth windows and the sweeps are replayed from the deeper stage
 //! entries the generators traced them from (`with_stage_entry`).
 //!
@@ -24,7 +28,8 @@ use std::fs;
 use std::sync::Arc;
 
 use pdfminer::cmapdb::{CMapDB, DirCMapProvider};
-use pdftrace::canon::sha256_hex;
+use pdfminer::pdfinterp::PDFResourceManager;
+use pdftrace::canon::{canon, canon_exc, sha256_hex};
 use pdftrace::stages::common::with_stage_entry;
 use pdftrace::stages::interp_text::run_deep;
 use pdftrace::stages::py_process::{self, PyProcess};
@@ -32,7 +37,7 @@ use pdftrace::stages::{self, StageInput};
 use pdftrace::typed_json::{self, Json};
 use pdftrace::unit::{cache_dir, UnitData};
 use pdftrace::value::Value;
-use pycompat::recursion::{Depth, C_RECURSION_LIMIT};
+use pycompat::recursion::{with_depth, Depth, C_RECURSION_LIMIT};
 
 /// Opens the data of `module` and installs the provider of the predefined
 /// CMaps.
@@ -208,4 +213,51 @@ fn deep_sweeps() {
         failures.len(),
         failures[..failures.len().min(20)].join("\n")
     );
+}
+
+/// `PDFResourceManager.get_cmap`, which nothing calls on a page: each
+/// case from the recorded depth (`api.jsonl` of `oracle/unit/interp_deep.py`),
+/// from a new process's state (the generator forks one per case: `CMapDB`'s
+/// caches empty).
+#[test]
+fn resource_manager_get_cmap() {
+    let data = open("interp_deep");
+    py_process::set(generator_process(&data));
+    let mut failures = Vec::new();
+    let (mut n, mut limited) = (0, 0);
+    for (args, expected) in data.cases("api") {
+        let [Value::Str(method), Value::Str(name), Value::Bool(strict), entry] = &args[..] else {
+            panic!("bad case {args:?}");
+        };
+        assert_eq!(method.as_str(), Some("get_cmap"));
+        let name = name.as_str().expect("a CMap name");
+        py_process::start();
+        pycompat::logging::disable();
+        CMapDB::clear_caches();
+        let rsrcmgr = PDFResourceManager::new(true);
+        let got = match with_depth(depth(entry), || rsrcmgr.get_cmap(name, *strict)) {
+            Ok(cmap) => {
+                let cids = cmap.decode(b"\x00\x01\x30\x42\xff").expect("decode");
+                Value::List(vec![
+                    Value::Str(cmap.class_name().into()),
+                    Value::Bool(cmap.is_vertical()),
+                    Value::List(cids.into_iter().map(Value::Int).collect()),
+                ])
+            }
+            Err(e) => {
+                limited += usize::from(e.message.contains("recursion"));
+                Value::Str(canon_exc(&e).as_str().into())
+            }
+        };
+        n += 1;
+        if canon(&got) != canon(&expected) {
+            failures.push(format!(
+                "get_cmap({name:?}, {strict}) at {entry:?}: oracle {}, rust {}",
+                canon(&expected),
+                canon(&got)
+            ));
+        }
+    }
+    assert!(n > 100 && limited > 20, "{n} cases, {limited} at the recursion limit");
+    assert!(failures.is_empty(), "{} of {n} cases differ:\n{}", failures.len(), failures.join("\n"));
 }

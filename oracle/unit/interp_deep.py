@@ -25,7 +25,18 @@ moves the recursion limit one frame at a time from just above the deepest
 frame of the file's run (``max_depth``, measured with a bounded profile
 hook) down ``SWEEP`` frames: every frame on a path to a device call, and on
 the paths deeper than those, is then the first one past the limit in one of
-the traces.
+the traces. Each file is also swept with ``descent`` 0 (the stage's own
+device) from above its deepest frame down to the stage body, one frame at a
+time: what a page does before its first device call (``init_resources``,
+fonts, color spaces, ``/ProcSet``) is then reached too, which the descent
+of ``begin_page`` hides.
+
+``api.jsonl``: ``PDFResourceManager.get_cmap(name, strict)``, which
+pdfminer and pdfplumber never call on a page: the class, ``is_vertical``
+and the CIDs of a few codes of the result, or the exception, for
+predefined, identity and missing names; and the same call from every
+depth down to the recursion limit (``at_depth``, a process forked for
+each: ``CMapDB``'s caches start empty).
 
 Cases (``deep.jsonl``): ``{"in": [name, pdf, password, descent, entries],
 "out": [first, digests]}``: the trace of each entry (as ``interp_text``
@@ -48,12 +59,13 @@ from pdfminer.pdfinterp import PDFResourceManager
 from pdfminer.pdfpage import PDFPage
 
 from ..codegen import cmaps as codegen_cmaps
+from ..canon import canon
 from ..corpus import cache_dir, load_set
 from ..depth import depth_here
 from ..stages import _in_stage_thread
 from ..stages._common import line, open_document, terminated
 from ..stages.interp import _DO_EI, Fonts, _Page, page_layout
-from ..stages.interp_text import TextDevice
+from ..stages.interp_text import TextDevice, TracingDevice
 from ._common import require_oracle_python, write_cases, write_meta
 from .document import in_child, process_state
 
@@ -79,9 +91,10 @@ class DeepTracingDevice(TextDevice):
     so that ``sys._getframe(1)`` is still the interpreter's method)."""
 
     calls: list[tuple[Any, ...]]
+    descent = DESCENT
 
     def set_ctm(self, ctm):
-        descend(DESCENT)
+        descend(self.descent)
         self.calls.append(("set_ctm", ctm))
         try:
             super().set_ctm(ctm)
@@ -90,7 +103,7 @@ class DeepTracingDevice(TextDevice):
             raise
 
     def begin_tag(self, tag, props=None):
-        descend(DESCENT)
+        descend(self.descent)
         self.calls.append(("begin_tag", tag, props))
         try:
             super().begin_tag(tag, props)
@@ -99,7 +112,7 @@ class DeepTracingDevice(TextDevice):
             raise
 
     def end_tag(self):
-        descend(DESCENT)
+        descend(self.descent)
         self.calls.append(("end_tag",))
         try:
             super().end_tag()
@@ -108,7 +121,7 @@ class DeepTracingDevice(TextDevice):
             raise
 
     def do_tag(self, tag, props=None):
-        descend(DESCENT)
+        descend(self.descent)
         self.calls.append(("do_tag", tag, props))
         try:
             super().do_tag(tag, props)
@@ -117,7 +130,7 @@ class DeepTracingDevice(TextDevice):
             raise
 
     def begin_page(self, page, ctm):
-        descend(DESCENT)
+        descend(self.descent)
         self.calls.append(("begin_page", page.pageid, ctm))
         try:
             super().begin_page(page, ctm)
@@ -126,7 +139,7 @@ class DeepTracingDevice(TextDevice):
             raise
 
     def end_page(self, page):
-        descend(DESCENT)
+        descend(self.descent)
         self.calls.append(("end_page", page.pageid))
         try:
             super().end_page(page)
@@ -135,7 +148,7 @@ class DeepTracingDevice(TextDevice):
             raise
 
     def begin_figure(self, name, bbox, matrix):
-        descend(DESCENT)
+        descend(self.descent)
         self.calls.append(("begin_figure", name, sys._getframe(1).f_code is _DO_EI, bbox, matrix))
         try:
             super().begin_figure(name, bbox, matrix)
@@ -144,7 +157,7 @@ class DeepTracingDevice(TextDevice):
             raise
 
     def end_figure(self, name):
-        descend(DESCENT)
+        descend(self.descent)
         self.calls.append(("end_figure", name, sys._getframe(1).f_code is _DO_EI))
         try:
             super().end_figure(name)
@@ -153,7 +166,7 @@ class DeepTracingDevice(TextDevice):
             raise
 
     def render_image(self, name, stream):
-        descend(DESCENT)
+        descend(self.descent)
         self.calls.append(("render_image", name, sys._getframe(1).f_code is _DO_EI, stream))
         try:
             super().render_image(name, stream)
@@ -162,7 +175,7 @@ class DeepTracingDevice(TextDevice):
             raise
 
     def paint_path(self, graphicstate, stroke, fill, evenodd, path):
-        descend(DESCENT)
+        descend(self.descent)
         self.calls.append(("paint_path", dict(vars(graphicstate)), stroke, fill, evenodd, list(path)))
         try:
             super().paint_path(graphicstate, stroke, fill, evenodd, path)
@@ -171,7 +184,7 @@ class DeepTracingDevice(TextDevice):
             raise
 
     def render_string(self, textstate, seq, ncs, graphicstate):
-        descend(DESCENT)
+        descend(self.descent)
         self.calls.append(("render_string", dict(vars(textstate)), seq, ncs, dict(vars(graphicstate))))
         try:
             super().render_string(textstate, seq, ncs, graphicstate)
@@ -181,7 +194,7 @@ class DeepTracingDevice(TextDevice):
         self.calls.append(("end_string", textstate.linematrix))
 
     def render_char(self, matrix, font, fontsize, scaling, rise, cid, ncs, graphicstate):
-        descend(DESCENT)
+        descend(self.descent)
         try:
             adv = super().render_char(matrix, font, fontsize, scaling, rise, cid, ncs, graphicstate)
         except Exception as e:
@@ -191,15 +204,23 @@ class DeepTracingDevice(TextDevice):
         return adv
 
 
+def set_descent(descent: int) -> None:
+    """The device of ``deep_run`` (in the process forked for a trace):
+    ``DeepTracingDevice`` descending ``descent`` frames, or for ``0`` the
+    stage's ``TracingDevice``."""
+    DeepTracingDevice.descent = descent
+
+
 @terminated
 def deep_run(path: str, password: str | None, max_pages: int) -> Iterator[str]:
-    """``interp_text.run`` with ``DeepTracingDevice``."""
+    """``interp_text.run`` with the device ``set_descent`` chose."""
+    device_class = DeepTracingDevice if DeepTracingDevice.descent else TracingDevice
     with open_document(path, password) as doc:
         rsrcmgr = PDFResourceManager()
         fonts = Fonts()
         for pageno, page in enumerate(PDFPage.create_pages(doc), start=1):
             yield line("page", pageno, page.pageid)
-            device, _, error = page_layout(rsrcmgr, page, pageno, DeepTracingDevice)
+            device, _, error = page_layout(rsrcmgr, page, pageno, device_class)
             fmt = _Page(fonts)
             for c in device.calls:
                 fmt.call(c)
@@ -236,9 +257,10 @@ def entry_at(k: int) -> dict[str, int]:
     return {"py": int(py), "c_left": int(c_left)}
 
 
-def max_depth(path: str, password: str | None) -> int:
+def max_depth(path: str, password: str | None, descent: int) -> int:
     """The deepest frame of ``deep_run`` on ``path``, counted from its body
     (the body's callees are 1): a profile hook keeping two integers."""
+    set_descent(descent)
     state = {"depth": 0, "max": 0}
 
     def hook(frame, event, arg) -> None:
@@ -262,7 +284,8 @@ def max_depth(path: str, password: str | None) -> int:
     return state["max"] - 1
 
 
-def traced_from(path: str, password: str | None, k: int) -> tuple[dict[str, int], str]:
+def traced_from(path: str, password: str | None, k: int, descent: int) -> tuple[dict[str, int], str]:
+    set_descent(descent)
     entry = entry_at(k)
     lines = _in_stage_thread(lambda: nested(k, lambda: deep_run(path, password, MAX_PAGES)))
     return entry, "".join(x + "\n" for x in lines)
@@ -273,20 +296,78 @@ def deep_cases() -> Iterator[tuple[list, Any]]:
     for f in load_set("adv-interp"):
         if f.path.name[4:].startswith("depth-"):
             continue
-        deepest = in_child(lambda: max_depth(str(f.path), f.password))
-        entries, first, digests = [], None, []
-        # k such that the frame at `deepest` below the body is the first
-        # past the limit (shift 0), then one frame higher each time
-        for shift in range(-1, SWEEP):
-            k = LIMIT + 1 - base - deepest + shift
-            if k < 0:
-                continue
-            entry, text = in_child(lambda: traced_from(str(f.path), f.password, k))
-            entries.append(entry)
-            if first is None:
-                first = text
-            digests.append(hashlib.sha256(text.encode("ascii")).hexdigest())
-        yield [f.path.name, f.path.read_bytes(), f.password, DESCENT, entries], [first, digests]
+        for descent in (DESCENT, 0):
+            deepest = in_child(lambda: max_depth(str(f.path), f.password, descent))
+            entries, first, digests = [], None, []
+            # k such that the frame at `deepest` below the body is the first
+            # past the limit (shift 0), then one frame higher each time
+            for shift in range(-1, SWEEP if descent else deepest):
+                k = LIMIT + 1 - base - deepest + shift
+                if k < 0:
+                    continue
+                entry, text = in_child(lambda: traced_from(str(f.path), f.password, k, descent))
+                entries.append(entry)
+                if first is None:
+                    first = text
+                digests.append(hashlib.sha256(text.encode("ascii")).hexdigest())
+            yield [f.path.name, f.path.read_bytes(), f.password, descent, entries], [first, digests]
+
+
+#: Names given to ``get_cmap``: identity CMaps (made, not loaded), predefined
+#: ones (loaded), unicode maps and missing names (``CMapNotFound``).
+CMAP_NAMES = ("Identity-H", "Identity-V", "OneByteIdentityH", "OneByteIdentityV", "UniJIS-UCS2-H",
+              "UniJIS-UCS2-V", "78-EUC-H", "Adobe-Japan1-UCS2", "NoSuchCMap", "", "../cmap/x", "Identity")
+#: Names of the depth sweeps of ``get_cmap``.
+CMAP_DEPTH_NAMES = ("Identity-H", "UniJIS-UCS2-H", "NoSuchCMap")
+#: Codes decoded by the result.
+CODES = b"\x00\x01\x30\x42\xff"
+
+
+def get_cmap_case(name: str, strict: bool, room: int | None) -> tuple[dict[str, int], Any]:
+    """``PDFResourceManager().get_cmap(name, strict)`` called from the
+    depth ``LIMIT - room`` (``get_cmap``'s own frame is the next one; or
+    from the stage thread's depth for ``None``): the depth of the calling
+    frame, and the result (``[class, is_vertical, cids]``, built back at
+    the stage's depth) or the exception."""
+    rsrcmgr = PDFResourceManager()
+
+    def call():
+        try:
+            return rsrcmgr.get_cmap(name, strict)
+        except Exception as e:  # the exception is the expected result
+            return e
+
+    def down(n: int):
+        return call() if n <= 0 else down(n - 1)
+
+    out: dict[str, Any] = {}
+
+    @terminated
+    def body(path, password, max_pages):
+        here = depth_here()
+        # down(n) takes n + 1 frames, then call() one: its frame is the
+        # (here + n + 2)th, and a Python call takes no C unit
+        n = LIMIT - here["py"] - room - 2 if room is not None else -1
+        out["depth"] = {"py": here["py"] + max(n, 0) + 2 if n >= 0 else here["py"] + 1, "c_left": here["c_left"]}
+        out["cmap"] = down(n) if n >= 0 else call()
+        yield ""
+
+    _in_stage_thread(lambda: body("", None, 0))
+    cmap = out["cmap"]
+    if isinstance(cmap, Exception):
+        return out["depth"], canon(cmap)
+    return out["depth"], [type(cmap).__name__, cmap.is_vertical(), list(cmap.decode(CODES))]
+
+
+def api_cases() -> Iterator[tuple[list, Any]]:
+    for name in CMAP_NAMES:
+        for strict in (False, True):
+            depth, result = in_child(lambda: get_cmap_case(name, strict, None))
+            yield ["get_cmap", name, strict, depth], result
+    for name in CMAP_DEPTH_NAMES:
+        for room in range(0, 31):
+            depth, result = in_child(lambda: get_cmap_case(name, False, room))
+            yield ["get_cmap", name, False, depth], result
 
 
 def main() -> None:
@@ -295,6 +376,7 @@ def main() -> None:
     rel_cmap_dir = cmap_dir.relative_to(cache_dir()).as_posix()
     state = process_state()
     write_cases(MODULE, "py_process", [([], state)])
+    write_cases(MODULE, "api", api_cases())
     n = write_cases(MODULE, "deep", deep_cases())
     if process_state() != state:
         raise RuntimeError("the process state changed while the traces ran in children")
