@@ -2081,8 +2081,11 @@ impl PDFPageInterpreter {
             // earlier PDFs (prior to v1.2) use the page's Resources entry
             // instead of having their own Resources entry.
             let xobjres = xobj.get_counted("Resources", &PDFObject::Null)?;
-            let resources =
-                if xobjres.is_truthy() { PDFObject::Dict(dict_value(&xobjres)?) } else { copy_resources(&self.resources)? };
+            let resources = if xobjres.is_truthy() {
+                PDFObject::Dict(dict_value(&xobjres)?)
+            } else {
+                copy_resources(&self.resources)?
+            };
             self.device.borrow_mut().begin_figure(&xobjid, &bbox, &matrix)?;
             let streams = PDFObject::List(PDFList::new(vec![PDFObject::Stream(xobj.clone())]));
             // utils.mult_matrix(matrix, self.ctm): a Python function

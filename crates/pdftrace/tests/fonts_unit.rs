@@ -87,26 +87,28 @@ use std::collections::HashMap;
 use std::fs;
 use std::rc::{Rc, Weak};
 
-use pdfminer::casting::IterItem;
-use pdfminer::cmapdb::{AttrValue, CMapBase, CMapDB, DirCMapProvider, Unichr, UnicodeMap};
-use pdfminer::layout::{CharDisp, LTChar, LTCharFont, LTPayload};
+use pdfminer::cmapdb::{CMapDB, DirCMapProvider, Unichr};
+use pdfminer::layout::{LTChar, LTCharFont, LTPayload};
 use pdfminer::pdfdocument::{security_handler_registry, PDFStandardSecurityHandler};
 use pdfminer::pdffont::cff::SidName;
 use pdfminer::pdffont::{
-    get_font, get_widths, get_widths2, getdict, CFFFont, FontKind, FontName, PDFFont, TrueTypeFont,
-    Type1FontHeaderParser, WidthKey,
+    get_font, get_widths, get_widths2, getdict, CFFFont, FontName, PDFFont, TrueTypeFont, Type1FontHeaderParser,
+    WidthKey,
 };
 use pdfminer::pdftypes::{int_value, DecipherCallable, PDFDict, PDFList, PDFObjRef, PDFObject, PDFResolver, PDFStream};
 use pdfminer::psparser::{LIT_bytes, PSBaseParser, KWD, LIT};
-use pdfminer::utils::{Operand, SeqKind};
+
 use pdftrace::canon::{canon, sha256_hex};
+use pdftrace::fonts_report::{
+    self, call_seq, char_disp, fontname, in_frame, named, num, numkey, operand, res, tuple, umap_report, unichr,
+};
 use pdftrace::typed_json::{self, Json};
 use pdftrace::unit::{cache_dir, UnitData};
-use pdftrace::value::{NameValue, PyStr, Value};
+use pdftrace::value::{NameValue, Value};
 use pycompat::io::BytesIO;
 use pycompat::logging::disable as clear_logger_cache;
 use pycompat::recursion::{self, py_frame, Depth, C_RECURSION_LIMIT};
-use pycompat::{exc, ExcKind, Num, NumKey, PyErr, PyInt, PyResult};
+use pycompat::{exc, ExcKind, Num, PyErr, PyInt, PyResult};
 
 /// Python's `INLINE_LIMIT`: longer outputs are compared by SHA-256.
 const INLINE_LIMIT: usize = 4000;
@@ -283,74 +285,6 @@ fn depth(v: &Value) -> Depth {
 
 // -- values of results -----------------------------------------------------------
 
-fn num(n: &Num) -> Value {
-    match n {
-        Num::Int(i) => Value::Int(i.clone()),
-        Num::Float(f) => Value::Float(*f),
-    }
-}
-
-/// `seqval(x)` of the generator.
-fn operand(x: &Operand) -> Value {
-    match x {
-        Operand::Num(n) => num(n),
-        Operand::Bool(b) => Value::Bool(*b),
-        Operand::Seq(kind, len) => Value::Named {
-            name: "seq".into(),
-            fields: vec![
-                (Value::str("type"), Value::str(if *kind == SeqKind::Bytes { "bytes" } else { "list" })),
-                (Value::str("len"), Value::Int(PyInt::Small(i64::try_from(*len).expect("a length")))),
-            ],
-        },
-        Operand::Other(name) => panic!("an operand of type {name} is never a result"),
-    }
-}
-
-fn unichr(u: &Unichr) -> Value {
-    match u {
-        Unichr::Text(s) => Value::str(s.to_string()),
-        Unichr::Surrogate(c) => Value::Str(PyStr::from_code_points(vec![*c]).expect("a surrogate")),
-    }
-}
-
-fn item(x: &IterItem) -> Value {
-    match x {
-        IterItem::Obj(o) => Value::from(o),
-        IterItem::Str(s) => Value::str(s.to_string()),
-    }
-}
-
-fn numkey(k: &NumKey) -> Value {
-    num(k.num())
-}
-
-fn attr(a: &AttrValue) -> Value {
-    match a {
-        AttrValue::Str(s) => Value::str(s.clone()),
-        AttrValue::Obj(o) => Value::from(o),
-    }
-}
-
-fn attrs(m: &dyn CMapBase) -> Value {
-    Value::Dict(m.attrs().iter().map(|(k, v)| (Value::str(k.clone()), attr(v))).collect())
-}
-
-/// A result, or the exception.
-fn res<T>(r: PyResult<T>, f: impl FnOnce(T) -> Value) -> Value {
-    match r {
-        Ok(v) => f(v),
-        Err(e) => Value::from(&e),
-    }
-}
-
-fn named(name: &str, fields: Vec<(&str, Value)>) -> Value {
-    Value::Named { name: name.to_owned(), fields: fields.into_iter().map(|(k, v)| (Value::str(k), v)).collect() }
-}
-
-fn tuple(items: Vec<Value>) -> Value {
-    Value::Tuple(items)
-}
-
 /// `canon_or_hash(v)` of the generator.
 fn canon_or_hash(v: &Value) -> String {
     let text = canon(v);
@@ -405,132 +339,14 @@ fn at<T>(d: &Value, f: impl FnOnce() -> T) -> T {
     recursion::with_depth(depth(d), f)
 }
 
-/// `at_depth(f, ...)` of the generator: `f` (a Python function) takes its
-/// frame.
-fn in_frame<T>(f: impl FnOnce() -> PyResult<T>) -> PyResult<T> {
-    let _frame = py_frame()?;
-    f()
-}
-
 // -- reports ---------------------------------------------------------------------------
 
-fn umap_report(m: Option<&UnicodeMap>) -> Value {
-    let Some(m) = m else { return Value::None };
-    named(
-        m.class_name(),
-        vec![
-            ("attrs", attrs(m)),
-            (
-                "items",
-                Value::List(m.cid2unichr.iter().map(|(k, v)| tuple(vec![Value::Int(k.clone()), unichr(v)])).collect()),
-            ),
-        ],
-    )
-}
-
-fn cmap_report(m: &dyn CMapBase) -> Value {
-    let mut fields = vec![("attrs", attrs(m))];
-    if let Some(c) = m.as_cmap() {
-        fields.push(("code2cid", Value::Int(PyInt::Small(c.code2cid.len() as i64))));
-    }
-    named(m.class_name(), fields)
-}
-
-fn fontname(n: &FontName) -> Value {
-    match n {
-        FontName::Str(s) => Value::str(s.clone()),
-        FontName::Obj(o) => Value::from(o),
-    }
-}
-
-fn char_disp(d: &CharDisp) -> Value {
-    match d {
-        CharDisp::Scalar(n) => num(n),
-        CharDisp::Vertical(vx, vy) => tuple(vec![item(vx), item(vy)]),
-    }
-}
-
-/// A method called through `call_seq` (one more frame: `attempt`'s).
-fn call_seq(f: impl FnOnce() -> PyResult<Operand>) -> Value {
-    res(in_frame(f), |x| operand(&x))
-}
-
-/// `font_attrs(font)` of the generator.
+/// `font_attrs(font)` of the generator (`pdftrace::fonts_report`), and the
+/// check of what `LTChar.__init__` reads of the font.
 fn font_attrs(font: &PDFFont) -> Value {
-    let mut fields: Vec<(&str, Value)> = Vec::new();
-    let basefont = match &font.kind {
-        FontKind::Simple(s) => s.basefont.clone(),
-        FontKind::CID(c) => Some(c.basefont.clone()),
-    };
-    if let Some(b) = basefont {
-        fields.push(("basefont", Value::str(b)));
-    }
-    fields.push(("fontname", fontname(&font.fontname)));
-    fields.push(("flags", Value::from(&font.flags)));
-    fields.push(("ascent", operand(&font.ascent)));
-    fields.push(("descent", operand(&font.descent)));
-    fields.push(("italic_angle", operand(&font.italic_angle)));
-    fields.push(("default_width", item(&font.default_width)));
-    fields.push(("leading", operand(&font.leading)));
-    fields.push(("bbox", tuple(font.bbox.iter().map(|&f| Value::Float(f)).collect())));
-    fields.push(("hscale", operand(&font.hscale)));
-    fields.push(("vscale", operand(&font.vscale)));
-    let widths = font
-        .widths
-        .iter()
-        .map(|(k, v)| {
-            let k = match k {
-                WidthKey::Num(n) => numkey(n),
-                WidthKey::Str(s) => Value::str(s.to_string()),
-            };
-            tuple(vec![k, Value::from(v)])
-        })
-        .collect();
-    fields.push(("widths", Value::List(widths)));
-    match &font.kind {
-        FontKind::Simple(s) => {
-            let items = s.cid2unicode.iter().map(|(k, v)| tuple(vec![Value::Int(k.clone()), Value::str(v.clone())]));
-            fields.push(("cid2unicode", Value::List(items.collect())));
-            fields.push(("unicode_map", umap_report(s.unicode_map.as_deref())));
-            if s.fontfile.is_some() {
-                fields.push(("fontfile", Value::Bool(true)));
-            }
-            if let Some(m) = &s.matrix {
-                fields.push(("matrix", tuple(m.iter().map(Value::from).collect())));
-            }
-        }
-        FontKind::CID(c) => {
-            fields.push(("unicode_map", umap_report(c.unicode_map.as_deref())));
-            if c.fontfile.is_some() {
-                fields.push(("fontfile", Value::Bool(true)));
-            }
-            fields.push(("cidcoding", Value::str(c.cidcoding.clone())));
-            fields.push(("cmap", cmap_report(&*c.cmap)));
-            fields.push(("vertical", Value::Bool(c.vertical)));
-            let disps = c
-                .disps
-                .iter()
-                .map(|(k, (vx, vy))| tuple(vec![numkey(k), tuple(vec![Value::from(vx), Value::from(vy)])]));
-            fields.push(("disps", Value::List(disps.collect())));
-            fields.push((
-                "default_disp",
-                match &c.default_disp {
-                    pdfminer::pdffont::DefaultDisp::Zero => Value::Int(PyInt::ZERO),
-                    pdfminer::pdffont::DefaultDisp::Vertical(vy) => tuple(vec![Value::None, item(vy)]),
-                },
-            ));
-        }
-    }
-    fields.push(("is_vertical", Value::Bool(font.is_vertical())));
-    fields.push(("is_multibyte", Value::Bool(font.is_multibyte())));
-    fields.push(("repr", Value::str(font.repr())));
+    let report = fonts_report::font_attrs(font);
     check_ltchar_font(font);
-    // called through call_seq from font_attrs, at the depth of the queries
-    fields.push(("get_ascent", call_seq(|| font.get_ascent())));
-    fields.push(("get_descent", call_seq(|| font.get_descent())));
-    fields.push(("get_width", call_seq(|| font.get_width())));
-    fields.push(("get_height", call_seq(|| font.get_height())));
-    named(font.class_name(), fields)
+    report
 }
 
 /// A layout payload whose font name is the font's.

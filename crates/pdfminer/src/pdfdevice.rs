@@ -107,7 +107,9 @@ pub enum SeqItem {
 pub fn text_seq_items(seq: &PDFTextSeq) -> PyResult<Vec<SeqItem>> {
     match seq {
         PDFObject::List(l) => Ok(l.to_vec().into_iter().map(SeqItem::Obj).collect()),
-        PDFObject::Bytes(b) => Ok(b.iter().map(|&c| SeqItem::Obj(PDFObject::Int(PyInt::Small(i64::from(c))))).collect()),
+        PDFObject::Bytes(b) => {
+            Ok(b.iter().map(|&c| SeqItem::Obj(PDFObject::Int(PyInt::Small(i64::from(c))))).collect())
+        }
         PDFObject::Dict(d) => Ok(d.keys().into_iter().map(SeqItem::Str).collect()),
         PDFObject::Stream(s) => {
             c_called_leaf()?;

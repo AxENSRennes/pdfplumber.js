@@ -16,7 +16,9 @@ use pycompat::recursion::{Depth, C_RECURSION_LIMIT};
 
 pub mod common;
 pub mod fonts;
+pub mod fonts_text;
 pub mod interp;
+pub mod interp_text;
 pub mod layout;
 pub mod objects;
 pub mod pages;
@@ -77,7 +79,9 @@ pub const STAGES: &[Stage] = &[
     streams::STAGE,
     pages::STAGE,
     fonts::STAGE,
+    fonts_text::STAGE,
     interp::STAGE,
+    interp_text::STAGE,
     layout::STAGE,
     plumber_objects::STAGE,
     plumber_text::STAGE,
