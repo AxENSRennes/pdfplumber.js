@@ -502,6 +502,45 @@ l'interpréteur avec un générateur unitaire qui le mène sur un
   niveau qui échoue est cherché par dichotomie pour `interp_text`,
   `interp` et `fonts` (processus fils), la fenêtre couvre de deux niveaux
   avant à un après pour chacun.
+- **Profondeur des chemins vers le périphérique** (`oracle/unit/interp_deep.py`,
+  rejeu `deep_sweeps` de `interp_unit.rs`). Un `RecursionError` naît au
+  premier point, dans le temps, qui dépasse la limite. Mesure bornée
+  (crochet de profil à deux entiers) sur `adv-interp` et ses chaînes : le
+  parseur de contenu descend, avant le premier opérateur de chaque
+  `execute`, à 8 cadres au moins sous `execute` (39 000 `execute`) ;
+  sur `PDFTextDevice`, aucun cadre d'un opérateur ne dépasse ce niveau
+  (opérateur, `safe_*`, `mult_matrix`, journalisation, `push`/`pop`,
+  `copy`, appels au périphérique : 7 au plus), seuls le parseur lui-même,
+  la création de polices (dans `init_resources`) et `resolve1` le font. Avec
+  le périphérique de pdfplumber, en revanche, les objets du convertisseur
+  (`LTChar`, `set_bbox`, `apply_matrix_pt`) vont plus bas que le parseur :
+  les cadres des chemins vers le périphérique (`do_Tj`, `do_TJ`,
+  `render_string`, `render_string_horizontal`, `do_S`, `do_s`,
+  `do_BDC`...) décident là où pdfplumber lève. `interp_text` ne peut pas les
+  voir ; `interp_deep.py` les rend visibles : `DeepTracingDevice` (le
+  `TracingDevice` de `interp_text`, chaque méthode descendant d'abord
+  `DESCENT` = 60 cadres) rend chaque appel au périphérique plus profond que
+  tout ce qui le précède sur sa page (chaque page a son périphérique et
+  son interpréteur : un `RecursionError` n'arrête que sa page), et chaque
+  fichier de `adv-interp` (hors `depth-*`) est tracé depuis 17 entrées
+  successives (générateurs imbriqués, profondeur du corps de l'étape
+  enregistrée) qui font monter la limite d'un cadre à la fois depuis
+  au-dessus du point le plus profond du fichier. Restent invisibles, par
+  construction, les cadres plus courts que le parseur du même `execute`
+  et qui ne sont sur aucun chemin vers le périphérique (`push`, `pop`,
+  `keyword_name`, `safe_*`, `mult_matrix` de `do_cm`, journalisation des
+  opérateurs, `get_current_state`, `copy`, `PDFTextState()`, `reset`,
+  `dup`/`subinterp` et `init_state` d'une Form, plus courts que le parseur
+  du sous-interpréteur), et les corps de `PDFDevice` atteints par
+  `super()` sous la descente (`pass`, `set_ctm`) : leurs mutants sont
+  équivalents (aucune entrée ne place la limite sur eux avant un point
+  plus profond), avec pdfplumber comme ici (`PDFLayoutAnalyzer` remplace
+  ces méthodes ou les atteint au même niveau). Les unités C
+  des entrées de boucle d'évaluation (`eval_entry` : `func(*args)`, appels
+  de classes) ne décident rien non plus : chacune précède un cadre Python
+  et en prend deux, si bien qu'à 1 000 cadres il en reste plus de 7 000 sur
+  10 000 (l'interpréteur n'appelle pas de `repr` récursif sur ses
+  opérandes) ; leurs mutants sont équivalents.
 
 ### Chantier CONVERTER
 
