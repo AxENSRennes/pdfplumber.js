@@ -58,13 +58,31 @@
 //! not count their callees call by call: they run at the depth of a page's
 //! or a figure's `analyze`, which pdfminer's interpreter never reaches near
 //! the limit.
+//!
+//! The constructors of the raw objects, which `converter` calls as deep as
+//! Form XObjects nest ([`LTChar::new`], [`LTCurve::new`],
+//! [`LTCurve::new_line`], [`LTCurve::new_rect`], [`LTImage::new`],
+//! [`LTFigure::new`], [`LTFigure::new_obj`], [`LTPage::new`]), take the
+//! frames of the class call: `_PyObject_MakeTpCall`'s C unit (`" while
+//! calling a Python object"`) and the evaluation loop entry of `__init__`
+//! (three C units in all, measured by `oracle/unit/converter.py`'s probes),
+//! the `__init__` frame and those of the base `__init__`s it calls
+//! (`LTComponent.__init__` -> `set_bbox`; `LTItem.__init__` and
+//! `LTText.__init__` are `object.__init__`, C), and the leaf frames of the
+//! Python functions they call (`apply_matrix_rect` -> `apply_matrix_pt`,
+//! `get_bound`, `PDFStream.get_any`, `font.is_vertical()`), each where
+//! upstream calls it, so that the outcome at the recursion limit (a
+//! `RecursionError` or an exception raised earlier) is Python's.
+//! `oracle/unit/converter.py` checks them at the boundary (its `depth`
+//! cases). The analysis's own constructors (`LTTextLineHorizontal`...) are
+//! not counted (see above).
 
 use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use pycompat::pystr::PyStrBuilder;
-use pycompat::recursion::{eval_entry, py_frame, Guard};
+use pycompat::recursion::{c_call, eval_entry, py_frame, Guard};
 use pycompat::{exc, Num, PyInt, PyResult, PyStr};
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -96,6 +114,24 @@ fn truthy(x: &Num) -> bool {
 fn c_called_frame() -> PyResult<(Guard, Guard)> {
     let entry = eval_entry()?;
     Ok((entry, py_frame()?))
+}
+
+/// A class call, `Cls(...)` (see the module documentation, "Recursion"):
+/// `_PyObject_MakeTpCall`'s C unit, then the evaluation loop entry of
+/// `__init__` (called from C), held for the call; the caller then takes
+/// the `__init__` frame.
+pub fn class_call() -> PyResult<(Guard, Guard)> {
+    let unit = c_call(" while calling a Python object")?;
+    Ok((unit, eval_entry()?))
+}
+
+/// `apply_matrix_rect(m, rect)` with its frames (`utils` does not count
+/// them): its own, and the leaf of each `apply_matrix_pt` (all at the same
+/// depth, before its arithmetic: the first check decides).
+pub fn apply_matrix_rect_counted(m: &Matrix, rect: &Rect) -> PyResult<Rect> {
+    let _frame = py_frame()?;
+    leaf_frame()?; // apply_matrix_pt
+    apply_matrix_rect(m, rect)
 }
 
 /// A leaf call of a Python function that returns at once (its frame is
@@ -391,6 +427,15 @@ impl LTComponent {
         Ok(LTComponent { x0, y0, x1, y1, width, height })
     }
 
+    // pdfminer/layout.py:136 LTComponent.__init__
+    /// `LTComponent.__init__(self, bbox)` called by a subclass's
+    /// `__init__`: its frame and that of `set_bbox`, which it calls.
+    pub fn init(bbox: Rect) -> PyResult<LTComponent> {
+        let _frame = py_frame()?;
+        let _set_bbox = py_frame()?;
+        LTComponent::new(bbox)
+    }
+
     // pdfminer/layout.py:156 LTComponent.set_bbox
     /// Sets the four coordinates, then `width` and `height` (an
     /// `OverflowError` of the subtraction leaves the coordinates set, as in
@@ -535,6 +580,7 @@ impl<P: LTPayload> LTCurve<P> {
     ];
 
     // pdfminer/layout.py:215 LTCurve.__init__
+    /// `LTCurve(...)`: the class call, then `__init__`.
     pub fn new(
         linewidth: Num,
         pts: Vec<Point>,
@@ -546,9 +592,41 @@ impl<P: LTPayload> LTCurve<P> {
         original_path: Option<Vec<OriginalPathSegment>>,
         dashing_style: Option<(PDFObject, PDFObject)>,
     ) -> PyResult<LTCurve<P>> {
-        let comp = LTComponent::new(get_bound(&pts))?;
+        let _call = class_call()?;
+        LTCurve::init(
+            CurveKind::Curve,
+            linewidth,
+            pts,
+            stroke,
+            fill,
+            evenodd,
+            stroking_color,
+            non_stroking_color,
+            original_path,
+            dashing_style,
+        )
+    }
+
+    // pdfminer/layout.py:215 LTCurve.__init__
+    /// The body of `LTCurve.__init__` (its frame), for `kind`'s class:
+    /// `LTComponent.__init__(self, get_bound(pts))`, then the attributes.
+    fn init(
+        kind: CurveKind,
+        linewidth: Num,
+        pts: Vec<Point>,
+        stroke: bool,
+        fill: bool,
+        evenodd: bool,
+        stroking_color: Option<P::Color>,
+        non_stroking_color: Option<P::Color>,
+        original_path: Option<Vec<OriginalPathSegment>>,
+        dashing_style: Option<(PDFObject, PDFObject)>,
+    ) -> PyResult<LTCurve<P>> {
+        let _frame = py_frame()?;
+        leaf_frame()?; // get_bound
+        let comp = LTComponent::init(get_bound(&pts))?;
         Ok(LTCurve {
-            kind: CurveKind::Curve,
+            kind,
             comp,
             pts,
             linewidth,
@@ -564,6 +642,8 @@ impl<P: LTPayload> LTCurve<P> {
     }
 
     // pdfminer/layout.py:248 LTLine.__init__
+    /// `LTLine(...)`: the class call, `LTLine.__init__`, which calls
+    /// `LTCurve.__init__` with the points `[p0, p1]`.
     pub fn new_line(
         linewidth: Num,
         p0: Point,
@@ -576,7 +656,10 @@ impl<P: LTPayload> LTCurve<P> {
         original_path: Option<Vec<OriginalPathSegment>>,
         dashing_style: Option<(PDFObject, PDFObject)>,
     ) -> PyResult<LTCurve<P>> {
-        let mut curve = LTCurve::new(
+        let _call = class_call()?;
+        let _frame = py_frame()?;
+        LTCurve::init(
+            CurveKind::Line,
             linewidth,
             vec![p0, p1],
             stroke,
@@ -586,12 +669,12 @@ impl<P: LTPayload> LTCurve<P> {
             non_stroking_color,
             original_path,
             dashing_style,
-        )?;
-        curve.kind = CurveKind::Line;
-        Ok(curve)
+        )
     }
 
     // pdfminer/layout.py:281 LTRect.__init__
+    /// `LTRect(...)`: the class call, `LTRect.__init__`, which calls
+    /// `LTCurve.__init__` with the four corners of `bbox`.
     pub fn new_rect(
         linewidth: Num,
         bbox: Rect,
@@ -603,9 +686,12 @@ impl<P: LTPayload> LTCurve<P> {
         original_path: Option<Vec<OriginalPathSegment>>,
         dashing_style: Option<(PDFObject, PDFObject)>,
     ) -> PyResult<LTCurve<P>> {
+        let _call = class_call()?;
+        let _frame = py_frame()?;
         let [x0, y0, x1, y1] = bbox;
         let pts = vec![[x0.clone(), y0.clone()], [x1.clone(), y0], [x1, y1.clone()], [x0, y1]];
-        let mut curve = LTCurve::new(
+        LTCurve::init(
+            CurveKind::Rect,
             linewidth,
             pts,
             stroke,
@@ -615,9 +701,7 @@ impl<P: LTPayload> LTCurve<P> {
             non_stroking_color,
             original_path,
             dashing_style,
-        )?;
-        curve.kind = CurveKind::Rect;
-        Ok(curve)
+        )
     }
 
     // pdfminer/layout.py:238 LTCurve.get_pts
@@ -673,8 +757,13 @@ impl<P: LTPayload> LTImage<P> {
     ];
 
     // pdfminer/layout.py:314 LTImage.__init__
+    /// `LTImage(name, stream, bbox)`: the class call, `__init__`; the four
+    /// `stream.get_any(...)` are leaf calls (methods that do not resolve).
     pub fn new(name: String, stream: Rc<PDFStream>, bbox: Rect) -> PyResult<LTImage<P>> {
-        let comp = LTComponent::new(bbox)?;
+        let _call = class_call()?;
+        let _frame = py_frame()?;
+        let comp = LTComponent::init(bbox)?;
+        leaf_frame()?; // PDFStream.get_any
         let srcsize =
             (stream.get_any(&["W", "Width"], PDFObject::Null), stream.get_any(&["H", "Height"], PDFObject::Null));
         let imagemask = stream.get_any(&["IM", "ImageMask"], PDFObject::Null);
@@ -748,6 +837,12 @@ impl<P: LTPayload> LTChar<P> {
     ];
 
     // pdfminer/layout.py:350 LTChar.__init__
+    /// `LTChar(...)`: the class call, then `__init__`. `textwidth` is what
+    /// `font.char_width(cid)` returned (a number, or a sequence for a Type 3
+    /// font whose `/FontMatrix` holds one, which `* fontsize * scaling`
+    /// rejects with Python's exception: the interpreter's `scaling` is a
+    /// float, `textstate.scaling * 0.01`). `font.is_vertical()` is a leaf
+    /// call (a method), `font.get_descent()` takes its frames itself.
     pub fn new(
         matrix: Matrix,
         font: &dyn LTCharFont<P>,
@@ -755,14 +850,27 @@ impl<P: LTPayload> LTChar<P> {
         scaling: Num,
         rise: Num,
         text: impl Into<PyStr>,
-        textwidth: Num,
+        textwidth: Operand,
         textdisp: CharDisp,
         ncs: Rc<PDFColorSpace>,
         graphicstate: P::GraphicState,
     ) -> PyResult<LTChar<P>> {
+        let _call = class_call()?;
+        let _frame = py_frame()?;
         let fontname = font.fontname();
-        let adv = textwidth.mul(&fontsize)?.mul(&scaling)?;
+        let adv = match textwidth.mul(&Operand::Num(fontsize.clone()))?.mul(&Operand::Num(scaling.clone()))? {
+            Operand::Num(adv) => adv,
+            // a sequence repeated by an int font size and an int scaling,
+            // which the interpreter never passes (its scaling is a float)
+            other => {
+                return Err(exc::TypeError(format!(
+                    "LTChar.adv of type '{}': an int scaling is not supported",
+                    other.type_name()
+                )))
+            }
+        };
         // compute the boundary rectangle.
+        leaf_frame()?; // font.is_vertical()
         let bbox: Rect = if font.is_vertical() {
             // vertical
             let CharDisp::Vertical(vx, vy) = textdisp else {
@@ -795,14 +903,15 @@ impl<P: LTPayload> LTChar<P> {
         };
         let [a, b, c, d, _e, _f] = &matrix;
         let upright = a.mul(d)?.mul(&scaling)?.py_gt(&int(0)) && b.mul(c)?.py_le(&int(0));
-        let [mut x0, mut y0, mut x1, mut y1] = apply_matrix_rect(&matrix, &bbox)?;
+        let [mut x0, mut y0, mut x1, mut y1] = apply_matrix_rect_counted(&matrix, &bbox)?;
         if x1.py_lt(&x0) {
             std::mem::swap(&mut x0, &mut x1);
         }
         if y1.py_lt(&y0) {
             std::mem::swap(&mut y0, &mut y1);
         }
-        let comp = LTComponent::new([x0, y0, x1, y1])?;
+        let comp = LTComponent::init([x0, y0, x1, y1])?;
+        leaf_frame()?; // font.is_vertical()
         let size = if font.is_vertical() { comp.width.clone() } else { comp.height.clone() };
         Ok(LTChar {
             _text: text.into(),
@@ -1549,9 +1658,29 @@ impl<P: LTPayload> LTLayoutContainer<P> {
         Ok(LTLayoutContainer { comp: LTComponent::new(bbox)?, _objs: Vec::new(), groups: None })
     }
 
-    /// `self.add(obj)` (`LTContainer.add`)
+    // pdfminer/layout.py:698 LTLayoutContainer.__init__
+    /// `LTLayoutContainer.__init__(self, bbox)` called by a subclass's
+    /// `__init__` (`LTFigure`, `LTPage`): its frame, `LTContainer.__init__`'s
+    /// and `LTComponent.__init__`'s.
+    pub fn init(bbox: Rect) -> PyResult<LTLayoutContainer<P>> {
+        let _frame = py_frame()?;
+        let _container = py_frame()?; // LTContainer.__init__
+        Ok(LTLayoutContainer { comp: LTComponent::init(bbox)?, _objs: Vec::new(), groups: None })
+    }
+
+    /// `self.add(obj)` (`LTContainer.add`), without its frame (see
+    /// [`Self::add_counted`]).
     pub fn add(&mut self, obj: LTItem<P>) {
         self._objs.push(obj);
+    }
+
+    // pdfminer/layout.py:423 LTContainer.add
+    /// `self.add(obj)` called from Python code (the converter): a leaf
+    /// frame, then the append.
+    pub fn add_counted(&mut self, obj: LTItem<P>) -> PyResult<()> {
+        leaf_frame()?;
+        self._objs.push(obj);
+        Ok(())
     }
 
     // pdfminer/layout.py:703 LTLayoutContainer.group_objects
@@ -1841,10 +1970,12 @@ impl<P: LTPayload> LTFigure<P> {
     /// For numbers; the figure of a Form XObject is made by
     /// [`Self::new_obj`].
     pub fn new(name: String, bbox: [Num; 4], matrix: Matrix) -> PyResult<LTFigure<P>> {
+        let _call = class_call()?;
+        let _frame = py_frame()?;
         let [x, y, w, h] = bbox;
         let rect = [x.clone(), y.clone(), x.add(&w)?, y.add(&h)?];
-        let bbox = apply_matrix_rect(&matrix, &rect)?;
-        Ok(LTFigure { name, matrix, layout: LTLayoutContainer::new(bbox)?, attrs: ExtraAttrs::default() })
+        let bbox = apply_matrix_rect_counted(&matrix, &rect)?;
+        Ok(LTFigure { name, matrix, layout: LTLayoutContainer::init(bbox)?, attrs: ExtraAttrs::default() })
     }
 
     // pdfminer/layout.py:953 LTFigure.__init__
@@ -1857,11 +1988,17 @@ impl<P: LTPayload> LTFigure<P> {
     /// not numbers, are raised where Python raises them. When it succeeds,
     /// the matrix and the box are numbers (see [`ObjMatrix`]).
     pub fn new_obj(name: String, bbox: &[PDFObject], matrix: &ObjMatrix) -> PyResult<LTFigure<P>> {
+        let _call = class_call()?;
+        let _frame = py_frame()?;
         let [x, y, w, h] = unpack::<_, 4>(bbox)?.map(|v| Operand::from_obj(&v));
         let rect = [x.clone(), y.clone(), x.add(&w)?, y.add(&h)?];
-        let bbox = matrix.apply_rect(&rect)?;
+        let bbox = {
+            let _frame = py_frame()?; // apply_matrix_rect
+            leaf_frame()?; // apply_matrix_pt
+            matrix.apply_rect(&rect)?
+        };
         let matrix = matrix.to_matrix().expect("apply_matrix_pt raises on a matrix item that is not a number");
-        Ok(LTFigure { name, matrix, layout: LTLayoutContainer::new(bbox)?, attrs: ExtraAttrs::default() })
+        Ok(LTFigure { name, matrix, layout: LTLayoutContainer::init(bbox)?, attrs: ExtraAttrs::default() })
     }
 
     // pdfminer/layout.py:968 LTFigure.analyze
@@ -1889,8 +2026,11 @@ impl<P: LTPayload> LTPage<P> {
         ["x0", "y0", "x1", "y1", "width", "height", "bbox", "_objs", "groups", "pageid", "rotate"];
 
     // pdfminer/layout.py:981 LTPage.__init__
+    /// `LTPage(pageid, bbox, rotate)`: the class call, then `__init__`.
     pub fn new(pageid: PyInt, bbox: Rect, rotate: Num) -> PyResult<LTPage<P>> {
-        Ok(LTPage { layout: LTLayoutContainer::new(bbox)?, pageid, rotate })
+        let _call = class_call()?;
+        let _frame = py_frame()?;
+        Ok(LTPage { layout: LTLayoutContainer::init(bbox)?, pageid, rotate })
     }
 
     /// `page.analyze(laparams)` (`LTLayoutContainer.analyze`).

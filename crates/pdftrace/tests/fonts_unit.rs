@@ -574,7 +574,7 @@ fn check_ltchar_text(font: &PDFFont, cid: &PyInt, u: &Unichr) {
     let matrix = [one.clone(), zero.clone(), zero.clone(), one.clone(), zero.clone(), zero.clone()];
     let gray = pdfminer::pdfcolor::predefined_colorspace("DeviceGray").expect("DeviceGray");
     let built = recursion::with_depth(Depth::default(), || {
-        LTChar::<FP>::new(matrix, font, Num::Float(1.0), one, zero.clone(), u.clone(), zero, textdisp, gray, ())
+        LTChar::<FP>::new(matrix, font, Num::Float(1.0), one, zero.clone(), u.clone(), Operand::Num(zero), textdisp, gray, ())
     });
     match built {
         Ok(ch) => {

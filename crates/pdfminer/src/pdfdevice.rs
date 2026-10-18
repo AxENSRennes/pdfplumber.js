@@ -55,6 +55,7 @@
 
 use std::rc::Rc;
 
+use pycompat::recursion::{leaf, py_frame};
 use pycompat::{Num, PyInt, PyResult};
 
 use crate::pdfcolor::PDFColorSpace;
@@ -213,43 +214,48 @@ pub trait PDFDevice {
     }
 }
 
-/// The bodies of `PDFDevice`'s methods (`super()` for a direct subclass).
+/// The bodies of `PDFDevice`'s methods (`super()` for a direct subclass):
+/// `set_ctm` sets `self.ctm` (its frame), the others only `pass` (a leaf
+/// frame). Implemented by workstream CONVERTER, whose unit replay drives
+/// the devices without the interpreter (`oracle/unit/converter.py`).
 pub mod device {
     use super::*;
 
     // pdfminer/pdfdevice.py:48 PDFDevice.close
     pub fn close<D: PDFDevice + ?Sized>(dev: &mut D) -> PyResult<()> {
-        todo!("wave 3 INTERP: pass (leaf frame)")
+        leaf(1)
     }
 
     // pdfminer/pdfdevice.py:51 PDFDevice.set_ctm
     pub fn set_ctm<D: PDFDevice + ?Sized>(dev: &mut D, ctm: Matrix) -> PyResult<()> {
-        todo!("wave 3 INTERP: self.ctm = ctm")
+        let _frame = py_frame()?;
+        dev.attrs_mut().ctm = Some(ctm);
+        Ok(())
     }
 
     // pdfminer/pdfdevice.py:54 PDFDevice.begin_tag
     pub fn begin_tag<D: PDFDevice + ?Sized>(dev: &mut D, tag: &PSLiteral, props: Option<&PDFStackT>) -> PyResult<()> {
-        todo!("wave 3 INTERP")
+        leaf(1)
     }
 
     // pdfminer/pdfdevice.py:57 PDFDevice.end_tag
     pub fn end_tag<D: PDFDevice + ?Sized>(dev: &mut D) -> PyResult<()> {
-        todo!("wave 3 INTERP")
+        leaf(1)
     }
 
     // pdfminer/pdfdevice.py:60 PDFDevice.do_tag
     pub fn do_tag<D: PDFDevice + ?Sized>(dev: &mut D, tag: &PSLiteral, props: Option<&PDFStackT>) -> PyResult<()> {
-        todo!("wave 3 INTERP")
+        leaf(1)
     }
 
     // pdfminer/pdfdevice.py:63 PDFDevice.begin_page
     pub fn begin_page<D: PDFDevice + ?Sized>(dev: &mut D, page: &PDFPage, ctm: &Matrix) -> PyResult<()> {
-        todo!("wave 3 INTERP")
+        leaf(1)
     }
 
     // pdfminer/pdfdevice.py:66 PDFDevice.end_page
     pub fn end_page<D: PDFDevice + ?Sized>(dev: &mut D, page: &PDFPage) -> PyResult<()> {
-        todo!("wave 3 INTERP")
+        leaf(1)
     }
 
     // pdfminer/pdfdevice.py:69 PDFDevice.begin_figure
@@ -259,12 +265,12 @@ pub mod device {
         bbox: &ObjSeq,
         matrix: &ObjSeq,
     ) -> PyResult<()> {
-        todo!("wave 3 INTERP")
+        leaf(1)
     }
 
     // pdfminer/pdfdevice.py:72 PDFDevice.end_figure
     pub fn end_figure<D: PDFDevice + ?Sized>(dev: &mut D, name: &str) -> PyResult<()> {
-        todo!("wave 3 INTERP")
+        leaf(1)
     }
 
     // pdfminer/pdfdevice.py:75 PDFDevice.paint_path
@@ -276,12 +282,12 @@ pub mod device {
         evenodd: bool,
         path: &[PathSegment],
     ) -> PyResult<()> {
-        todo!("wave 3 INTERP")
+        leaf(1)
     }
 
     // pdfminer/pdfdevice.py:85 PDFDevice.render_image
     pub fn render_image<D: PDFDevice + ?Sized>(dev: &mut D, name: &str, stream: &Rc<PDFStream>) -> PyResult<()> {
-        todo!("wave 3 INTERP")
+        leaf(1)
     }
 
     // pdfminer/pdfdevice.py:88 PDFDevice.render_string
@@ -292,7 +298,7 @@ pub mod device {
         ncs: &Rc<PDFColorSpace>,
         graphicstate: &Rc<PDFGraphicState>,
     ) -> PyResult<()> {
-        todo!("wave 3 INTERP")
+        leaf(1)
     }
 }
 

@@ -732,7 +732,7 @@ fn ltchar() {
             num(&a[3]),
             num(&a[4]),
             text(&a[5]),
-            num(&a[6]),
+            Operand::Num(num(&a[6])),
             textdisp,
             gray(),
             (),
