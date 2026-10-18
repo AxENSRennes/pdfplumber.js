@@ -2,10 +2,9 @@
 //! drives (`PDFDevice`) and the text device that turns a shown string into
 //! characters (`PDFTextDevice`).
 //!
-//! **Wave 3 skeleton**: the signatures are the contract between the
-//! interpreter (workstream INTERP) and the devices (workstream CONVERTER,
-//! `docs/architecture.md`, "Vague 3"); the bodies are `todo!()` until
-//! ported.
+//! The signatures are the contract between the interpreter (workstream
+//! INTERP) and the devices (workstream CONVERTER, `docs/architecture.md`,
+//! "Vague 3").
 //!
 //! Not ported (out of scope, pdfplumber never uses them): `TagExtractor`
 //! (an XML-like dump of the tags), `PDFDevice.__repr__`, and the context
@@ -38,24 +37,37 @@
 //! the analyzer's), so the free functions work on any subclass, a tracing
 //! device of `pdftrace` included.
 //!
+//! # Values
+//!
+//! `PDFTextDevice` runs Python's arithmetic on the text state's numbers
+//! ([`Num`]: ints until an operator sets a float) and on the items of the
+//! shown sequence, which nothing checked: `TJ`'s operand is any object
+//! ([`PDFTextSeq`]), iterated as Python iterates it ([`text_seq_items`]).
+//!
 //! # Recursion depth
 //!
 //! Each method takes its Python frame (`pycompat::recursion::py_frame`) for
-//! its duration, in the method itself (the default methods of
-//! `PDFDevice`, which only `pass`, check theirs with `leaf(1)`); a call to a
-//! free function standing for `super().m(...)` is a frame of `m`, taken by
-//! the function. `logger.warning` of `render_string_horizontal` and
-//! `render_string_vertical` take theirs through `pycompat::logging`
-//! (`Logger::new("pdfminer.pdfdevice")`). `font.decode(obj)` of a CID font
-//! is a generator (`CMap.decode`) resumed by the `for` loop: its frames are
-//! taken where the loop resumes it (as `pdffont` documents for `decode`).
-//! See `pdfinterp` for the interpreter's recursion.
-
-#![allow(unused_variables)] // wave 3 skeleton: the bodies are todo!()
+//! its duration, in the free function of its class (the methods of
+//! `PDFDevice`, which only `pass` or assign, check theirs with `leaf(1)`); a
+//! call to a free function standing for `super().m(...)` is a frame of `m`,
+//! taken by the function. The `pdfminer.utils` functions called here
+//! (`mult_matrix`, `translate_matrix`) and the font's `is_multibyte` and
+//! `is_vertical` are Python functions that do not count their frame in the
+//! port: their callers check it (`leaf(1)`). `logger.warning` of
+//! `render_string_horizontal` and `render_string_vertical` take their
+//! frames through `pycompat::logging` (`Logger::new("pdfminer.pdfdevice")`).
+//! `font.decode(obj)` of a CID font is a generator (`CMap.decode`) resumed
+//! by the `for` loop: `pdffont` takes the frames of its first step where the
+//! loop resumes it; the later resumptions take a frame at the depth of the
+//! loop's, shallower than that first step (which logs), so they can never
+//! raise where it did not, and are not taken. See `pdfinterp` for the
+//! interpreter's recursion.
 
 use std::rc::Rc;
 
-use pycompat::{Num, PyInt, PyResult};
+use pycompat::logging::Logger;
+use pycompat::recursion::{c_called_leaf, eval_entry, leaf, py_frame};
+use pycompat::{exc, Num, PyInt, PyResult};
 
 use crate::pdfcolor::PDFColorSpace;
 use crate::pdffont::PDFFont;
@@ -63,7 +75,10 @@ use crate::pdfinterp::{PDFGraphicState, PDFResourceManager, PDFStackT, PDFTextSt
 use crate::pdfpage::PDFPage;
 use crate::pdftypes::{PDFList, PDFObject, PDFStream};
 use crate::psparser::PSLiteral;
-use crate::utils::{Matrix, PathSegment, Point};
+use crate::utils::{mult_matrix, translate_matrix, Matrix, PathSegment, Point};
+
+/// `logger = logging.getLogger(__name__)`
+static LOG: Logger = Logger::new("pdfminer.pdfdevice");
 
 // pdfminer/pdfdevice.py:27 PDFTextSeq
 /// `PDFTextSeq`: what `render_string` iterates. The interpreter does not
@@ -72,6 +87,35 @@ use crate::utils::{Matrix, PathSegment, Point};
 /// them, or raise `TypeError`/`KeyError`), or the new list `[s]` of `Tj`,
 /// `'` and `"`.
 pub type PDFTextSeq = PDFObject;
+
+/// An item of a [`PDFTextSeq`], as `for obj in seq` gives it: a PDF object
+/// (an item of a list; a `bytes` gives its byte values, ints), or a `str`
+/// key of a dict (neither a number nor `bytes`).
+#[derive(Clone, Debug)]
+pub enum SeqItem {
+    Obj(PDFObject),
+    Str(Rc<str>),
+}
+
+/// The items `for obj in seq` (or `list(seq)`) gets from a sequence of
+/// any type, or the exception Python raises: a list gives its items, a
+/// `bytes` its byte values, a dict its keys; a stream is iterated through
+/// `PDFStream.__getitem__(0)` (a Python method called from C: the
+/// evaluation loop entry and its frame), whose `PDFKeyError` propagates;
+/// anything else is not iterable (`TypeError`). Nothing can raise once the
+/// first item is had, so the items are collected at once.
+pub fn text_seq_items(seq: &PDFTextSeq) -> PyResult<Vec<SeqItem>> {
+    match seq {
+        PDFObject::List(l) => Ok(l.to_vec().into_iter().map(SeqItem::Obj).collect()),
+        PDFObject::Bytes(b) => Ok(b.iter().map(|&c| SeqItem::Obj(PDFObject::Int(PyInt::Small(i64::from(c))))).collect()),
+        PDFObject::Dict(d) => Ok(d.keys().into_iter().map(SeqItem::Str).collect()),
+        PDFObject::Stream(s) => {
+            c_called_leaf()?;
+            Err(s.missing_attribute("0"))
+        }
+        other => Err(exc::TypeError(format!("'{}' object is not iterable", other.type_name()))),
+    }
+}
 
 /// A sequence the interpreter hands to `begin_figure` unchecked: the
 /// result of `list_value(...)` on an XObject's `/BBox` or `/Matrix` (the
@@ -106,6 +150,8 @@ pub struct PDFDeviceAttrs {
 
 impl PDFDeviceAttrs {
     // pdfminer/pdfdevice.py:35 PDFDevice.__init__
+    /// The attributes (the frame of `__init__` is its caller's to count:
+    /// [`device::init`]).
     pub fn new(rsrcmgr: Rc<PDFResourceManager>) -> PDFDeviceAttrs {
         PDFDeviceAttrs { rsrcmgr, ctm: None }
     }
@@ -214,42 +260,61 @@ pub trait PDFDevice {
 }
 
 /// The bodies of `PDFDevice`'s methods (`super()` for a direct subclass).
+#[allow(unused_variables)] // the methods that only `pass`
 pub mod device {
     use super::*;
 
+    // pdfminer/pdfdevice.py:35 PDFDevice.__init__
+    /// The frames of `PDFDevice.__init__(self, rsrcmgr)` called by a
+    /// subclass's `__init__` (only checked: it assigns and returns).
+    pub fn init(rsrcmgr: Rc<PDFResourceManager>) -> PyResult<PDFDeviceAttrs> {
+        leaf(1)?;
+        Ok(PDFDeviceAttrs::new(rsrcmgr))
+    }
+
+    /// The class call `PDFDevice(rsrcmgr)` (or of a subclass that does not
+    /// override `__init__`): the evaluation loop entry and the frame of
+    /// `__init__`.
+    pub fn new(rsrcmgr: Rc<PDFResourceManager>) -> PyResult<PDFDeviceAttrs> {
+        let _entry = eval_entry()?;
+        init(rsrcmgr)
+    }
+
     // pdfminer/pdfdevice.py:48 PDFDevice.close
     pub fn close<D: PDFDevice + ?Sized>(dev: &mut D) -> PyResult<()> {
-        todo!("wave 3 INTERP: pass (leaf frame)")
+        leaf(1)
     }
 
     // pdfminer/pdfdevice.py:51 PDFDevice.set_ctm
     pub fn set_ctm<D: PDFDevice + ?Sized>(dev: &mut D, ctm: Matrix) -> PyResult<()> {
-        todo!("wave 3 INTERP: self.ctm = ctm")
+        leaf(1)?;
+        dev.attrs_mut().ctm = Some(ctm);
+        Ok(())
     }
 
     // pdfminer/pdfdevice.py:54 PDFDevice.begin_tag
     pub fn begin_tag<D: PDFDevice + ?Sized>(dev: &mut D, tag: &PSLiteral, props: Option<&PDFStackT>) -> PyResult<()> {
-        todo!("wave 3 INTERP")
+        leaf(1)
     }
 
     // pdfminer/pdfdevice.py:57 PDFDevice.end_tag
     pub fn end_tag<D: PDFDevice + ?Sized>(dev: &mut D) -> PyResult<()> {
-        todo!("wave 3 INTERP")
+        leaf(1)
     }
 
     // pdfminer/pdfdevice.py:60 PDFDevice.do_tag
     pub fn do_tag<D: PDFDevice + ?Sized>(dev: &mut D, tag: &PSLiteral, props: Option<&PDFStackT>) -> PyResult<()> {
-        todo!("wave 3 INTERP")
+        leaf(1)
     }
 
     // pdfminer/pdfdevice.py:63 PDFDevice.begin_page
     pub fn begin_page<D: PDFDevice + ?Sized>(dev: &mut D, page: &PDFPage, ctm: &Matrix) -> PyResult<()> {
-        todo!("wave 3 INTERP")
+        leaf(1)
     }
 
     // pdfminer/pdfdevice.py:66 PDFDevice.end_page
     pub fn end_page<D: PDFDevice + ?Sized>(dev: &mut D, page: &PDFPage) -> PyResult<()> {
-        todo!("wave 3 INTERP")
+        leaf(1)
     }
 
     // pdfminer/pdfdevice.py:69 PDFDevice.begin_figure
@@ -259,12 +324,12 @@ pub mod device {
         bbox: &ObjSeq,
         matrix: &ObjSeq,
     ) -> PyResult<()> {
-        todo!("wave 3 INTERP")
+        leaf(1)
     }
 
     // pdfminer/pdfdevice.py:72 PDFDevice.end_figure
     pub fn end_figure<D: PDFDevice + ?Sized>(dev: &mut D, name: &str) -> PyResult<()> {
-        todo!("wave 3 INTERP")
+        leaf(1)
     }
 
     // pdfminer/pdfdevice.py:75 PDFDevice.paint_path
@@ -276,12 +341,12 @@ pub mod device {
         evenodd: bool,
         path: &[PathSegment],
     ) -> PyResult<()> {
-        todo!("wave 3 INTERP")
+        leaf(1)
     }
 
     // pdfminer/pdfdevice.py:85 PDFDevice.render_image
     pub fn render_image<D: PDFDevice + ?Sized>(dev: &mut D, name: &str, stream: &Rc<PDFStream>) -> PyResult<()> {
-        todo!("wave 3 INTERP")
+        leaf(1)
     }
 
     // pdfminer/pdfdevice.py:88 PDFDevice.render_string
@@ -292,7 +357,7 @@ pub mod device {
         ncs: &Rc<PDFColorSpace>,
         graphicstate: &Rc<PDFGraphicState>,
     ) -> PyResult<()> {
-        todo!("wave 3 INTERP")
+        leaf(1)
     }
 }
 
@@ -396,6 +461,11 @@ pub trait PDFTextDevice: PDFDevice {
 pub mod text_device {
     use super::*;
 
+    /// `0.01`, `0.001`, `0`
+    fn float(x: f64) -> Num {
+        Num::Float(x)
+    }
+
     // pdfminer/pdfdevice.py:99 PDFTextDevice.render_string
     /// `matrix = mult_matrix(textstate.matrix, self.ctm)`, the font's
     /// scales, then `render_string_vertical` or `render_string_horizontal`
@@ -408,7 +478,145 @@ pub mod text_device {
         ncs: &Rc<PDFColorSpace>,
         graphicstate: &Rc<PDFGraphicState>,
     ) -> PyResult<()> {
-        todo!("wave 3 INTERP")
+        let _frame = py_frame()?;
+        let Some(ctm) = dev.attrs().ctm.clone() else {
+            return Err(exc::AssertionError(""));
+        };
+        // utils.mult_matrix: a Python function
+        leaf(1)?;
+        let matrix = mult_matrix(&textstate.matrix, &ctm)?;
+        let font = textstate.font.clone();
+        let fontsize = textstate.fontsize.clone();
+        let scaling = textstate.scaling.mul(&float(0.01))?;
+        let charspace = textstate.charspace.mul(&scaling)?;
+        let mut wordspace = textstate.wordspace.mul(&scaling)?;
+        let rise = textstate.rise.clone();
+        let Some(font) = font else {
+            return Err(exc::AssertionError(""));
+        };
+        // font.is_multibyte(): its frame
+        leaf(1)?;
+        if font.is_multibyte() {
+            wordspace = Num::Int(PyInt::ZERO);
+        }
+        let dxscale = float(0.001).mul(&fontsize)?.mul(&scaling)?;
+        // font.is_vertical(): its frame
+        leaf(1)?;
+        let pos = textstate.linematrix.clone();
+        textstate.linematrix = if font.is_vertical() {
+            dev.render_string_vertical(
+                seq,
+                &matrix,
+                &pos,
+                &font,
+                &fontsize,
+                &scaling,
+                &charspace,
+                &wordspace,
+                &rise,
+                &dxscale,
+                ncs,
+                graphicstate,
+            )?
+        } else {
+            dev.render_string_horizontal(
+                seq,
+                &matrix,
+                &pos,
+                &font,
+                &fontsize,
+                &scaling,
+                &charspace,
+                &wordspace,
+                &rise,
+                &dxscale,
+                ncs,
+                graphicstate,
+            )?
+        };
+        Ok(())
+    }
+
+    /// The axis a string advances along.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Axis {
+        Horizontal,
+        Vertical,
+    }
+
+    /// The loop of `render_string_horizontal` (moving `x`) and
+    /// `render_string_vertical` (moving `y`), which are the same code but
+    /// for the coordinate and the warning's text; the caller took the
+    /// method's frame.
+    #[allow(clippy::too_many_arguments)]
+    fn render_string_along<D: PDFTextDevice + ?Sized>(
+        dev: &mut D,
+        axis: Axis,
+        seq: &PDFTextSeq,
+        matrix: &Matrix,
+        pos: &Point,
+        font: &Rc<PDFFont>,
+        fontsize: &Num,
+        scaling: &Num,
+        charspace: &Num,
+        wordspace: &Num,
+        rise: &Num,
+        dxscale: &Num,
+        ncs: &Rc<PDFColorSpace>,
+        graphicstate: &Rc<PDFGraphicState>,
+    ) -> PyResult<Point> {
+        let [mut x, mut y] = pos.clone();
+        let mut needcharspace = false;
+        for obj in text_seq_items(seq)? {
+            match obj {
+                SeqItem::Obj(PDFObject::Bytes(b)) => {
+                    for cid in font.decode(&b)? {
+                        if needcharspace {
+                            let c = coord(axis, &mut x, &mut y);
+                            *c = c.add(charspace)?;
+                        }
+                        // utils.translate_matrix: a Python function
+                        leaf(1)?;
+                        let char_matrix = translate_matrix(matrix, &[x.clone(), y.clone()])?;
+                        let adv =
+                            dev.render_char(char_matrix, font, fontsize, scaling, rise, &cid, ncs, graphicstate)?;
+                        let c = coord(axis, &mut x, &mut y);
+                        *c = c.add(&adv)?;
+                        if cid == PyInt::Small(32) && is_truthy(wordspace) {
+                            *c = c.add(wordspace)?;
+                        }
+                        needcharspace = true;
+                    }
+                }
+                SeqItem::Obj(o) if o.as_num().is_some() => {
+                    let shift = o.as_num().expect("a number").mul(dxscale)?;
+                    let c = coord(axis, &mut x, &mut y);
+                    *c = c.sub(&shift)?;
+                    needcharspace = true;
+                }
+                _ => {
+                    // logger.warning("Cannot render horizontal string ..." / "... vertical ...")
+                    LOG.warning()?;
+                }
+            }
+        }
+        Ok([x, y])
+    }
+
+    /// The coordinate a string advances along: `x`, or `y`.
+    fn coord<'a>(axis: Axis, x: &'a mut Num, y: &'a mut Num) -> &'a mut Num {
+        match axis {
+            Axis::Horizontal => x,
+            Axis::Vertical => y,
+        }
+    }
+
+    /// `bool(x)` of a number: a NaN is true.
+    fn is_truthy(x: &Num) -> bool {
+        match x {
+            Num::Int(i) => !i.is_zero(),
+            Num::Float(f) => *f != 0.0,
+        }
     }
 
     // pdfminer/pdfdevice.py:149 PDFTextDevice.render_string_horizontal
@@ -427,7 +635,23 @@ pub mod text_device {
         ncs: &Rc<PDFColorSpace>,
         graphicstate: &Rc<PDFGraphicState>,
     ) -> PyResult<Point> {
-        todo!("wave 3 INTERP")
+        let _frame = py_frame()?;
+        render_string_along(
+            dev,
+            Axis::Horizontal,
+            seq,
+            matrix,
+            pos,
+            font,
+            fontsize,
+            scaling,
+            charspace,
+            wordspace,
+            rise,
+            dxscale,
+            ncs,
+            graphicstate,
+        )
     }
 
     // pdfminer/pdfdevice.py:195 PDFTextDevice.render_string_vertical
@@ -446,10 +670,27 @@ pub mod text_device {
         ncs: &Rc<PDFColorSpace>,
         graphicstate: &Rc<PDFGraphicState>,
     ) -> PyResult<Point> {
-        todo!("wave 3 INTERP")
+        let _frame = py_frame()?;
+        render_string_along(
+            dev,
+            Axis::Vertical,
+            seq,
+            matrix,
+            pos,
+            font,
+            fontsize,
+            scaling,
+            charspace,
+            wordspace,
+            rise,
+            dxscale,
+            ncs,
+            graphicstate,
+        )
     }
 
     // pdfminer/pdfdevice.py:241 PDFTextDevice.render_char
+    #[allow(unused_variables)]
     pub fn render_char<D: PDFTextDevice + ?Sized>(
         dev: &mut D,
         matrix: Matrix,
@@ -461,6 +702,7 @@ pub mod text_device {
         ncs: &Rc<PDFColorSpace>,
         graphicstate: &Rc<PDFGraphicState>,
     ) -> PyResult<Num> {
-        todo!("wave 3 INTERP: return 0 (an int)")
+        leaf(1)?;
+        Ok(Num::Int(PyInt::ZERO))
     }
 }
