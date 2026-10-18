@@ -1444,6 +1444,11 @@ def depth_probes(fonts: dict[str, list[FontRef]]):
         for compiled in ((True, False) if shape.count("m") > 1 else (True,)):
             yield f"paint_path {shape!r} {compiled}", probe(
                 page, lambda g, py, s=shape: g.paint(g.path(s, special=0), py=py)), None, compiled
+    # rectangles (LTRect: the random corners above make curves), closed by
+    # h and by a fourth l
+    corners = [("m", 0.0, 0.0), ("l", 5.0, 0.0), ("l", 5.0, 3.0), ("l", 0.0, 3.0)]
+    for label, rect in (("rect h", [*corners, ("h",)]), ("rect l", [*corners, ("l", 0.0, 0.0)])):
+        yield f"paint_path {label}", probe(page, lambda g, py, p=rect: g.paint(p, py=py)), None, True
     for kind in fonts:
         for cid in (65, 0x4E00, 10**4300):
             label = cid if cid < 10**10 else "huge"
