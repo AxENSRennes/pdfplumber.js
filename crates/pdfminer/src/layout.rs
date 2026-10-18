@@ -62,7 +62,7 @@
 //! The constructors of the raw objects, which `converter` calls as deep as
 //! Form XObjects nest ([`LTChar::new`], [`LTCurve::new`],
 //! [`LTCurve::new_line`], [`LTCurve::new_rect`], [`LTImage::new`],
-//! [`LTFigure::new`], [`LTFigure::new_obj`], [`LTPage::new`]), take the
+//! [`LTFigure::new_obj`], [`LTPage::new`]), take the
 //! frames of the class call: `_PyObject_MakeTpCall`'s C unit (`" while
 //! calling a Python object"`) and the evaluation loop entry of `__init__`
 //! (three C units in all, measured by `oracle/unit/converter.py`'s probes),
@@ -1967,15 +1967,15 @@ impl<P: LTPayload> LTFigure<P> {
 
     // pdfminer/layout.py:953 LTFigure.__init__
     /// `bbox` is `(x, y, w, h)`, the form's box, mapped through `matrix`.
-    /// For numbers; the figure of a Form XObject is made by
-    /// [`Self::new_obj`].
+    /// For numbers, without the frames of the class call: the converter
+    /// makes the figure of a Form XObject with [`Self::new_obj`], which
+    /// counts them; this one rebuilds the figures of a dumped page
+    /// (`tests/layout_unit.rs`).
     pub fn new(name: String, bbox: [Num; 4], matrix: Matrix) -> PyResult<LTFigure<P>> {
-        let _call = class_call()?;
-        let _frame = py_frame()?;
         let [x, y, w, h] = bbox;
         let rect = [x.clone(), y.clone(), x.add(&w)?, y.add(&h)?];
-        let bbox = apply_matrix_rect_counted(&matrix, &rect)?;
-        Ok(LTFigure { name, matrix, layout: LTLayoutContainer::init(bbox)?, attrs: ExtraAttrs::default() })
+        let bbox = apply_matrix_rect(&matrix, &rect)?;
+        Ok(LTFigure { name, matrix, layout: LTLayoutContainer::new(bbox)?, attrs: ExtraAttrs::default() })
     }
 
     // pdfminer/layout.py:953 LTFigure.__init__
