@@ -5,8 +5,8 @@ its attributes, ``mcid`` and ``tag`` included.
 Exercises pdfminer/converter.py (``PDFLayoutAnalyzer``: ``begin_page``,
 ``end_page``, ``begin_figure``, ``end_figure``, ``render_image``,
 ``paint_path`` and its shapes, ``render_char``, ``handle_undefined_char``;
-``PDFPageAggregator``), pdfplumber/page.py:110
-``PDFPageAggregatorWithMarkedContent`` (``mcid``, ``tag``), pdfminer/layout.py
+``PDFPageAggregator``),
+pdfplumber/page.py:110 ``PDFPageAggregatorWithMarkedContent`` (``mcid``, ``tag``), pdfminer/layout.py
 (the objects, and ``LTLayoutContainer.analyze`` under ``LAParams()``), and
 the interpreter under them.
 
@@ -44,44 +44,55 @@ of the ids). ``oracle.verify`` hands the oracle's trace to ``pdftrace``
 ``IdSource``) and writes the ``ids`` of its own result.
 
 Raw objects are numbered depth-first in ``_objs`` order (figures before
-their contents), from 0: the raw index. An object is written as
-``Named(class, fields)``, its ``__dict__`` in order, where ``_objs`` is the
-number of children (they follow on their own lines), a graphic state
-``gs{"n": k}`` (``k`` numbers the distinct ``graphicstate`` objects of the
-page by identity, in order of first use; a ``gstate`` line gives its
-``__dict__`` before its first use), a color space
-``PDFColorSpace{"name": .., "ncomponents": ..}``, and the name of an inline
-image (``str(id(stream))``, pdfminer/pdfinterp.py:1309 ``do_EI``, a memory
-address) ``inline{"n": k}``, ``k`` counting the page's inline images in raw
-order (an ``LTImage`` whose name is ``str(id(stream))``, and its
-``LTFigure``, which has its name).
+their contents), from 0: the raw index. A raw object is written as its
+class name and the tuple of its ``__dict__`` values, in order; a ``class``
+line gives the attribute names, before the first object of the class on the
+page and again whenever they change (``mcid``/``tag`` are set on some
+objects only). Everywhere, ``bbox`` is left out: upstream it is always the
+tuple ``(x0, y0, x1, y1)`` of the same values (``LTComponent.set_bbox``),
+and ``layout.rs`` does not store it. In the values, ``_objs`` is the number
+of children (they follow on their own lines); a graphic state is
+``gs{"n": k}`` and a color space ``cs{"n": k}``, ``k`` numbering the
+distinct values (canonical texts) of the page, which a ``gstate`` or
+``colorspace`` line gives before their first use (by value: the identity
+of these objects is not observable through pdfplumber); the name of an
+inline image (``str(id(stream))``, pdfminer/pdfinterp.py:1309 ``PDFPageInterpreter.do_EI``, a
+memory address) is ``inline{"n": k}``, ``k`` counting the page's inline
+images in raw order (an ``LTImage`` whose name is ``str(id(stream))``, and
+its ``LTFigure``, which has its name).
 
 In the analyzed page, a raw object (``LTChar``, ``LTCurve``, ``LTImage``,
 ``LTFigure``: ``LAParams()`` has ``all_texts=False``, figures are not
-analyzed) is ``#{"i": n}``, its raw index; a text line is written on one
-line, its ``_objs`` given in full (raw chars and ``LTAnno{"_text": ..}``),
-then ``get_text()``; a text box with its ``_objs`` count and
-``get_text()``, its lines on the following lines; ``groups`` is the number
-of top-level groups (or ``None``), written after the objects, depth-first,
-a box as ``box#{"i": n}`` (its position in the page's ``_objs``), a group
-with ``get_text()`` when its tree is at most ``GROUP_TEXT_HEIGHT`` high (a
-deeper one would recurse near the limit).
+analyzed) is ``#{"i": n}``, its raw index; a text line is written as
+``Named(class, __dict__)`` on one line, its ``_objs`` given in full (raw
+chars and ``LTAnno{"_text": ..}``), then ``get_text()``; a text box with
+its ``_objs`` count and ``get_text()``, its lines on the following lines;
+``groups`` is the number of top-level groups (or ``None``), written after
+the objects, depth-first, a box as ``box#{"i": n}`` (its position in the
+page's ``_objs``), a group with ``get_text()`` when its tree is at most
+``GROUP_TEXT_HEIGHT`` high (a deeper one would recurse near the limit).
 
 Lines (per page)::
 
     page <pageno> <pageid>
     error <exception>                    process_page raised it (no layout lines follow)
-    raw LTPage{...}                      the raw page (`_objs`: count, `groups`: None)
-    gstate <k> <PDFGraphicState{...}>
-    raw <i> <depth> <object>             depth: 0 for an object of the page, 1 inside a
+    raw LTPage{...}                      the raw page (``_objs``: count, ``groups``: None)
+    gstate <k> <PDFGraphicState{...}>    its __dict__, color spaces as PDFColorSpace{...}
+    colorspace <k> <PDFColorSpace{"name": .., "ncomponents": ..}>
+    class <name> <[attribute, ...]>
+    raw <i> <depth> <name> <(value, ...)>
+                                         depth: 0 for an object of the page, 1 inside a
                                          figure of the page...
     analyze <exception>                  the analysis raised (no analyzed lines follow)
-    analyzed LTPage{...}                 the analyzed page (`_objs`: count, `groups`:
+    analyzed LTPage{...}                 the analyzed page (``_objs``: count, ``groups``:
                                          count or None)
     obj <path> <object>                  path: the positions from the page, as a tuple
     group <path> <object>
     ids [[min_char, n_boxes, rank], ...] after an analysis, even one that raised
     !end
+
+The ``gstate``, ``colorspace`` and ``class`` lines a ``raw`` line needs come
+right before it, in the order its values need them (``class`` last).
 """
 
 from __future__ import annotations
@@ -95,7 +106,7 @@ from pdfminer.pdfinterp import PDFPageInterpreter, PDFResourceManager
 from pdfminer.pdfpage import PDFPage
 from pdfplumber.page import PDFPageAggregatorWithMarkedContent
 
-from ..canon import Named
+from ..canon import Named, canon
 from ._common import line, open_document, terminated
 from .interp import colorspace, state_fields
 
@@ -130,8 +141,9 @@ class _RawDump:
         for obj, _ in self.objects:
             if isinstance(obj, LTImage) and obj.name == str(id(obj.stream)) and obj.name not in self.inline:
                 self.inline[obj.name] = len(self.inline)
-        self.gstates: dict[int, int] = {}
-        self.keep: list[Any] = []
+        #: canonical text -> number, for each kind of shared value
+        self.shared: dict[str, dict[str, int]] = {"gstate": {}, "colorspace": {}}
+        self.keys: dict[str, list[str]] = {}
         self.lines: list[str] = []
 
     def name(self, obj: Any, name: Any) -> Any:
@@ -143,33 +155,46 @@ class _RawDump:
                     return Named("inline", {"n": self.inline[name]})
         return name
 
-    def gstate(self, gs: Any) -> Named:
-        k = self.gstates.get(id(gs))
+    def ref(self, kind: str, value: Named, short: str) -> Named:
+        """``short{"n": k}``, ``k`` numbering the distinct values of ``kind``
+        on the page; a ``kind`` line defines it at its first use."""
+        text = canon(value)
+        numbers = self.shared[kind]
+        k = numbers.get(text)
         if k is None:
-            k = self.gstates[id(gs)] = len(self.gstates)
-            self.keep.append(gs)
-            self.lines.append(line("gstate", k, Named("PDFGraphicState", state_fields(vars(gs)))))
-        return Named("gs", {"n": k})
+            k = numbers[text] = len(numbers)
+            self.lines.append(f"{kind} {k} {text}")
+        return Named(short, {"n": k})
 
-    def fields(self, obj: Any) -> Named:
-        out: dict[str, Any] = {}
+    def values(self, obj: Any) -> tuple[list[str], list[Any]]:
+        """The attribute names (``bbox`` left out) and values of ``obj``."""
+        keys: list[str] = []
+        values: list[Any] = []
         for k, v in vars(obj).items():
+            if k == "bbox":
+                continue
             if k == "_objs":
                 v = len(v)
             elif k == "graphicstate":
-                v = self.gstate(v)
+                v = self.ref("gstate", Named("PDFGraphicState", state_fields(vars(v))), "gs")
             elif k == "name":
                 v = self.name(obj, v)
             elif isinstance(v, PDFColorSpace):
-                v = colorspace(v)
-            out[k] = v
-        return Named(type(obj).__name__, out)
+                v = self.ref("colorspace", colorspace(v), "cs")
+            keys.append(k)
+            values.append(v)
+        return keys, values
 
     def write(self, page: LTPage) -> list[str]:
-        self.lines.append(line("raw", self.fields(page)))
+        keys, values = self.values(page)
+        self.lines.append(line("raw", Named("LTPage", dict(zip(keys, values)))))
         for i, (obj, depth) in enumerate(self.objects):
-            dumped = self.fields(obj)
-            self.lines.append(line("raw", i, depth, dumped))
+            cls = type(obj).__name__
+            keys, values = self.values(obj)
+            if self.keys.get(cls) != keys:
+                self.keys[cls] = keys
+                self.lines.append(line("class", cls, keys))
+            self.lines.append(line("raw", i, depth, cls, tuple(values)))
         return self.lines
 
 
@@ -199,7 +224,8 @@ def _analyzed(page: LTPage, raw: _RawDump) -> list[str]:
     def container(obj: Any, extra: dict[str, Any]) -> Named:
         fields: dict[str, Any] = {}
         for k, v in vars(obj).items():
-            fields[k] = len(v) if k == "_objs" and not isinstance(obj, LTTextLine) else v
+            if k != "bbox":
+                fields[k] = len(v) if k == "_objs" and not isinstance(obj, LTTextLine) else v
         if isinstance(obj, LTTextLine):
             fields["_objs"] = [ref(c) if isinstance(c, LTChar) else Named("LTAnno", {"_text": c._text}) for c in obj._objs]
         fields.update(extra)
@@ -207,6 +233,8 @@ def _analyzed(page: LTPage, raw: _RawDump) -> list[str]:
 
     fields: dict[str, Any] = {}
     for k, v in vars(page).items():
+        if k == "bbox":
+            continue
         if k == "_objs" or (k == "groups" and v is not None):
             v = len(v)
         fields[k] = v
@@ -281,8 +309,8 @@ def _end_page(ltpage: LTPage, laparams: LAParams) -> Exception | None:
 
 
 def _process_page(ltpage: LTPage, laparams: LAParams) -> Exception | None:
-    """Stands for pdfminer/pdfinterp.py:1352
-    ``PDFPageInterpreter.process_page``'s frame, which calls ``end_page``."""
+    """Stands for the frame of
+    pdfminer/pdfinterp.py:1352 ``PDFPageInterpreter.process_page``, which calls ``end_page``."""
     return _end_page(ltpage, laparams)
 
 

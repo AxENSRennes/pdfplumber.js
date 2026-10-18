@@ -218,10 +218,17 @@ class VerifyWithFakePdftrace(unittest.TestCase):
         self.assertEqual(len(list(cache.glob("oracle/psparser/*/*.pw-*.txt"))), 1)
 
     def test_other_stages(self) -> None:
-        for stage in ("objects", "streams", "pages"):
+        for stage in ("objects", "streams", "pages", "fonts", "interp"):
             code, summary = self.verify(stage=stage, files=FILES[:2])
             self.assertEqual(code, 0, (stage, summary))
             self.assertEqual(summary["counts"]["identical"], 2, stage)
+
+    def test_stage_reading_the_oracle(self) -> None:
+        # the layout stage gets --oracle-dir: the fake reads each oracle
+        # trace there (a password-protected file's name included)
+        code, summary = self.verify(stage="layout")
+        self.assertEqual(code, 0, (summary, self.stderr))
+        self.assertEqual(summary["counts"]["identical"], len(FILES))
 
 
 class FirstDifference(unittest.TestCase):

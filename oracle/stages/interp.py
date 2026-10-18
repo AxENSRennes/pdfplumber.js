@@ -8,12 +8,12 @@ Exercises pdfminer/pdfinterp.py (``PDFResourceManager`` and its font cache,
 images), pdfminer/pdfdevice.py (``PDFTextDevice.render_string``,
 ``render_string_horizontal``, ``render_string_vertical``),
 pdfminer/converter.py (``PDFLayoutAnalyzer``, whose ``render_char`` returns
-the advance the interpreter adds) and pdfplumber/page.py:110
-``PDFPageAggregatorWithMarkedContent``, plus everything they call (fonts,
+the advance the interpreter adds) and
+pdfplumber/page.py:110 ``PDFPageAggregatorWithMarkedContent``, plus everything they call (fonts,
 CMaps, ``PDFContentParser``).
 
 Traversal (``max_pages`` pages, 0 = all; pages are created lazily), the one
-of pdfplumber: pdfplumber/pdf.py:53 ``PDF.__init__`` creates one
+of pdfplumber: pdfplumber/pdf.py:28 ``PDF.__init__`` creates (at its line 53) one
 ``PDFResourceManager()`` for the document (``caching=True``: fonts are
 cached by object id across pages), and pdfplumber/page.py:256 ``Page.layout``
 creates a device and an interpreter for each page::
@@ -46,7 +46,7 @@ calls ``self.paint_path`` for each subpath of a path with several ``m``,
 
 The fonts, by identity, are numbered in order of first reference in the
 document's trace. Inline images are named ``str(id(obj))`` by
-pdfminer/pdfinterp.py:1309 ``do_EI``, a memory address: a name given by
+pdfminer/pdfinterp.py:1309 ``PDFPageInterpreter.do_EI``, a memory address: a name given by
 ``do_EI`` (``begin_figure``, ``render_image``, ``end_figure`` called from
 ``do_EI``'s frame) is written ``inline{"n": k}``, ``k`` counting the inline
 images of the page from 0 in order of appearance (the port names them

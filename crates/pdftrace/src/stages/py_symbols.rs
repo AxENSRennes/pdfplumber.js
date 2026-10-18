@@ -7,6 +7,27 @@ use pdfminer::psparser::Symbols;
 /// The symbols of the oracle's process for stage `stage`.
 pub fn for_stage(stage: &str) -> Option<Symbols> {
     match stage {
+        "fonts" => Some(
+            Symbols {
+                literals: &["A85", "AHx", "ASCII85Decode", "ASCIIHexDecode", "CCF", "CCITTFaxDecode", "CMYK", "Catalog", "Crypt", "DCT", "DCTDecode", "DeviceCMYK", "DeviceGray", "DeviceRGB", "Fl", "FlateDecode", "Font", "Form", "G", "Image", "JBIG2Decode", "JPXDecode", "LZW", "LZWDecode", "ObjStm", "PDF", "Page", "Pages", "RGB", "RL", "RunLengthDecode", "StandardEncoding", "Text", "Type1C", "XRef"],
+                bytes_literals: &[],
+                keywords: &[b"<<", b">>", b"BI", b"EI", b"ID", b"R", b"[", b"]", b"array", b"begin", b"beginbfchar", b"beginbfrange", b"begincidchar", b"begincidrange", b"begincmap", b"begincodespacerange", b"beginnotdefrange", b"def", b"dict", b"end", b"endbfchar", b"endbfrange", b"endcidchar", b"endcidrange", b"endcmap", b"endcodespacerange", b"endnotdefrange", b"endobj", b"for", b"null", b"obj", b"put", b"readonly", b"startxref", b"stream", b"usecmap", b"xref", b"{", b"}"],
+            },
+        ),
+        "interp" => Some(
+            Symbols {
+                literals: &["A85", "AHx", "ASCII85Decode", "ASCIIHexDecode", "CCF", "CCITTFaxDecode", "CMYK", "Catalog", "Crypt", "DCT", "DCTDecode", "DeviceCMYK", "DeviceGray", "DeviceRGB", "Fl", "FlateDecode", "Font", "Form", "G", "Image", "JBIG2Decode", "JPXDecode", "LZW", "LZWDecode", "ObjStm", "PDF", "Page", "Pages", "RGB", "RL", "RunLengthDecode", "StandardEncoding", "Text", "Type1C", "XRef"],
+                bytes_literals: &[],
+                keywords: &[b"<<", b">>", b"BI", b"EI", b"ID", b"R", b"[", b"]", b"array", b"begin", b"beginbfchar", b"beginbfrange", b"begincidchar", b"begincidrange", b"begincmap", b"begincodespacerange", b"beginnotdefrange", b"def", b"dict", b"end", b"endbfchar", b"endbfrange", b"endcidchar", b"endcidrange", b"endcmap", b"endcodespacerange", b"endnotdefrange", b"endobj", b"for", b"null", b"obj", b"put", b"readonly", b"startxref", b"stream", b"usecmap", b"xref", b"{", b"}"],
+            },
+        ),
+        "layout" => Some(
+            Symbols {
+                literals: &["A85", "AHx", "ASCII85Decode", "ASCIIHexDecode", "CCF", "CCITTFaxDecode", "CMYK", "Catalog", "Crypt", "DCT", "DCTDecode", "DeviceCMYK", "DeviceGray", "DeviceRGB", "Fl", "FlateDecode", "Font", "Form", "G", "Image", "JBIG2Decode", "JPXDecode", "LZW", "LZWDecode", "ObjStm", "PDF", "Page", "Pages", "RGB", "RL", "RunLengthDecode", "StandardEncoding", "Text", "Type1C", "XRef"],
+                bytes_literals: &[],
+                keywords: &[b"<<", b">>", b"BI", b"EI", b"ID", b"R", b"[", b"]", b"array", b"begin", b"beginbfchar", b"beginbfrange", b"begincidchar", b"begincidrange", b"begincmap", b"begincodespacerange", b"beginnotdefrange", b"def", b"dict", b"end", b"endbfchar", b"endbfrange", b"endcidchar", b"endcidrange", b"endcmap", b"endcodespacerange", b"endnotdefrange", b"endobj", b"for", b"null", b"obj", b"put", b"readonly", b"startxref", b"stream", b"usecmap", b"xref", b"{", b"}"],
+            },
+        ),
         "objects" => Some(
             Symbols {
                 literals: &["A85", "AHx", "ASCII85Decode", "ASCIIHexDecode", "CCF", "CCITTFaxDecode", "Catalog", "Crypt", "DCT", "DCTDecode", "Fl", "FlateDecode", "JBIG2Decode", "JPXDecode", "LZW", "LZWDecode", "ObjStm", "RL", "RunLengthDecode", "XRef"],

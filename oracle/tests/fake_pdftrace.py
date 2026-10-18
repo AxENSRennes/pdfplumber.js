@@ -2,8 +2,14 @@
 
 Same command line as the real binary::
 
-    fake_pdftrace.py --stage S [--password P] [--max-pages N] --out DIR F1.pdf ...
+    fake_pdftrace.py --stage S [--password P] [--max-pages N] [--oracle-dir C] --out DIR F1.pdf ...
     fake_pdftrace.py --list-stages
+
+It requires ``--oracle-dir`` for a stage whose module sets
+``ORACLE_INPUT`` (the real binary runs without it, with the library's
+default ``id()`` order, but ``verify`` must pass it) and refuses it for the
+others, and reads each file's oracle trace there (exit status 1 if it is
+missing, as the real binary).
 
 It writes the oracle's own trace to ``DIR/<sha256>.txt`` and appends
 ``<sha256>\t<seconds>`` to ``DIR/_times.tsv``, like the real binary, then
@@ -35,7 +41,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from oracle.stages import available_stages, trace_text  # noqa: E402
+from oracle.stages import available_stages, get_stage, trace_text  # noqa: E402
 
 
 def main() -> int:
@@ -49,8 +55,12 @@ def main() -> int:
     ap.add_argument("--password")
     ap.add_argument("--max-pages", type=int, default=20)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--oracle-dir")
     ap.add_argument("files", nargs="+")
     args = ap.parse_args()
+    if bool(getattr(get_stage(args.stage), "ORACLE_INPUT", False)) != (args.oracle_dir is not None):
+        print(f"pdftrace: --oracle-dir is required for, and only for, the stages that read the oracle ({args.stage})", file=sys.stderr)
+        return 1
     target = os.environ.get("FAKE_PDFTRACE_TARGET", "")
     if mode in ("unimplemented", "unlisted"):
         print(f"pdftrace: stage {args.stage} is not implemented", file=sys.stderr)
@@ -66,6 +76,16 @@ def main() -> int:
         if mode == "hang" and hit:
             time.sleep(sleep)
         data = Path(name).read_bytes()
+        if args.oracle_dir is not None:
+            sha = hashlib.sha256(data).hexdigest()
+            if args.password is None:
+                oracle = Path(args.oracle_dir) / f"{sha}.txt"
+            else:
+                pw = hashlib.sha256(args.password.encode("utf-8", "surrogatepass")).hexdigest()[:12]
+                oracle = Path(args.oracle_dir) / f"{sha}.pw-{pw}.txt"
+            if not oracle.is_file():
+                print(f"pdftrace: no oracle trace {oracle}", file=sys.stderr)
+                return 1
         lines = trace_text(args.stage, name, args.password, args.max_pages).split("\n")[:-1]
         if mode == "perturb" and hit:
             k = int(os.environ.get("FAKE_PDFTRACE_LINE", "2")) - 1

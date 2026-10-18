@@ -1,15 +1,19 @@
 //! Helpers shared by the stages, the Rust side of
 //! `oracle/stages/_common.py`.
 
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::io::{self, Write};
 use std::rc::Rc;
 
+use pdfminer::pdfdevice::PDFDevice;
 use pdfminer::pdfdocument::PDFDocument;
+use pdfminer::pdfinterp::{PDFPageInterpreter, PDFResourceManager};
+use pdfminer::pdfpage::PDFPage;
 use pdfminer::pdfparser::FileKind;
 use pdfminer::pdftypes::{ObjId, PDFObject};
-use pycompat::recursion::{py_frames, with_depth};
-use pycompat::PyResult;
+use pycompat::recursion::{py_frame, py_frames, with_depth};
+use pycompat::{PyErr, PyResult};
 
 use super::{StageInput, STAGE_ENTRY};
 use crate::canon::{canon_exc, canon_obj};
@@ -87,4 +91,30 @@ pub fn canon_id(id: &ObjId) -> String {
 /// `canon(obj)` of an optional object (`None` when absent).
 pub fn canon_opt(obj: Option<&PDFObject>) -> String {
     obj.map_or_else(|| "None".to_owned(), canon_obj)
+}
+
+/// `interp.page_layout` of `oracle/stages/interp.py`, shared by the
+/// `fonts`, `interp` and `layout` stages: the body of
+/// pdfplumber/page.py:256 `Page.layout` with `laparams=None` (one frame,
+/// the property's), on the document's resource manager:
+/// `device = make()`, `PDFPageInterpreter(rsrcmgr, device)`,
+/// `interpreter.process_page(page)`. Returns the device, the interpreter
+/// (the `fonts` stage reads its `fontmap`) and what `process_page` raised.
+///
+/// Wave 3: `make` stands for the device's class call; the frames of its
+/// `__init__` chain (`PDFPageAggregator.__init__` ->
+/// `PDFLayoutAnalyzer.__init__` -> `PDFDevice.__init__`, from C) are to be
+/// checked there by the porter (`c_called_leaf`, `leaf`), as
+/// `PDFPageInterpreter::new` checks its own.
+pub fn page_layout<D: PDFDevice + 'static>(
+    rsrcmgr: &Rc<PDFResourceManager>,
+    page: &PDFPage,
+    make: impl FnOnce() -> PyResult<D>,
+) -> PyResult<(Rc<RefCell<D>>, PDFPageInterpreter, Option<PyErr>)> {
+    let _frame = py_frame()?;
+    let device = Rc::new(RefCell::new(make()?));
+    let shared: Rc<RefCell<dyn PDFDevice>> = device.clone();
+    let mut interpreter = PDFPageInterpreter::new(rsrcmgr.clone(), shared)?;
+    let error = interpreter.process_page(page).err();
+    Ok((device, interpreter, error))
 }

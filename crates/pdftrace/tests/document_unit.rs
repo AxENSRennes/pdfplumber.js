@@ -268,7 +268,7 @@ fn stage_traces() {
             _ => String::new(),
         };
         let max_pages = max_pages.as_i64().filter(|&m| m > 0).map(|m| m as usize);
-        let input = StageInput { pdf, password: &password, max_pages };
+        let input = StageInput { pdf, password: &password, max_pages, oracle: None };
         let what = what.as_str().expect("a stage");
         let got = trace(what, &input);
         let Value::Str(expected) = &expected else { panic!("bad output") };

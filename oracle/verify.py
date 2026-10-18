@@ -12,9 +12,12 @@
 3. Runs the Rust binary (default ``<repo>/target/release/pdftrace``) in
    batches of files sharing a password::
 
-       pdftrace --stage S --max-pages N [--password=P] --out DIR F1.pdf F2.pdf ...
+       pdftrace --stage S --max-pages N [--password=P] [--oracle-dir C] --out DIR F1.pdf F2.pdf ...
 
-   which writes ``DIR/<sha256 of the PDF>.txt`` for each file, in order, and
+   (``--oracle-dir`` only for a stage whose module sets ``ORACLE_INPUT``:
+   ``C`` is the oracle cache directory of the stage, where ``pdftrace`` reads
+   each file's oracle trace, named as ``oracle/cache.py`` names it; the
+   ``layout`` stage takes Python's ``id()`` order from it) which writes ``DIR/<sha256 of the PDF>.txt`` for each file, in order, and
    appends ``<sha256> <seconds>`` to ``DIR/_times.tsv`` after each. Exit
    status 2 means "stage not implemented" and stops verify (status 2); before
    building the oracle cache, verify asks ``pdftrace --list-stages`` and stops
@@ -60,7 +63,7 @@ from pathlib import Path
 
 from .cache import DEFAULT_JOBS, DEFAULT_TIMEOUT, OracleCache, OracleResult
 from .corpus import REPO_DIR, SET_NAMES, CorpusError, CorpusFile, cache_dir, files_from_paths, load_set
-from .stages import DEFAULT_MAX_PAGES, available_stages
+from .stages import DEFAULT_MAX_PAGES, available_stages, get_stage
 
 DEFAULT_PDFTRACE = REPO_DIR / "target" / "release" / "pdftrace"
 DEFAULT_BATCH = 64
@@ -86,11 +89,21 @@ class RustRun:
 # ------------------------------------------------------------------------- Rust side
 
 
-def _pdftrace_command(pdftrace: Path, stage: str, max_pages: int, password: str | None, files: list[CorpusFile], out: Path) -> list[str]:
+def _pdftrace_command(
+    pdftrace: Path, stage: str, max_pages: int, password: str | None, files: list[CorpusFile], out: Path, oracle_dir: Path | None = None
+) -> list[str]:
     cmd = [str(pdftrace), "--stage", stage, "--max-pages", str(max_pages)]
     if password is not None:
         cmd.append(f"--password={password}")  # one argument: the password may start with "-"
+    if oracle_dir is not None:
+        cmd += ["--oracle-dir", str(oracle_dir)]
     return cmd + ["--out", str(out), *(str(f.path) for f in files)]
+
+
+def oracle_input(stage: str) -> bool:
+    """Whether ``pdftrace`` reads the oracle's trace of each file for
+    ``stage`` (its module's ``ORACLE_INPUT``)."""
+    return bool(getattr(get_stage(stage), "ORACLE_INPUT", False))
 
 
 def _completed(out: Path) -> int:
@@ -160,7 +173,17 @@ def rust_stage_implemented(pdftrace: Path, stage: str) -> bool | None:
     return False
 
 
-def run_rust(pdftrace: Path, stage: str, max_pages: int, files: list[CorpusFile], out_root: Path, jobs: int, timeout: float, batch_size: int) -> RustRun:
+def run_rust(
+    pdftrace: Path,
+    stage: str,
+    max_pages: int,
+    files: list[CorpusFile],
+    out_root: Path,
+    jobs: int,
+    timeout: float,
+    batch_size: int,
+    oracle_dir: Path | None = None,
+) -> RustRun:
     """Run pdftrace over ``files``; raise StageNotImplemented on exit status 2."""
     groups: dict[str | None, list[CorpusFile]] = {}
     for f in files:
@@ -174,7 +197,7 @@ def run_rust(pdftrace: Path, stage: str, max_pages: int, files: list[CorpusFile]
         password, batch = item
         out = out_root / f"batch-{next(counter)}"
         out.mkdir(parents=True)
-        code, err = _run_pdftrace(_pdftrace_command(pdftrace, stage, max_pages, password, batch, out), out, timeout)
+        code, err = _run_pdftrace(_pdftrace_command(pdftrace, stage, max_pages, password, batch, out, oracle_dir), out, timeout)
         if code == 2:
             raise StageNotImplemented(err or f"pdftrace: stage {stage!r} not implemented")
         times = _elapsed(out)
@@ -344,7 +367,10 @@ def main(argv: list[str] | None = None) -> int:
     out_root = Path(tempfile.mkdtemp(prefix=f"pdftrace-{args.stage}-", dir=tmp_root))
     try:
         try:
-            rust = run_rust(args.pdftrace, args.stage, args.max_pages, comparable, out_root, args.jobs, args.timeout, args.batch_size)
+            oracle_dir = cache.dir if oracle_input(args.stage) else None
+            rust = run_rust(
+                args.pdftrace, args.stage, args.max_pages, comparable, out_root, args.jobs, args.timeout, args.batch_size, oracle_dir
+            )
         except StageNotImplemented as e:
             print(f"verify: pdftrace does not implement stage {args.stage!r} (exit status 2): {e}", file=sys.stderr)
             return 2

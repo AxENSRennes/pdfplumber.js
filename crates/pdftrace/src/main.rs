@@ -9,6 +9,15 @@
 //! pdftrace --list-stages
 //! ```
 //!
+//! `--oracle-dir DIR` gives a stage that reads the oracle's trace of each
+//! file (`Stage::oracle_input`: `layout`, which takes Python's `id()` order
+//! from it; without the option, it runs with the library's default order)
+//! that trace; the other stages refuse it. `DIR` is the stage's oracle
+//! cache directory (`oracle.verify` passes it), where the trace of a file is
+//! `<sha256>.txt`, or `<sha256>.pw-<first 12 hex digits of the SHA-256 of
+//! the password>.txt` when `--password` is given (`oracle/cache.py`); a
+//! missing trace is an error for that file.
+//!
 //! `--cmap-dir DIR` (default: `$PDFPLUMBER_CMAP_DIR`) installs the provider
 //! of pdfminer's predefined CMaps for the process
 //! (`CMapDB::set_default_provider`), from the compact files that
@@ -39,13 +48,17 @@ use pdftrace::stages::{self, Stage, StageInput};
 
 const DEFAULT_MAX_PAGES: usize = 20;
 
-const USAGE: &str = "usage: pdftrace --stage S [--password P] [--max-pages N] [--cmap-dir DIR] FILE.pdf\n       \
-pdftrace --stage S [--password P] [--max-pages N] [--cmap-dir DIR] --out DIR FILE.pdf...\n       \
+const USAGE: &str =
+    "usage: pdftrace --stage S [--password P] [--max-pages N] [--cmap-dir DIR] [--oracle-dir DIR] FILE.pdf\n       \
+pdftrace --stage S [--password P] [--max-pages N] [--cmap-dir DIR] [--oracle-dir DIR] --out DIR FILE.pdf...\n       \
 pdftrace --list-stages";
 
 struct Args {
     stage: String,
     password: String,
+    /// Whether `--password` was given (the oracle's file name says so).
+    password_given: bool,
+    oracle_dir: Option<PathBuf>,
     max_pages: Option<usize>,
     out: Option<PathBuf>,
     cmap_dir: Option<PathBuf>,
@@ -55,6 +68,8 @@ struct Args {
 fn parse_args(mut argv: impl Iterator<Item = String>) -> Result<Option<Args>, String> {
     let mut stage = None;
     let mut password = String::new();
+    let mut password_given = false;
+    let mut oracle_dir = None;
     let mut max_pages = Some(DEFAULT_MAX_PAGES);
     let mut out = None;
     let mut cmap_dir = std::env::var_os("PDFPLUMBER_CMAP_DIR").map(PathBuf::from);
@@ -70,7 +85,11 @@ fn parse_args(mut argv: impl Iterator<Item = String>) -> Result<Option<Args>, St
             |name: &str| inline.take().or_else(|| argv.next()).ok_or_else(|| format!("{name} needs a value"));
         match arg.as_str() {
             "--stage" => stage = Some(value("--stage")?),
-            "--password" => password = value("--password")?,
+            "--password" => {
+                password = value("--password")?;
+                password_given = true;
+            }
+            "--oracle-dir" => oracle_dir = Some(PathBuf::from(value("--oracle-dir")?)),
             "--max-pages" => {
                 let n: usize = value("--max-pages")?.parse().map_err(|_| "--max-pages needs a number".to_owned())?;
                 max_pages = (n > 0).then_some(n);
@@ -90,14 +109,31 @@ fn parse_args(mut argv: impl Iterator<Item = String>) -> Result<Option<Args>, St
         (None, _) => return Err("give one FILE.pdf, or --out DIR with several".into()),
         (Some(_), 0) => return Err("no FILE.pdf given".into()),
     }
-    Ok(Some(Args { stage, password, max_pages, out, cmap_dir, files }))
+    Ok(Some(Args { stage, password, password_given, oracle_dir, max_pages, out, cmap_dir, files }))
+}
+
+/// The oracle's trace of `pdf` in `--oracle-dir`, named as
+/// `oracle/cache.py` names it.
+fn oracle_trace(args: &Args, pdf: &[u8]) -> io::Result<Option<String>> {
+    let Some(dir) = &args.oracle_dir else { return Ok(None) };
+    let sha = sha256_hex(pdf);
+    let name = if args.password_given {
+        format!("{sha}.pw-{}.txt", &sha256_hex(args.password.as_bytes())[..12])
+    } else {
+        format!("{sha}.txt")
+    };
+    let path = dir.join(name);
+    fs::read_to_string(&path)
+        .map(Some)
+        .map_err(|e| io::Error::new(e.kind(), format!("oracle trace {}: {e}", path.display())))
 }
 
 fn trace(stage: &Stage, args: &Args, pdf: &[u8], out: &mut dyn Write) -> io::Result<()> {
     let run = stage.run.expect("checked by main");
+    let oracle = oracle_trace(args, pdf)?;
     // each trace of the oracle runs in a new process
     pdftrace::stages::py_process::set_for_stage(stage.name);
-    run(&StageInput { pdf, password: &args.password, max_pages: args.max_pages }, out)
+    run(&StageInput { pdf, password: &args.password, max_pages: args.max_pages, oracle: oracle.as_deref() }, out)
 }
 
 /// Writes the trace of `file` to `dir/<sha256>.txt` through a temporary file,
@@ -139,6 +175,10 @@ fn main() -> ExitCode {
     };
     if stage.run.is_none() {
         eprintln!("pdftrace: stage {:?} is not implemented yet", stage.name);
+        return ExitCode::from(2);
+    }
+    if !stage.oracle_input && args.oracle_dir.is_some() {
+        eprintln!("pdftrace: stage {:?} does not read the oracle (no --oracle-dir)", stage.name);
         return ExitCode::from(2);
     }
     if let Some(dir) = &args.cmap_dir {
