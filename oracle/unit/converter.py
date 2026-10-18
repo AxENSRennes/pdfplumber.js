@@ -1001,6 +1001,12 @@ def generated_fonts(rng, table: dict[str, list]) -> dict[str, list[FontRef]]:
     add("vertical", lambda s: s.cid(encoding="Identity-V"))
     add("type0", lambda s: s.type0())
     add("any", lambda s: s.any())
+    # a vertical font whose /W2 gives code 65 a displacement LTChar's
+    # arithmetic rejects (vy a name: a TypeError after font.is_vertical())
+    odd = {"Type": LIT("Font"), "Subtype": LIT("Type0"), "BaseFont": LIT("OddV"), "Encoding": LIT("Identity-V"),
+           "DescendantFonts": [{"Type": LIT("Font"), "Subtype": LIT("CIDFontType2"), "BaseFont": LIT("OddV"),
+                                "W2": [65, [1000, 500, LIT("x")]]}]}
+    kinds["vertical odd disp"] = [font_ref(odd, FontDoc(), table)]
     return {k: v for k, v in kinds.items() if v}
 
 
