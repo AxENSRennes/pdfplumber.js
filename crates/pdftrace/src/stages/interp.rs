@@ -43,7 +43,7 @@ use pdfminer::utils::{Matrix, PathSegment, Point};
 use pdfplumber::page::{
     marked_content, MarkedContent, MarkedContentState, PDFPageAggregatorWithMarkedContent, PlumberPayload,
 };
-use pycompat::recursion::py_frame;
+use pycompat::recursion::{py_frame, py_frames};
 use pycompat::{Num, PyErr, PyInt, PyResult};
 
 use super::common::{open_document, page_layout, terminated, Lines};
@@ -577,6 +577,19 @@ pub fn run_with<D: PDFDevice + 'static>(
     make: impl Fn(&Rc<PDFResourceManager>, PyInt) -> PyResult<D>,
     calls: impl Fn(&mut D) -> Vec<Call>,
 ) -> io::Result<()> {
+    run_with_page_frames(input, out, make, calls, 0)
+}
+
+/// [`run_with`], each page interpreted (`page_layout`) `page_frames`
+/// frames deeper than the stage does: the depth sweeps of
+/// `oracle/unit/interp_deep.py` (`down`).
+pub fn run_with_page_frames<D: PDFDevice + 'static>(
+    input: &StageInput<'_>,
+    out: &mut dyn Write,
+    make: impl Fn(&Rc<PDFResourceManager>, PyInt) -> PyResult<D>,
+    calls: impl Fn(&mut D) -> Vec<Call>,
+    page_frames: u32,
+) -> io::Result<()> {
     terminated(out, |lines: &mut Lines| {
         let doc = open_document(input)?;
         let rsrcmgr = Rc::new(PDFResourceManager::new(true));
@@ -586,7 +599,10 @@ pub fn run_with<D: PDFDevice + 'static>(
             let page = page?;
             lines.line("page", &[&pageno.to_string(), &canon_obj(&page.pageid)]);
             let pageno_int = PyInt::Small(pageno as i64);
-            let (device, interpreter, error) = page_layout(&rsrcmgr, &page, || make(&rsrcmgr, pageno_int))?;
+            let (device, interpreter, error) = {
+                let _deeper = if page_frames > 0 { Some(py_frames(page_frames)?) } else { None };
+                page_layout(&rsrcmgr, &page, || make(&rsrcmgr, pageno_int))?
+            };
             let records = calls(&mut device.borrow_mut());
             let mut fmt = PageFormatter::new(&mut fonts, interpreter.inline_images.get());
             for c in &records {

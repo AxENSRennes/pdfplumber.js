@@ -22,7 +22,7 @@ use pdfminer::utils::{mult_matrix_obj, Matrix, PathSegment};
 use pycompat::recursion::{eval_entry, leaf, py_frame};
 use pycompat::{exc, Num, PyInt, PyResult};
 
-use super::interp::{run_with, traced, traced_render_char, traced_render_string, Call, Traced};
+use super::interp::{run_with_page_frames, traced, traced_render_char, traced_render_string, Call, Traced};
 use super::{Stage, StageInput};
 
 pub const STAGE: Stage = Stage { name: "interp_text", run: Some(run), oracle_input: false };
@@ -227,16 +227,19 @@ impl PDFTextDevice for TracingDevice {
 }
 
 fn run(input: &StageInput<'_>, out: &mut dyn Write) -> io::Result<()> {
-    run_deep(input, out, 0)
+    run_deep(input, out, 0, 0)
 }
 
-/// The stage with `DeepTracingDevice` (`oracle/unit/interp_deep.py`):
-/// every device method descends `descent` frames first (`0`: the stage).
-pub fn run_deep(input: &StageInput<'_>, out: &mut dyn Write, descent: u32) -> io::Result<()> {
-    run_with(
+/// `deep_run` of `oracle/unit/interp_deep.py`: the stage with
+/// `DeepTracingDevice` (every device method descends `descent` frames
+/// first; `0`: the stage's device), each page interpreted `page_frames`
+/// frames deeper than the stage does (`0`: the stage).
+pub fn run_deep(input: &StageInput<'_>, out: &mut dyn Write, descent: u32, page_frames: u32) -> io::Result<()> {
+    run_with_page_frames(
         input,
         out,
         |rsrcmgr, _pageno| Ok(TracingDevice { inner: TextDevice::new(rsrcmgr.clone())?, calls: Vec::new(), descent }),
         |d| std::mem::take(&mut d.calls),
+        page_frames,
     )
 }

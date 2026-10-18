@@ -33,6 +33,7 @@ use pdftrace::canon::{canon, canon_exc, sha256_hex};
 use pdftrace::stages::common::with_stage_entry;
 use pdftrace::stages::interp_text::run_deep;
 use pdftrace::stages::py_process::{self, PyProcess};
+use pdftrace::stages::STAGE_ENTRY;
 use pdftrace::stages::{self, StageInput};
 use pdftrace::typed_json::{self, Json};
 use pdftrace::unit::{cache_dir, UnitData};
@@ -169,7 +170,7 @@ fn deep_sweeps() {
     let mut failures = Vec::new();
     let (mut files, mut traces, mut limited) = (0, 0, 0);
     for (args, expected) in data.cases("deep") {
-        let [Value::Str(name), Value::Bytes(pdf), password, Value::Int(descent), Value::List(entries)] = &args[..]
+        let [Value::Str(name), Value::Bytes(pdf), password, Value::Int(descent), base, Value::List(frames)] = &args[..]
         else {
             panic!("bad case {args:?}");
         };
@@ -177,6 +178,7 @@ fn deep_sweeps() {
         if only.as_ref().is_some_and(|o| !name.contains(o.as_str())) {
             continue;
         }
+        assert_eq!(depth(base), STAGE_ENTRY, "the stage body's depth");
         let Value::List(out) = &expected else { panic!("bad output") };
         let [Value::Str(first), Value::List(digests)] = &out[..] else { panic!("bad output {out:?}") };
         let first = first.as_str().expect("ASCII");
@@ -186,11 +188,14 @@ fn deep_sweeps() {
         };
         let descent = u32::try_from(descent.as_i64().expect("small")).expect("a descent");
         let input = StageInput { pdf, password: &password, max_pages: Some(20), oracle: None };
-        assert_eq!(entries.len(), digests.len(), "{name}: one digest per entry");
+        assert_eq!(frames.len(), digests.len(), "{name}: one digest per depth");
         files += 1;
-        for (i, (entry, digest)) in entries.iter().zip(digests).enumerate() {
+        for (i, (n, digest)) in frames.iter().zip(digests).enumerate() {
+            let Value::Int(n) = n else { panic!("a number of frames") };
+            let n = u32::try_from(n.as_i64().expect("small")).expect("frames");
             let mut out = Vec::new();
-            with_stage_entry(depth(entry), || run_deep(&input, &mut out, descent)).expect("write to memory");
+            // down(n): n + 1 frames, and its lambda's
+            run_deep(&input, &mut out, descent, n + 2).expect("write to memory");
             let got = String::from_utf8(out).expect("ASCII");
             traces += 1;
             if got.contains("RecursionError") {
@@ -199,13 +204,13 @@ fn deep_sweeps() {
             let Value::Str(digest) = digest else { panic!("a digest") };
             if sha256_hex(got.as_bytes()) != digest.as_str().expect("hex") {
                 let at = if i == 0 { first_difference(first, &got) } else { "trace digest".to_owned() };
-                failures.push(format!("{name} [entry {i}: {entry:?}]: {at}"));
+                failures.push(format!("{name} [descent {descent}, {n} frames deeper]: {at}"));
             }
         }
     }
     if only.is_none() {
-        assert!(files > 100, "only {files} files");
-        assert!(limited > 1500, "only {limited} of {traces} traces reach the recursion limit");
+        assert!(files > 300, "only {files} sweeps");
+        assert!(limited > 3000, "only {limited} of {traces} traces reach the recursion limit");
     }
     assert!(
         failures.is_empty(),

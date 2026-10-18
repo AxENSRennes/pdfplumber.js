@@ -19,15 +19,15 @@ So this generator traces the files of ``adv-interp`` (all but the
 ``DESCENT`` frames (``descend``), which makes each device call deeper than
 anything before it on its page (each page is interpreted by its own device
 and interpreter, a ``RecursionError`` stops only its page). Each file is
-traced from a range of deeper entries (``nested`` generator frames, the
-stage body's depth recorded per trace, ``oracle.depth.depth_here``) that
-moves the recursion limit one frame at a time from just above the deepest
-frame of the file's run (``max_depth``, measured with a bounded profile
+traced with its pages interpreted from a range of depths (``down``: ``n``
+more frames around ``page_layout``, recorded per trace) that moves the
+recursion limit one frame at a time from just above the deepest frame of
+the pages' interpretation (``max_depth``, measured with a bounded profile
 hook) down ``SWEEP`` frames: every frame on a path to a device call, and on
 the paths deeper than those, is then the first one past the limit in one of
 the traces. Each file is also swept with ``descent`` 0 (the stage's own
-device) from above its deepest frame down to the stage body, one frame at a
-time: what a page does before its first device call (``init_resources``,
+device) from above its deepest frame down to ``page_layout``'s own frame,
+one frame at a time: what a page does before its first device call (``init_resources``,
 fonts, color spaces, ``/ProcSet``) is then reached too, which the descent
 of ``begin_page`` hides.
 
@@ -35,13 +35,15 @@ of ``begin_page`` hides.
 pdfminer and pdfplumber never call on a page: the class, ``is_vertical``
 and the CIDs of a few codes of the result, or the exception, for
 predefined, identity and missing names; and the same call from every
-depth down to the recursion limit (``at_depth``, a process forked for
-each: ``CMapDB``'s caches start empty).
+depth down to the recursion limit (a process forked for each:
+``CMapDB``'s caches start empty).
 
-Cases (``deep.jsonl``): ``{"in": [name, pdf, password, descent, entries],
-"out": [first, digests]}``: the trace of each entry (as ``interp_text``
-writes it, with ``DeepTracingDevice``), the first one in full (the limit
-above the deepest frame: no ``RecursionError``), and the SHA-256 of each.
+Cases (``deep.jsonl``): ``{"in": [name, pdf, password, descent, base,
+frames], "out": [first, digests]}``: ``base`` the depth of the stage body
+(``STAGE_ENTRY`` of the replay), the trace for each ``n`` of ``frames`` (as
+``interp_text`` writes it, with ``DeepTracingDevice``, pages ``n + 2``
+frames deeper), the first one in full (the limit above the deepest frame:
+no ``RecursionError``), and the SHA-256 of each.
 Every trace runs in a process forked for it (``document.in_child``), from
 the state ``py_process.jsonl`` records.
 
@@ -204,11 +206,23 @@ class DeepTracingDevice(TextDevice):
         return adv
 
 
-def set_descent(descent: int) -> None:
+#: ``[n]``: ``deep_run`` interprets each page from ``n + 2`` frames deeper
+#: than the stage does (``down``), set in the process forked for a trace.
+PAGE_FRAMES = [-1]
+
+
+def set_descent(descent: int, n: int = -1) -> None:
     """The device of ``deep_run`` (in the process forked for a trace):
     ``DeepTracingDevice`` descending ``descent`` frames, or for ``0`` the
-    stage's ``TracingDevice``."""
+    stage's ``TracingDevice``; and the depth of its pages (``n``: below,
+    ``-1``: the stage's)."""
     DeepTracingDevice.descent = descent
+    PAGE_FRAMES[0] = n
+
+
+def down(n: int, f):
+    """``f()`` called through ``n + 1`` more frames (``down`` itself)."""
+    return f() if n <= 0 else down(n - 1, f)
 
 
 @terminated
@@ -220,7 +234,12 @@ def deep_run(path: str, password: str | None, max_pages: int) -> Iterator[str]:
         fonts = Fonts()
         for pageno, page in enumerate(PDFPage.create_pages(doc), start=1):
             yield line("page", pageno, page.pageid)
-            device, _, error = page_layout(rsrcmgr, page, pageno, device_class)
+            if PAGE_FRAMES[0] < 0:
+                device, _, error = page_layout(rsrcmgr, page, pageno, device_class)
+            else:
+                # n + 1 frames of down(), one of the lambda: page_layout's
+                # frame is n + 2 frames deeper than the stage's
+                device, _, error = down(PAGE_FRAMES[0], lambda: page_layout(rsrcmgr, page, pageno, device_class))
             fmt = _Page(fonts)
             for c in device.calls:
                 fmt.call(c)
@@ -231,44 +250,36 @@ def deep_run(path: str, password: str | None, max_pages: int) -> Iterator[str]:
                 break
 
 
-def nested(k: int, make):
-    """The generator ``make()`` resumed through ``k`` more generator frames
-    (built without recursion: each level is a generator frame on the stack
-    while it runs)."""
-
-    def level(inner):
-        yield from inner
-
-    gen = make()
-    for _ in range(k):
-        gen = level(gen)
-    return gen
-
-
-def entry_at(k: int) -> dict[str, int]:
-    """The depth of a stage body run through ``nested(k, ...)``."""
+def entry_at() -> dict[str, int]:
+    """The depth of the stage body (``oracle.stages.entry_depth``)."""
 
     @terminated
     def probe(path: str, password: str | None, max_pages: int):
         depth = depth_here()
         yield f"{depth['py']} {depth['c_left']}"
 
-    py, c_left = _in_stage_thread(lambda: nested(k, lambda: probe("", None, 0)))[0].split()
+    py, c_left = _in_stage_thread(lambda: probe("", None, 0))[0].split()
     return {"py": int(py), "c_left": int(c_left)}
 
 
 def max_depth(path: str, password: str | None, descent: int) -> int:
-    """The deepest frame of ``deep_run`` on ``path``, counted from its body
-    (the body's callees are 1): a profile hook keeping two integers."""
+    """The deepest frame of the pages' interpretation (``page_layout`` and
+    below) in ``deep_run`` on ``path``, counted from the stage body
+    (``page_layout`` is 1): a profile hook keeping a few integers."""
     set_descent(descent)
-    state = {"depth": 0, "max": 0}
+    state = {"depth": 0, "max": 0, "inside": 0}
+    target = page_layout.__code__
 
     def hook(frame, event, arg) -> None:
         if event == "call":
             state["depth"] += 1
-            if state["depth"] > state["max"]:
+            if frame.f_code is target:
+                state["inside"] = state["depth"]
+            if state["inside"] and state["depth"] > state["max"]:
                 state["max"] = state["depth"]
         elif event == "return":
+            if state["depth"] == state["inside"]:
+                state["inside"] = 0
             state["depth"] -= 1
 
     @terminated
@@ -284,33 +295,34 @@ def max_depth(path: str, password: str | None, descent: int) -> int:
     return state["max"] - 1
 
 
-def traced_from(path: str, password: str | None, k: int, descent: int) -> tuple[dict[str, int], str]:
-    set_descent(descent)
-    entry = entry_at(k)
-    lines = _in_stage_thread(lambda: nested(k, lambda: deep_run(path, password, MAX_PAGES)))
-    return entry, "".join(x + "\n" for x in lines)
+def traced_from(path: str, password: str | None, n: int, descent: int) -> str:
+    set_descent(descent, n)
+    lines = _in_stage_thread(lambda: deep_run(path, password, MAX_PAGES))
+    return "".join(x + "\n" for x in lines)
 
 
 def deep_cases() -> Iterator[tuple[list, Any]]:
-    base = in_child(lambda: entry_at(0))["py"]
+    base = in_child(entry_at)
     for f in load_set("adv-interp"):
         if f.path.name[4:].startswith("depth-"):
             continue
         for descent in (DESCENT, 0):
             deepest = in_child(lambda: max_depth(str(f.path), f.password, descent))
-            entries, first, digests = [], None, []
-            # k such that the frame at `deepest` below the body is the first
-            # past the limit (shift 0), then one frame higher each time
+            frames, first, digests = [], None, []
+            # a frame r below the body runs at base["py"] + r + n + 2: n such
+            # that the frame at `deepest` is the first past the limit (shift
+            # 0), then one frame higher each time, down to page_layout's own
+            # frame without descent
             for shift in range(-1, SWEEP if descent else deepest):
-                k = LIMIT + 1 - base - deepest + shift
-                if k < 0:
+                n = LIMIT - 1 - base["py"] - deepest + shift
+                if n < 0:
                     continue
-                entry, text = in_child(lambda: traced_from(str(f.path), f.password, k, descent))
-                entries.append(entry)
+                text = in_child(lambda: traced_from(str(f.path), f.password, n, descent))
+                frames.append(n)
                 if first is None:
                     first = text
                 digests.append(hashlib.sha256(text.encode("ascii")).hexdigest())
-            yield [f.path.name, f.path.read_bytes(), f.password, descent, entries], [first, digests]
+            yield [f.path.name, f.path.read_bytes(), f.password, descent, base, frames], [first, digests]
 
 
 #: Names given to ``get_cmap``: identity CMaps (made, not loaded), predefined
