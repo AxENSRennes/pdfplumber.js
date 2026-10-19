@@ -479,7 +479,7 @@ pub fn literal_name(x: &PDFObject) -> PyResult<String> {
 /// `RecursionError` for an object nested one level less deep (a `Tf`, `Do`,
 /// `CS`/`cs` operand, a `/ColorSpace` resource, a dict key of the parsers).
 pub static LITERAL_NAME_STR: pycompat::specialize::CallSite =
-    pycompat::specialize::CallSite::new("pdfminer/psparser.py:121 literal_name str(x)");
+    pycompat::specialize::CallSite::new("psparser.literal_name str(x)");
 
 /// Result of [`keyword_name`]: Python returns either a `str` or, for a
 /// non-keyword with `STRICT = False`, the object itself.

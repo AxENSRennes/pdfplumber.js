@@ -86,7 +86,7 @@ def _call_sites() -> dict[str, tuple[Any, int, tuple]]:
     line of the call, arguments that run it)``."""
     from pdfminer.psparser import literal_name
 
-    return {"pdfminer/psparser.py:121 literal_name str(x)": (literal_name, 121, (0,))}
+    return {"psparser.literal_name str(x)": (literal_name, 121, (0,))}
 
 
 def executed_call_sites() -> list[str]:

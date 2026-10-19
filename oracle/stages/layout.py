@@ -41,7 +41,13 @@ the boxes and groups of the result (``ids``, the keying of
 smallest raw index of its chars and its number of boxes, ``rank`` the order
 of the ids). ``oracle.verify`` hands the oracle's trace to ``pdftrace``
 (``ORACLE_INPUT``), which analyzes with these ids (an injected
-``IdSource``) and writes the ``ids`` of its own result.
+``IdSource``) and writes the ``ids`` of its own result. The ids are memory
+addresses: the hash seed and every allocation of the process move them, so
+on pages with such ties the analysis is a draw that differs from one run of
+the stage to the next (and from ``pdfplumber.open(f, laparams={})``, which
+allocates differently: no raw dump before the analysis); parity holds for
+whichever draw the cache holds, and the trace is not reproducible across
+cache builds (``docs/architecture.md``, "Statistique ``CreationOrder``").
 
 Raw objects are numbered depth-first in ``_objs`` order (figures before
 their contents), from 0: the raw index. A raw object is written as its

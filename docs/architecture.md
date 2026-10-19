@@ -957,7 +957,13 @@ extractions (`fonts_report`, `font_case`). Ensuite :
     `process_page`, peu profond ; `laparams=None`), `paint_path` et
     `render_image` (aucune exception hors `RecursionError` pour des points
     numériques, et la frontière de `layout` sur `depth-subpaths` est celle
-    d'`interp_text`, donc `paint_path` ne la décide pas). Les non
+    d'`interp_text`, donc `paint_path` ne la décide pas). **Faux pour
+    `paint_path`** (revue) : `depth-subpaths` dessine la dernière Form
+    depuis la page avant la chaîne, ce qui compile le motif de
+    `re.finditer` à faible profondeur ; sur `depth-subpaths-first`, où la
+    première compilation est au bas de la chaîne, `fonts` et `layout`
+    échouent un niveau avant `interp_text`, et le mutant est tué (« Corrections
+    de la revue »). Les non
     compilables aux types sans `Default` remplacés à la main par une valeur
     (`render_char` de `FontsDevice` et de `TracingDevice` → `0.0`, `1.0`,
     `traced_render_char` → `0.0`, `page_layout` sans `process_page`) : 5
@@ -1027,6 +1033,28 @@ de la revue sous `/tmp/claude-review-w3-*`) :
   le contraire, est corrigée).
 - **Statistique `CreationOrder`** : refaite avec la variation de Python
   lui-même (ci-dessous).
+- **Mutants à la main repassés** contre les nouvelles fenêtres (`climit-*`,
+  `depth-subpaths-first`, `depth-subpaths-compiled`, rejeu `interp_unit`
+  `stage_traces` restreint à elles, `INTERP_ONLY`) : chaque survivant de la
+  jonction qui ne retire que des unités C (`eval_entry`, `class_call`,
+  `class_call_leaf`, `c_called_leaf` de `pdfinterp`, `pdfdevice`,
+  `converter`, `layout`, `page.rs`, `pdfinternals`), les cadres du chemin
+  de `paint_path` de pdfplumber (`converter::paint_path`,
+  `marked_content::paint_path`, `tag_cur_item`, le corps de
+  `PDFDevice.paint_path`) et le survivant de la passe `Ok(..)`
+  `FontsDevice::paint_path` : 31 mutants, 2 tués (`func(*args)`
+  d'`execute`, par `climit-tf-list-9994` : ses unités sont tenues pendant
+  le `str()` de l'opérande de `do_Tf` comme pendant toute Form imbriquée ;
+  `FontsDevice::paint_path` → `Ok(())`, par `depth-subpaths-first-326` de
+  `fonts`), 29 survivants. Ceux-ci restent équivalents : leurs unités ne
+  sont tenues que le temps d'un constructeur ou d'un appel au
+  périphérique, sous lequel aucun `repr` récursif ne s'exécute (le
+  `repr`/`str` d'un opérande profond a lieu dans le parseur ou dans
+  l'opérateur, avant), et les unités en cours y restent à trois au plus
+  par cadre Python, loin des 10 000 ; les cadres de `paint_path` et de
+  `tag_cur_item` sont dominés (« Chantier CONVERTER », cadres dominés : la
+  compilation du motif, huit cadres plus bas, ou la méthode de `super()`
+  au même niveau passent avant).
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 
