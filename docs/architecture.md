@@ -1083,6 +1083,33 @@ de la revue sous `/tmp/claude-review-w3-*`) :
   `tag_cur_item` sont dominés (« Chantier CONVERTER », cadres dominés : la
   compilation du motif, huit cadres plus bas, ou la méthode de `super()`
   au même niveau passent avant).
+- **Parité** (code final, `oracle.verify --timeout 600`, caches de
+  l'oracle reconstruits : `oracle/stages/__init__.py`, `oracle/depth.py`
+  et `layout.py` ont changé) : `interp`, `fonts`, `layout` identiques sur
+  `all` (1 853 chacune) ; `interp_text`, `fonts_text`, `interp`, `fonts`,
+  `layout` sur `adv-interp` (353 : 279 et les fenêtres `climit-*`,
+  `depth-subpaths-first`, `depth-subpaths-compiled`) ; `interp`, `fonts`,
+  `layout` sur `adv-pages` (285) et `adv-objects` (333) ; régression
+  `psparser`, `objects`, `streams`, `pages` sur `quick` (150). Toutes les
+  données unitaires régénérées (`oracle/depth.py` est dans les sources de
+  chaque générateur), tous les rejeux identiques.
+- **Mutations** (`--profile mutants`, `-j 1`, `heavy.sh` ; diff
+  `e226e54..wave3/fix` de `specialize.rs`, `logging.rs`, `re_cache.rs`,
+  `psparser.rs`, `cmapdb.rs`, `process_state.rs`, `py_process.rs`,
+  `common.rs`, `wasm/src/ops.rs` ; rejeux `--lib`, `pdftypes_unit`,
+  `psparser_unit`, `cmaps_unit`, `lazy_cmap`, `interp_unit`,
+  `document_unit`, `js_runtime_unit`) : passe ordinaire 57 mutants, 34
+  tués, 19 non compilables, 4 survivants (`py_symbols_restore` et
+  `logging::restore` rendus vides, `PyProcess::from_value` rendu par
+  défaut ou cherchant le site par `!=`), tués après l'ajout des tests
+  unitaires de `process_state` (chaque partie remise, lue à la profondeur
+  des mêmes appels) et de `py_process` (un état enregistré non vide) : 5
+  mutants repassés, 5 tués ; passe `Ok(..)` : 5 mutants, 4 tués
+  (`literal_name`, `terminated`, `str_call` → `Ok(None)`), 1 non
+  compilable (`Ok(Some(Default::default()))` : `Guard` sans `Default`),
+  remplacé à la main par un site jamais spécialisé (tué par `deep`). Les
+  `build.rs` (la pile Wasm) ne changent rien en natif : c'est
+  `scripts/wasm-depth-gate.sh` qui les vérifie.
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 

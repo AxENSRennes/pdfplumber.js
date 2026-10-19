@@ -265,6 +265,14 @@ Lecture :
   protocole des CMaps paresseuses vérifié à travers l'interpréteur
   (`lazy_cmap`) ; mutations sans survivant non justifié
   (`architecture.md`, « Jonction »).
+  Revue (`wave3/fix`) : premier `str(x)` d'un processus (spécialisation
+  de CPython) modélisé, pile Wasm de 8 Mio vérifiée par une porte au
+  profil `dist`, état du processus remis après un appel nul des CMaps
+  paresseuses, fenêtres adverses `climit-*` et `depth-subpaths-first`,
+  statistique `CreationOrder` rapportée à la variation de Python ; la
+  référence reste la journalisation de pdfminer coupée (écart documenté
+  avec la configuration par défaut) ; parité identique partout
+  (`architecture.md`, « Corrections de la revue »).
 - **Vagues suivantes**, dans l'ordre des dépendances :
   1. `pdfinterp`, `pdfdevice`, `converter` (`PDFPageAggregator` vers
      `layout`) : étapes `fonts`, `interp`, `layout` (comptage des cadres de

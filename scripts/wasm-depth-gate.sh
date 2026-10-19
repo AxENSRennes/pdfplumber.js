@@ -46,17 +46,22 @@ gate() {
     status=1
     return
   fi
-  mkdir -p "$work/$stage-$set/native" "$work/$stage-$set/wasm"
-  "$native" --stage "$stage" --out "$work/$stage-$set/native" "${files[@]}" >/dev/null
-  if ! node --no-warnings "$ROOT/scripts/wasi-runner.mjs" "$wasm" --stage "$stage" --out "$work/$stage-$set/wasm" \
-    "${files[@]}" >/dev/null 2>"$work/$stage-$set/err"; then
-    echo "wasm-depth-gate: $stage on $set: the dist wasm failed" >&2
-    head -c 2000 "$work/$stage-$set/err" >&2
-    status=1
-    return
-  fi
-  rm -f "$work/$stage-$set"/{native,wasm}/_times.tsv
-  if diff -rq "$work/$stage-$set/native" "$work/$stage-$set/wasm" >&2; then
+  # one file per run, on stdout (`--out` names its temporary files with
+  # the process id, which WASI does not have)
+  local f bad=0
+  for f in "${files[@]}"; do
+    "$native" --stage "$stage" "$f" >"$work/native.txt"
+    if ! node --no-warnings "$ROOT/scripts/wasi-runner.mjs" "$wasm" --stage "$stage" "$f" \
+      >"$work/wasm.txt" 2>"$work/err"; then
+      echo "wasm-depth-gate: $stage on $(basename "$f"): the dist wasm failed" >&2
+      head -c 2000 "$work/err" >&2
+      bad=$((bad + 1))
+    elif ! cmp -s "$work/native.txt" "$work/wasm.txt"; then
+      echo "wasm-depth-gate: $stage on $(basename "$f"): the dist wasm's trace differs from the native one" >&2
+      bad=$((bad + 1))
+    fi
+  done
+  if [[ $bad -eq 0 ]]; then
     echo "wasm-depth-gate: $stage on $set: ${#files[@]} files, dist wasm = native"
   else
     status=1
