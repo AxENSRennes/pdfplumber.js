@@ -836,7 +836,10 @@ extractions (`fonts_report`, `font_case`). Ensuite :
   vague appelait `adv-content` est `adv-interp`.)
 - **Rejeux** : `interp_unit` 3 165 traces d'étapes (contre 1 266 avant la
   jonction), `deep_sweeps` et `get_cmap` identiques ; `lazy_cmap` ; les
-  autres rejeux par `scripts/check.sh` (natif et `wasm32-wasip1`).
+  autres rejeux par `scripts/check.sh`, vert sur le code final (natif et
+  `wasm32-wasip1`, `converter_unit` avec son corpus : 366 s et 392 s ;
+  construction JS et Wasm, tests Node, budget de taille, 45 auto-tests de
+  l'oracle).
 - **Statistique `CreationOrder`** (l'étape `layout` sans `--oracle-dir`,
   comparée page à page à la trace de Python, lignes `ids` exclues) : sur
   les 3 659 pages des 20 premières pages de `all`, 3 425 identiques
