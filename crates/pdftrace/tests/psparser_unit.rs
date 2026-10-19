@@ -111,6 +111,9 @@ fn replay(corpus: &str, min_jobs: usize) {
 
 #[test]
 fn adversarial_corpus() {
+    // the generator ran literal_name's str(x) before the first job
+    // (warm_call_sites): its deep dict keys see the specialized call
+    pycompat::specialize::set_executed(pdfminer::psparser::LITERAL_NAME_STR.name, true);
     replay("fuzz", 4000);
 }
 

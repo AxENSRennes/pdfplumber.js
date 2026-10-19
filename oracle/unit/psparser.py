@@ -52,6 +52,7 @@ from pdfminer.psparser import LIT
 
 from ..canon import canon
 from ..corpus import load_set
+from ..depth import warm_call_sites
 from ..stages._common import open_document
 from ._common import depth_here, oracle_sources, require_oracle_python, unit_dir, write_meta
 
@@ -348,6 +349,10 @@ def main() -> None:
         return
 
     if args.fuzz:
+        # literal_name's str(x) specialized before the first job: the deep
+        # dict keys of fixed_jobs see the cost of every execution but the
+        # first (the replay sets the same state, psparser_unit.rs)
+        warm_call_sites()
         rng = random.Random(args.seed)
         records, payload = [], []
         for k in range(args.fuzz):

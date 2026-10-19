@@ -22,6 +22,8 @@
 //! - [`logging`]: the Python frames of a `logging` call (`Logger._cache`).
 //! - [`re_cache`]: the Python frames of a call into `re` (its cache of
 //!   compiled patterns).
+//! - [`specialize`]: the C unit a call site takes until the adaptive
+//!   interpreter specializes it (first `str(x)` of a process).
 //! - [`memory`]: whether an allocation CPython would make succeeds (`MemoryError`).
 //! - [`recursion`]: CPython's two recursion limits (Python frames, C
 //!   units), counted where the ported code recurses.
@@ -54,6 +56,7 @@ pub mod pystr;
 pub mod re_cache;
 pub mod recursion;
 pub mod repr;
+pub mod specialize;
 pub mod text;
 mod unicode_tables;
 pub mod unicodedata;

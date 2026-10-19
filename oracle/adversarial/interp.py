@@ -58,7 +58,16 @@ and what they call):
   stream drawn as a form), content arrays with broken members;
 - ``depth-*`` (``cases_depth``): chains of nested Form XObjects around the
   first nesting depth at which Python raises ``RecursionError`` in each
-  checked stage, the deepest point being each time another path.
+  checked stage, the deepest point being each time another path;
+- ``climit-*`` (``cases_climit``): operands nested around the depth at
+  which Python runs out of C recursion units, each window bisected on the
+  oracle for each checked stage: ``str()`` of a ``Tf``, ``Do``, ``CS``/``cs``
+  operand and of a ``/ColorSpace`` resource (``literal_name``, whose first
+  ``str(x)`` in a process takes one unit more: the ``-2pages`` variants
+  repeat the page, the second running the specialized call), and the
+  ``repr()`` of an inline image's or a dictionary's odd entries (the
+  ``PSSyntaxError`` message) at the bottom of chains of nested Form
+  XObjects, whose ``func(*args)`` entries hold two units per level.
 """
 
 from __future__ import annotations
@@ -673,11 +682,12 @@ def cases_xobjects() -> list[Case]:
 
 
 def form_chain(n: int, deepest: bytes, deepest_res: dict | None = None, link: bytes = b"/X Do",
-               cycle: bool = False, precache: int = 4) -> bytes:
+               cycle: bool = False, precache: int = 4, page_prefix: bytes = b"") -> bytes:
     """A page drawing form 1, which draws form 2, ... down to form ``n``,
     whose content is ``deepest`` (with ``deepest_res``); each form draws
     the next with ``link``. ``cycle``: the deepest form also draws the
-    first one (refused as circular).
+    first one (refused as circular). ``page_prefix``: what the page's
+    content does first.
 
     The page first draws form ``n - precache`` (and so the last forms) at
     its own depth: their objects are then in the document's cache and their
@@ -704,7 +714,7 @@ def form_chain(n: int, deepest: bytes, deepest_res: dict | None = None, link: by
     if 0 < precache < n:
         xobjects["Pre"] = refs[n - 1 - precache]
         content = b"/Pre Do " + content
-    b.page(content, {"XObject": xobjects, "Font": {"F1": font}})
+    b.page(page_prefix + content, {"XObject": xobjects, "Font": {"F1": font}})
     return b.build()
 
 
@@ -766,6 +776,13 @@ def depth_kinds() -> dict[str, Any]:
         "image-xobject": lambda n: form_chain(n, b"/Im Do", lambda b: {"XObject": {"Im": b.stream(
             b"\x00", Subtype=Name("Image"), Width=1, Height=1)}}),
         "subpaths": lambda n: form_chain(n, b"0 0 m 5 5 l 6 6 m 7 7 l S"),
+        # pdfplumber's paint_path at the deepest point (the forms not
+        # precached, whose content would paint first): the first
+        # re.finditer of the process compiles its pattern there ...
+        "subpaths-first": lambda n: form_chain(n, b"0 0 m 5 5 l 6 6 m 7 7 l S", precache=0),
+        # ... or the page compiled it first
+        "subpaths-compiled": lambda n: form_chain(n, b"0 0 m 5 5 l 6 6 m 7 7 l S", precache=0,
+                                                  page_prefix=b"0 0 m 1 1 l 2 2 m 3 3 l S "),
         "state": lambda n: form_chain(n, b"q 2 0 0 2 0 0 cm 1 w Q"),
         "color": lambda n: form_chain(n, b"/Pattern cs /P scn 0.1 0.2 0.3 /P scn"),
         "color-sc": lambda n: form_chain(n, b"/DeviceRGB cs 0.1 0.2 0.3 sc (x) 0.2 0.3 sc /DeviceCMYK CS 1 2 3 SC"),
@@ -827,19 +844,72 @@ def cases_depth() -> list[Case]:
     return out
 
 
+def nested_array(n: int, leaf: bytes = b"") -> bytes:
+    return b"[" * n + leaf + b"]" * n
+
+
+def nested_dict(n: int) -> bytes:
+    return b"<< /a " * n + b"1" + b" >>" * n
+
+
+def climit_kinds() -> dict[str, Any]:
+    """The documents of ``cases_climit``, by kind, from the nesting ``n``."""
+    show = b" (a) Tj ET 0 0 m 1 1 l S"
+    kinds: dict[str, Any] = {
+        # str() of the operand (literal_name), the first of the process
+        "tf-list": lambda n: one_page(b"BT " + nested_array(n) + b" 10 Tf" + show),
+        "tf-dict": lambda n: one_page(b"BT " + nested_dict(n) + b" 10 Tf" + show),
+        "do-list": lambda n: one_page(nested_array(n) + b" Do 0 0 m 1 1 l S"),
+        "cs-list": lambda n: one_page(nested_array(n) + b" cs 0 0 m 1 1 l S"),
+        "CS-list": lambda n: one_page(nested_array(n) + b" CS 0 0 m 1 1 l S"),
+        "colorspace-resource": lambda n: one_page(b"/C cs 0 0 m 1 1 l S", {"ColorSpace": {"C": [Raw(nested_array(n))]}}),
+        # the same page twice: the second str() is the specialized call
+        "tf-list-2pages": lambda n: pages_doc([b"BT " + nested_array(n) + b" 10 Tf" + show] * 2),
+        "do-list-2pages": lambda n: pages_doc([nested_array(n) + b" Do 0 0 m 1 1 l S"] * 2),
+    }
+    # repr() of the odd entries in the PSSyntaxError message, below chains
+    # of nested Form XObjects (two C units per level: func(*args) of do_Do)
+    image = lambda n: b"BI /W 1 /H " + nested_array(n, b"1") + b" /X ID \x00 EI\n"  # noqa: E731
+    odd_dict = lambda n: b"<< /A " + nested_array(n) + b" /B >> 0 0 m 1 1 l S"  # noqa: E731
+    for d in (0, 1, 50, 300):
+        for name, content in (("inline-odd", image), ("dict-odd", odd_dict)):
+            if d == 0:
+                kinds[f"{name}-0"] = lambda n, content=content: one_page(content(n))
+            else:
+                kinds[f"{name}-{d}"] = lambda n, content=content, d=d: form_chain(d, content(n), precache=0)
+    return kinds
+
+
+def cases_climit() -> list[Case]:
+    out: list[Case] = []
+    for label, make in climit_kinds().items():
+        levels: set[int] = set()
+        bounds = []
+        for stage in DEPTH_STAGES:
+            first = first_failing(stage, make, lo=8000, hi=10100)
+            bounds.append(f"{stage} {first}")
+            levels.update(range(first - 2, first + 2))
+        print(f"climit-{label}: first failing " + ", ".join(bounds), file=sys.stderr)
+        for n in sorted(levels):
+            out.append((f"climit-{label}-{n}", make(n), None))
+    return out
+
+
 def generate(depth: bool = True) -> None:
-    """Writes the corpus (``depth=False``: without ``cases_depth``)."""
+    """Writes the corpus (``depth=False``: without ``cases_depth`` and
+    ``cases_climit``)."""
     cases = (cases_operators() + cases_text() + cases_fonts() + cases_colors() + cases_paths() + cases_inline()
              + cases_marked() + cases_xobjects())
     if depth:
-        cases += cases_depth()
+        cases += cases_depth() + cases_climit()
     write_corpus("interp", cases)
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--no-depth", action="store_true",
-                    help="skip cases_depth (minutes of bisection): a corpus for development, not the reference one")
+                    help="skip cases_depth and cases_climit (minutes of bisection): a corpus for development, "
+                         "not the reference one")
     generate(depth=not ap.parse_args().no_depth)
 
 

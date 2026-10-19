@@ -431,8 +431,9 @@ pub static KEYWORD_DICT_END: LazyLock<PSKeyword> = LazyLock::new(|| KWD(b">>"));
 /// `literal_name(x)` with `settings.STRICT = False`: the literal's name as a
 /// `str` (a `bytes` name is decoded as UTF-8, or else written as its repr),
 /// and `str(x)` for any other object, which raises `RecursionError` for an
-/// object nested too deep (see `pdftypes`, "Depth"). Takes its Python
-/// frame.
+/// object nested too deep (see `pdftypes`, "Depth"; one level less deep the
+/// first time a process runs that `str(x)`, [`LITERAL_NAME_STR`]). Takes its
+/// Python frame.
 pub fn literal_name(x: &PDFObject) -> PyResult<String> {
     let _frame = py_frame()?;
     if let PDFObject::Literal(lit) = x {
@@ -451,8 +452,19 @@ pub fn literal_name(x: &PDFObject) -> PyResult<String> {
     if settings::STRICT {
         unreachable!("settings.STRICT is False");
     }
+    // `return str(x)`: one C unit more the first time the process runs it
+    let _call = LITERAL_NAME_STR.str_call()?;
     x.py_str()
 }
+
+// pdfminer/psparser.py:110 literal_name
+/// The call site of `return str(x)` in `literal_name` (psparser.py:121),
+/// whose first execution in a process takes one C unit more
+/// (`pycompat::specialize`): the first non-literal `literal_name` raises
+/// `RecursionError` for an object nested one level less deep (a `Tf`, `Do`,
+/// `CS`/`cs` operand, a `/ColorSpace` resource, a dict key of the parsers).
+pub static LITERAL_NAME_STR: pycompat::specialize::CallSite =
+    pycompat::specialize::CallSite::new("pdfminer/psparser.py:121 literal_name str(x)");
 
 /// Result of [`keyword_name`]: Python returns either a `str` or, for a
 /// non-keyword with `STRICT = False`, the object itself.

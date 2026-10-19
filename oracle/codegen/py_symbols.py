@@ -18,6 +18,10 @@ the process starts with:
   S`` (``oracle.trace`` and the stage module), the process in which the
   oracle computes every trace (``oracle/cache.py``).
 
+It also checks that these imports execute none of the call sites whose
+first execution takes one C unit more (``oracle.depth.executed_call_sites``):
+the port starts every process with none executed (``pycompat::specialize``).
+
 Each set is read from a fresh interpreter. ``--check`` exits 1 if a file is
 not what this script generates (``scripts/check.sh`` runs it).
 """
@@ -41,7 +45,8 @@ import json, sys
 from pdfminer.psparser import PSKeywordTable, PSLiteralTable
 lits = [[isinstance(k, bytes), k.hex() if isinstance(k, bytes) else k] for k in PSLiteralTable.dict]
 kwds = [k.hex() for k in PSKeywordTable.dict]
-json.dump({{"literals": lits, "keywords": kwds}}, sys.stdout)
+from oracle.depth import executed_call_sites
+json.dump({{"literals": lits, "keywords": kwds, "call_sites": executed_call_sites()}}, sys.stdout)
 """
 
 
@@ -54,7 +59,12 @@ def interned(imports: str) -> dict:
         check=True,
         timeout=120,
     )
-    return json.loads(out.stdout)
+    table = json.loads(out.stdout)
+    # the port starts every process with no call site executed
+    # (pdftrace::stages::py_process::start, pycompat::specialize::reset)
+    if table["call_sites"]:
+        raise RuntimeError(f"{imports!r} executes call sites the port assumes fresh: {table['call_sites']}")
+    return table
 
 
 def stage_names() -> list[str]:

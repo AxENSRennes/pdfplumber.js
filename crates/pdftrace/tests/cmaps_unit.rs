@@ -615,6 +615,9 @@ fn parse_job(a: &[Value]) -> Value {
 
 #[test]
 fn parse_adversarial() {
+    // the generator ran literal_name's str(x) before the first job
+    // (warm_call_sites): its deep def keys see the specialized call
+    pycompat::specialize::set_executed(pdfminer::psparser::LITERAL_NAME_STR.name, true);
     let data = open();
     replay_canon(&data, "parse", 3000, parse_job);
 }

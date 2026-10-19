@@ -27,7 +27,7 @@ Every trace runs in a fresh stage thread, from the stage entry depth, as
 one for that trace alone (``in_child``): as each trace of ``oracle.verify``
 runs in a new process, no trace sees what another one left in the
 process-wide state that decides how deep a call goes (the symbols interned
-so far). ``py_process.jsonl`` records that state as the
+so far, the call sites executed). ``py_process.jsonl`` records that state as the
 children start (``process_state``); the replay starts each trace from it
 (``pdftrace::stages::py_process``).
 
@@ -221,13 +221,18 @@ def in_child(fn: Callable[[], Any]) -> Any:
 
 def process_state() -> dict[str, Any]:
     """What a child forked now starts with: the names of the interned
-    literals (``str`` or ``bytes``) and keywords."""
+    literals (``str`` or ``bytes``) and keywords, and the call sites the
+    adaptive interpreter has executed (``oracle.depth.executed_call_sites``:
+    the first ``str(x)`` of ``literal_name`` takes one C unit more)."""
     from pdfminer.psparser import PSKeywordTable, PSLiteralTable
+
+    from ..depth import executed_call_sites
 
     return {
         "literals": sorted(k for k in PSLiteralTable.dict if isinstance(k, str)),
         "bytes_literals": sorted(k for k in PSLiteralTable.dict if isinstance(k, bytes)),
         "keywords": sorted(PSKeywordTable.dict),
+        "call_sites": executed_call_sites(),
     }
 
 

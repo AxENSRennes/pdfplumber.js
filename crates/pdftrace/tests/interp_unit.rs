@@ -61,23 +61,8 @@ fn open(module: &str) -> UnitData {
 /// (`process_state` of `oracle/unit/document.py`).
 fn generator_process(data: &UnitData) -> PyProcess {
     let cases = data.cases("py_process");
-    let [(_, Value::Dict(items))] = &cases[..] else { panic!("one process state") };
-    let get = |name: &str| {
-        items.iter().find(|(k, _)| k.as_str() == Some(name)).map(|(_, v)| v).unwrap_or_else(|| panic!("{name}"))
-    };
-    let list = |name: &str| match get(name) {
-        Value::List(l) => l.clone(),
-        other => panic!("{name}: {other:?}"),
-    };
-    let bytes = |v: &Value| match v {
-        Value::Bytes(b) => b.clone(),
-        other => panic!("bytes: {other:?}"),
-    };
-    PyProcess {
-        literals: list("literals").iter().map(|v| v.as_str().expect("a str name").to_owned()).collect(),
-        bytes_literals: list("bytes_literals").iter().map(bytes).collect(),
-        keywords: list("keywords").iter().map(bytes).collect(),
-    }
+    let [(_, state)] = &cases[..] else { panic!("one process state") };
+    PyProcess::from_value(state)
 }
 
 /// The `{"py": .., "c_left": ..}` depth of a case.

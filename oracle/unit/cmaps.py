@@ -81,6 +81,7 @@ from pdfminer.psparser import KWD, LIT
 from ..canon import canon
 from ..codegen import cmaps as codegen_cmaps
 from ..corpus import cache_dir, load_set
+from ..depth import warm_call_sites
 from ..stages._common import open_document
 from ._common import depth_here, oracle_sources, require_oracle_python, unit_dir, write_cases, write_meta
 
@@ -697,6 +698,10 @@ def fixed_jobs():
 
 
 def parse_cases(n_fuzz, seed):
+    # literal_name's str(x) specialized before the first job: the deep def
+    # keys of fixed_jobs see the cost of every execution but the first (the
+    # replay sets the same state, cmaps_unit.rs)
+    warm_call_sites()
     rng = random.Random(seed)
     jobs = [fuzz_job(rng) for _ in range(n_fuzz)] + list(fixed_jobs())
     for target, data in jobs:
