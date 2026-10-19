@@ -66,7 +66,7 @@
 use std::rc::Rc;
 
 use pycompat::logging::Logger;
-use pycompat::recursion::{c_called_leaf, eval_entry, leaf, py_frame};
+use pycompat::recursion::{c_called_leaf, leaf, py_frame};
 use pycompat::{exc, Num, PyInt, PyResult};
 
 use crate::pdfcolor::PDFColorSpace;
@@ -272,14 +272,6 @@ pub mod device {
     pub fn init(rsrcmgr: Rc<PDFResourceManager>) -> PyResult<PDFDeviceAttrs> {
         leaf(1)?;
         Ok(PDFDeviceAttrs::new(rsrcmgr))
-    }
-
-    /// The class call `PDFDevice(rsrcmgr)` (or of a subclass that does not
-    /// override `__init__`): the evaluation loop entry and the frame of
-    /// `__init__`.
-    pub fn new(rsrcmgr: Rc<PDFResourceManager>) -> PyResult<PDFDeviceAttrs> {
-        let _entry = eval_entry()?;
-        init(rsrcmgr)
     }
 
     // pdfminer/pdfdevice.py:48 PDFDevice.close
