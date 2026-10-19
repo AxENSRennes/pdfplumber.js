@@ -52,3 +52,68 @@ impl ProcessState {
         CMapDB::restore_caches(self.cmaps);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use pycompat::logging::Logger;
+    use pycompat::recursion::{with_depth, Depth, C_RECURSION_LIMIT, PY_RECURSION_LIMIT};
+    use pycompat::specialize::CallSite;
+
+    use super::*;
+    use crate::cmapdb::CMapProvider;
+    use crate::psparser::{py_intern, Symbol, LIT};
+
+    static LOG: Logger = Logger::new("process_state.test");
+    static SITE: CallSite = CallSite::new("process_state.test str(x)");
+    const PATTERN: &str = "process_state test";
+
+    /// Serves a compact horizontal CMap with an empty `CODE2CID` for every
+    /// name.
+    struct Empty;
+    impl CMapProvider for Empty {
+        fn load(&self, _name: &str) -> Option<Vec<u8>> {
+            Some(b"PMCM\x01\x02\x0bIS_VERTICALB\x00\x08CODE2CIDC\x00".to_vec())
+        }
+    }
+
+    /// Whether each part of the state holds what `done_once` did, read from
+    /// how deep the same calls go (one frame or unit more the first time)
+    /// and from `CMapDB`'s cache.
+    fn parts_done(symbol: Symbol) -> [bool; 5] {
+        let at = |py: u32, c: u32, f: &mut dyn FnMut() -> bool| with_depth(Depth { py, c }, f);
+        [
+            at(PY_RECURSION_LIMIT - 1, 0, &mut || py_intern(symbol).is_ok()),
+            at(PY_RECURSION_LIMIT - 2, 0, &mut || LOG.warning().is_ok()),
+            at(PY_RECURSION_LIMIT - 3, 0, &mut || pycompat::re_cache::compile_frames(PATTERN, 5).is_ok()),
+            at(0, C_RECURSION_LIMIT, &mut || SITE.str_call().is_ok()),
+            CMapDB::caches_snapshot().names().0 == ["process_state test"],
+        ]
+    }
+
+    #[test]
+    fn restore_puts_back_every_part() {
+        CMapDB::set_provider(Some(Rc::new(Empty)));
+        let symbol = Symbol::Literal(LIT("process_state test"));
+        let fresh = ProcessState::capture();
+        // each done once, shallow
+        let done_once = || {
+            py_intern(symbol).unwrap();
+            LOG.warning().unwrap();
+            pycompat::re_cache::compile_frames(PATTERN, 5).unwrap();
+            drop(SITE.str_call().unwrap());
+            CMapDB::get_cmap("process_state test").unwrap();
+        };
+        done_once();
+        let done = ProcessState::capture();
+        fresh.clone().restore();
+        assert_eq!(parts_done(symbol), [false; 5], "the fresh state, every part");
+        // (parts_done did them, at depth, failing: still not done but for
+        // the call site, executed even when its call raises)
+        fresh.restore();
+        done.restore();
+        assert_eq!(parts_done(symbol), [true; 5], "the state after them, every part");
+        CMapDB::clear_provider();
+    }
+}

@@ -258,7 +258,9 @@ Lecture :
   et `layout` identiques à Python sur `all` (1 853, 20 premières pages),
   `adv-interp` (279), `adv-pages` (285), `adv-objects` (333), avec
   l'ordre des `id()` de la trace Python ; `CreationOrder` seul donne le
-  résultat de Python sur 93,6 % des pages de `all` ; `pdftrace` 5,3 fois
+  résultat de Python sur 98,6 % des pages de `all` où Python est stable
+  d'une exécution à l'autre (Python lui-même change d'analyse sur 10,6 %
+  des pages à deux boîtes ou plus : les `id()` sont des adresses) ; `pdftrace` 5,3 fois
   plus rapide que Python par page hors démarrage (54 ms contre 288 ms) ;
   protocole des CMaps paresseuses vérifié à travers l'interpréteur
   (`lazy_cmap`) ; mutations sans survivant non justifié

@@ -891,14 +891,42 @@ extractions (`fonts_report`, `font_case`). Ensuite :
   construction JS et Wasm, tests Node, budget de taille, 45 auto-tests de
   l'oracle).
 - **Statistique `CreationOrder`** (l'étape `layout` sans `--oracle-dir`,
-  comparée page à page à la trace de Python, lignes `ids` exclues) : sur
-  les 3 659 pages des 20 premières pages de `all`, 3 425 identiques
-  (93,6 %) ; 1 756 fichiers sur 1 853 (94,8 %). Parmi les 2 208 pages dont
-  l'analyse classe au moins deux boîtes ou groupes (ligne `ids` à deux
-  entrées ou plus), 1 974 (89,4 %). Les 234 autres pages ont des paires à
-  égale distance que l'ordre des `id()` de Python départage autrement.
-  C'est une statistique, pas un critère de parité : la bibliothèque et
-  l'API JS gardent `CreationOrder`.
+  comparée page à page à la trace de Python, lignes `ids` exclues). Python
+  ne s'accorde pas avec lui-même : sur une page où des boîtes sont à égale
+  distance, l'ordre des `id()` (des adresses, que la graine de hachage et
+  les allocations du processus déplacent) change d'une exécution à
+  l'autre, et l'analyse avec lui. Mesure de la revue (`wave3/fix`, code
+  final ; cache de l'oracle reconstruit, plus trois exécutions de l'étape
+  Python avec `PYTHONHASHSEED` = 1, 2, 3, chacune dans un processus neuf ;
+  les rangs des `ids` comptés dans le bloc de leur page, et non plus en
+  appariant la k-ième ligne `ids` du fichier à sa k-ième page, ce qui
+  décalait les pages d'un fichier dont une page avait levé avant son
+  analyse, `poppler-90-0-fuzzed.pdf`) : sur les 3 659 pages des 20
+  premières pages de `all`, 2 208 classent au moins deux boîtes ou groupes
+  (ligne `ids` à deux entrées ou plus) ; 3 642 pages ont les quatre tirages
+  (les 17 autres, de 14 fichiers à mot de passe, un seul) :
+  - Python est stable sur ses quatre tirages pour 3 409 pages (93,6 %) :
+    toutes les 1 437 pages à moins de deux boîtes, et 1 972 des 2 205 pages
+    à deux boîtes ou plus (89,4 %) ; les 233 autres (10,6 %) donnent deux
+    (122), trois (38) ou quatre (73) analyses différentes ;
+  - sur les pages stables, `CreationOrder` donne le résultat de Python sur
+    3 362 (98,6 % ; 1 925 des 1 972 à deux boîtes ou plus, 97,6 %) ;
+  - sur les 233 pages instables, il donne l'un des tirages de Python sur
+    124 (53 %) ;
+  - contre le seul tirage du cache (ce que mesurait la jonction) : 3 436
+    pages identiques sur 3 659 (93,9 %), 1 985 des 2 208 à deux boîtes ou
+    plus (89,9 %), 1 759 fichiers sur 1 853 ; la jonction trouvait 93,6 %
+    et 89,4 % sur un autre tirage : l'écart est celui de Python avec
+    lui-même.
+
+  Le tirage de référence est celui de l'étape, qui alloue le vidage brut
+  avant l'analyse : il n'est pas celui de `pdfplumber.open(f,
+  laparams={})` (autres allocations), qui varie de même (la revue :
+  4 pages sur 101 instables entre deux processus du flux de pdfplumber,
+  10 entre deux de l'étape, sur 60 fichiers enclins aux égalités). La
+  parité n'en dépend pas : `pdftrace` reçoit le tirage du cache (`ids`). C'est
+  une statistique, pas un critère de parité : la bibliothèque et l'API JS
+  gardent `CreationOrder`.
 - **Temps** (étape `layout`, 20 premières pages de `all`, 1 836 fichiers
   sans mot de passe, 3 640 pages ; Python : `seconds` des constructions du
   cache, un processus par trace, `-j 3` ; Rust : `_times.tsv`, un

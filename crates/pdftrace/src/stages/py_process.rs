@@ -149,3 +149,43 @@ pub fn start() {
     });
     pycompat::re_cache::reset();
 }
+
+#[cfg(test)]
+mod tests {
+    use pdfminer::psparser::{py_intern, LITERAL_NAME_STR};
+    use pycompat::recursion::{with_depth, Depth, PY_RECURSION_LIMIT};
+
+    use super::*;
+
+    #[test]
+    fn a_recorded_state_is_the_state_a_trace_starts_from() {
+        let state = Value::Dict(vec![
+            (Value::str("literals"), Value::List(vec![Value::str("Zz recorded")])),
+            (Value::str("bytes_literals"), Value::List(vec![Value::Bytes(b"\xff\xfe".to_vec())])),
+            (Value::str("keywords"), Value::List(vec![Value::Bytes(b"zzkw".to_vec())])),
+            (Value::str("call_sites"), Value::List(vec![Value::str(LITERAL_NAME_STR.name)])),
+        ]);
+        let process = PyProcess::from_value(&state);
+        assert_eq!(process.literals, ["Zz recorded"]);
+        assert_eq!(process.bytes_literals, [b"\xff\xfe".to_vec()]);
+        assert_eq!(process.keywords, [b"zzkw".to_vec()]);
+        assert_eq!(process.call_sites, [LITERAL_NAME_STR.name]);
+        set(process);
+        start();
+        assert!(LITERAL_NAME_STR.executed());
+        // an interned name takes one frame (no class call) at the limit
+        let last = Depth { py: PY_RECURSION_LIMIT - 1, c: 0 };
+        let recorded = [
+            Symbol::Literal(LIT("Zz recorded")),
+            Symbol::Literal(LIT_bytes(b"\xff\xfe")),
+            Symbol::Keyword(KWD(b"zzkw")),
+        ];
+        for symbol in recorded {
+            assert!(with_depth(last, || py_intern(symbol)).is_ok());
+        }
+        assert!(with_depth(last, || py_intern(Symbol::Literal(LIT("Zz not recorded")))).is_err());
+        set_for_stage("objects");
+        start();
+        assert!(!LITERAL_NAME_STR.executed(), "a new process");
+    }
+}

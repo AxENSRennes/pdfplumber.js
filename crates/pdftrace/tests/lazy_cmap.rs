@@ -17,13 +17,18 @@
 //! - one page showing a Shift-JIS code with a Type 0 font encoded by the
 //!   predefined `90ms-RKSJ-H` (`Adobe-Japan1`, no `/ToUnicode`, so the
 //!   unicode map `to-unicode-Adobe-Japan1` too);
-//! - a page with a chain of nested Form XObjects whose deepest form shows
-//!   the process's first inline image (`get_inline_data`'s `re.sub`
-//!   compiles its pattern there, at depth), then a shallow page with an
-//!   inline image and a Type 0 font encoded by `UniJIS-UCS2-H`: the voided
-//!   run compiles the pattern on its second page, so a re-run that kept
-//!   that state would not fail where the complete run does, at the chain
-//!   lengths around the limit.
+//! - two pages, the first with a chain of nested Form XObjects whose
+//!   deepest form does something for the first time in the process (the
+//!   first inline image: `get_inline_data`'s `re.sub` compiles its pattern;
+//!   a predefined CMap loaded), or with an operand nested near the C limit
+//!   (the first `str(x)` of `literal_name`), the second doing the same,
+//!   shallow, then showing a character with a Type 0 font encoded by
+//!   `UniGB-UCS2-H` (withheld): the voided run does it on its second page,
+//!   so a re-run that kept that state would not fail where the complete run
+//!   does, at the lengths around the limit. (A name interned or a logger's
+//!   first warning at the bottom of such a chain is not its deepest point:
+//!   the unit test of `pdfminer::process_state` checks those parts, and
+//!   every other, directly.)
 //!
 //! The CMaps are those of the `interp` unit data (`cmap_dir` of its
 //! `meta.json`), the provider of the replays.
@@ -35,9 +40,11 @@ use std::rc::Rc;
 
 use pdfminer::cmapdb::{CMapDB, CMapProvider, DirCMapProvider};
 use pdfminer::process_state::ProcessState;
-use pdftrace::stages::{self, py_process, StageInput};
+use pdftrace::stages::common::with_stage_entry;
+use pdftrace::stages::{self, py_process, StageInput, STAGE_ENTRY};
 use pdftrace::typed_json::{self, Json};
 use pdftrace::unit::{cache_dir, UnitData};
+use pycompat::recursion::Depth;
 
 /// A provider that withholds some names as the JavaScript provider does
 /// before they are fetched: it records them, in order, and answers as if
@@ -112,12 +119,34 @@ fn rksj_pdf() -> Vec<u8> {
     ])
 }
 
-/// Page 1: a chain of `n` nested Form XObjects, the deepest showing an
-/// inline image; page 2: an inline image, then `<3042>` with a Type 0 font
-/// encoded by `UniJIS-UCS2-H`.
-fn chain_pdf(n: usize) -> Vec<u8> {
-    const FIRST_FORM: usize = 9;
-    let image = b"BI /W 1 /H 1 ID x EI\n";
+/// The deepest point of page 1 in [`two_pages`]: the content of the
+/// deepest form (or of page 1), its resources and more entries of its
+/// stream dictionary.
+struct Deepest {
+    content: &'static [u8],
+    resources: &'static str,
+    dict: &'static str,
+}
+
+/// Two pages: page 1 draws a chain of `forms` nested Form XObjects whose
+/// deepest one is `deepest` (no form: page 1's content is
+/// `deepest.content`); page 2 has the content `page2` and every font:
+/// `/G`, a Type 0 font encoded by `UniGB-UCS2-H` (the CMap the lazy
+/// provider withholds), `/J`, one encoded by `UniJIS-UCS2-H`, and `/W`, a
+/// Type 1 font without metrics nor descriptor (`PDFFont._parse_bbox`
+/// warns).
+fn two_pages(forms: usize, deepest: &Deepest, page2: &[u8]) -> Vec<u8> {
+    const FIRST_FORM: usize = 12;
+    let type0 = |encoding: &str, descendant: usize| {
+        format!(
+            "<< /Type /Font /Subtype /Type0 /BaseFont /F /Encoding /{encoding} /DescendantFonts [{descendant} 0 R] >>"
+        )
+        .into_bytes()
+    };
+    let cid = |ordering: &str| {
+        format!("<< /Type /Font /Subtype /CIDFontType0 /BaseFont /F /CIDSystemInfo << /Registry (Adobe) /Ordering ({ordering}) /Supplement 2 >> >>")
+            .into_bytes()
+    };
     let mut objects = vec![
         b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
         b"<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>".to_vec(),
@@ -125,24 +154,25 @@ fn chain_pdf(n: usize) -> Vec<u8> {
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /XObject << /X {FIRST_FORM} 0 R >> >> /Contents 5 0 R >>"
         )
         .into_bytes(),
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /Font << /F 7 0 R >> >> /Contents 6 0 R >>"
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /Font << /G 7 0 R /J 9 0 R /W 11 0 R >> >> /Contents 6 0 R >>"
             .to_vec(),
-        stream("", b"/X Do"),
-        stream("", &[&image[..], b" BT /F 10 Tf <3042> Tj ET"].concat()),
-        b"<< /Type /Font /Subtype /Type0 /BaseFont /Ryumin-Light /Encoding /UniJIS-UCS2-H /DescendantFonts [8 0 R] >>"
-            .to_vec(),
-        b"<< /Type /Font /Subtype /CIDFontType0 /BaseFont /Ryumin-Light /CIDSystemInfo << /Registry (Adobe) /Ordering (Japan1) /Supplement 2 >> >>"
-            .to_vec(),
+        stream("", if forms > 0 { b"/X Do" } else { deepest.content }),
+        stream("", page2),
+        type0("UniGB-UCS2-H", 8),
+        cid("GB1"),
+        type0("UniJIS-UCS2-H", 10),
+        cid("Japan1"),
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Zzfont >>".to_vec(),
     ];
-    for k in 0..n {
+    for k in 0..forms {
         let form = "/Type /XObject /Subtype /Form /BBox [0 0 10 10]";
-        objects.push(if k + 1 < n {
+        objects.push(if k + 1 < forms {
             stream(
                 &format!("{form} /Resources << /XObject << /X {} 0 R >> >>", FIRST_FORM + k + 1),
                 b"0 0 m 1 1 l /X Do",
             )
         } else {
-            stream(form, image)
+            stream(&format!("{form} /Resources << {} >> {}", deepest.resources, deepest.dict), deepest.content)
         });
     }
     build(&objects)
@@ -212,23 +242,70 @@ fn a_missing_predefined_cmap_is_reported_and_the_rerun_is_complete() {
     }
 }
 
+/// The documents of `the_rerun_starts_from_the_process_state_of_the_voided_call`:
+/// the deepest point of page 1 does something for the first time in the
+/// process (page 2 does it again, shallow, before it shows a character
+/// with the withheld CMap), and the lengths around Python's limit.
+#[allow(clippy::type_complexity)]
+fn process_state_cases() -> Vec<(&'static str, Box<dyn Fn(usize) -> Vec<u8>>, std::ops::RangeInclusive<usize>)> {
+    const SHOW: &[u8] = b" BT /G 10 Tf <3042> Tj ET";
+    let chain = |deepest: Deepest, page2: &'static [u8]| {
+        Box::new(move |n: usize| two_pages(n, &deepest, &[page2, SHOW].concat())) as Box<dyn Fn(usize) -> Vec<u8>>
+    };
+    let image: &'static [u8] = b"BI /W 1 /H 1 ID x EI\n";
+    vec![
+        // re.sub's pattern compiled (pycompat::re_cache)
+        ("re", chain(Deepest { content: image, resources: "", dict: "" }, image), 318..=336),
+        // a predefined CMap loaded for the first time (CMapDB's caches)
+        (
+            "cmapdb",
+            chain(
+                Deepest { content: b"BT /J 10 Tf <3042> Tj ET", resources: "/Font << /J 9 0 R >>", dict: "" },
+                b"BT /J 10 Tf <3042> Tj ET",
+            ),
+            318..=336,
+        ),
+        // the first str(x) of literal_name (pycompat::specialize)
+        (
+            "call site",
+            Box::new(|n: usize| {
+                let operand = [b"[".repeat(n), b"]".repeat(n), b" Do".to_vec()].concat();
+                let content: &'static [u8] = Box::leak(operand.clone().into_boxed_slice());
+                two_pages(0, &Deepest { content, resources: "", dict: "" }, &[&operand[..], SHOW].concat())
+            }),
+            9990..=9998,
+        ),
+    ]
+}
+
+/// For each kind of process state, each stage and each length, from the
+/// stage entry and one and two frames deeper (a nesting level is three
+/// frames: the frame or two the state adds shows at one of the offsets):
+/// the re-run is the complete run, and at some length and offset the
+/// re-run from the state the voided run left is not.
 #[test]
 fn the_rerun_starts_from_the_process_state_of_the_voided_call() {
-    for stage in ["layout", "interp", "fonts"] {
-        let mut sensitive = Vec::new();
-        for n in 318..=336 {
-            let pdf = chain_pdf(n);
-            let complete = complete(stage, &pdf);
-            let b = void_and_rerun(stage, &pdf, &["UniJIS-UCS2-H"]);
-            assert_eq!(b.asked, ["UniJIS-UCS2-H"], "{stage} {n}: the names asked for");
-            assert_eq!(b.rerun, complete, "{stage} {n}: the re-run is the complete run");
-            if b.rerun_unrestored != complete {
-                sensitive.push(n);
+    for (what, make, lengths) in process_state_cases() {
+        for stage in ["layout", "interp", "fonts"] {
+            let mut sensitive = Vec::new();
+            for n in lengths.clone() {
+                let pdf = make(n);
+                for k in 0..3 {
+                    let entry = Depth { py: STAGE_ENTRY.py + k, c: STAGE_ENTRY.c };
+                    with_stage_entry(entry, || {
+                        let complete = complete(stage, &pdf);
+                        let b = void_and_rerun(stage, &pdf, &["UniGB-UCS2-H"]);
+                        assert_eq!(b.asked, ["UniGB-UCS2-H"], "{what} {stage} {n}+{k}: the names asked for");
+                        assert_eq!(b.rerun, complete, "{what} {stage} {n}+{k}: the re-run is the complete run");
+                        if b.rerun_unrestored != complete {
+                            sensitive.push((n, k));
+                        }
+                    });
+                }
             }
+            // the case checks something: somewhere, the state the voided
+            // run left (page 2 did it first, shallow) changes the re-run
+            assert!(!sensitive.is_empty(), "{what} {stage}: no length depends on the process state");
         }
-        // the case checks something: at some lengths, the state the voided
-        // run left (the pattern compiled on its second page) changes the
-        // re-run
-        assert!(!sensitive.is_empty(), "{stage}: no chain length depends on the process state");
     }
 }
