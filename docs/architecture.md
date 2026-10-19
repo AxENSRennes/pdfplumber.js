@@ -1109,7 +1109,13 @@ de la revue sous `/tmp/claude-review-w3-*`) :
   compilable (`Ok(Some(Default::default()))` : `Guard` sans `Default`),
   remplacé à la main par un site jamais spécialisé (tué par `deep`). Les
   `build.rs` (la pile Wasm) ne changent rien en natif : c'est
-  `scripts/wasm-depth-gate.sh` qui les vérifie.
+  `scripts/wasm-depth-gate.sh` qui les vérifie (avec 1 Mio, le profil
+  `dist` piège sur chaque fenêtre `depth-*` d'`adv-interp`).
+- **`scripts/check.sh`** vert sur le code final (natif, `wasm32-wasip1`,
+  la porte `wasm-depth-gate` : 188 fenêtres d'`adv-interp` × `layout`,
+  `interp`, `fonts`, 79 d'`adv-pages`, 23 d'`adv-objects`, le profil
+  `dist` en Wasm identique au natif ; paquet JS et construction Wasm
+  `dist`, budget de taille ; auto-tests de l'oracle).
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 
