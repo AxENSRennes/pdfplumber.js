@@ -240,6 +240,11 @@ Lecture :
   (suites d'appels générées, frontières de récursion, appels des 20
   premières pages de `all`) ; l'étape Rust `layout` est écrite et attend
   l'interpréteur (chantier INTERP).
+  Rejeux identiques (natif et `wasm32-wasip1`) : 429 cas générés, 606
+  cas de profondeur, 3 657 pages du corpus ; mutations sans survivant
+  non justifié (`architecture.md`, « Chantier CONVERTER ») ; cache
+  Python de l'étape `layout` construit sur `all` (1 853 fichiers, aucun
+  délai, 1,8 Go).
 - **Vagues suivantes**, dans l'ordre des dépendances :
   1. `pdfinterp`, `pdfdevice`, `converter` (`PDFPageAggregator` vers
      `layout`) : étapes `fonts`, `interp`, `layout` (comptage des cadres de
