@@ -9,8 +9,20 @@
 # both on the depth windows of the adversarial corpora (chains of nested Form
 # XObjects around Python's first failing level, `adv-interp`; page trees,
 # `/Prev` and `/Length` chains, `adv-pages`, `adv-objects`) and requires the
-# same traces: the native ones are those `oracle.verify` checks against
-# Python. A stack overflow traps (`memory access out of bounds`) and fails.
+# same traces. A stack overflow traps (`memory access out of bounds`) and
+# fails.
+#
+# For `interp`, `fonts`, `pages` and `objects`, the native traces are those
+# `oracle.verify` checks against Python. Not by construction for `layout`:
+# both builds run here without `--oracle-dir`, so with `CreationOrder`,
+# where `oracle.verify` hands `pdftrace` Python's `id()` ranking (the gate
+# needs no oracle cache). They are the same traces only because these
+# windows have no page whose analysis depends on that ranking: measured in
+# October 2026 at the wave 3 finalization, the 188 `adv-interp` depth and
+# C-limit files give identical native `layout` traces with and without
+# `--oracle-dir` (docs/verification.md, "Étapes"). A new depth file whose
+# layout has `id()` ties would still be gated for the stack (wasm = native),
+# not for Python parity.
 #
 #   scripts/wasm-depth-gate.sh        # run by scripts/check.sh
 set -euo pipefail

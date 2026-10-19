@@ -67,6 +67,19 @@ step "cargo test on wasm32-wasip1 (Node WASI): the same unit replays compiled to
 CARGO_TARGET_WASM32_WASIP1_RUNNER="node --no-warnings $ROOT/scripts/wasi-runner.mjs" \
   capped cargo test --release --target wasm32-wasip1 -p pycompat -p pdfminer -p pdfplumber -p pdftrace -p pdfplumber-wasm
 
+step "cargo test on wasm32-wasip1: the tests that need a process of their own (ignored above), one process each"
+# No fresh thread per test under WebAssembly: these leave CMaps in the
+# provider and CMapDB's caches (crates/wasm/tests/js_runtime_unit.rs).
+for t in a_void_call_leaves_no_state_and_its_rerun_matches_pdfminer a_void_call_puts_the_process_state_back; do
+  out=$(CARGO_TARGET_WASM32_WASIP1_RUNNER="node --no-warnings $ROOT/scripts/wasi-runner.mjs" \
+    capped cargo test --release --target wasm32-wasip1 -p pdfplumber-wasm --test js_runtime_unit -- --ignored --exact "$t" 2>&1) \
+    || { printf '%s\n' "$out"; exit 1; }
+  printf '%s\n' "$out" | grep -E "^test |test result"
+  # the filter must have selected the test: one ran, none left ignored
+  printf '%s\n' "$out" | grep -q "test result: ok. 1 passed; 0 failed; 0 ignored" \
+    || { echo "check.sh: $t did not run alone under WebAssembly" >&2; exit 1; }
+done
+
 step "the deepest recursions Python accepts on the production Wasm profile (dist), against native"
 capped scripts/wasm-depth-gate.sh
 

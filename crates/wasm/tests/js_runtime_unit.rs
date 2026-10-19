@@ -206,14 +206,16 @@ fn predefined_cmaps_load_lazily_and_match_pdfminer() {
     }
 }
 
+/// Under WebAssembly there is no fresh thread per test: the CMaps a test
+/// loads would stay in the provider and `CMapDB`'s caches of the next one,
+/// which must miss them (natively, each test has its own thread-local
+/// state). In the shared run, `predefined_cmaps_load_lazily_and_match_pdfminer`
+/// is the only test that loads CMaps; the two void-call tests are ignored
+/// there, so the skip shows in the counts, and `scripts/check.sh` runs each
+/// alone, one process per test (`--ignored --exact NAME`).
 #[test]
+#[cfg_attr(target_family = "wasm", ignore = "loads CMaps: run alone, one process per test, by scripts/check.sh")]
 fn a_void_call_leaves_no_state_and_its_rerun_matches_pdfminer() {
-    if cfg!(target_family = "wasm") {
-        // no fresh thread there: the CMaps this test loads would stay in the
-        // provider and CMapDB's caches of the next test, which must miss
-        // them (natively, each test has its own thread-local state)
-        return;
-    }
     let dir = cmap_dir();
     let names: Vec<String> = fs::read_to_string(dir.join("names.txt")).unwrap().lines().map(str::to_owned).collect();
     on_thread(64 << 20, move || {
@@ -287,10 +289,8 @@ fn exc(name: &str, message: &str) -> Js {
 /// Python's single run, every CMap installed, loads that CMap during the
 /// call, deeper than a re-run that found it cached would.
 #[test]
+#[cfg_attr(target_family = "wasm", ignore = "loads CMaps: run alone, one process per test, by scripts/check.sh")]
 fn a_void_call_puts_the_process_state_back() {
-    if cfg!(target_family = "wasm") {
-        return; // see a_void_call_leaves_no_state_and_its_rerun_matches_pdfminer
-    }
     let dir = cmap_dir();
     let names: Vec<String> = fs::read_to_string(dir.join("names.txt")).unwrap().lines().map(str::to_owned).collect();
     on_thread(64 << 20, move || {
