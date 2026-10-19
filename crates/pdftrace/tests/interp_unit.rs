@@ -20,8 +20,8 @@
 //!
 //! A difference prints the case and the first differing line of the
 //! trace (`INTERP_DUMP=<dir>`: the differing traces of `deep_sweeps` are
-//! written there). `INTERP_ONLY=<substring>` restricts the cases to the file names
-//! containing it.
+//! written there). `INTERP_ONLY=<substring>[,<substring>...]` restricts the cases to the file names
+//! containing one of them.
 //!
 //! The generator computes each trace in a process forked for it, whose
 //! state (`py_process.jsonl`: the interned symbols) each replayed trace
@@ -109,7 +109,7 @@ fn stage_traces() {
             panic!("bad case {args:?}");
         };
         let name = name.as_str().expect("a file name");
-        if only.as_ref().is_some_and(|o| !name.contains(o.as_str())) {
+        if only.as_ref().is_some_and(|o| !o.split(',').any(|s| name.contains(s))) {
             continue;
         }
         let password = match password {
@@ -170,7 +170,7 @@ fn deep_sweeps() {
             panic!("bad case {args:?}");
         };
         let name = name.as_str().expect("a file name");
-        if only.as_ref().is_some_and(|o| !name.contains(o.as_str())) {
+        if only.as_ref().is_some_and(|o| !o.split(',').any(|s| name.contains(s))) {
             continue;
         }
         assert_eq!(depth(base), STAGE_ENTRY, "the stage body's depth");

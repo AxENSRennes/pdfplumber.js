@@ -61,10 +61,14 @@ pub fn with_stage_entry<R>(entry: Depth, f: impl FnOnce() -> R) -> R {
 /// `terminated`: runs a stage body from the oracle's stage entry depth and
 /// ends the trace with `!end`, or with the line of the exception that
 /// escaped the body. As the oracle, it starts from a new Python process
-/// ([`super::py_process`]) with logging disabled (`logging.disable`).
+/// ([`super::py_process`]) with logging disabled (`logging.disable`),
+/// unless the trace goes on in the current one
+/// ([`super::py_process::continuing`]).
 pub fn terminated(out: &mut dyn Write, body: impl FnOnce(&mut Lines) -> PyResult<()>) -> io::Result<()> {
-    super::py_process::start();
-    pycompat::logging::disable();
+    if !super::py_process::is_continuing() {
+        super::py_process::start();
+        pycompat::logging::disable();
+    }
     let mut lines = Lines::default();
     let entry = ENTRY.with(Cell::get).unwrap_or(STAGE_ENTRY);
     let result = with_depth(entry, || body(&mut lines));

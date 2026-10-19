@@ -54,7 +54,11 @@ statut 2 (CMaps manquantes) : fetch/fs des fichiers, "cmap_add", même requête 
 - **Profondeur** : le cœur lit, écrit et libère les valeurs sans récursion
   (`PyValue` se libère avec une pile de travail, comme la « trashcan » de
   CPython ; `PDFObject` de même) : une liste imbriquée sur 200 000 niveaux
-  traverse la frontière dans les deux sens.
+  traverse la frontière dans les deux sens. L'interpréteur, lui, récurse en
+  Rust là où Python récurse (Form XObjects imbriquées), jusqu'à la limite
+  de Python : la pile du module est de 8 Mio (`crates/wasm/build.rs` ; le
+  défaut de `wasm-ld`, 1 Mio, ne suffit pas au profil `dist`, voir
+  `architecture.md`, « Profondeur de récursion »).
 
 ## Format des résultats
 
@@ -225,18 +229,28 @@ dans `check.sh`).
   a créés, fait oublier à **chaque** objet l'état qu'il a dérivé
   (`Object::reset` : un appel atteint tout objet dont il a reçu le handle,
   dans n'importe quel argument ; `Document::state`, où la couche page
-  mettra le `PDF` de pdfplumber, reconstruit depuis les octets), et répond
-  « CMaps manquantes » avec les noms. Les caches du processus ne gardent que
-  ce qui ne dépend pas d'une CMap absente (`CMapDB` ne garde que les CMaps
-  chargées). JS les récupère (`fetch` dans le navigateur et
+  mettra le `PDF` de pdfplumber, reconstruit depuis les octets), remet
+  l'état modélisé du processus Python tel qu'il était avant l'appel
+  (`pdfminer::process_state` : noms internés, motifs `re` compilés, caches
+  des loggers, sites d'appel spécialisés, caches de `CMapDB` ; sans quoi la
+  relance trouverait, par exemple, compilé à la page 2 de l'appel nul un
+  motif que l'exécution unique de Python compile plus profond à la page 1,
+  et une `RecursionError` disparaîtrait), et répond « CMaps manquantes »
+  avec les noms. JS les récupère (`fetch` dans le navigateur et
   le worker, `fs` sous Node, ou la fonction `cmaps.load` de `configure`), les
   passe au cœur (`cmap_add`) et relance la même requête, qui voit les CMaps
   dès le début : son résultat est celui de Python avec toutes les CMaps
   installées. Testé avec une requête (`doc_cmap_decode`) qui atteint son
   document par un argument, y met la CMap en cache comme une police, et la
   manque : le résultat est celui de pdfminer (`cmaps.jsonl`), aucun handle
-  ne reste, et un avertissement émis avant le manque arrive une fois. Chaque nom est chargé une fois (les caches de `CMapDB` ne
-  gardent que les succès) ; un nom demandé deux fois est une erreur (boucle).
+  ne reste, et un avertissement émis avant le manque arrive une fois ; une
+  CMap chargée par l'appel nul avant le manque n'est plus dans les caches
+  de `CMapDB` après lui (`a_void_call_puts_the_process_state_back`), et
+  `crates/pdftrace/tests/lazy_cmap.rs` vérifie la relance à travers
+  l'interpréteur, à la frontière de récursion. Chaque nom est demandé à JS
+  une fois (le fournisseur garde les fichiers reçus ; le cœur relit depuis
+  eux ce que la remise de l'état a retiré des caches) ; un nom demandé deux
+  fois est une erreur (boucle).
   Un nom hors de la liste est `CMapNotFound` sans requête réseau. Avec
   `cmaps: false`, toutes les CMaps sont absentes, comme une installation de
   pdfminer sans son dossier `cmap`.

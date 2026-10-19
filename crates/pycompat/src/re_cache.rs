@@ -34,6 +34,17 @@ pub fn reset() {
     COMPILED.with(|c| c.borrow_mut().clear());
 }
 
+/// The patterns compiled so far: a snapshot of the state, to put back with
+/// [`restore`].
+pub fn snapshot() -> Vec<&'static str> {
+    COMPILED.with(|c| c.borrow().clone())
+}
+
+/// Puts back a [`snapshot`].
+pub fn restore(compiled: Vec<&'static str>) {
+    COMPILED.with(|c| *c.borrow_mut() = compiled);
+}
+
 /// Whether `pattern` is compiled (in `re`'s caches).
 pub fn is_compiled(pattern: &str) -> bool {
     COMPILED.with(|c| c.borrow().contains(&pattern))

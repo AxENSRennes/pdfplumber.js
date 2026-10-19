@@ -163,10 +163,21 @@ fingerprint directories are never read again and can be deleted.
   a 256 MiB C stack so that deep C recursion raises `RecursionError` instead of
   crashing (the limits count frames, not bytes, so this cannot change a trace).
 - `logging` is disabled during a stage (pdfminer never reads its log level, so
-  results are unchanged); warnings keep their default filters.
+  results are unchanged, but a logging call's frames count for the recursion
+  limits: the reference is pdfminer's warnings off, see
+  `stages/__init__.py`); warnings keep their default filters.
 - Each cached trace is computed in its own process, with its own random
   `PYTHONHASHSEED`: a trace that depended on set or hash order would show up
-  as a cache that differs between two builds.
+  as a cache that differs between two builds. Nothing compares two builds,
+  and one stage is not reproducible by design: `layout`, whose analysis
+  breaks ties between text boxes at equal distance by `id()` (memory
+  addresses, which the hash seed and the allocations of the process move).
+  Its trace records the order its own run used (`ids` lines), and
+  `pdftrace` analyzes with that order (`ORACLE_INPUT`), so parity holds for
+  whichever draw the cache holds; a rebuilt cache can differ from the
+  previous one on the pages with such ties (about one page in ten among
+  those with two text boxes or more, `docs/architecture.md`, "Statistique
+  `CreationOrder`").
 
 ## Unit cases
 

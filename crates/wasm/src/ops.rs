@@ -35,13 +35,17 @@
 //! result and diagnostics are discarded, the handles it created are
 //! removed, and every object drops the state it derived ([`Object::reset`];
 //! a call can reach any object whose handle it was given, in any argument),
-//! so that the re-run computes everything again with the CMaps. Process-wide
-//! caches keep only what does not depend on a missing CMap (`CMapDB` caches
-//! loaded CMaps only).
+//! so that the re-run computes everything again with the CMaps. The
+//! modeled state of the Python process is put back as it was before the
+//! call (`pdfminer::process_state`: symbols interned, `re` patterns
+//! compiled, logger caches, specialized call sites, the CMaps `CMapDB`
+//! cached), so that the re-run reaches Python's recursion limits where
+//! Python's single run with every CMap installed does.
 
 use std::rc::Rc;
 
 use pdfminer::cmapdb::{Attrs, CMap, CMapBase, CMapDB, Unichr};
+use pdfminer::process_state::ProcessState;
 use pdfplumber::obj::{bbox_from_value, bbox_value, Bbox, HashKey, Obj, PyValue};
 use pdfplumber::table::{TableFinder, TablePage, TableSettings};
 use pdfplumber::utils::text::{
@@ -641,6 +645,7 @@ impl Core {
         let mut diag_level = None;
         let mut h = 0;
         self.created.clear();
+        let process = ProcessState::capture();
         let (result, collected) = {
             let parsed = binary::decode(request).and_then(|req| {
                 let r = seq(&req)?.to_vec();
@@ -669,6 +674,7 @@ impl Core {
             // the re-run emits its own diagnostics: Python's, once
             drop((result, collected));
             self.void();
+            process.restore();
             let none = diagnostics::Collected::default();
             return response(STATUS_NEED_CMAPS, FORMAT_BINARY, false, &encode_names(&missing), &none);
         }

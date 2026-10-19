@@ -14,7 +14,9 @@ there. With pdfplumber's device, the converter's objects (``LTChar``,
 frames decide where pdfplumber raises.
 
 So this generator traces the files of ``adv-interp`` (all but the
-``depth-*`` chains) with ``DeepTracingDevice``: the ``TracingDevice`` of
+``depth-*`` chains and the ``climit-*`` windows: operands nested around the
+C recursion limit, whose units no frame of a descent takes) with
+``DeepTracingDevice``: the ``TracingDevice`` of
 ``oracle/stages/interp_text.py`` whose every method first descends
 ``DESCENT`` frames (``descend``), which makes each device call deeper than
 anything before it on its page (each page is interpreted by its own device
@@ -304,7 +306,7 @@ def traced_from(path: str, password: str | None, n: int, descent: int) -> str:
 def deep_cases() -> Iterator[tuple[list, Any]]:
     base = in_child(entry_at)
     for f in load_set("adv-interp"):
-        if f.path.name[4:].startswith("depth-"):
+        if f.path.name[4:].startswith(("depth-", "climit-")):
             continue
         for descent in (DESCENT, 0):
             deepest = in_child(lambda: max_depth(str(f.path), f.password, descent))

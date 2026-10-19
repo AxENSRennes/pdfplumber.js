@@ -129,7 +129,11 @@ observable, et seulement là.
 - **Avertissements** (`logging`, `warnings.warn`) : leur texte est sans effet
   sur la sortie et remonte par un canal de diagnostics (option `onWarning`
   côté JS) ; leurs cadres Python comptent pour la profondeur de récursion
-  (ci-dessous).
+  (ci-dessous). La référence est la journalisation de pdfminer coupée
+  (`logging.disable`, ou `setLevel(ERROR)` sur le logger `pdfminer`, mêmes
+  cadres) : dans la configuration par défaut de Python, un `log.warning`
+  est émis par `logging.lastResort`, plus profond, et formate ses `%r`
+  (écart non modélisé, `verification.md`, « Étapes »).
 - **Réglages** : `pdfminer.settings.STRICT = False`, comme l'oracle.
 
 ## Profondeur de récursion
@@ -144,8 +148,23 @@ deux). Règles :
 - Les structures arbitrairement profondes que Python construit sans
   récursion (un flux de contenu de 10^6 `[`) se libèrent, se comparent,
   s'écrivent et se convertissent sans récursion en Rust non plus
-  (`PDFObject`, `Value`, JSON typé, `canon`) : la pile Rust (1 Mio dans un
-  navigateur) ne limite jamais rien.
+  (`PDFObject`, `Value`, JSON typé, `canon`). Là où Python récurse (les
+  Form XObjects : `execute` → `do_Do` → `render_contents` → `execute`,
+  trois cadres par niveau), le Rust récurse aussi, jusqu'à la limite de
+  Python : la plus longue chaîne que Python accepte (environ 330 niveaux)
+  prend environ 1,2 Mio de pile au profil `dist` en Wasm (mesuré : 3,7 Kio
+  par niveau ; avec 512 Kio de pile, la chaîne la plus profonde qui passe
+  a 140 niveaux), plus que le 1 Mio que `wasm-ld` réserve par défaut (le
+  profil `dist` piège sur chaque fenêtre `depth-*` d'`adv-interp`). Le
+  module Wasm et les binaires `wasm32` de `pdftrace` ont donc une pile de
+  8 Mio (`crates/wasm/build.rs`, `crates/pdftrace/build.rs`, plus de six
+  fois la mesure ; avec 2 Mio tout passe déjà), et
+  `scripts/wasm-depth-gate.sh` (dans `scripts/check.sh`) fait tourner le
+  profil `dist` en `wasm32-wasip1` sur les fenêtres de profondeur
+  d'`adv-interp`, `adv-pages` et `adv-objects` et compare ses traces à
+  celles du natif. En natif, un fil de 2 Mio (celui des tests) suffit au
+  profil `release` (1,5 Mio passe, 1 Mio non) ; un hôte qui appellerait le
+  cœur depuis un fil plus petit devrait l'agrandir.
 - Là où Python a une limite, le port la reproduit : `repr()`/`str()` d'un
   objet PDF prennent les unités C de CPython à chaque niveau (cas
   unitaires à la frontière pour chaque sorte d'objet), `resolve_all` et
@@ -160,6 +179,22 @@ deux). Règles :
   appel d'un niveau sur un logger depuis `logging.disable()`, qui vide les
   caches, voir `docs/verification.md`). Une compréhension ne prend pas de
   cadre (PEP 709) ; `collections.abc.Iterator[...]` non plus (fait en C).
+- L'interpréteur adaptatif de CPython 3.12 exécute la première fois
+  l'instruction `CALL` d'un site sous sa forme générique, puis la
+  spécialise. Pour `str(x)` (le type `str`, sans `tp_vectorcall` en 3.12),
+  la forme générique passe par `_PyObject_MakeTpCall`, qui tient une unité
+  C de plus pendant tout l'appel : le premier `str(x)` d'un processus à un
+  site lève `RecursionError` pour un objet imbriqué un niveau de moins que
+  les suivants (`CALL_NO_KW_STR_1`). Seuls les sites dont l'appel peut
+  approcher la limite C sont modélisés (`pycompat::specialize`, état de
+  processus) : `return str(x)` de `literal_name` (psparser.py:121,
+  `psparser::LITERAL_NAME_STR`), qu'atteignent un opérande de `Tf`, `Do`,
+  `CS`/`cs`, une ressource `/ColorSpace`, une clé de dictionnaire des
+  parseurs ou de `CMapParser`. Ailleurs, l'écart est d'une unité tenue le
+  temps d'un appel qui ne récurse pas (un `isinstance` générique), loin de
+  la limite ; les appels de classes et de fonctions Python ne changent pas
+  de coût en 3.12. `oracle/depth.py` (`executed_call_sites`) lit l'état
+  d'un site dans le compteur adaptatif de son instruction.
 - `LIT()`/`KWD()` appelés à l'exécution (un nom lu par le parseur,
   `KWD(b"obj")` de `_getobj_parse`, `LIT("D")` des libellés) prennent le
   cadre de `PSSymbolTable.intern`, plus celui de `PSLiteral.__init__` (appelé
@@ -170,7 +205,13 @@ deux). Règles :
   le harnais, `pdftrace::stages::py_symbols`, générés par
   `oracle/codegen/py_symbols.py`), puis tous ceux internés depuis ; le
   harnais repart de l'état d'un nouveau processus à chaque trace, comme
-  l'oracle (`pdftrace::stages::py_process`).
+  l'oracle (`pdftrace::stages::py_process`). L'état modélisé d'un
+  processus (noms internés, motifs `re` compilés, caches des loggers,
+  sites d'appel spécialisés, caches de `CMapDB`) se prend et se remet d'un
+  bloc (`pdfminer::process_state`) : la frontière JavaScript le remet tel
+  qu'il était avant un appel nul du protocole des CMaps paresseuses, pour
+  que la relance parte de l'état dont l'exécution unique de Python serait
+  partie.
 - Le comptage est en place partout où le document est lu : `psparser`
   (chaque méthode des parseurs, `_add_token`, `contextlib.suppress`,
   `literal_name`), les accesseurs de `pdftypes` (`resolve1`, `dict_value`…,
@@ -583,8 +624,15 @@ l'interpréteur avec un générateur unitaire qui le mène sur un
   - les unités C des entrées de boucle d'évaluation (`eval_entry` :
     `func(*args)`, appels de classes), qui ne décident rien : chacune
     précède un cadre Python et en prend deux, si bien qu'à 1 000 cadres il
-    en reste plus de 7 000 sur 10 000 (l'interpréteur n'appelle pas de
-    `repr` récursif sur ses opérandes).
+    en reste plus de 7 000 sur 10 000. **Faux pour `func(*args)`
+    d'`execute`** (corrigé par la revue, « Corrections de la revue ») : ses
+    deux unités restent tenues pendant toute l'exécution imbriquée d'une
+    Form, et le parseur de contenu appelle bien un `repr` récursif (les
+    entrées impaires d'une image en ligne ou d'un dictionnaire, dans le
+    message de `PSSyntaxError`) : au bas d'une chaîne de `d` Forms, il
+    échoue `2d` niveaux plus tôt (fenêtres `climit-*`, mutant tué). Les
+    unités des appels de classes ne sont tenues que le temps d'un
+    constructeur, sans `repr` dessous : la justification tient pour elles.
 - **Autres mutations** (`--in-diff` du chantier sur `pdfinterp.rs` et
   `pdfdevice.rs`, `--profile mutants -j 1`, rejeux `interp_unit` et, pour le
   parseur, `psparser_unit`) : passe ordinaire 180 mutants (136 tués, 11 non
@@ -823,7 +871,9 @@ extractions (`fonts_report`, `font_case`). Ensuite :
   bien que pdfminer rattrape `CMapNotFound` ; la relance après remise des
   fichiers, avec un nouveau gestionnaire de ressources, donne la trace
   d'une exécution complète (celle de Python, vérifiée par
-  `oracle.trace`).
+  `oracle.trace`). Depuis la revue, l'appel nul et sa relance tournent dans
+  le même processus, comme à la frontière (`py_process::continuing`), avec
+  l'état du processus remis entre les deux (`pdfminer::process_state`).
 
 #### Résultats de la jonction
 
@@ -926,6 +976,57 @@ extractions (`fonts_report`, `font_case`). Ensuite :
     survivants des deux chantiers le restent avec le vrai interpréteur et
     le vrai périphérique (leurs justifications tiennent), et les appels de
     classe de `pdfinterp` sont des unités C seules ou dominés (ci-dessus).
+
+### Corrections de la revue (branche `wave3/fix`)
+
+Constats de la revue de la vague 3, vérifiés un à un (scripts et mesures
+de la revue sous `/tmp/claude-review-w3-*`) :
+
+- **Premier `str(x)` de `literal_name`** (psparser.py:121) : exécuté une
+  première fois sous la forme générique de `CALL`, il prend une unité C de
+  plus (`pycompat::specialize`, « Profondeur de récursion »). Avant la
+  correction, un `Tf`, `Do`, `CS`/`cs` dont l'opérande est imbriqué au
+  premier niveau qui échoue en Python (9 994 pour un tableau sous `Tf`,
+  9 993 pour un dictionnaire, 9 996 pour une ressource `/ColorSpace`)
+  passait en Rust. Corrigé ; vérifié par les fenêtres `climit-*`
+  d'`adv-interp` (dont deux pages identiques : la première échoue, la
+  seconde exécute l'appel spécialisé) et par les cas `deep_first` de
+  `oracle/unit/pdftypes.py` (chacun dans un fils où le site n'a jamais
+  tourné : 21 des 72 cas diffèrent sans la correction). L'état « site
+  exécuté » est un état de processus : `py_process.jsonl` le note
+  (`call_sites`), `oracle/codegen/py_symbols.py` vérifie que les imports
+  de l'oracle n'exécutent aucun site, et les générateurs qui passent par ce
+  site près de la limite (`pdftypes`, `psparser --fuzz`, `cmaps`) l'exécutent
+  d'abord (`warm_call_sites`), ce que leurs rejeux reproduisent.
+- **Unités C de `func(*args)` sous une chaîne de Forms** : voir « Mutants
+  des cadres » ci-dessus ; fenêtres `climit-inline-odd-<d>` et
+  `climit-dict-odd-<d>` (`d` = 0, 1, 50, 300 Forms : 9 995, 9 993, 9 895,
+  9 395 en Python, deux unités par niveau).
+- **`paint_path` de pdfplumber au point le plus profond** : sur une chaîne
+  dont la dernière Form peint plusieurs sous-chemins sans que la page
+  l'ait peinte avant (`depth-subpaths-first` : le premier `re.finditer` du
+  processus compile son motif là), `fonts`, `interp` et `layout` échouent
+  à 327 et `interp_text` à 328 ; la justification « la frontière de
+  `layout` sur `depth-subpaths` est celle d'`interp_text` » ne valait que
+  pour une chaîne dont la page a peint la dernière Form d'abord.
+  `depth-subpaths-compiled` (le motif compilé par la page) complète.
+- **Pile Wasm** : voir « Profondeur de récursion » (8 Mio,
+  `scripts/wasm-depth-gate.sh`).
+- **CMaps paresseuses et état du processus** : la relance d'un appel nul
+  repart de l'état du processus d'avant l'appel
+  (`pdfminer::process_state`, `crates/wasm/src/ops.rs`) ; `lazy_cmap.rs`
+  mène l'appel nul et la relance dans un même processus et vérifie, sur des
+  chaînes de 318 à 336 Forms dont la dernière montre la première image en
+  ligne du processus, que la relance est l'exécution complète, et que sans
+  la remise elle ne l'est pas à certaines longueurs.
+- **Journalisation par défaut** (constat écarté pour le port, documenté) :
+  dans la configuration par défaut de Python, un `log.warning` de
+  pdfminer est émis et formate le `%r` de ses arguments ; la référence
+  reste la journalisation de pdfminer coupée (`verification.md`,
+  « Étapes » ; la docstring de `oracle/stages/__init__.py`, qui disait
+  le contraire, est corrigée).
+- **Statistique `CreationOrder`** : refaite avec la variation de Python
+  lui-même (ci-dessous).
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 

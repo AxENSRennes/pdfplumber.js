@@ -23,9 +23,10 @@
 //! by `repr()`, a function run by `f(*args)`) an [`eval_entry`] before the
 //! callee's frame; a guard leaves on drop, as CPython leaves on return or
 //! on error. Calling a builtin function (`repr(x)`, `len(x)`) takes a unit
-//! too (`" while calling a Python object"`), but neither `str(x)` (a type)
-//! nor the `!r` of an f-string, which call `PyObject_Str`/`PyObject_Repr`
-//! directly. So a
+//! too (`" while calling a Python object"`), but neither `str(x)` (a type,
+//! once its call site is specialized: the first execution takes one,
+//! [`crate::specialize`]) nor the `!r` of an f-string, which call
+//! `PyObject_Str`/`PyObject_Repr` directly. So a
 //! `RecursionError` happens at the same place as in Python, provided the
 //! starting depth is Python's: the harness sets it with [`with_depth`] to
 //! the depth the oracle measured where it calls the same code

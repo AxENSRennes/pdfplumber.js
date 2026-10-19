@@ -391,6 +391,21 @@ impl Symbol {
     }
 }
 
+/// The symbols the process has interned so far ([`py_intern`]): a
+/// snapshot to put back with [`py_symbols_restore`].
+#[derive(Clone, Debug)]
+pub struct PyInterned(rustc_hash::FxHashSet<usize>);
+
+/// A snapshot of the interned symbols.
+pub fn py_symbols_snapshot() -> PyInterned {
+    PY_INTERNED.with(|s| PyInterned(s.borrow().clone()))
+}
+
+/// Puts back a [`py_symbols_snapshot`].
+pub fn py_symbols_restore(interned: PyInterned) {
+    PY_INTERNED.with(|s| *s.borrow_mut() = interned.0);
+}
+
 /// Starts a new run of the Python process, in which exactly `symbols` are
 /// interned (those its imported modules intern at import time): the
 /// harness calls it where the oracle starts a process.

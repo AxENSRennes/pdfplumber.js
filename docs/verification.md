@@ -124,16 +124,32 @@ bord par le cache) et le format de chaque ligne. Règles communes :
   `RecursionError` dans une récursion profonde (`create_pages` journalise à
   chaque nœud). La référence est donc la journalisation coupée
   (`logging.disable(logging.CRITICAL)`), comme l'exécute l'oracle et comme
-  se comporte l'API JS, qui n'émet aucun message. Ce n'est pas la
-  configuration par défaut d'un utilisateur (aucun gestionnaire, niveau
-  WARNING) : `log.debug` et `log.info` y coûtent la même chose, mais
-  `log.warning` y est actif et exécute `_log`, `findCaller`, `makeRecord` et
-  le gestionnaire `lastResort`, bien plus profonds (12 cadres sous
-  l'appelant de l'avertissement de `PDFFont._parse_bbox`, contre 4 coupée),
-  et dont la profondeur dépend des arguments formatés ; une configuration
-  DEBUG fait de même pour chaque `log.debug`. Près de la limite, ces
-  configurations peuvent avancer la `RecursionError` : non modélisé. Le port
-  compte les cadres de la journalisation coupée comme les autres
+  se comporte l'API JS sans `onWarning` ; c'est aussi, au cadre près, la
+  configuration courante qui fait taire pdfminer
+  (`logging.getLogger("pdfminer").setLevel(logging.ERROR)` : `isEnabledFor`
+  remplit son cache par `getEffectiveLevel`, un cadre plus bas, comme par
+  `_acquireLock` ; mesuré : 4 cadres au premier appel, 3 ensuite, dans les
+  deux cas). Ce n'est pas la configuration par défaut d'un utilisateur
+  (aucun gestionnaire, niveau WARNING) : `log.debug` et `log.info` y
+  coûtent la même chose, mais `log.warning` y est actif et exécute `_log`,
+  `findCaller`, `makeRecord` et le gestionnaire `lastResort`, bien plus
+  profonds (11 cadres sous l'appelant au plus profond, `Formatter.format`
+  → `PercentStyle._format`, mesuré par une sonde bornée, le même avec
+  `basicConfig()`, `multiprocessing` ou `asyncio` importés, `stderr`
+  redirigé), et il formate le `%r` de ses arguments : sur un opérande
+  imbriqué près de la limite C, ce `repr` lève `RecursionError`, que
+  `StreamHandler.emit` relance, et la page échoue (la revue l'a montré pour
+  `w` et pour l'avertissement de `TJ` de `render_string_horizontal`, sur un
+  tableau de 20 000 niveaux) ; une chaîne de Form XObjects dont la Form la
+  plus profonde avertit échoue un niveau plus tôt (326 au lieu de 327). Une
+  configuration DEBUG fait de même pour chaque `log.debug`. Non modélisé :
+  la référence reste la journalisation coupée, une configuration fixe que
+  l'oracle exécute et que le port reproduit ; modéliser la configuration
+  par défaut changerait la référence de toutes les vagues (chaque
+  avertissement de `pdfinterp`, `pdfdevice`, `pdffont`, `pdfpage`,
+  `pdfdocument`, `cmapdb`, `psparser`, avec le `repr` de ses arguments, et
+  les fenêtres de profondeur de tous les corpus adverses). Le port compte
+  les cadres de la journalisation coupée comme les autres
   (`pycompat::logging`, « Profondeur de récursion » de `architecture.md`).
 - `oracle.stages.entry_depth()` mesure la profondeur (cadres Python, unités
   C restantes, `oracle/depth.py`) où s'exécute le corps d'une fonction
@@ -189,7 +205,7 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   | `canon.py` | `pdftrace::{canon, typed_json}` | `canon_unit.rs` | `canon` et JSON typé (ci-dessus), valeurs imbriquées sur 2·10^5 à 10^6 niveaux |
   | `pycompat.py` | `pycompat` | `pycompat_unit.rs` | sémantique CPython, `PyStr` (surrogates isolés, `unicodedata.normalize` NFC/NFKC/NFD/NFKD, `repr`, `json`, UTF-16), `pow` et `atan2` de la libm (`math.atan2`), `hash()` numérique, limites de récursion |
   | `exceptions.py` | `psexceptions`, `pdfexceptions`, `pycompat::err` | `exceptions_unit.rs` | classes d'exception de pdfminer et pdfplumber |
-  | `pdftypes.py` | `pdftypes` | `pdftypes_unit.rs` | modèle d'objets, références, flux, déchiffrement, `uint_value`, objets imbriqués à la frontière des limites de récursion (`repr`/`str` en unités C, `resolve_all`/`decipher_all` en cadres) |
+  | `pdftypes.py` | `pdftypes`, `pycompat::specialize` | `pdftypes_unit.rs` | modèle d'objets, références, flux, déchiffrement, `uint_value`, objets imbriqués à la frontière des limites de récursion (`repr`/`str` en unités C, `resolve_all`/`decipher_all` en cadres) ; `deep_first` : `literal_name` comme premier `str(x)` de son site dans le processus (chaque cas dans un fils créé avant toute exécution du site), les autres cas avec le site déjà exécuté (`warm_call_sites`) |
   | `psparser_base.py` | `psparser` | `psparser_base_unit.rs` | `PSStackParser` sur un fichier : `nexttoken`, `nextline`, `revreadlines`, `seek`, `pop` |
   | `psparser.py` | `psparser`, `pdfparser` (`PDFContentParser`) | `psparser_unit.rs` | flux de contenu des pages et Form XObjects de l'ensemble `all` (`corpus.json`), corpus adverse `--fuzz 4000` (`fuzz.json`) suivi de jobs fixes (chaque fragment qui lève, chaque fragment posé sur une frontière de bloc, objets imbriqués autour de la limite de `repr`/`str` et sur 10^6 niveaux) ; comparés job par job par empreinte de la sérialisation canonique, chaque job rejoué depuis la profondeur où pdfminer l'a exécuté |
   | `utils.py` | `utils`, `casting`, `data_structures`, `pdfcolor`, `pdfplumber::ctm` | `utils_unit.rs` | matrices et points (ints, floats, grands ints, infinis, NaN, zéros signés), `get_bound`, `drange`, `bbox2str`/`matrix2str`, `parse_rect`, `uniq`/`fsplit`/`pick`, `nunpack`, `decode_text`, nombres romains et alphabétiques, `safe_*` de `casting`, `Plane`, `NumberTree`, espaces de couleur, `CTM` |
@@ -427,8 +443,19 @@ d'écrire ses cas) :
   `cases_depth` : chaînes de Form XObjects autour du premier niveau qui
   échoue, cherché par dichotomie pour `interp_text`, `interp`, `fonts` et
   `layout` (le périphérique de pdfplumber sans les surcharges de trace),
-  avec 26 chemins différents au point le plus profond
-  (`docs/architecture.md`, « Vague 3 »).
+  avec 28 chemins différents au point le plus profond
+  (`docs/architecture.md`, « Vague 3 » ; dont `subpaths-first`, où le
+  `paint_path` de pdfplumber et la première compilation du motif de
+  `re.finditer` sont le point le plus profond, et `subpaths-compiled`, le
+  motif compilé par la page) ; `cases_climit` (`climit-*`) : opérandes
+  imbriqués autour de la limite des unités C, cherchée par dichotomie pour
+  les mêmes étapes : `str()` d'un opérande de `Tf` (tableau,
+  dictionnaire), `Do`, `CS`, `cs` et d'une ressource `/ColorSpace`
+  (`literal_name`, dont le premier `str(x)` d'un processus prend une unité
+  de plus ; variantes à deux pages, la seconde exécutant l'appel
+  spécialisé), `repr()` des entrées impaires d'une image en ligne et d'un
+  dictionnaire au bas de chaînes de 0, 1, 50 et 300 Form XObjects (deux
+  unités par niveau, celles de `func(*args)`).
 - `oracle/adversarial/pages.py` → `adv-pages` : héritage (`/Resources`,
   `/MediaBox`, `/CropBox`, `/Rotate`, depuis les nœuds et le catalogue),
   boucles et partages dans l'arbre, `/Kids` absents ou atypiques (entiers,

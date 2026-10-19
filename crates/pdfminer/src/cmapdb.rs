@@ -991,6 +991,25 @@ thread_local! {
     static UMAP_CACHE: RefCell<FxHashMap<String, [Rc<UnicodeMap>; 2]>> = RefCell::new(FxHashMap::default());
 }
 
+/// The content of `CMapDB._cmap_cache` and `CMapDB._umap_cache` (shared
+/// with the cached maps): [`CMapDB::caches_snapshot`].
+#[derive(Clone)]
+pub struct CMapDBCaches {
+    cmaps: FxHashMap<String, Rc<CMap>>,
+    umaps: FxHashMap<String, [Rc<UnicodeMap>; 2]>,
+}
+
+impl CMapDBCaches {
+    /// The names in `_cmap_cache`, then those in `_umap_cache`, each sorted.
+    pub fn names(&self) -> (Vec<&str>, Vec<&str>) {
+        let mut cmaps: Vec<&str> = self.cmaps.keys().map(String::as_str).collect();
+        let mut umaps: Vec<&str> = self.umaps.keys().map(String::as_str).collect();
+        cmaps.sort_unstable();
+        umaps.sort_unstable();
+        (cmaps, umaps)
+    }
+}
+
 /// pdfminer/cmapdb.py:220 `CMapDB`: the predefined CMaps (see the module
 /// documentation).
 pub struct CMapDB;
@@ -1038,6 +1057,18 @@ impl CMapDB {
     pub fn clear_caches() {
         CMAP_CACHE.with(|c| c.borrow_mut().clear());
         UMAP_CACHE.with(|c| c.borrow_mut().clear());
+    }
+
+    /// A snapshot of the caches of this thread, to put back with
+    /// [`CMapDB::restore_caches`].
+    pub fn caches_snapshot() -> CMapDBCaches {
+        CMapDBCaches { cmaps: CMAP_CACHE.with(|c| c.borrow().clone()), umaps: UMAP_CACHE.with(|c| c.borrow().clone()) }
+    }
+
+    /// Puts back a [`CMapDB::caches_snapshot`].
+    pub fn restore_caches(caches: CMapDBCaches) {
+        CMAP_CACHE.with(|c| *c.borrow_mut() = caches.cmaps);
+        UMAP_CACHE.with(|c| *c.borrow_mut() = caches.umaps);
     }
 
     // pdfminer/cmapdb.py:249 CMapDB._load_data

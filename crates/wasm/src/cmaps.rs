@@ -9,9 +9,12 @@
 //! asks for a name that exists but has not been handed over yet, the
 //! provider records it and answers as if it did not exist; the call that
 //! asked is then void ([`take_missing`]): the boundary discards its result
-//! and the state it touched, reports the names, and JavaScript re-runs the
+//! and the state it touched (the documents' derived state, and the modeled
+//! state of the Python process, `pdfminer::process_state`, put back as it
+//! was before the call), reports the names, and JavaScript re-runs the
 //! call once it has added them. The re-run sees the CMap from the start, so
-//! its result is the one Python computes with every CMap installed.
+//! its result is the one Python computes with every CMap installed, down to
+//! where a `RecursionError` happens.
 //!
 //! The files are the compact form of `oracle/codegen/cmaps.py`, compressed
 //! with zlib (`scripts/build-cmaps.mjs`); they are inflated here by the

@@ -53,6 +53,21 @@ pub fn disable() {
     CACHE.with(|c| c.borrow_mut().clear());
 }
 
+/// The cache of every logger: a snapshot of the state, to put back with
+/// [`restore`].
+#[derive(Clone, Debug)]
+pub struct LoggerCaches(Vec<(&'static str, u8)>);
+
+/// A snapshot of the logger caches.
+pub fn snapshot() -> LoggerCaches {
+    CACHE.with(|c| LoggerCaches(c.borrow().clone()))
+}
+
+/// Puts back a [`snapshot`].
+pub fn restore(caches: LoggerCaches) {
+    CACHE.with(|c| *c.borrow_mut() = caches.0);
+}
+
 impl Logger {
     /// `logging.getLogger(name)`.
     pub const fn new(name: &'static str) -> Logger {

@@ -20,7 +20,7 @@
 //! (`py_process.jsonl`, [`PyProcess::from_value`]), which their replays
 //! set with [`set`].
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use pdfminer::psparser::{py_symbols_reset, LIT_bytes, Symbol, Symbols, KWD, LIT};
 use pycompat::specialize::{self, CallSite};
@@ -95,6 +95,29 @@ impl PyProcess {
 thread_local! {
     static PROCESS: RefCell<PyProcess> =
         RefCell::new(PyProcess::new(&pdfminer::psparser_symbols::IMPORT_PDFPLUMBER));
+    /// Inside [`continuing`]: traces go on in the process as it is.
+    static CONTINUING: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Runs `f`, whose traces go on in the current process instead of each
+/// starting a new one ([`start`] and `logging.disable()` are skipped): the
+/// calls of one Python process, as the JavaScript boundary runs them
+/// (`tests/lazy_cmap.rs`, with `pdfminer::process_state` around a voided
+/// call).
+pub fn continuing<R>(f: impl FnOnce() -> R) -> R {
+    struct Reset(bool);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            CONTINUING.with(|c| c.set(self.0));
+        }
+    }
+    let _reset = Reset(CONTINUING.with(|c| c.replace(true)));
+    f()
+}
+
+/// Whether the traces go on in the current process ([`continuing`]).
+pub fn is_continuing() -> bool {
+    CONTINUING.with(Cell::get)
 }
 
 /// The traces of this thread start from `process`.

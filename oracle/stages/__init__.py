@@ -30,12 +30,23 @@ Python frames: ``log.debug(...)`` runs ``Logger.debug`` and
 level on a logger, after ``logging.disable`` cleared the caches, a third:
 ``_acquireLock``), which decides where a ``RecursionError`` happens in deep
 recursions (the page tree of ``PDFPage.create_pages`` logs at each node).
-Disabled logging costs exactly what the default configuration (no handler,
-level WARNING) costs, so traces are those of a user with the default
-configuration; a user who configures DEBUG logging runs more frames in
-handlers and can see a ``RecursionError`` earlier. The Rust side counts these
-frames like the others (``pycompat::recursion``). Warnings keep their default
-filters.
+The traces are those of a user whose configuration leaves pdfminer's
+warnings off: ``logging.disable``, or the common
+``logging.getLogger("pdfminer").setLevel(logging.ERROR)``, whose calls take
+the same frames (``getEffectiveLevel`` fills the cache one frame below
+``isEnabledFor``, as ``_acquireLock`` does). The default configuration (no
+handler, level WARNING) costs the same for ``log.debug`` and ``log.info``,
+but not for ``log.warning``, which it emits through ``logging.lastResort``:
+eleven frames below the caller at the deepest (``Formatter.format`` ->
+``PercentStyle._format``), and the ``%r`` of the arguments formatted, whose
+``RecursionError`` on an operand nested near the C recursion limit
+``StreamHandler.emit`` raises again (the page fails). A user with that
+configuration can therefore see a ``RecursionError`` one Form XObject level
+earlier, or on a deep operand that warns; a DEBUG configuration does the
+same for every ``log.debug``. Not modeled (``docs/verification.md``,
+"Étapes"). The Rust side counts the frames of disabled logging like the
+others (``pycompat::logging``, ``pycompat::recursion``). Warnings keep their
+default filters.
 
 ``entry_depth()`` measures the recursion depth a stage function's body runs
 at (``oracle.depth.depth_here``); the Rust stages start from it
