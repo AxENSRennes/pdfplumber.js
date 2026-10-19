@@ -328,7 +328,7 @@ invalide son cache et celui des étapes qui en dépendent).
   `all` où `CreationOrder` seul donne le résultat de Python (`pdftrace
   --stage layout` sans `--oracle-dir`, comparé page à page) ; c'est une
   statistique, pas un critère de parité. Première mesure, sur le rejeu du
-  corpus de `oracle/unit/converter.py` : 93,8 % (« Chantier CONVERTER »).
+  corpus de `oracle/unit/converter.py` : 93,3 % (« Chantier CONVERTER »).
 - **Images en ligne** : pdfminer/pdfinterp.py:1309 `PDFPageInterpreter.do_EI`
   les nomme `str(id(obj))`, une adresse mémoire. Les traces écrivent
   `inline{"n": k}` (`k` : rang d'apparition dans la page). Le port leur
@@ -522,8 +522,9 @@ une `Rc<PDFGraphicState>` par `render_string` d'origine.
   converter_unit corpus`, en attendant l'étape `layout` complète) : sur les
   3 657 pages des vingt premières pages de `all`, l'analyse
   `LAParams()` avec l'ordre par défaut de la bibliothèque donne le
-  résultat de Python (lignes `ids` exclues) sur 3 430 pages (93,8 %) ;
-  les 227 autres ont des paires de boîtes à égale distance que l'ordre des
+  résultat de Python (lignes `ids` exclues) sur 3 413 pages (93,3 % ;
+  deux passes identiques sur le corpus régénéré pour les sources finales,
+  3 430 sur une version antérieure du générateur) ; les 244 autres ont des paires de boîtes à égale distance que l'ordre des
   `id()` de Python départage autrement.
 - **Mutations** (sur le diff final `wave3/base..wave3/converter`,
   `--in-diff`, `-j 1`, `--profile mutants`, rejeux sans `corpus`) :
@@ -540,12 +541,16 @@ une `Rc<PDFGraphicState>` par `render_string` d'origine.
     `converter.rs`, `layout.rs`, `pdfdevice.rs`, `re_cache.rs`,
     `layout_dump.rs`, `font_case.rs` (`converter_unit`, `layout_unit`,
     `fonts_unit`) : 60 mutants, 15 tués, 34 non compilables, 11
-    survivants ; OKB3_RESULT ; les corps aux types sans `Default`
+    survivants ; `page.rs`, `pdfinternals.rs` (`converter_unit`,
+    `document_unit`) : 9 mutants, 7 tués, 2 non compilables ; les corps aux types sans `Default`
     remplacés à la main par une valeur concrète (`cur_item`, `apply_pt`,
     `render_char`, `get_result`, `apply_matrix_rect_counted`,
     `LTComponent::init`, `LTCurve::init`/`new_line`/`new_rect`,
-    `LTLayoutContainer::init`, `LTFigure::new_obj`, `FontDoc::getobj`) :
-    HANDOK_RESULT ;
+    `LTLayoutContainer::init`, `LTFigure::new_obj`, `FontDoc::getobj`,
+    et dans `page.rs` `marked_content::render_char` et
+    `PDFPageAggregatorWithMarkedContent::create`) : 16 mutants, tous tués
+    (`class_call`, dont le résultat n'est qu'un garde, est couvert par les
+    mutants des cadres) ;
   - mutants à la main des cadres (chaque `py_frame`, `leaf`,
     `c_called_leaf`, `eval_entry`, `class_call`, `init_frames` ajouté
     retiré, `leaf(n)` décalé de ±1, `LTComponent::init` et
