@@ -227,60 +227,85 @@ Lecture :
   un `LTChar` pour chaque `to_unichr` et compte ce qu'il vérifie : 40 910
   (dont 113 surrogates isolés) sur `fonts` et 106 769 (dont 28) sur
   `corpus_fonts`, avec un plancher par test.
-- **Vague 3** (en cours, octobre 2026) : base `wave3/base` partagée par
-  deux chantiers parallèles (INTERP, CONVERTER ; plan et contrat dans
-  `architecture.md`, « Vague 3 ») : côté Python, les étapes `fonts`,
-  `interp`, `layout` (la spécification), mesurées sur `quick` ; côté Rust,
-  les interfaces de `pdfdevice`, `pdfinterp`, `converter` et du
-  périphérique de pdfplumber, en squelettes qui compilent, et
-  `pdftrace --oracle-dir` (les `id()` de Python pour l'étape `layout`).
-  Chantier INTERP (branche `wave3/interp`) : `pdfinterp` et `pdfdevice`
-  complets, cadres comptés ; étapes Rust `fonts`, `interp` (en attente du
-  convertisseur) et `fonts_text`, `interp_text` (sur `PDFTextDevice`,
-  Python et Rust) ; corpus adverse `adv-interp`, balayages de profondeur
-  `interp_deep` et rejeu `interp_unit` ; `interp_text` et `fonts_text`
-  identiques sur `all` (1 853), `micro` (17) et `adv-interp` (279) ;
-  mutations : survivants tous justifiés (résultats et mesures :
-  `architecture.md`, « Vague 3 », « Réalisation »).
-  Chantier CONVERTER (`wave3/converter`) : `converter.rs`, le
-  périphérique de pdfplumber et les cadres des constructeurs du layout
-  portés, vérifiés sans l'interpréteur par `oracle/unit/converter.py`
-  (suites d'appels générées, frontières de récursion, appels des 20
-  premières pages de `all`) ; l'étape Rust `layout` est écrite et attend
-  l'interpréteur (chantier INTERP).
-  Rejeux identiques (natif et `wasm32-wasip1`) : 429 cas générés, 606
-  cas de profondeur, 3 657 pages du corpus ; mutations sans survivant
-  non justifié (`architecture.md`, « Chantier CONVERTER ») ; cache
-  Python de l'étape `layout` construit sur `all` (1 853 fichiers, aucun
-  délai, 1,8 Go).
-  Jonction (`wave3/join`) : les deux chantiers fusionnés, un seul cache
-  de motifs `re` et un seul modèle d'appel de classe ; `interp`, `fonts`
-  et `layout` identiques à Python sur `all` (1 853, 20 premières pages),
-  `adv-interp` (279), `adv-pages` (285), `adv-objects` (333), avec
-  l'ordre des `id()` de la trace Python ; `CreationOrder` seul donne le
-  résultat de Python sur 98,6 % des pages de `all` où Python est stable
-  d'une exécution à l'autre (Python lui-même change d'analyse sur 10,6 %
-  des pages à deux boîtes ou plus : les `id()` sont des adresses) ; `pdftrace` 5,3 fois
-  plus rapide que Python par page hors démarrage (54 ms contre 288 ms) ;
-  protocole des CMaps paresseuses vérifié à travers l'interpréteur
-  (`lazy_cmap`) ; mutations sans survivant non justifié
-  (`architecture.md`, « Jonction »).
-  Revue (`wave3/fix`) : premier `str(x)` d'un processus (spécialisation
-  de CPython) modélisé, pile Wasm de 8 Mio vérifiée par une porte au
-  profil `dist`, état du processus remis après un appel nul des CMaps
-  paresseuses, fenêtres adverses `climit-*` et `depth-subpaths-first`,
-  statistique `CreationOrder` rapportée à la variation de Python ; la
-  référence reste la journalisation de pdfminer coupée (écart documenté
-  avec la configuration par défaut) ; parité identique partout
-  (`architecture.md`, « Corrections de la revue »).
+- **Vague 3** (octobre 2026, fusionnée dans `rewrite/rust-core` : base
+  `wave3/base`, chantiers `wave3/interp` et `wave3/converter`, jonction
+  `wave3/join`, revue `wave3/fix` ; détails dans `architecture.md`,
+  « Vague 3 ») :
+  - `pdfinterp` complet, `pdfdevice` (`PDFDevice`, `PDFTextDevice`),
+    `converter` (`PDFLayoutAnalyzer`, `PDFPageAggregator`) et le
+    périphérique de pdfplumber (`PDFPageAggregatorWithMarkedContent`),
+    menés comme pdfplumber (un `PDFResourceManager` par document, un
+    périphérique et un interpréteur par page) ; hors périmètre, notés
+    dans les en-têtes : `TextConverter`, `HTMLConverter`, `XMLConverter`,
+    `HOCRConverter`, `PDFConverter`, `TagExtractor` ;
+  - étapes `fonts`, `interp`, `layout` (et `fonts_text`, `interp_text`
+    sur le `PDFTextDevice` de pdfminer) ; corpus adverse `adv-interp`
+    (353 PDF, dont les chaînes de Forms autour de la limite des cadres,
+    `depth-*`, et les opérandes autour de la limite des unités C,
+    `climit-*`) ; cadres et unités C comptés jusqu'au premier `str(x)`
+    d'un site d'appel (`pycompat::specialize`) ; état du processus remis
+    après un appel nul des CMaps paresseuses (`pdfminer::process_state`) ;
+    pile Wasm de 8 Mio, vérifiée au profil `dist` par
+    `scripts/wasm-depth-gate.sh`.
+  - **`id()` du layout** : l'étape Python écrit le rang des `id()` de son
+    analyse (lignes `ids`), que `pdftrace --oracle-dir` relit : parité
+    exacte. La bibliothèque et l'API JS gardent `CreationOrder`, qui donne
+    le résultat de Python sur 98,6 % des pages de `all` où Python est
+    stable ; Python lui-même change d'analyse d'une exécution à l'autre
+    sur 233 pages (10,6 % des pages à deux boîtes ou plus : les `id()`
+    sont des adresses), et `CreationOrder` y retrouve l'un de ses tirages
+    sur 124. Une statistique, pas un critère de parité.
+  - **Noms des images en ligne** : `str(id(obj))` (une adresse, dans
+    pdfminer/pdfinterp.py:1309 `PDFPageInterpreter.do_EI`) devient
+    `inline{"n": k}` dans les traces et `"inline-<k>"` dans le port
+    (`k` : rang dans la page) ; écart documenté, visible dans le `name`
+    des images de pdfplumber.
+  - **Journalisation** : la référence est celle de pdfminer coupée ; avec
+    la configuration par défaut de Python, un `log.warning` formate son
+    `%r` et peut lever `RecursionError` plus tôt (`verification.md`,
+    « Étapes ») : écart documenté, non modélisé.
+  - Vérification à l'intégration (`oracle.verify --timeout 600`, un job
+    lourd à la fois) : identique à Python pour `psparser`, `objects`,
+    `streams`, `pages`, `fonts`, `interp`, `layout` sur `all` (1 853
+    fichiers, 20 premières pages), `adv-objects` (333), `adv-pages` (285)
+    et `adv-interp` (353), plus `interp_text` et `fonts_text` sur
+    `adv-interp` ; aucun délai, aucune erreur de l'oracle.
+    `scripts/check.sh` vert (66 suites natives et `wasm32-wasip1`, porte
+    de profondeur `dist` : 188 fenêtres d'`adv-interp` × 3 étapes, 79
+    d'`adv-pages`, 23 d'`adv-objects`), `scripts/check-browsers.sh` (102
+    tests : Chromium, Firefox, WebKit) ; `pdftrace` compilé en Wasm
+    (`dist`) donne les traces natives sur `quick` pour `interp`, `fonts`
+    et `layout` (WASMQ). Mutations : aucun survivant non justifié
+    (`architecture.md`, « Jonction », « Corrections de la revue ») ; la
+    fusion est sans conflit et n'a modifié aucun code.
+  - Temps (étape `layout`, 20 premières pages de `all`) : `pdftrace` 54 ms
+    par page contre 288 ms pour Python hors démarrage (5,3 fois), dont
+    l'essentiel à écrire la trace.
 - **Vagues suivantes**, dans l'ordre des dépendances :
-  1. `pdfinterp`, `pdfdevice`, `converter` (`PDFPageAggregator` vers
-     `layout`) : étapes `fonts`, `interp`, `layout` (comptage des cadres de
-     l'interpréteur, ordre des `id()` du layout) ;
-  2. pdfplumber `page`, `pdf`, `container`, `structure`, `convert` :
-     étapes `plumber_*`, en réutilisant `text`/`table` déjà portés ;
-  3. l'API JS publique sur la couche page (`pdf.pages`, objets, texte,
-     tables), sur l'infrastructure Wasm/JS déjà en place.
+  1. **Vague 4** : pdfplumber `page`, `pdf`, `container`, `structure`,
+     `convert` : étapes `plumber_objects`, `plumber_text`,
+     `plumber_tables`, `plumber_doc`, en réutilisant `text`/`table` déjà
+     portés et le pilotage de la vague 3 (`Page.layout` fera ce que fait
+     `stages::common::page_layout` de `pdftrace`, à déplacer dans
+     `crates/pdfplumber`). À reprendre :
+     - le `PDF` de pdfplumber dans `Document::state` (`crates/wasm`), avec
+       le `PDFResourceManager` du document, jeté par un appel nul des
+       CMaps paresseuses (l'état du processus est déjà remis) ; une
+       opération Wasm qui interprète une page ;
+     - `laparams` : une étape `plumber_*` qui analyse (`laparams` donné)
+       compare avec le rang des `id()` de la trace Python, comme `layout` ;
+     - `structure.py` (`decode_text`, `str(s)` d'un `/ID` profond) : un
+       site d'appel de `pycompat::specialize` ;
+     - les constructeurs des vagues 0 à 2 comptent un appel de classe pour
+       deux unités C, ceux de `pdfinterp` et du layout pour trois (sans
+       effet observable aujourd'hui) : à unifier si une étape approche la
+       limite C ;
+     - le nom des images en ligne (`"inline-<k>"`) dans `page.images` et
+       le test JS CJK marqué *todo* (`documents.jsonl`), qui attend
+       `pdf.pages`.
+  2. L'API JS publique sur la couche page (`pdf.pages`, objets, texte,
+     tables), sur l'infrastructure Wasm/JS déjà en place (`CreationOrder`
+     par défaut).
   Les questions ouvertes sont notées dans les en-têtes des modules, dans
   `architecture.md` et dans `js-runtime.md` (`search` suit la sémantique
   `RegExp` de JS, choix documenté ; `atan2` et le fournisseur de CMaps sont

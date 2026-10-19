@@ -96,10 +96,10 @@ Chaque étape a un nom stable, une implémentation Python
 | `interp` | chaque appel de l'interpréteur au périphérique de pdfplumber (`set_ctm`, pages, figures, `paint_path`, `render_image`, `render_string`/`render_char` et l'avance rendue, balises), avec les états graphique et texte, et où remontent les exceptions |
 | `fonts_text`, `interp_text` | `fonts` et `interp` sur le `PDFTextDevice` de pdfminer (`render_char` rend `0`) au lieu du périphérique de pdfplumber : l'interpréteur vérifié sans convertisseur (`oracle/stages/interp_text.py`) |
 | `layout` | le `LTPage` brut (`laparams=None`, le défaut de pdfplumber) puis analysé (`LAParams()`), tous attributs (`mcid`, `tag` compris), et le rang des `id()` de l'analyse (`ids`) ; non reproductible d'une construction du cache à l'autre sur les pages où des boîtes sont à égale distance (les `id()` sont des adresses : un tirage), la parité suivant le tirage du cache (`pdftrace --oracle-dir`) |
-| `plumber_objects` | `page.objects` de pdfplumber, tous attributs, plus boîtes et `doctop` |
-| `plumber_text` | `extract_text` (simple, `layout=True`, options), `extract_words`, `extract_text_lines`, `search`, `dedupe_chars` |
-| `plumber_tables` | `find_tables`/`extract_tables` pour les stratégies `lines`, `lines_strict`, `text`, `explicit` |
-| `plumber_doc` | métadonnées, annotations, liens, arbre de structure, `crop`/`within_bbox`/`outside_bbox` |
+| `plumber_objects` (vague 4) | `page.objects` de pdfplumber, tous attributs, plus boîtes et `doctop` |
+| `plumber_text` (vague 4) | `extract_text` (simple, `layout=True`, options), `extract_words`, `extract_text_lines`, `search`, `dedupe_chars` |
+| `plumber_tables` (vague 4) | `find_tables`/`extract_tables` pour les stratégies `lines`, `lines_strict`, `text`, `explicit` |
+| `plumber_doc` (vague 4) | métadonnées, annotations, liens, arbre de structure, `crop`/`within_bbox`/`outside_bbox` |
 
 En tête de chaque `oracle/stages/<nom>.py` : les modules upstream exercés, le
 parcours exact (ordre des appels à `getobj`/`get_data`, qui a des effets de
@@ -295,6 +295,14 @@ Mode d'emploi détaillé : [`oracle/README.md`](../oracle/README.md).
   Rust lit (`StageInput::oracle`) ; `verify` la passe toujours pour ces
   étapes, et les autres étapes la refusent. Sans elle, `layout` analyse
   avec l'ordre par défaut de la bibliothèque (`CreationOrder`).
+- `pdftrace --cmap-dir DIR` (par défaut `$PDFPLUMBER_CMAP_DIR`) : le
+  fournisseur des CMaps prédéfinies (`<cache>/cmap/<empreinte>/`, le
+  `cmap_dir` des données unitaires `cmaps` ou `interp`). Les étapes
+  `fonts`, `interp`, `layout`, `fonts_text`, `interp_text` en ont besoin :
+  sans lui, une police à CMap prédéfinie donne `RuntimeError("no CMap
+  provider installed …")` et `verify` compte un écart (8 fichiers
+  d'`adv-interp`, `*-font-cmap-*` et `*-depth-font-predefined-cmap-*`) ;
+  exporter `PDFPLUMBER_CMAP_DIR` avant `oracle.verify`.
 - Les deux outils acceptent aussi `--option=valeur` ; `verify` et le cache
   passent toujours le mot de passe sous la forme `--password=P` (un mot de
   passe peut commencer par `-`). Avec `--out`, `pdftrace` ajoute après
@@ -366,9 +374,9 @@ Les constantes mesurées sont aussi vérifiées par les cas de l'ensemble
 | `upstream` | `upstream/pdfplumber-python/tests/pdfs`, `upstream/pdfminer-six/samples`, `corpus/upstream-contract` |
 | `real` | `corpus/external`, `corpus/external-holdout`, `corpus/parity-cycles` |
 | `pdfjs` | `upstream/pdfjs/test/pdfs` (937 PDF, beaucoup de cas tordus) |
-| `quick` | tout `micro`, plus les fichiers de `all` dont le SHA-256 commence par un octet < 18 (~7 %, 149 PDF aujourd'hui) : l'appartenance ne dépend que du contenu du fichier, en ajouter n'en retire aucun |
-| `all` | tout ce qui précède (1 852 PDF distincts aujourd'hui) |
-| `adv-<étape>` | corpus adverse généré pour une étape (voir plus bas) ; plusieurs étapes peuvent vérifier le même (`adv-interp` : `fonts`, `interp`, `layout`) |
+| `quick` | tout `micro`, plus les fichiers de `all` dont le SHA-256 commence par un octet < 18 (~7 % ; 150 PDF en tout aujourd'hui) : l'appartenance ne dépend que du contenu du fichier, en ajouter n'en retire aucun |
+| `all` | tout ce qui précède (1 853 PDF distincts aujourd'hui) |
+| `adv-<étape>` | corpus adverse généré pour une étape (voir plus bas) ; plusieurs étapes peuvent vérifier le même ; aujourd'hui `adv-objects` (333 PDF), `adv-pages` (285) et `adv-interp` (353), sur lesquels chaque étape implémentée est vérifiée à l'intégration d'une vague (`interp_text` et `fonts_text` : `adv-interp`) |
 
 Un fichier est tout `*.pdf` (casse ignorée) des dossiers, récursivement, en
 ordre de chemin relatif. Les fichiers identiques sont dédoublonnés par SHA-256
@@ -420,7 +428,7 @@ d'écrire ses cas) :
   `OverflowError`), un champ de flux xref de 100 000 octets, un id flottant
   déchiffré (`struct.error`) et un id booléen (`True`, un entier pour
   `struct.pack`).
-- `oracle/adversarial/interp.py` → `adv-interp` (vérifié par `interp_text`,
+- `oracle/adversarial/interp.py` → `adv-interp` (353 PDF ; vérifié par `interp_text`,
   `fonts_text`, `interp`, `fonts` et `layout`) : chaque opérateur de
   l'interpréteur sans opérande, avec un de moins, un de trop, et chaque
   position recevant chaque sorte de valeur du parseur de contenu (entiers,
@@ -456,7 +464,7 @@ d'écrire ses cas) :
   spécialisé), `repr()` des entrées impaires d'une image en ligne et d'un
   dictionnaire au bas de chaînes de 0, 1, 50 et 300 Form XObjects (deux
   unités par niveau, celles de `func(*args)`).
-- `oracle/adversarial/pages.py` → `adv-pages` : héritage (`/Resources`,
+- `oracle/adversarial/pages.py` → `adv-pages` (285 PDF) : héritage (`/Resources`,
   `/MediaBox`, `/CropBox`, `/Rotate`, depuis les nœuds et le catalogue),
   boucles et partages dans l'arbre, `/Kids` absents ou atypiques (entiers,
   dicts, flux, noms), repli sans `/Pages`, arbres profonds jusqu'à la
@@ -588,5 +596,11 @@ dépôt ne correspond plus à la copie que voit cargo mutants.
 3. Corpus adverse de l'étape : 100 % identique.
 4. Mutations : aucune survivante non justifiée.
 
-La version Wasm est vérifiée par les mêmes traces (le binaire de trace tourne
-aussi sous Node via le Wasm) sur l'ensemble `quick`.
+La version Wasm est vérifiée par les mêmes rejeux unitaires compilés pour
+`wasm32-wasip1` (`scripts/check.sh`), par `scripts/wasm-depth-gate.sh` (le
+profil `dist` sur les fenêtres de profondeur des corpus adverses, comparé au
+natif) et, à l'intégration d'une vague, par `pdftrace` compilé en Wasm
+(`dist`, sous le WASI de Node, un fichier par processus) comparé au natif sur
+`quick` pour les étapes de la vague (vague 3 : `interp`, `fonts`, `layout`).
+`oracle.verify` ne mène pas le binaire Wasm lui-même : `--out` nomme ses
+fichiers temporaires par le numéro de processus, que WASI n'a pas.
