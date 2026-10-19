@@ -27,15 +27,25 @@ pub enum TextArg<'a> {
 /// pdfminer's version.
 pub fn decode_text(s: TextArg<'_>) -> PyResult<String> {
     let _frame = py_frame()?;
-    match s {
-        TextArg::Bytes(b) => {
-            if let Some(body) = b.strip_prefix(b"\xfe\xff") {
-                // str(s[2:], "utf-16be", "ignore")
-                let units = body.as_chunks::<2>().0.iter().map(|p| u16::from_be_bytes(*p));
-                return Ok(char::decode_utf16(units).filter_map(Result::ok).collect());
-            }
-            Ok(b.iter().map(|&c| doc_char(u32::from(c))).collect())
+    if let TextArg::Bytes(b) = &s {
+        if let Some(body) = b.strip_prefix(b"\xfe\xff") {
+            // str(s[2:], "utf-16be", "ignore"): not one of PyUnicode_Decode's
+            // fast paths, so the codec registry's decoder runs,
+            // encodings.utf_16_be.decode, a Python function called from C
+            pycompat::recursion::c_called_leaf()?;
+            let units = body.as_chunks::<2>().0.iter().map(|p| u16::from_be_bytes(*p));
+            return Ok(char::decode_utf16(units).filter_map(Result::ok).collect());
         }
+    }
+    // `ords` and the generator `"".join` runs are created (a frame check
+    // each), then join resumes the second from C, which resumes `ords`, two
+    // frames down, once per character and once more (or up to the
+    // IndexError): every check is at most two frames down, and nothing
+    // between them can raise, so the deepest decides.
+    let _entry = eval_entry()?;
+    pycompat::recursion::leaf(2)?;
+    match s {
+        TextArg::Bytes(b) => Ok(b.iter().map(|&c| doc_char(u32::from(c))).collect()),
         TextArg::Str(s) => {
             // PDFDocEncoding[ord(c)]: an IndexError past 255, then str(s)
             if s.chars().any(|c| u32::from(c) > 255) {

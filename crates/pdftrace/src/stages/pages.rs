@@ -14,7 +14,7 @@ use super::{Stage, StageInput};
 use crate::canon::{canon, canon_exc, canon_obj};
 use crate::value::{PyStr, Value};
 
-pub const STAGE: Stage = Stage { name: "pages", run: Some(run) };
+pub const STAGE: Stage = Stage { name: "pages", run: Some(run), oracle_input: false };
 
 fn float_rect(r: &FloatRect) -> String {
     canon(&Value::Tuple(r.iter().map(|&f| Value::Float(f)).collect()))

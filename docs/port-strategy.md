@@ -227,6 +227,52 @@ Lecture :
   un `LTChar` pour chaque `to_unichr` et compte ce qu'il vérifie : 40 910
   (dont 113 surrogates isolés) sur `fonts` et 106 769 (dont 28) sur
   `corpus_fonts`, avec un plancher par test.
+- **Vague 3** (en cours, octobre 2026) : base `wave3/base` partagée par
+  deux chantiers parallèles (INTERP, CONVERTER ; plan et contrat dans
+  `architecture.md`, « Vague 3 ») : côté Python, les étapes `fonts`,
+  `interp`, `layout` (la spécification), mesurées sur `quick` ; côté Rust,
+  les interfaces de `pdfdevice`, `pdfinterp`, `converter` et du
+  périphérique de pdfplumber, en squelettes qui compilent, et
+  `pdftrace --oracle-dir` (les `id()` de Python pour l'étape `layout`).
+  Chantier INTERP (branche `wave3/interp`) : `pdfinterp` et `pdfdevice`
+  complets, cadres comptés ; étapes Rust `fonts`, `interp` (en attente du
+  convertisseur) et `fonts_text`, `interp_text` (sur `PDFTextDevice`,
+  Python et Rust) ; corpus adverse `adv-interp`, balayages de profondeur
+  `interp_deep` et rejeu `interp_unit` ; `interp_text` et `fonts_text`
+  identiques sur `all` (1 853), `micro` (17) et `adv-interp` (279) ;
+  mutations : survivants tous justifiés (résultats et mesures :
+  `architecture.md`, « Vague 3 », « Réalisation »).
+  Chantier CONVERTER (`wave3/converter`) : `converter.rs`, le
+  périphérique de pdfplumber et les cadres des constructeurs du layout
+  portés, vérifiés sans l'interpréteur par `oracle/unit/converter.py`
+  (suites d'appels générées, frontières de récursion, appels des 20
+  premières pages de `all`) ; l'étape Rust `layout` est écrite et attend
+  l'interpréteur (chantier INTERP).
+  Rejeux identiques (natif et `wasm32-wasip1`) : 429 cas générés, 606
+  cas de profondeur, 3 657 pages du corpus ; mutations sans survivant
+  non justifié (`architecture.md`, « Chantier CONVERTER ») ; cache
+  Python de l'étape `layout` construit sur `all` (1 853 fichiers, aucun
+  délai, 1,8 Go).
+  Jonction (`wave3/join`) : les deux chantiers fusionnés, un seul cache
+  de motifs `re` et un seul modèle d'appel de classe ; `interp`, `fonts`
+  et `layout` identiques à Python sur `all` (1 853, 20 premières pages),
+  `adv-interp` (279), `adv-pages` (285), `adv-objects` (333), avec
+  l'ordre des `id()` de la trace Python ; `CreationOrder` seul donne le
+  résultat de Python sur 98,6 % des pages de `all` où Python est stable
+  d'une exécution à l'autre (Python lui-même change d'analyse sur 10,6 %
+  des pages à deux boîtes ou plus : les `id()` sont des adresses) ; `pdftrace` 5,3 fois
+  plus rapide que Python par page hors démarrage (54 ms contre 288 ms) ;
+  protocole des CMaps paresseuses vérifié à travers l'interpréteur
+  (`lazy_cmap`) ; mutations sans survivant non justifié
+  (`architecture.md`, « Jonction »).
+  Revue (`wave3/fix`) : premier `str(x)` d'un processus (spécialisation
+  de CPython) modélisé, pile Wasm de 8 Mio vérifiée par une porte au
+  profil `dist`, état du processus remis après un appel nul des CMaps
+  paresseuses, fenêtres adverses `climit-*` et `depth-subpaths-first`,
+  statistique `CreationOrder` rapportée à la variation de Python ; la
+  référence reste la journalisation de pdfminer coupée (écart documenté
+  avec la configuration par défaut) ; parité identique partout
+  (`architecture.md`, « Corrections de la revue »).
 - **Vagues suivantes**, dans l'ordre des dépendances :
   1. `pdfinterp`, `pdfdevice`, `converter` (`PDFPageAggregator` vers
      `layout`) : étapes `fonts`, `interp`, `layout` (comptage des cadres de

@@ -15,7 +15,7 @@ use pdfminer::pdftypes::{
     decipher_all, dict_value, float_value, int_value_obj, list_value, num_value, resolve1, resolve1_none, resolve_all,
     str_value, uint_value, DecipherCallable, ObjId, PDFDict, PDFList, PDFObjRef, PDFObject, PDFResolver, PDFStream,
 };
-use pdfminer::psparser::{keyword_name, literal_name, KeywordName, LIT_bytes, KWD, LIT};
+use pdfminer::psparser::{keyword_name, literal_name, KeywordName, LIT_bytes, KWD, LIT, LITERAL_NAME_STR};
 use pdftrace::canon::{canon_obj, sha256_hex};
 use pdftrace::unit::UnitData;
 use pdftrace::value::{NameValue, Value};
@@ -526,10 +526,25 @@ fn canon_sha(r: PyResult<PDFObject>) -> Value {
 /// `repr`, `literal_name`, `resolve_all` and `decipher_all` of objects
 /// nested close to Python's recursion limits, from the depth the generator
 /// called them at: the same `RecursionError`, at the same depth.
+/// `literal_name`'s `str(x)` has run before in the generator's process
+/// (`warm_call_sites`): specialized.
 #[test]
 fn deep() {
+    replay_deep("deep", true);
+}
+
+/// `literal_name` of the same objects as the first `str(x)` of its call
+/// site in the process (`pycompat::specialize`: one C unit more), each case
+/// in a child the generator forked before anything ran it.
+#[test]
+fn deep_first() {
+    replay_deep("deep_first", false);
+}
+
+fn replay_deep(name: &str, executed: bool) {
     let callback: DecipherCallable = Rc::new(test_decipher);
-    replay("deep", |a| {
+    replay(name, |a| {
+        pycompat::specialize::set_executed(LITERAL_NAME_STR.name, executed);
         let (doc, weak) = doc();
         let Value::Dict(depth) = &a[1] else { panic!() };
         let field = |name: &str| match depth.iter().find(|(k, _)| k.as_str() == Some(name)) {

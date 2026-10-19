@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Local CI: formatting, lints, upstream references, generated tables, Rust
 # tests on the unit oracle data (natively and compiled to WebAssembly, run by
-# Node's WASI), the JavaScript package (Wasm build, Node tests, size budget;
-# the browsers are scripts/check-browsers.sh) and the oracle self-tests. Regenerates the unit oracle data first when it is
+# Node's WASI), the deepest recursions on the production Wasm profile
+# (scripts/wasm-depth-gate.sh), the JavaScript package (Wasm build, Node
+# tests, size budget; the browsers are scripts/check-browsers.sh) and the
+# oracle self-tests. Regenerates the unit oracle data first when it is
 # missing or stale (`python -m oracle.unit`).
 #
 #   scripts/check.sh            # from any directory
@@ -64,6 +66,9 @@ capped cargo test --release --workspace
 step "cargo test on wasm32-wasip1 (Node WASI): the same unit replays compiled to WebAssembly"
 CARGO_TARGET_WASM32_WASIP1_RUNNER="node --no-warnings $ROOT/scripts/wasi-runner.mjs" \
   capped cargo test --release --target wasm32-wasip1 -p pycompat -p pdfminer -p pdfplumber -p pdftrace -p pdfplumber-wasm
+
+step "the deepest recursions Python accepts on the production Wasm profile (dist), against native"
+capped scripts/wasm-depth-gate.sh
 
 step "JavaScript package: CMap names, build (dist/, without wasm-opt), types, Node tests, size budget"
 node scripts/build-cmaps.mjs --check-names

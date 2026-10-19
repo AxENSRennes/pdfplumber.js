@@ -16,7 +16,7 @@ use super::{Stage, StageInput};
 use crate::canon::{canon, canon_exc, canon_obj};
 use crate::value::Value;
 
-pub const STAGE: Stage = Stage { name: "psparser", run: Some(run) };
+pub const STAGE: Stage = Stage { name: "psparser", run: Some(run), oracle_input: false };
 
 /// `_parse(streams)`: every object until the exception that ends the job.
 fn parse(lines: &mut Lines, streams: Vec<PDFObject>) {

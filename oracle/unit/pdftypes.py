@@ -38,10 +38,17 @@ object does in ``PDFDocument.getobj``).
   lists (``RecursionError``). Deep objects are given
   as ``["deep", shape, n, leaf]`` (``deep_object``), results of
   ``resolve_all``/``decipher_all`` as the SHA-256 of their ``canon``.
+  ``literal_name``'s ``str(x)`` has run before (``oracle.depth``,
+  ``warm_call_sites``): the cost of every execution but a process's first.
+- ``deep_first``: ``literal_name`` of the same deep objects, each case in a
+  child process forked before anything ran ``literal_name``'s ``str(x)``
+  (written first): the first execution of that call site in a process,
+  generic, one C unit more (``crates/pycompat/src/specialize.rs``).
 
 Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.pdftypes
 """
 
+import builtins
 import hashlib
 import math
 import random
@@ -66,7 +73,9 @@ from pdfminer.pdftypes import (
 from pdfminer.psparser import KWD, LIT, keyword_name, literal_name
 
 from ..canon import canon
+from ..depth import executed_call_sites, warm_call_sites
 from ._common import at_depth, depth_here, require_oracle_python, write_cases, write_meta
+from .document import in_child
 
 
 # An object whose parsing fails: PDFObjRef.resolve lets the error through.
@@ -482,6 +491,7 @@ DEEP_LEAVES = [["list", []], ["dict", []], ["v", 7], ["v", 2**80], ["v", 1.5], [
 
 
 def gen_deep(rng):
+    warm_call_sites()
     # repr() and str() (literal_name) around the C recursion limit
     for op_name, op in (("repr", repr), ("literal_name", literal_name)):
         for shape in ("list", "dict", "mixed"):
@@ -521,7 +531,33 @@ def gen_deep(rng):
         yield ["decipher_all", depth, spec, []], canon_sha(out)
 
 
+def _first_literal_name(shape, n, leaf):
+    """In a forked child: ``literal_name`` of a deep object as the first
+    ``str(x)`` of its call site, ``[depth, out]`` (JSON)."""
+    if executed_call_sites():
+        raise RuntimeError(f"call sites already executed: {executed_call_sites()}")
+    depth, out = at_depth(literal_name, deep_object(shape, n, leaf, TableDoc([])))
+    out = text_sha(out)
+    return [depth, [type(out).__name__, str(out)] if isinstance(out, BaseException) else out]
+
+
+def gen_deep_first(rng):
+    # literal_name's str(x) executed for the first time in the process, around
+    # the C recursion limit (each case in its own forked child)
+    for shape in ("list", "dict", "mixed"):
+        for leaf in (["list", []], ["v", 7], ["dict", [["Q", ["lit", "R"]]]], ["ref", 5]):
+            left = depth_here()["c_left"]
+            for n in range(left - 4, left + 2):
+                depth, out = in_child(lambda: _first_literal_name(shape, n, leaf))
+                if isinstance(out, list):
+                    cls, msg = out
+                    out = getattr(builtins, cls)(msg)
+                yield ["literal_name", depth, ["deep", shape, n, leaf], []], out
+
+
 GENERATORS = {
+    # first: forked before anything executes literal_name's str(x)
+    "deep_first": gen_deep_first,
     "objects": gen_objects,
     "eq": gen_eq,
     "resolve": gen_resolve,

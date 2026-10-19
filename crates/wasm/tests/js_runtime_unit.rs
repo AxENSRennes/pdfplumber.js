@@ -281,6 +281,48 @@ fn exc(name: &str, message: &str) -> Js {
     obj(vec![("exception", s(name)), ("message", s(message))])
 }
 
+/// A void call puts the modeled state of the Python process back as it was
+/// before it (`pdfminer::process_state`): here the CMap `CMapDB` cached
+/// from a file already handed over, before the call missed another one.
+/// Python's single run, every CMap installed, loads that CMap during the
+/// call, deeper than a re-run that found it cached would.
+#[test]
+fn a_void_call_puts_the_process_state_back() {
+    if cfg!(target_family = "wasm") {
+        return; // see a_void_call_leaves_no_state_and_its_rerun_matches_pdfminer
+    }
+    let dir = cmap_dir();
+    let names: Vec<String> = fs::read_to_string(dir.join("names.txt")).unwrap().lines().map(str::to_owned).collect();
+    on_thread(64 << 20, move || {
+        use pdfminer::cmapdb::CMapDB;
+        let mut core = Core::new();
+        ok(call(&mut core, "cmap_configure", 0, list(names.iter().map(|n| PyValue::str(n)).collect()), None));
+        let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(b"%PDF".to_vec()))) else {
+            panic!("a handle")
+        };
+        let doc = PyValue::from(doc as i64);
+        let (present, missing) = ("UniJIS-UCS2-H", "UniGB-UCS2-H");
+        let raw = |name: &str| fs::read(dir.join(format!("{name}.pdfcmap"))).unwrap();
+        ok(call(&mut core, "cmap_add", 0, PyValue::str(present), Some(raw(present))));
+        let decode = |name: &str| {
+            list(vec![
+                PyValue::str("doc_cmap_decode"),
+                PyValue::from(0_i64),
+                list(vec![doc.clone(), PyValue::str(name), PyValue::Bytes(Rc::from(&[0u8, 0x41][..]))]),
+            ])
+        };
+        let sequence = list(vec![decode(present), decode(missing)]);
+        let cached = || CMapDB::caches_snapshot().names().0.into_iter().map(str::to_owned).collect::<Vec<_>>();
+        assert!(cached().is_empty());
+        let r = call(&mut core, "sequence", 0, sequence.clone(), None);
+        assert_eq!((r.status, r.value), (2, Js::Arr(vec![s(missing)])));
+        assert!(cached().is_empty(), "the void call's CMapDB cache entries are dropped: {:?}", cached());
+        ok(call(&mut core, "cmap_add", 0, PyValue::str(missing), Some(raw(missing))));
+        assert_eq!(call(&mut core, "sequence", 0, sequence, None).status, 0);
+        assert_eq!(cached(), [missing, present]);
+    });
+}
+
 #[test]
 fn search_reads_main_group_for_each_match_like_m_group() {
     for &format in FORMATS {

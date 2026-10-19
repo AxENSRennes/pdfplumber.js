@@ -52,12 +52,22 @@ GENERATORS: dict[str, tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]] = {
     "cmaps": (("meta.json", "synthetic.json", "corpus.json"), ((), ("--corpus",))),
     # generated cases and depth boundaries (minutes), then the fonts of the real corpus (minutes)
     "fonts": (("meta.json", "generated.json", "corpus.json"), ((), ("--corpus",))),
+    # generated device-call sequences and depth boundaries (a minute), then
+    # the calls of the real corpus's pages (minutes)
+    "converter": (("meta.json", "corpus.json"), ((), ("--corpus",))),
     "text_tables": (("meta.json",), ((),)),
     # every page operation on the quick set and sample documents (minutes)
     "text_tables_real": (("meta.json",), ((),)),
     # the adversarial corpora adv-objects and adv-pages (written first), then
     # the stage traces of the document layer on them, micro and small quick files (minutes)
     "document": (("meta.json",), ((),)),
+    # the adversarial corpus adv-interp (written first, its depth windows
+    # bisected on the oracle: minutes), then the traces of the interp_text
+    # and fonts_text stages on it, micro and small quick files (minutes)
+    "interp": (("meta.json",), ((),)),
+    # interp_text with a device whose methods descend 60 frames, each file of
+    # adv-interp swept from a range of entry depths (minutes)
+    "interp_deep": (("meta.json",), ((),)),
     # what the JavaScript tests replay through the WebAssembly boundary (seconds)
     "js_runtime": (("meta.json",), ((),)),
 }

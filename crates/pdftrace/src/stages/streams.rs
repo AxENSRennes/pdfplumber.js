@@ -11,7 +11,7 @@ use super::{Stage, StageInput};
 use crate::canon::{canon, canon_exc, canon_obj, write_bytes};
 use crate::value::Value;
 
-pub const STAGE: Stage = Stage { name: "streams", run: Some(run) };
+pub const STAGE: Stage = Stage { name: "streams", run: Some(run), oracle_input: false };
 
 fn run(input: &StageInput<'_>, out: &mut dyn Write) -> io::Result<()> {
     terminated(out, |lines: &mut Lines| {

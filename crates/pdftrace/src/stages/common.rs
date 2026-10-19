@@ -1,15 +1,19 @@
 //! Helpers shared by the stages, the Rust side of
 //! `oracle/stages/_common.py`.
 
+use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::io::{self, Write};
 use std::rc::Rc;
 
+use pdfminer::pdfdevice::PDFDevice;
 use pdfminer::pdfdocument::PDFDocument;
+use pdfminer::pdfinterp::{PDFPageInterpreter, PDFResourceManager};
+use pdfminer::pdfpage::PDFPage;
 use pdfminer::pdfparser::FileKind;
-use pdfminer::pdftypes::{ObjId, PDFObject};
-use pycompat::recursion::{py_frames, with_depth};
-use pycompat::PyResult;
+use pdfminer::pdftypes::ObjId;
+use pycompat::recursion::{py_frame, py_frames, with_depth, Depth};
+use pycompat::{PyErr, PyResult};
 
 use super::{StageInput, STAGE_ENTRY};
 use crate::canon::{canon_exc, canon_obj};
@@ -37,15 +41,37 @@ impl Lines {
     }
 }
 
+thread_local! {
+    /// The depth [`terminated`] runs a stage body from on this thread
+    /// ([`with_stage_entry`]), `None` for the oracle's (`STAGE_ENTRY`).
+    static ENTRY: Cell<Option<Depth>> = const { Cell::new(None) };
+}
+
+/// Runs `f` with the stage bodies starting at `entry` instead of the
+/// oracle's stage entry depth: a unit replay of a trace that its generator
+/// computed from a deeper call site (`oracle/unit/interp.py`, the depth
+/// windows from 1 or 2 more frames).
+pub fn with_stage_entry<R>(entry: Depth, f: impl FnOnce() -> R) -> R {
+    let previous = ENTRY.with(|e| e.replace(Some(entry)));
+    let result = f();
+    ENTRY.with(|e| e.set(previous));
+    result
+}
+
 /// `terminated`: runs a stage body from the oracle's stage entry depth and
 /// ends the trace with `!end`, or with the line of the exception that
 /// escaped the body. As the oracle, it starts from a new Python process
-/// ([`super::py_process`]) with logging disabled (`logging.disable`).
+/// ([`super::py_process`]) with logging disabled (`logging.disable`),
+/// unless the trace goes on in the current one
+/// ([`super::py_process::continuing`]).
 pub fn terminated(out: &mut dyn Write, body: impl FnOnce(&mut Lines) -> PyResult<()>) -> io::Result<()> {
-    super::py_process::start();
-    pycompat::logging::disable();
+    if !super::py_process::is_continuing() {
+        super::py_process::start();
+        pycompat::logging::disable();
+    }
     let mut lines = Lines::default();
-    let result = with_depth(STAGE_ENTRY, || body(&mut lines));
+    let entry = ENTRY.with(Cell::get).unwrap_or(STAGE_ENTRY);
+    let result = with_depth(entry, || body(&mut lines));
     match result {
         Ok(()) => lines.push("!end"),
         Err(e) => lines.push(canon_exc(&e)),
@@ -84,7 +110,28 @@ pub fn canon_id(id: &ObjId) -> String {
     canon_obj(id.obj())
 }
 
-/// `canon(obj)` of an optional object (`None` when absent).
-pub fn canon_opt(obj: Option<&PDFObject>) -> String {
-    obj.map_or_else(|| "None".to_owned(), canon_obj)
+/// `interp.page_layout` of `oracle/stages/interp.py`, shared by the
+/// `fonts`, `interp` and `layout` stages: the body of
+/// pdfplumber/page.py:256 `Page.layout` with `laparams=None` (one frame,
+/// the property's), on the document's resource manager:
+/// `device = make()`, `PDFPageInterpreter(rsrcmgr, device)`,
+/// `interpreter.process_page(page)`. Returns the device, the interpreter
+/// (the `fonts` stage reads its `fontmap`) and what `process_page` raised.
+///
+/// Wave 3: `make` stands for the device's class call; the frames of its
+/// `__init__` chain (`PDFPageAggregator.__init__` ->
+/// `PDFLayoutAnalyzer.__init__` -> `PDFDevice.__init__`, from C) are to be
+/// checked there by the porter (`c_called_leaf`, `leaf`), as
+/// `PDFPageInterpreter::new` checks its own.
+pub fn page_layout<D: PDFDevice + 'static>(
+    rsrcmgr: &Rc<PDFResourceManager>,
+    page: &PDFPage,
+    make: impl FnOnce() -> PyResult<D>,
+) -> PyResult<(Rc<RefCell<D>>, PDFPageInterpreter, Option<PyErr>)> {
+    let _frame = py_frame()?;
+    let device = Rc::new(RefCell::new(make()?));
+    let shared: Rc<RefCell<dyn PDFDevice>> = device.clone();
+    let mut interpreter = PDFPageInterpreter::new(rsrcmgr.clone(), shared)?;
+    let error = interpreter.process_page(page).err();
+    Ok((device, interpreter, error))
 }

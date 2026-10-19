@@ -5,4 +5,4 @@
 
 use super::Stage;
 
-pub const STAGE: Stage = Stage { name: "plumber_doc", run: None };
+pub const STAGE: Stage = Stage { name: "plumber_doc", run: None, oracle_input: false };

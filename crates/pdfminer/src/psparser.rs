@@ -391,6 +391,21 @@ impl Symbol {
     }
 }
 
+/// The symbols the process has interned so far ([`py_intern`]): a
+/// snapshot to put back with [`py_symbols_restore`].
+#[derive(Clone, Debug)]
+pub struct PyInterned(rustc_hash::FxHashSet<usize>);
+
+/// A snapshot of the interned symbols.
+pub fn py_symbols_snapshot() -> PyInterned {
+    PY_INTERNED.with(|s| PyInterned(s.borrow().clone()))
+}
+
+/// Puts back a [`py_symbols_snapshot`].
+pub fn py_symbols_restore(interned: PyInterned) {
+    PY_INTERNED.with(|s| *s.borrow_mut() = interned.0);
+}
+
 /// Starts a new run of the Python process, in which exactly `symbols` are
 /// interned (those its imported modules intern at import time): the
 /// harness calls it where the oracle starts a process.
@@ -431,8 +446,9 @@ pub static KEYWORD_DICT_END: LazyLock<PSKeyword> = LazyLock::new(|| KWD(b">>"));
 /// `literal_name(x)` with `settings.STRICT = False`: the literal's name as a
 /// `str` (a `bytes` name is decoded as UTF-8, or else written as its repr),
 /// and `str(x)` for any other object, which raises `RecursionError` for an
-/// object nested too deep (see `pdftypes`, "Depth"). Takes its Python
-/// frame.
+/// object nested too deep (see `pdftypes`, "Depth"; one level less deep the
+/// first time a process runs that `str(x)`, [`LITERAL_NAME_STR`]). Takes its
+/// Python frame.
 pub fn literal_name(x: &PDFObject) -> PyResult<String> {
     let _frame = py_frame()?;
     if let PDFObject::Literal(lit) = x {
@@ -451,8 +467,19 @@ pub fn literal_name(x: &PDFObject) -> PyResult<String> {
     if settings::STRICT {
         unreachable!("settings.STRICT is False");
     }
+    // `return str(x)`: one C unit more the first time the process runs it
+    let _call = LITERAL_NAME_STR.str_call()?;
     x.py_str()
 }
+
+// pdfminer/psparser.py:110 literal_name
+/// The call site of `return str(x)` in `literal_name` (psparser.py:121),
+/// whose first execution in a process takes one C unit more
+/// (`pycompat::specialize`): the first non-literal `literal_name` raises
+/// `RecursionError` for an object nested one level less deep (a `Tf`, `Do`,
+/// `CS`/`cs` operand, a `/ColorSpace` resource, a dict key of the parsers).
+pub static LITERAL_NAME_STR: pycompat::specialize::CallSite =
+    pycompat::specialize::CallSite::new("psparser.literal_name str(x)");
 
 /// Result of [`keyword_name`]: Python returns either a `str` or, for a
 /// non-keyword with `STRICT = False`, the object itself.

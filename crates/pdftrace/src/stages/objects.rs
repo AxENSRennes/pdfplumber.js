@@ -16,7 +16,7 @@ use super::{Stage, StageInput};
 use crate::canon::{canon, canon_exc, canon_obj};
 use crate::value::Value;
 
-pub const STAGE: Stage = Stage { name: "objects", run: Some(run) };
+pub const STAGE: Stage = Stage { name: "objects", run: Some(run), oracle_input: false };
 
 /// `canon(xref.get_pos(objid))`: `(strmid, index, genno)`.
 pub fn canon_pos(pos: &XRefPos) -> String {

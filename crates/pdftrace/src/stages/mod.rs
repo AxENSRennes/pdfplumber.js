@@ -16,7 +16,9 @@ use pycompat::recursion::{Depth, C_RECURSION_LIMIT};
 
 pub mod common;
 pub mod fonts;
+pub mod fonts_text;
 pub mod interp;
+pub mod interp_text;
 pub mod layout;
 pub mod objects;
 pub mod pages;
@@ -49,6 +51,11 @@ pub struct StageInput<'a> {
     /// `--max-pages`: page-by-page stages stop after this many pages
     /// (`None`: every page).
     pub max_pages: Option<usize>,
+    /// The oracle's trace of this file, for a stage that reads it
+    /// ([`Stage::oracle_input`], `--oracle-dir`): the `layout` stage takes
+    /// Python's `id()` order of the text boxes and groups from its `ids`
+    /// lines. `None` without `--oracle-dir`.
+    pub oracle: Option<&'a str>,
 }
 
 /// Writes the trace of one PDF.
@@ -59,6 +66,10 @@ pub struct Stage {
     pub name: &'static str,
     /// `None` until the stage is implemented.
     pub run: Option<StageFn>,
+    /// Whether the stage reads the oracle's trace of the file
+    /// ([`StageInput::oracle`]): its Python module sets `ORACLE_INPUT`, and
+    /// `oracle.verify` passes `--oracle-dir`.
+    pub oracle_input: bool,
 }
 
 /// Every stage, in pipeline order.
@@ -68,7 +79,9 @@ pub const STAGES: &[Stage] = &[
     streams::STAGE,
     pages::STAGE,
     fonts::STAGE,
+    fonts_text::STAGE,
     interp::STAGE,
+    interp_text::STAGE,
     layout::STAGE,
     plumber_objects::STAGE,
     plumber_text::STAGE,

@@ -229,23 +229,8 @@ fn clip(s: &str) -> &str {
 /// (`process_state` of `oracle/unit/document.py`).
 fn generator_process(data: &UnitData) -> PyProcess {
     let cases = data.cases("py_process");
-    let [(_, Value::Dict(items))] = &cases[..] else { panic!("one process state") };
-    let get = |name: &str| {
-        items.iter().find(|(k, _)| k.as_str() == Some(name)).map(|(_, v)| v).unwrap_or_else(|| panic!("{name}"))
-    };
-    let list = |name: &str| match get(name) {
-        Value::List(l) => l.clone(),
-        other => panic!("{name}: {other:?}"),
-    };
-    let bytes = |v: &Value| match v {
-        Value::Bytes(b) => b.clone(),
-        other => panic!("bytes: {other:?}"),
-    };
-    PyProcess {
-        literals: list("literals").iter().map(|v| v.as_str().expect("a str name").to_owned()).collect(),
-        bytes_literals: list("bytes_literals").iter().map(bytes).collect(),
-        keywords: list("keywords").iter().map(bytes).collect(),
-    }
+    let [(_, state)] = &cases[..] else { panic!("one process state") };
+    PyProcess::from_value(state)
 }
 
 #[test]
@@ -268,7 +253,7 @@ fn stage_traces() {
             _ => String::new(),
         };
         let max_pages = max_pages.as_i64().filter(|&m| m > 0).map(|m| m as usize);
-        let input = StageInput { pdf, password: &password, max_pages };
+        let input = StageInput { pdf, password: &password, max_pages, oracle: None };
         let what = what.as_str().expect("a stage");
         let got = trace(what, &input);
         let Value::Str(expected) = &expected else { panic!("bad output") };

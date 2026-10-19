@@ -92,9 +92,10 @@ Chaque étape a un nom stable, une implémentation Python
 | `objects` | xref (type, trailer, `get_pos` de chaque entrée), catalogue, info, chiffrement, puis chaque objet indirect résolu (`getobj`), erreurs comprises |
 | `streams` | chaque flux : filtres, paramètres, données décodées (`x#…`) ou exception |
 | `pages` | arbre des pages : attributs hérités, boîtes, rotation, ressources, contenus, libellés ; boîtes de la `Page` pdfplumber (TrimBox/BleedBox/ArtBox comprises), `doctop` |
-| `fonts` | chaque police utilisée : type, métriques, et pour chaque code rencontré `decode`, `to_unichr`, `char_width`, `char_disp` |
-| `interp` | appels au périphérique (`begin_figure`, `paint_path`, `render_char`, `render_image`, balises) avec l'état graphique |
-| `layout` | arbre `LTPage` complet, avec et sans `laparams` |
+| `fonts` | les polices obtenues par l'interpréteur (le `fontmap` de la page, les entrées ajoutées au cache du `PDFResourceManager`) : classe et attributs, puis, pour chaque chaîne affichée, `decode` et, par code, `to_unichr`, `char_width`, `char_disp` |
+| `interp` | chaque appel de l'interpréteur au périphérique de pdfplumber (`set_ctm`, pages, figures, `paint_path`, `render_image`, `render_string`/`render_char` et l'avance rendue, balises), avec les états graphique et texte, et où remontent les exceptions |
+| `fonts_text`, `interp_text` | `fonts` et `interp` sur le `PDFTextDevice` de pdfminer (`render_char` rend `0`) au lieu du périphérique de pdfplumber : l'interpréteur vérifié sans convertisseur (`oracle/stages/interp_text.py`) |
+| `layout` | le `LTPage` brut (`laparams=None`, le défaut de pdfplumber) puis analysé (`LAParams()`), tous attributs (`mcid`, `tag` compris), et le rang des `id()` de l'analyse (`ids`) ; non reproductible d'une construction du cache à l'autre sur les pages où des boîtes sont à égale distance (les `id()` sont des adresses : un tirage), la parité suivant le tirage du cache (`pdftrace --oracle-dir`) |
 | `plumber_objects` | `page.objects` de pdfplumber, tous attributs, plus boîtes et `doctop` |
 | `plumber_text` | `extract_text` (simple, `layout=True`, options), `extract_words`, `extract_text_lines`, `search`, `dedupe_chars` |
 | `plumber_tables` | `find_tables`/`extract_tables` pour les stratégies `lines`, `lines_strict`, `text`, `explicit` |
@@ -123,16 +124,32 @@ bord par le cache) et le format de chaque ligne. Règles communes :
   `RecursionError` dans une récursion profonde (`create_pages` journalise à
   chaque nœud). La référence est donc la journalisation coupée
   (`logging.disable(logging.CRITICAL)`), comme l'exécute l'oracle et comme
-  se comporte l'API JS, qui n'émet aucun message. Ce n'est pas la
-  configuration par défaut d'un utilisateur (aucun gestionnaire, niveau
-  WARNING) : `log.debug` et `log.info` y coûtent la même chose, mais
-  `log.warning` y est actif et exécute `_log`, `findCaller`, `makeRecord` et
-  le gestionnaire `lastResort`, bien plus profonds (12 cadres sous
-  l'appelant de l'avertissement de `PDFFont._parse_bbox`, contre 4 coupée),
-  et dont la profondeur dépend des arguments formatés ; une configuration
-  DEBUG fait de même pour chaque `log.debug`. Près de la limite, ces
-  configurations peuvent avancer la `RecursionError` : non modélisé. Le port
-  compte les cadres de la journalisation coupée comme les autres
+  se comporte l'API JS sans `onWarning` ; c'est aussi, au cadre près, la
+  configuration courante qui fait taire pdfminer
+  (`logging.getLogger("pdfminer").setLevel(logging.ERROR)` : `isEnabledFor`
+  remplit son cache par `getEffectiveLevel`, un cadre plus bas, comme par
+  `_acquireLock` ; mesuré : 4 cadres au premier appel, 3 ensuite, dans les
+  deux cas). Ce n'est pas la configuration par défaut d'un utilisateur
+  (aucun gestionnaire, niveau WARNING) : `log.debug` et `log.info` y
+  coûtent la même chose, mais `log.warning` y est actif et exécute `_log`,
+  `findCaller`, `makeRecord` et le gestionnaire `lastResort`, bien plus
+  profonds (11 cadres sous l'appelant au plus profond, `Formatter.format`
+  → `PercentStyle._format`, mesuré par une sonde bornée, le même avec
+  `basicConfig()`, `multiprocessing` ou `asyncio` importés, `stderr`
+  redirigé), et il formate le `%r` de ses arguments : sur un opérande
+  imbriqué près de la limite C, ce `repr` lève `RecursionError`, que
+  `StreamHandler.emit` relance, et la page échoue (la revue l'a montré pour
+  `w` et pour l'avertissement de `TJ` de `render_string_horizontal`, sur un
+  tableau de 20 000 niveaux) ; une chaîne de Form XObjects dont la Form la
+  plus profonde avertit échoue un niveau plus tôt (326 au lieu de 327). Une
+  configuration DEBUG fait de même pour chaque `log.debug`. Non modélisé :
+  la référence reste la journalisation coupée, une configuration fixe que
+  l'oracle exécute et que le port reproduit ; modéliser la configuration
+  par défaut changerait la référence de toutes les vagues (chaque
+  avertissement de `pdfinterp`, `pdfdevice`, `pdffont`, `pdfpage`,
+  `pdfdocument`, `cmapdb`, `psparser`, avec le `repr` de ses arguments, et
+  les fenêtres de profondeur de tous les corpus adverses). Le port compte
+  les cadres de la journalisation coupée comme les autres
   (`pycompat::logging`, « Profondeur de récursion » de `architecture.md`).
 - `oracle.stages.entry_depth()` mesure la profondeur (cadres Python, unités
   C restantes, `oracle/depth.py`) où s'exécute le corps d'une fonction
@@ -143,6 +160,17 @@ bord par le cache) et le format de chaque ligne. Règles communes :
 - Une étape par page traite les `--max-pages` premières pages (20 par défaut,
   0 = toutes), créées paresseusement : le générateur `create_pages` n'est plus
   relancé après la dernière page demandée.
+- Les étapes `fonts`, `interp` et `layout` mènent les pages comme pdfplumber
+  (un `PDFResourceManager` par document, un
+  `PDFPageAggregatorWithMarkedContent` et un `PDFPageInterpreter` par page,
+  `process_page` ; `architecture.md`, « Vague 3 »). `interp` et `fonts`
+  observent les appels par une sous-classe du périphérique (point
+  d'extension, pas de rustine), qui n'écrit rien pendant l'interprétation ;
+  `layout` n'ajoute aucune surcharge et analyse le `LTPage` brut à la
+  profondeur où `end_page` l'analyserait. Une adresse mémoire ne figure dans
+  aucune trace : les noms `str(id(obj))` des images en ligne deviennent
+  `inline{"n": k}`, et l'étape `layout` écrit le rang des `id()` de son
+  analyse (lignes `ids`), que `pdftrace` relit (`ORACLE_INPUT`, ci-dessous).
 
 Les modules sans PDF en entrée (filtres, inflate, chiffrement, parseur de
 CMap, analyse de mise en page, tables à partir de bords) ont aussi des **tests
@@ -177,11 +205,12 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   | `canon.py` | `pdftrace::{canon, typed_json}` | `canon_unit.rs` | `canon` et JSON typé (ci-dessus), valeurs imbriquées sur 2·10^5 à 10^6 niveaux |
   | `pycompat.py` | `pycompat` | `pycompat_unit.rs` | sémantique CPython, `PyStr` (surrogates isolés, `unicodedata.normalize` NFC/NFKC/NFD/NFKD, `repr`, `json`, UTF-16), `pow` et `atan2` de la libm (`math.atan2`), `hash()` numérique, limites de récursion |
   | `exceptions.py` | `psexceptions`, `pdfexceptions`, `pycompat::err` | `exceptions_unit.rs` | classes d'exception de pdfminer et pdfplumber |
-  | `pdftypes.py` | `pdftypes` | `pdftypes_unit.rs` | modèle d'objets, références, flux, déchiffrement, `uint_value`, objets imbriqués à la frontière des limites de récursion (`repr`/`str` en unités C, `resolve_all`/`decipher_all` en cadres) |
+  | `pdftypes.py` | `pdftypes`, `pycompat::specialize` | `pdftypes_unit.rs` | modèle d'objets, références, flux, déchiffrement, `uint_value`, objets imbriqués à la frontière des limites de récursion (`repr`/`str` en unités C, `resolve_all`/`decipher_all` en cadres) ; `deep_first` : `literal_name` comme premier `str(x)` de son site dans le processus (chaque cas dans un fils créé avant toute exécution du site), les autres cas avec le site déjà exécuté (`warm_call_sites`) |
   | `psparser_base.py` | `psparser` | `psparser_base_unit.rs` | `PSStackParser` sur un fichier : `nexttoken`, `nextline`, `revreadlines`, `seek`, `pop` |
   | `psparser.py` | `psparser`, `pdfparser` (`PDFContentParser`) | `psparser_unit.rs` | flux de contenu des pages et Form XObjects de l'ensemble `all` (`corpus.json`), corpus adverse `--fuzz 4000` (`fuzz.json`) suivi de jobs fixes (chaque fragment qui lève, chaque fragment posé sur une frontière de bloc, objets imbriqués autour de la limite de `repr`/`str` et sur 10^6 niveaux) ; comparés job par job par empreinte de la sérialisation canonique, chaque job rejoué depuis la profondeur où pdfminer l'a exécuté |
   | `utils.py` | `utils`, `casting`, `data_structures`, `pdfcolor`, `pdfplumber::ctm` | `utils_unit.rs` | matrices et points (ints, floats, grands ints, infinis, NaN, zéros signés), `get_bound`, `drange`, `bbox2str`/`matrix2str`, `parse_rect`, `uniq`/`fsplit`/`pick`, `nunpack`, `decode_text`, nombres romains et alphabétiques, `safe_*` de `casting`, `Plane`, `NumberTree`, espaces de couleur, `CTM` |
   | `layout.py` | `layout` | `layout_unit.rs` | pages brutes (réelles, par `PDFPageAggregatorWithMarkedContent`, et adverses) reconstruites puis analysées sous plusieurs `LAParams`, depuis la profondeur de Python et avec l'ordre des `id()` de Python ; objets `LT*` (`LTChar` vertical, `LTFigure` d'une Form XObject aux `/Matrix`/`/BBox` quelconques, attributs `mcid`/`tag`), lignes de texte, `list.sort` des clés du layout (NaN compris) |
+  | `converter.py` | `converter`, `pdfplumber::page` (`PDFPageAggregatorWithMarkedContent`), constructeurs de `layout`, `pdfdevice::device`, `pycompat::re_cache`, `pdftrace::{layout_dump, font_case}` | `converter_unit.rs` | suites d'appels de l'interpréteur au périphérique de pdfplumber, rejouées sans l'interpréteur sur un `PDFPageAggregatorWithMarkedContent` neuf, chaque appel depuis sa profondeur, sous `laparams=None` puis des `LAParams` (avec l'ordre des `id()` de Python, injecté avant `end_page`), sorties au format de l'étape `layout` (lignes `raw`, `analyzed`/`obj`/`group`, `ids`) ; `adversarial` : toutes les formes de `paint_path` jusqu'à 4 opérateurs et des plus longues, rectangles dans tous les sens et dégénérés, coordonnées NaN/infinies/énormes/entières, figures imbriquées aux `/BBox`/`/Matrix` de tout type, images (en ligne comprises), caractères de polices de toute sorte (`Spec` de `fonts.py`, cids indéfinis ou hors de la limite de `str()`), balises et propriétés de toute sorte, appels hors grammaire ; `depth` : pour chaque sorte d'appel et chaque chemin le plus profond, la frontière de la `RecursionError` (recherche dichotomique) et les cas autour ; `--corpus` : les appels des 20 premières pages de l'ensemble `all` (3 657 pages de 1 853 fichiers, 9 571 exécutions ; 2 pages de plus de 60 000 appels écartées ; le rejeu Python redonne la page de l'interprétation sur toutes), polices copiées comme celles de `fonts.py --corpus` (`corpus.json`) ; appels compactés (colonnes `zlib` des caractères d'une chaîne et des coordonnées d'un chemin, liste longue compressée : 188 Mo) |
   | `zlib.py` | `pycompat::zlib` | `zlib_unit.rs` | `zlib.decompress` et `zlib.decompressobj` de CPython sur zlib 1.3 : flux de compresseurs réels, troncatures, inversions de bits, flux deflate fabriqués aux tables invalides ou de taille maximale (`ENOUGH_LENS`, `ENOUGH_DISTS`), en entier, octet par octet, par morceaux, avec `max_length`, à travers les blocs de sortie de CPython |
   | `filters.py` | `lzw`, `ascii85`, `runlength`, prédicteurs de `utils`, `pdftypes` (`PDFStream.get_data`, `decompress_corrupted`), `ccitt` (par `decode`) | `filters_unit.rs` | LZW, ASCII85, ASCIIHex, RunLength, prédicteurs TIFF/PNG, `decompress_corrupted`, `PDFStream.get_data` sur des chaînes de filtres générées (références indirectes comprises), puis chaque flux de l'ensemble `all` (`corpus.bin`, `corpus.json` ; ~38 300 flux dont ~315 en `/CCITTFaxDecode`, aucun cas écarté) |
   | `ccitt.py` | `ccitt` | `ccitt_unit.rs` | arbres de classe, `BitParser.add`, le parseur mené par ses méthodes internes (cas des tests upstream compris), `ccittfaxdecode` sur des flux G4 générés (encodeur T.6 de test) et adverses, cas profonds près des limites de cadres et d'unités C |
@@ -192,6 +221,8 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   | `text_tables.py` | `pdfplumber::{obj, utils::{clustering, geometry, generic, text}, table}`, `pycompat::listsort` | `text_tables_unit.rs` | tri de CPython (timsort complet), opérateurs Python du modèle d'objets, `cluster_*`, géométrie, motifs de `extract_text_lines`, fonctions de `table.py`, `TableSettings.resolve`, pages adverses (`--fuzz`) passées par les opérations de page (`_plumber_ops.py`), pages aux coordonnées NaN (`_nan_objects.py`, ci-dessous), dont des NaN qu'objets et arêtes partagent, pages aux caractères surrogates isolés, arguments de l'utilisateur de tout type (`extra_attrs`, `split_at_punctuation`, lignes explicites, `text_settings`, chaînes en coordonnées) |
   | `text_tables_real.py` | les mêmes | `text_tables_unit.rs` (`pages_real`) | opérations de page sur les premières pages de l'ensemble `quick`, sur des documents riches en tables et sur `corpus/micro/lone-surrogates.pdf` du dépôt (caractères dont le texte est un surrogate isolé : `IdentityUnicodeMap`, `bfrange` de nombres) |
   | `document.py` | `pdfparser`, `pdfdocument` (xrefs, `getobj`, flux d'objets, mot de passe, plans, libellés, noms), `pdfpage`, `pdfplumber::page` (boîtes), `pdfinternals.resolve_all`, `pycompat::bytes_format`, le comptage des cadres (`psparser`, accesseurs, filtres, `pycompat::logging`) | `document_unit.rs` | traces des étapes `objects`, `streams`, `pages`, `psparser` sur `adv-objects` et `adv-pages` (régénérés d'abord ; fenêtres de profondeur autour de la limite des cadres comprises), `micro` et les petits fichiers de `quick` ; `objects` sur un `io.BytesIO` (erreurs de `seek`/`read` d'un `BytesIO`) ; `api` (`get_outlines`, `get_page_labels`, `lookup_name`, `get_dest`, `PDFPage.get_pages`, `repr` des pages) ; chaque trace dans un processus fils créé pour elle (`os.fork`), comme `verify` en lance un par trace, et `py_process.jsonl` (les noms internés au départ des fils), dont le rejeu repart ; `bytes % int` (formats générés, et les largeurs qu'aucune machine ne peut allouer : `MemoryError`) ; `PDFXRefFallback.PDFOBJ_CUE` sur chaque caractère Latin-1 |
+  | `interp.py` | `pdfinterp` (tout le module), `pdfdevice`, et par les étapes `interp`, `fonts`, `layout` : `converter`, `pdfplumber::page`, l'analyse du layout, `pdftrace::stages` | `interp_unit.rs` | traces des étapes `interp`, `fonts`, `layout` (la trace Python donnée en entrée de l'oracle : l'ordre des `id()`), `interp_text` et `fonts_text` sur `adv-interp` (régénéré d'abord, fenêtres de profondeur comprises), `micro` et les petits fichiers de `quick`, chaque trace dans un processus fils (`py_process.jsonl`), CMaps prédéfinies du `cmap_dir` de `meta.json` |
+  | `interp_deep.py` | les cadres des chemins de l'interpréteur vers le périphérique (`pdfinterp`, `pdfdevice`) | `interp_unit.rs` (`deep_sweeps`) | `interp_text` avec `DeepTracingDevice` (chaque méthode du périphérique descend d'abord `DESCENT` = 60 cadres : chaque appel au périphérique devient plus profond que tout ce qui le précède sur sa page) sur chaque fichier de `adv-interp` hors chaînes `depth-*`, l'interprétation de chaque page (`page_layout`) descendue de 17 profondeurs successives (`down`) qui font passer la limite de récursion d'un cadre au-dessus du point le plus profond des pages du fichier (mesuré par un crochet de profil borné) à 15 cadres plus haut ; puis, sans descente (le périphérique de l'étape), de chaque profondeur entre ce point et le cadre de `page_layout` (ce que la page fait avant son premier appel : `begin_page`, `init_resources`, polices, espaces de couleur, `/ProcSet`, `init_state`) ; le document est ouvert et les lignes écrites à la profondeur de l'étape ; la première trace complète, les autres par leur SHA-256. `api.jsonl` (`resource_manager_get_cmap`) : `PDFResourceManager.get_cmap(name, strict)`, qu'aucune page n'appelle, sur des CMaps identité, prédéfinies, des `UnicodeMap` et des noms absents, et depuis chaque profondeur à 30 cadres de la limite |
   | `js_runtime.py` | `crates/wasm` (`errors`, `cmaps`, `ops`, `wire`) | `crates/wasm/tests/js_runtime_unit.rs` (et les tests JS de `js/test/shared/`, Node et navigateurs) | MRO de chaque classe d'exception, CMaps prédéfinies par le protocole paresseux, texte, mots, `dedupe_chars`, `TextMap.search`/lignes, tables sur des objets de pages réelles ; documents CJK pour la couche page |
 
   Les tables générées (`oracle/codegen/`) sont vérifiées par `--check` dans
@@ -258,6 +289,12 @@ Mode d'emploi détaillé : [`oracle/README.md`](../oracle/README.md).
   écrit `DIR/<sha256 du PDF>.txt` pour une liste de fichiers. Code de sortie 2 :
   étape non implémentée. `pdftrace --list-stages` liste les étapes, suivies de
   `(not implemented)` tant qu'elles ne le sont pas.
+- `pdftrace --oracle-dir DIR` : pour une étape dont le module Python
+  déclare `ORACLE_INPUT` (`layout`), la trace de l'oracle de chaque fichier
+  (`DIR/<sha256>.txt`, ou `.pw-<12 hexa>.txt`, nommée comme le cache), que le
+  Rust lit (`StageInput::oracle`) ; `verify` la passe toujours pour ces
+  étapes, et les autres étapes la refusent. Sans elle, `layout` analyse
+  avec l'ordre par défaut de la bibliothèque (`CreationOrder`).
 - Les deux outils acceptent aussi `--option=valeur` ; `verify` et le cache
   passent toujours le mot de passe sous la forme `--password=P` (un mot de
   passe peut commencer par `-`). Avec `--out`, `pdftrace` ajoute après
@@ -331,7 +368,7 @@ Les constantes mesurées sont aussi vérifiées par les cas de l'ensemble
 | `pdfjs` | `upstream/pdfjs/test/pdfs` (937 PDF, beaucoup de cas tordus) |
 | `quick` | tout `micro`, plus les fichiers de `all` dont le SHA-256 commence par un octet < 18 (~7 %, 149 PDF aujourd'hui) : l'appartenance ne dépend que du contenu du fichier, en ajouter n'en retire aucun |
 | `all` | tout ce qui précède (1 852 PDF distincts aujourd'hui) |
-| `adv-<étape>` | corpus adverse généré pour une étape (voir plus bas) |
+| `adv-<étape>` | corpus adverse généré pour une étape (voir plus bas) ; plusieurs étapes peuvent vérifier le même (`adv-interp` : `fonts`, `interp`, `layout`) |
 
 Un fichier est tout `*.pdf` (casse ignorée) des dossiers, récursivement, en
 ordre de chemin relatif. Les fichiers identiques sont dédoublonnés par SHA-256
@@ -383,6 +420,42 @@ d'écrire ses cas) :
   `OverflowError`), un champ de flux xref de 100 000 octets, un id flottant
   déchiffré (`struct.error`) et un id booléen (`True`, un entier pour
   `struct.pack`).
+- `oracle/adversarial/interp.py` → `adv-interp` (vérifié par `interp_text`,
+  `fonts_text`, `interp`, `fonts` et `layout`) : chaque opérateur de
+  l'interpréteur sans opérande, avec un de moins, un de trop, et chaque
+  position recevant chaque sorte de valeur du parseur de contenu (entiers,
+  grands entiers, flottants infinis, booléens, `null`, noms, chaînes,
+  chaînes numériques `(nan)`/`(1e400)` que `float()` lit, tableaux,
+  dicts), mots-clés écrits comme les méthodes (`T_a`, `_q`) ou décodés vers
+  un opérateur (`q\x80`), chaque opérateur suivi de `J` sans opérande (qui prend ce que l'opérateur a laissé sur la pile), `/ProcSet` par référence, chaque `/Rotate` ; `Tz`/`TL`/`Ts`/`Tc`/`Tw` extrêmes, `TJ` sur
+  tout objet (nombre, chaîne, nom, dict, flux d'image en ligne `~>`),
+  espacement des mots mono- et multi-octets, `'` et `"` ; polices Type 3
+  aux `/FontMatrix` atypiques, `Type0` verticales (`/W2`, `/DW2`), CMap
+  prédéfinie ou inconnue, polices absentes ou mal typées, cache par
+  `objid` ; chaque espace de couleur (`ICCBased` et son `/N` de tout type,
+  `DeviceN`, `Indexed`, `Separation`, `Pattern`, tableau vide), `scn` de 0
+  à 5 composantes (et les opérandes que `scn`/`SCN` laissent sur la pile, pris par `J`/`j` ; les espaces qui lèvent dans `init_resources` à part), motifs colorés et non colorés ; chemins et peintures,
+  `cm` dégénérés, `q`/`Q` déséquilibrés ; images en ligne aux frontières
+  de blocs de 4 096 octets, coupées entre deux flux, mal formées ;
+  `BMC`/`BDC`/`EMC`/`MP`/`DP` déséquilibrés et toutes sortes de
+  propriétés ; Form XObjects aux `/BBox`, `/Matrix`, `/Resources`
+  atypiques, cycles, tableaux de contenus aux membres cassés ;
+  `cases_depth` : chaînes de Form XObjects autour du premier niveau qui
+  échoue, cherché par dichotomie pour `interp_text`, `interp`, `fonts` et
+  `layout` (le périphérique de pdfplumber sans les surcharges de trace),
+  avec 28 chemins différents au point le plus profond
+  (`docs/architecture.md`, « Vague 3 » ; dont `subpaths-first`, où le
+  `paint_path` de pdfplumber et la première compilation du motif de
+  `re.finditer` sont le point le plus profond, et `subpaths-compiled`, le
+  motif compilé par la page) ; `cases_climit` (`climit-*`) : opérandes
+  imbriqués autour de la limite des unités C, cherchée par dichotomie pour
+  les mêmes étapes : `str()` d'un opérande de `Tf` (tableau,
+  dictionnaire), `Do`, `CS`, `cs` et d'une ressource `/ColorSpace`
+  (`literal_name`, dont le premier `str(x)` d'un processus prend une unité
+  de plus ; variantes à deux pages, la seconde exécutant l'appel
+  spécialisé), `repr()` des entrées impaires d'une image en ligne et d'un
+  dictionnaire au bas de chaînes de 0, 1, 50 et 300 Form XObjects (deux
+  unités par niveau, celles de `func(*args)`).
 - `oracle/adversarial/pages.py` → `adv-pages` : héritage (`/Resources`,
   `/MediaBox`, `/CropBox`, `/Rotate`, depuis les nœuds et le catalogue),
   boucles et partages dans l'arbre, `/Kids` absents ou atypiques (entiers,
@@ -457,7 +530,16 @@ les fichiers partagés tous les rejeux qui les exercent (`utils.rs` :
 `utils_unit`, `layout_unit`, `filters_unit`, `crypto_unit` ; `pdftypes.rs` :
 `pdftypes_unit`, `filters_unit`, `document_unit` ; `pdfparser.rs`,
 `pdfdocument/*.rs`, `pdfpage.rs`, `pdfplumber/src/page.rs`,
-`utils/pdfinternals.rs`, `pycompat/src/bytes_format.rs` : `document_unit`).
+`utils/pdfinternals.rs`, `pycompat/src/bytes_format.rs` : `document_unit` ;
+`pdfinterp.rs` : `interp_unit`, `psparser_unit`, `document_unit` ;
+`pdfdevice.rs` : `interp_unit` ; `converter.rs`, `pdfplumber/src/page.rs` :
+`converter_unit` et `interp_unit` ; `pdftrace/src/stages/{interp,fonts,
+layout,common}.rs` : `interp_unit`, `lazy_cmap` ; `pycompat/src/specialize.rs`
+et le site de `literal_name` : `pdftypes_unit`, `psparser_unit`,
+`cmaps_unit`, `interp_unit` ; `pdfminer/src/process_state.rs` et les
+fonctions d'instantané qu'il appelle, `wasm/src/ops.rs` : `lazy_cmap`,
+`js_runtime_unit` ; `pdftrace/src/stages/py_process.rs` : `interp_unit`,
+`document_unit`, `lazy_cmap`).
 
 ```sh
 HEAVY_SLOTS=1 scripts/heavy.sh cargo mutants -f crates/pdfminer/src/psparser.rs \
