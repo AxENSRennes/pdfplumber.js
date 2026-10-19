@@ -16,6 +16,10 @@ and what they call):
   are not operands), one page per variant (an exception stops a page);
   keywords spelled like the methods (``T_a``, ``_q``, ``f_a``) and
   keywords that decode to an operator (``q\\x80``);
+  ``op-leftover-*``: each operator with operands followed by ``J`` with
+  none, which takes what the operator left on the stack (an operator that
+  is not dispatched pops nothing); ``op-procset``: ``/ProcSet`` by
+  reference; ``page-rotate``: the page's CTM for each ``/Rotate``;
 - ``text-*``: ``Tz``/``TL``/``Ts``/``Tc``/``Tw`` at 0, negative, huge and
   infinite values; ``TJ`` with numbers of every kind (bools, big ints,
   infinite floats), nested arrays, names, dicts, and ``TJ`` on a number, a
@@ -31,8 +35,11 @@ and what they call):
 - ``color-*``: every color space resource (``ICCBased`` with ``/N`` of
   every kind, ``DeviceN``, ``Indexed``, ``Separation``, ``Pattern``, an
   empty array, a name that is not a color space), ``CS``/``cs``/``SC``/
-  ``sc``/``SCN``/``scn`` with 0 to 5 components, patterns colored and
-  uncolored, ``G``/``g``/``RG``/``rg``/``K``/``k`` with odd operands;
+  ``sc``/``SCN``/``scn`` with 0 to 5 components (each page starting with
+  the operands ``scn``/``SCN`` leave on the stack, taken by ``J``/``j``;
+  the spaces that raise in ``init_resources`` have documents of their
+  own), patterns colored and uncolored, ``G``/``g``/``RG``/``rg``/``K``/``k``
+  with odd operands;
 - ``path-*``: ``m``/``l``/``c``/``v``/``y``/``h``/``re`` and every
   painting operator, with odd operands, several subpaths, no path; ``d``,
   ``w`` after degenerate ``cm`` (zeros, huge, infinite, NaN through
@@ -263,6 +270,32 @@ def cases_operators() -> list[Case]:
         b"BI ID EI", b"1 2 3 R", b"BT /F1 10 Tf <<>> TJ ET", b"0 0 m 1 1 l S unknownop 3 4 l S",
     ]
     out.append(("op-spelled", pages_doc([s + b"\n" + SHOW for s in spelled]), None))
+    # what an operator leaves on the stack when it is not called (or when it
+    # pops fewer operands than it is given): J with no operand takes it
+    leftover = [op_line(op, VALID[op]) + b" J" for op, nargs in OPERATORS.items() if nargs]
+    leftover += [b"1 2 3 " + op_line(op, VALID[op]) + b" J" for op, nargs in OPERATORS.items() if nargs > 1]
+    for i in range(0, len(leftover), 20):
+        b = Builder()
+        res = op_resources(b)
+        for c in leftover[i : i + 20]:
+            b.page(c + b"\n" + SHOW, res)
+        out.append((f"op-leftover-{i // 20}", b.build(), None))
+    # /ProcSet by reference (list_value resolves it), and a list holding a
+    # reference (get_procset does not resolve its items)
+    b = Builder()
+    procs = b.obj([Name("PDF"), Name("Text")])
+    b.page(b"0 0 m 5 5 l S", {"ProcSet": procs})
+    b.page(b"0 0 m 5 5 l S", {"ProcSet": [Name("PDF"), procs]})
+    b.page(b"0 0 m 5 5 l S", {"ProcSet": Ref(999)})
+    b.page(b"0 0 m 5 5 l S", {"ProcSet": 5, "XObject": {"P": procs}})
+    out.append(("op-procset", b.build(), None))
+    # the page's CTM for each /Rotate (process_page), from a mediabox that
+    # does not start at the origin
+    b = Builder()
+    res = {"Font": {"F1": b.obj(HELVETICA)}}
+    for rotate in (90, 180, 270, -90, 450, 360, 45, -180):
+        b.page(b"0 0 m 5 5 l S BT /F1 10 Tf 20 30 Td (r) Tj ET", res, Rotate=rotate, MediaBox=[10, 20, 210, 320])
+    out.append(("page-rotate", b.build(), None))
     return out
 
 
@@ -402,6 +435,7 @@ def cases_colors() -> list[Case]:
     spaces: dict = {
         "I1": icc(1), "I3": icc(3), "I4": icc(4), "I0": icc(0), "INeg": icc(-2), "IBig": icc(2**70),
         "IFloat": icc(2.0), "IZeroF": icc(0.0), "ITrue": icc(True), "IFalse": icc(False), "IName": icc(Name("x")),
+        "IHalf": icc(1.5), "INeg1": icc(-1), "IHugeNeg": icc(-(2**70)),
         "IRef": icc(Ref(999)), "IStr": icc(b"3"), "INone": [Name("ICCBased"), b.stream(b"")],
         "INotStream": [Name("ICCBased"), 5], "IShort": [Name("ICCBased")],
         "DN": [Name("DeviceN"), [Name("a"), Name("b")], Name("DeviceRGB"), {}],
@@ -410,16 +444,23 @@ def cases_colors() -> list[Case]:
         "PatName": Name("Pattern"), "Lab": [Name("Lab"), {}], "Cal": [Name("CalRGB"), {}], "Unknown": Name("Nope"),
         "Empty": [], "NumFirst": [5, 6], "DeviceRGB": icc(1), "Ref": Ref(999), "Str": b"DeviceRGB",
     }
-    res = {"ColorSpace": spaces, "Font": {"F1": b.obj(HELVETICA)}}
+    # the color spaces that raise in init_resources (or when used), one
+    # document each below; the others share the pages' resources
+    raising = ["IName", "IRef", "IStr", "INone", "INotStream", "IShort", "DNBad", "Empty", "NumFirst", "Ref"]
+    shared = {k: v for k, v in spaces.items() if k not in raising}
+    res = {"ColorSpace": shared, "Font": {"F1": b.obj(HELVETICA)}}
     comps = [b"", b"0.5", b"0.1 0.2", b"0.1 0.2 0.3", b"0.1 0.2 0.3 0.4", b"0.1 0.2 0.3 0.4 0.5",
              b"/P1", b"0.5 /P1", b"0.1 0.2 0.3 /P1", b"0.1 0.2 0.3 0.4 /P1", b"(x) /P1", b"/P1 0.5", b"(nan)",
              b"true false true", b"0.5 0.5 0.5 0.5 0.5 /P1"]
     pages = []
     for names in [["I1", "I3", "I4", "I0", "INeg"], ["IBig", "IFloat", "IZeroF", "ITrue", "IFalse"],
-                  ["DN", "Idx", "Sep", "Pat", "PatName"], ["Lab", "Cal", "Unknown", "DeviceRGB", "Str"]]:
+                  ["DN", "Idx", "Sep", "Pat", "PatName"], ["Lab", "Cal", "Unknown", "DeviceRGB", "Str"],
+                  ["IHalf", "INeg1", "IHugeNeg"]]:
         for cs in names:
+            # what scn and SCN leave on the stack, taken by J and j
+            left = b"/%s cs 1 2 3 scn J /%s CS 4 5 6 SCN j 0 0 m 5 5 l S" % (cs.encode(), cs.encode())
             body = b" ".join(b"/%s cs %s scn /%s CS %s SCN 0 0 m 5 5 l b" % (cs.encode(), c, cs.encode(), c) for c in comps)
-            pages.append(body + b" BT /F1 10 Tf (x) Tj ET")
+            pages.append(left + b" " + body + b" BT /F1 10 Tf (x) Tj ET")
     for chunk in range(0, len(pages), 20):
         bb = Builder()
         bb.objects, bb.next = list(b.objects), b.next
@@ -427,7 +468,7 @@ def cases_colors() -> list[Case]:
             bb.page(p, res)
         out.append((f"color-spaces-{chunk // 20}", bb.build(), None))
     # the color spaces that raise in init_resources, one document each
-    for cs in ["IName", "IRef", "IStr", "INone", "INotStream", "IShort", "DNBad", "Empty", "NumFirst", "Ref"]:
+    for cs in raising:
         bb = Builder()
         bb.objects, bb.next = list(b.objects), b.next
         bb.page(b"/%s cs 0.5 scn 0 0 5 5 re f" % cs.encode(), {"ColorSpace": {cs: spaces[cs]}})

@@ -522,22 +522,65 @@ l'interpréteur avec un générateur unitaire qui le mène sur un
   `DESCENT` = 60 cadres) rend chaque appel au périphérique plus profond que
   tout ce qui le précède sur sa page (chaque page a son périphérique et
   son interpréteur : un `RecursionError` n'arrête que sa page), et chaque
-  fichier de `adv-interp` (hors `depth-*`) est tracé avec l'interprétation de ses pages (`page_layout`) descendue de 17 profondeurs successives (`down`), qui font monter la limite d'un cadre à la fois depuis au-dessus du point le plus profond des pages ; sans descente, de chaque profondeur jusqu'au cadre de `page_layout` (`begin_page`, `init_resources`, `init_state`). Le document est ouvert et les lignes écrites à la profondeur de l'étape : leur mise en forme a ses propres cadres, que le port ne compte pas. Restent invisibles, par
-  construction, les cadres plus courts que le parseur du même `execute`
-  et qui ne sont sur aucun chemin vers le périphérique (`push`, `pop`,
-  `keyword_name`, `safe_*`, `mult_matrix` de `do_cm`, journalisation des
-  opérateurs, `get_current_state`, `copy`, `PDFTextState()`, `reset`,
-  `dup`/`subinterp` et `init_state` d'une Form, plus courts que le parseur
-  du sous-interpréteur), et les corps de `PDFDevice` atteints par
-  `super()` sous la descente (`pass`, `set_ctm`) : leurs mutants sont
-  équivalents (aucune entrée ne place la limite sur eux avant un point
-  plus profond), avec pdfplumber comme ici (`PDFLayoutAnalyzer` remplace
-  ces méthodes ou les atteint au même niveau). Les unités C
-  des entrées de boucle d'évaluation (`eval_entry` : `func(*args)`, appels
-  de classes) ne décident rien non plus : chacune précède un cadre Python
-  et en prend deux, si bien qu'à 1 000 cadres il en reste plus de 7 000 sur
-  10 000 (l'interpréteur n'appelle pas de `repr` récursif sur ses
-  opérandes) ; leurs mutants sont équivalents.
+  fichier de `adv-interp` (hors `depth-*`) est tracé avec l'interprétation
+  de ses pages (`page_layout`) descendue de 17 profondeurs successives
+  (`down`), qui font monter la limite d'un cadre à la fois depuis
+  au-dessus du point le plus profond des pages ; sans descente, de chaque
+  profondeur jusqu'au cadre de `page_layout` (`begin_page`,
+  `init_resources`, `init_state`). Le document est ouvert et les lignes
+  écrites à la profondeur de l'étape : leur mise en forme a ses propres
+  cadres, que le port ne compte pas. Les balayages ont trouvé un écart du
+  banc d'essai (une CMap prédéfinie chargée par une trace précédente du
+  même fil restait en cache, trois cadres moins profonde que le premier
+  chargement de Python) : `stages::py_process::start` vide les caches de
+  `CMapDB`, comme un nouveau processus.
+- **Mutants des cadres** (171 mutants à la main, chaque cadre, entrée,
+  vérification `leaf`, appel de journalisation supprimé, chaque `leaf(n)`
+  diminué ; `interp_unit`) : 39 tués, dont 30 par les seuls balayages
+  (`do_Tj`, `do_TJ`, `do_'`, `do_"`, `render_string`, `do_S`... `do_b*`,
+  `do_MP`/`do_DP`/`do_BMC`/`do_BDC`/`do_EMC`, `do_cm`, `do_Q`,
+  `set_current_state`, `init_state`, `do_EI`, `device::init`,
+  `device::set_ctm`, le `log.debug` de `process_page`, la compilation du
+  motif de `re.sub`), 132 équivalents. Un cadre ne décide de rien quand
+  aucune entrée ne peut en faire le premier point au-delà de la limite,
+  ou quand le premier point serait ailleurs sans appel au périphérique
+  entre les deux (même exception, rien d'enregistré, aucun état gardé) ;
+  les 132 tombent dans ces cas, que les balayages confirment (aucune
+  profondeur d'aucune page de 158 fichiers ne les distingue) :
+  - après le parseur, plus courts que lui (mesure bornée : le premier
+    `nextobject` de chaque `execute` descend à 8 cadres au moins, sur
+    39 000 `execute` de `adv-interp` et de ses chaînes ; ces chemins à 7
+    au plus) : le cadre des opérateurs qui n'appellent pas le
+    périphérique et leurs appels (`safe_*`, `mult_matrix` de `do_cm`,
+    avertissements et `log.debug` des opérateurs, `push`/`pop`/`pop_obj`,
+    `keyword_name`, le `log.debug` par opérateur d'`execute`,
+    `get_current_state`/`copy`/`PDFTextState()`/`reset` de `do_q`,
+    `do_BT`, `do_Tf` et la police créée pour `{}`, `subinterp`/`dup` et
+    les appels de `do_Do` avant `begin_figure`, `__contains__` de
+    `do_EI`), le `re.sub` d'une image en ligne une fois le motif compilé,
+    et dans `PDFTextDevice` les appels sans périphérique (`mult_matrix`,
+    `is_multibyte`, `is_vertical`, `translate_matrix`, l'avertissement de
+    `TJ`, `__getitem__` d'un flux) ;
+  - avant le parseur, aussi profonds qu'un point antérieur sans appel au
+    périphérique entre les deux : le `log.debug` de `render_contents`
+    (puis `dict_value` → `resolve1`), celui de `init_resources`,
+    `get_procset` et la police en cache (après le `log.debug` de la même
+    ressource), le `PDFColorSpace()` de `get_colorspace` (après
+    `stream_value`/`list_value` → `resolve1`), `PDFTextState()`, `reset`
+    et `PDFGraphicState()` d'`init_state` (après `set_ctm`, aussi
+    profond), les avertissements d'`execute` (suivis de la construction
+    du parseur, plus profonde) ;
+  - les corps de `PDFDevice` (`pass`) et `PDFTextDevice.render_char`
+    atteints par `super()` sous le cadre d'une surcharge qui descend plus
+    bas avant eux (pdfplumber les remplace, ou les atteint à moins de 8
+    cadres d'`execute`), `close` (jamais appelé) ;
+  - le `CMap()` de `get_cmap` pour un nom absent, après une recherche de
+    `CMapDB` plus profonde (8 cadres contre 3, `api.jsonl`) ;
+  - les unités C des entrées de boucle d'évaluation (`eval_entry` :
+    `func(*args)`, appels de classes), qui ne décident rien : chacune
+    précède un cadre Python et en prend deux, si bien qu'à 1 000 cadres il
+    en reste plus de 7 000 sur 10 000 (l'interpréteur n'appelle pas de
+    `repr` récursif sur ses opérandes).
 
 ### Chantier CONVERTER
 

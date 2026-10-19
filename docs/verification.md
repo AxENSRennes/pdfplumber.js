@@ -410,14 +410,14 @@ d'écrire ses cas) :
   grands entiers, flottants infinis, booléens, `null`, noms, chaînes,
   chaînes numériques `(nan)`/`(1e400)` que `float()` lit, tableaux,
   dicts), mots-clés écrits comme les méthodes (`T_a`, `_q`) ou décodés vers
-  un opérateur (`q\x80`) ; `Tz`/`TL`/`Ts`/`Tc`/`Tw` extrêmes, `TJ` sur
+  un opérateur (`q\x80`), chaque opérateur suivi de `J` sans opérande (qui prend ce que l'opérateur a laissé sur la pile), `/ProcSet` par référence, chaque `/Rotate` ; `Tz`/`TL`/`Ts`/`Tc`/`Tw` extrêmes, `TJ` sur
   tout objet (nombre, chaîne, nom, dict, flux d'image en ligne `~>`),
   espacement des mots mono- et multi-octets, `'` et `"` ; polices Type 3
   aux `/FontMatrix` atypiques, `Type0` verticales (`/W2`, `/DW2`), CMap
   prédéfinie ou inconnue, polices absentes ou mal typées, cache par
   `objid` ; chaque espace de couleur (`ICCBased` et son `/N` de tout type,
   `DeviceN`, `Indexed`, `Separation`, `Pattern`, tableau vide), `scn` de 0
-  à 5 composantes, motifs colorés et non colorés ; chemins et peintures,
+  à 5 composantes (et les opérandes que `scn`/`SCN` laissent sur la pile, pris par `J`/`j` ; les espaces qui lèvent dans `init_resources` à part), motifs colorés et non colorés ; chemins et peintures,
   `cm` dégénérés, `q`/`Q` déséquilibrés ; images en ligne aux frontières
   de blocs de 4 096 octets, coupées entre deux flux, mal formées ;
   `BMC`/`BDC`/`EMC`/`MP`/`DP` déséquilibrés et toutes sortes de
