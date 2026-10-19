@@ -6,8 +6,10 @@
 //! goes, so where a `RecursionError` happens (`docs/architecture.md`,
 //! "Profondeur de récursion"): the symbols interned so far (interning a
 //! name for the first time instantiates it, a frame more:
-//! `pdfminer::psparser::py_intern`). The oracle computes every trace of
-//! `oracle.verify` in a new process (`python -m oracle.trace`,
+//! `pdfminer::psparser::py_intern`), and the patterns `re` compiled
+//! (`pycompat::re_cache`: none at the start of a trace) and the CMaps
+//! `CMapDB` loaded. The oracle computes every trace of `oracle.verify` in
+//! a new process (`python -m oracle.trace`,
 //! `oracle/cache.py`): a trace starts from the symbols that process
 //! imports ([`super::py_symbols`]), which [`set_for_stage`] selects (the
 //! `pdftrace` binary, for each file). The
@@ -65,14 +67,14 @@ pub fn set_for_stage(stage: &str) {
 }
 
 /// Starts a trace from the process state of this thread: its interned
-/// symbols, and what a new process has not done yet (the pattern of
-/// `get_inline_data` not compiled, `CMapDB`'s caches empty: a predefined
+/// symbols, and what a new process has not done yet (no pattern of `re`
+/// compiled, `pycompat::re_cache`; `CMapDB`'s caches empty: a predefined
 /// CMap loaded by an earlier trace would otherwise be found in the cache,
 /// fewer frames down than Python's first load).
 pub fn start() {
     PROCESS.with(|p| {
         py_symbols_reset(p.borrow().symbols());
-        pdfminer::pdfinterp::reset_process_state();
         pdfminer::cmapdb::CMapDB::clear_caches();
     });
+    pycompat::re_cache::reset();
 }

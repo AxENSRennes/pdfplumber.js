@@ -83,32 +83,32 @@
 //! parser's construction).
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::fs;
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 
 use pdfminer::cmapdb::{CMapDB, DirCMapProvider, Unichr};
 use pdfminer::layout::{LTChar, LTCharFont, LTPayload};
-use pdfminer::pdfdocument::{security_handler_registry, PDFStandardSecurityHandler};
 use pdfminer::pdffont::cff::SidName;
 use pdfminer::pdffont::{
     get_font, get_widths, get_widths2, getdict, CFFFont, FontName, PDFFont, TrueTypeFont, Type1FontHeaderParser,
     WidthKey,
 };
-use pdfminer::pdftypes::{int_value, DecipherCallable, PDFDict, PDFList, PDFObjRef, PDFObject, PDFResolver, PDFStream};
-use pdfminer::psparser::{LIT_bytes, PSBaseParser, KWD, LIT};
+use pdfminer::pdftypes::PDFObject;
+use pdfminer::psparser::PSBaseParser;
+use pdfminer::utils::Operand;
 
 use pdftrace::canon::{canon, sha256_hex};
+use pdftrace::font_case::{build, load_doc, FontDoc};
 use pdftrace::fonts_report::{
     self, call_seq, char_disp, fontname, in_frame, named, num, numkey, operand, res, tuple, umap_report, unichr,
 };
 use pdftrace::typed_json::{self, Json};
 use pdftrace::unit::{cache_dir, UnitData};
-use pdftrace::value::{NameValue, Value};
+use pdftrace::value::Value;
 use pycompat::io::BytesIO;
 use pycompat::logging::disable as clear_logger_cache;
-use pycompat::recursion::{self, py_frame, Depth, C_RECURSION_LIMIT};
-use pycompat::{exc, ExcKind, Num, PyErr, PyInt, PyResult};
+use pycompat::recursion::{self, Depth, C_RECURSION_LIMIT};
+use pycompat::{Num, PyInt, PyResult};
 
 /// Python's `INLINE_LIMIT`: longer outputs are compared by SHA-256.
 const INLINE_LIMIT: usize = 4000;
@@ -141,112 +141,7 @@ fn check_marker(data: &UnitData, name: &str) {
 
 // -- documents and objects -----------------------------------------------------------
 
-/// The generator's `DEEP_OBJIDS`, `DEEP_GETOBJ_CALLS`.
-const DEEP_OBJIDS: i64 = 200_000;
-const DEEP_GETOBJ_CALLS: u32 = 8;
-
-/// The generator's `FontDoc`: a table of objects, and the exceptions of the
-/// object numbers whose loading raised.
-#[derive(Default)]
-struct FontDoc {
-    table: RefCell<HashMap<PyInt, PDFObject>>,
-    errors: RefCell<HashMap<PyInt, PyErr>>,
-}
-
-impl PDFResolver for FontDoc {
-    /// `FontDoc.getobj`: a Python method (one frame); from `DEEP_OBJIDS`
-    /// up, `FontDoc._deep` takes `DEEP_GETOBJ_CALLS + 1` more and finds
-    /// only table objects.
-    fn getobj(&self, objid: &PyInt) -> PyResult<PDFObject> {
-        let _frame = py_frame()?;
-        if *objid >= PyInt::Small(DEEP_OBJIDS) {
-            drop(recursion::py_frames(DEEP_GETOBJ_CALLS + 1)?);
-            return self.table.borrow().get(objid).cloned().ok_or_else(|| exc::PDFObjectNotFound(objid.to_string()));
-        }
-        if let Some(obj) = self.table.borrow().get(objid) {
-            return Ok(obj.clone());
-        }
-        if let Some(e) = self.errors.borrow().get(objid) {
-            return Err(e.clone());
-        }
-        Err(exc::PDFObjectNotFound(objid.to_string()))
-    }
-}
-
-/// What the objects of a case are bound to: the document their references
-/// resolve through, and, for an encrypted document, the decryption callback
-/// of its streams (the generator's `FontDoc.decipher`).
-struct Binder {
-    doc: Weak<dyn PDFResolver>,
-    decipher: Option<DecipherCallable>,
-}
-
-/// `security_handler(cipher)` of the generator: the handler of `[docid,
-/// param, password]`, built as `PDFDocument._initialize_password` builds
-/// it; its `decrypt`.
-fn security_handler(cipher: &Value, doc: &Weak<dyn PDFResolver>) -> DecipherCallable {
-    let c = list(cipher);
-    let unbound = Binder { doc: doc.clone(), decipher: None };
-    let docid = list(&c[0]).iter().map(|x| build(x, &unbound)).collect();
-    let PDFObject::Dict(param) = build(&c[1], &unbound) else { panic!("a dict param") };
-    let v = int_value(&param.get("V").unwrap_or(PDFObject::Int(PyInt::ZERO))).expect("int_value(V)");
-    let class = security_handler_registry(&v).expect("a handler class");
-    let h = PDFStandardSecurityHandler::new(class, docid, param, text(&c[2])).expect("a security handler");
-    Rc::new(h).decipher()
-}
-
-/// A document of `table`, `errors` and `cipher` (the case's dumps; `cipher`
-/// absent or `None` for a document that is not encrypted).
-fn load_doc(table: &Value, errors: &Value, cipher: Option<&Value>) -> (Rc<FontDoc>, Binder) {
-    let doc = Rc::new(FontDoc::default());
-    let dyn_doc: Rc<dyn PDFResolver> = doc.clone();
-    let weak = Rc::downgrade(&dyn_doc);
-    let decipher = cipher.filter(|c| !matches!(c, Value::None)).map(|c| security_handler(c, &weak));
-    let binder = Binder { doc: weak, decipher };
-    for pair in list(table) {
-        let p = list(pair);
-        doc.table.borrow_mut().insert(int(&p[0]), build(&p[1], &binder));
-    }
-    for e in list(errors) {
-        let e = list(e);
-        let name = text(&e[1]);
-        let kind = ExcKind::ALL.iter().copied().find(|k| k.trace_name() == name).unwrap_or_else(|| panic!("{name}"));
-        doc.errors.borrow_mut().insert(int(&e[0]), PyErr::new(kind, text(&e[3])));
-    }
-    (doc, binder)
-}
-
-/// The PDF object of a typed value, its references bound to the document,
-/// its streams with an object number given the document's decryption
-/// callback (the generator's `bind`).
-fn build(v: &Value, doc: &Binder) -> PDFObject {
-    match v {
-        Value::None => PDFObject::Null,
-        Value::Bool(b) => PDFObject::Bool(*b),
-        Value::Int(i) => PDFObject::Int(i.clone()),
-        Value::Float(f) => PDFObject::Float(*f),
-        Value::Bytes(b) => PDFObject::Bytes(Rc::from(&b[..])),
-        Value::Literal(NameValue::Str(s)) => PDFObject::Literal(LIT(s.as_str().expect("a literal name"))),
-        Value::Literal(NameValue::Bytes(b)) => PDFObject::Literal(LIT_bytes(b)),
-        Value::Keyword(k) => PDFObject::Keyword(KWD(k)),
-        Value::List(items) => PDFObject::List(PDFList::new(items.iter().map(|x| build(x, doc)).collect())),
-        Value::Dict(items) => PDFObject::Dict(PDFDict::from_pairs(
-            items.iter().map(|(k, x)| (Rc::from(k.as_str().expect("a str key")), build(x, doc))),
-        )),
-        Value::Ref(objid) => PDFObject::Ref(PDFObjRef::new(Some(doc.doc.clone()), objid.clone())),
-        Value::Stream(sv) => {
-            let PDFObject::Dict(attrs) = build(&Value::Dict(sv.attrs.clone()), doc) else { unreachable!() };
-            let Value::Bytes(raw) = &sv.raw else { panic!("a stream not decoded yet: {sv:?}") };
-            let decipher = doc.decipher.clone().filter(|_| !matches!(sv.objid, Value::None));
-            let s = PDFStream::new(attrs, Rc::from(&raw[..]), decipher);
-            if let (Value::Int(objid), Value::Int(genno)) = (&sv.objid, &sv.genno) {
-                s.set_objid(objid.clone(), genno.clone());
-            }
-            PDFObject::Stream(Rc::new(s))
-        }
-        other => panic!("not a PDF object: {other:?}"),
-    }
-}
+// The generator's `FontDoc`, `load_doc` and `bind` are `pdftrace::font_case`'s.
 
 fn int(v: &Value) -> PyInt {
     match v {
@@ -390,7 +285,18 @@ fn check_ltchar_text(font: &PDFFont, cid: &PyInt, u: &Unichr) {
     let matrix = [one.clone(), zero.clone(), zero.clone(), one.clone(), zero.clone(), zero.clone()];
     let gray = pdfminer::pdfcolor::predefined_colorspace("DeviceGray").expect("DeviceGray");
     let built = recursion::with_depth(Depth::default(), || {
-        LTChar::<FP>::new(matrix, font, Num::Float(1.0), one, zero.clone(), u.clone(), zero, textdisp, gray, ())
+        LTChar::<FP>::new(
+            matrix,
+            font,
+            Num::Float(1.0),
+            one,
+            zero.clone(),
+            u.clone(),
+            Operand::Num(zero),
+            textdisp,
+            gray,
+            (),
+        )
     });
     match built {
         Ok(ch) => {

@@ -72,6 +72,7 @@ use std::sync::LazyLock;
 use indexmap::IndexMap;
 use pycompat::io::{BytesIO, Pos};
 use pycompat::logging::Logger;
+use pycompat::re_cache;
 use pycompat::recursion::{c_called_leaf, eval_entry, leaf, py_frame};
 use pycompat::text::decode_utf8_ignore;
 use pycompat::{exc, ExcKind, Num, PyInt, PyResult};
@@ -188,33 +189,23 @@ impl PSStackParser<ContentStreams> {
     }
 }
 
-thread_local! {
-    /// Whether the process compiled the pattern of `get_inline_data`'s
-    /// `re.sub` (`re._compile`'s cache; a new process starts without it).
-    static EOL_PATTERN_COMPILED: Cell<bool> = const { Cell::new(false) };
-}
+/// The pattern of `get_inline_data`'s `re.sub`, as `pycompat::re_cache`
+/// keys it.
+const EOL_PATTERN: &str = r"rb'(\x0d\x0a|[\x0d\x0a])$'";
+
+/// The depth of the first compilation of [`EOL_PATTERN`] below the caller
+/// of `re.sub` (`sre_compile.compile`, `sre_parse.parse` down to
+/// `Tokenizer.__next`: 11 frames from `re.sub`, measured with
+/// `oracle/depth_probe.py` on CPython 3.12).
+const EOL_COMPILE_DEPTH: u32 = 11;
 
 /// The frames of `re.sub(rb"(\x0d\x0a|[\x0d\x0a])$", b"", data)`:
 /// `re.sub` and `re._compile`, and, the first time in a process, the
-/// compilation of the pattern below them (`sre_compile.compile`,
-/// `sre_parse.parse` down to `Tokenizer.__next`: 11 frames from `re.sub`,
-/// measured with `oracle/depth_probe.py` on CPython 3.12). The pattern is
-/// cached once compiled (the cache of `re` holds 512 patterns, more than
-/// pdfminer and pdfplumber compile: never evicted). [`reset_process_state`]
-/// is a new process.
+/// compilation of the pattern below them. The pattern is then in `re`'s
+/// cache (shared with the other patterns of the process, see
+/// `pycompat::re_cache`, whose `reset` is a new process).
 fn eol_sub_frames() -> PyResult<()> {
-    if EOL_PATTERN_COMPILED.with(Cell::get) {
-        return leaf(2);
-    }
-    leaf(11)?;
-    EOL_PATTERN_COMPILED.with(|c| c.set(true));
-    Ok(())
-}
-
-/// The state of a new Python process for this module: the pattern of
-/// `get_inline_data` not compiled yet.
-pub fn reset_process_state() {
-    EOL_PATTERN_COMPILED.with(|c| c.set(false));
+    re_cache::compile_frames(EOL_PATTERN, EOL_COMPILE_DEPTH)
 }
 
 /// `re.sub(rb"(\x0d\x0a|[\x0d\x0a])$", b"", data)`, as the length to keep.

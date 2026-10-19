@@ -195,12 +195,15 @@ deux). Règles :
   `CMapDB` et de `CMapParser`, et `pdffont::frames` ceux du code qu'il
   appelle sans comptage (`casting`, requêtes de `cmapdb`, `encodingdb`) ;
   ces cas sont vérifiés aux seuils par `fonts_unit` (`depth`,
-  `corpus_depth`). `pdfinterp` et `pdfdevice` comptent les leurs (vague 3,
-  chantier INTERP, ci-dessous : les fonctions de `casting` et de `utils`
-  qu'ils appellent, les méthodes de `PDFStream` appelées depuis le C, la
-  compilation du motif de `re.sub` de `get_inline_data`), vérifiés aux
-  seuils par `adv-interp` ; restent `converter`, les constructeurs de
-  `layout` et la couche pdfplumber.
+  `corpus_depth`). La vague 3 compte `pdfinterp` et `pdfdevice` (chantier
+  INTERP, ci-dessous : les fonctions de `casting` et de `utils` qu'ils
+  appellent, les méthodes de `PDFStream` appelées depuis le C, la
+  compilation du motif de `re.sub` de `get_inline_data`, vérifiés aux
+  seuils par `adv-interp`), `converter`, le périphérique de pdfplumber
+  (`page.rs`), les constructeurs des objets bruts de `layout` et
+  `decode_text` (chantier CONVERTER, vérifiés par le jeu `depth` de
+  `oracle/unit/converter.py`) ; restent l'analyse du layout hors de ses
+  récursions et le reste de la couche pdfplumber.
 - Le harnais fixe la profondeur de départ (`with_depth`) à celle que
   l'oracle a mesurée au même point d'appel ; le code porté ne la fixe jamais.
 
@@ -327,7 +330,8 @@ invalide son cache et celui des étapes qui en dépendent).
   et noter ici une fois l'étape identique : la proportion de pages de
   `all` où `CreationOrder` seul donne le résultat de Python (`pdftrace
   --stage layout` sans `--oracle-dir`, comparé page à page) ; c'est une
-  statistique, pas un critère de parité.
+  statistique, pas un critère de parité. Première mesure, sur le rejeu du
+  corpus de `oracle/unit/converter.py` : 93,3 % (« Chantier CONVERTER »).
 - **Images en ligne** : pdfminer/pdfinterp.py:1309 `PDFPageInterpreter.do_EI`
   les nomme `str(id(obj))`, une adresse mémoire. Les traces écrivent
   `inline{"n": k}` (`k` : rang d'apparition dans la page). Le port leur
@@ -637,6 +641,143 @@ le `LTPage` brut puis analysé (`LAParams()` et les configurations de
 `layout.py`, avec les `id()` de Python). Le Rust rejoue chaque appel sur
 `PDFPageAggregatorWithMarkedContent` depuis la profondeur enregistrée,
 une `Rc<PDFGraphicState>` par `render_string` d'origine.
+
+#### Réalisé (branche `wave3/converter`)
+
+- `converter.rs`, `PDFPageAggregatorWithMarkedContent` (`page.rs`,
+  `marked_content`) et les corps triviaux de `pdfdevice::device`
+  (`set_ctm` et les méthodes qui ne font que `pass` : le rejeu en a
+  besoin ; INTERP les reprend tels quels à la jonction) sont portés,
+  fonction par fonction, avec leurs cadres. Mesures (sondes bornées, puis
+  frontières vérifiées par le générateur) : un appel de classe Python
+  prend **trois** unités C (celle de `_PyObject_MakeTpCall` et l'entrée de
+  la boucle d'évaluation de `__init__` : `layout::class_call`), alors que
+  le code des vagues précédentes n'en compte que deux
+  (`PDFContentParser::new`, `PDFPage::new`, `c_called_leaf` des
+  `__init__`) ; sans effet tant que la limite C n'est pas approchée (elle
+  ne l'est par aucun corpus), noté pour une reprise ; `super().m(*args,
+  **kwargs)` de pdfplumber est un appel depuis le C (deux unités, une
+  entrée de boucle) ; le premier `re.finditer(r"m[^m]+", …)` d'un processus
+  compile le motif, huit cadres sous `PDFLayoutAnalyzer.paint_path`
+  (`pycompat::re_cache`, remis à zéro au début de chaque trace par
+  `stages::py_process::start`) ; `decode_text` prend les cadres de ses deux
+  générateurs, et le décodeur `utf-16be` (`encodings.utf_16_be.decode`,
+  appelé depuis le C) pour une chaîne qui commence par `\xfe\xff`.
+- Écarts d'état non observables, documentés dans `converter.rs`
+  (« Errors ») : après une exception d'un périphérique, l'interpréteur ne
+  rattrape rien et pdfplumber jette le périphérique, donc `begin_figure`
+  empile l'élément courant une fois la figure construite et `end_page`
+  passe la page à `receive_layout` (Python la garde dans `cur_item`).
+- Changements du contrat : `LTChar::new` prend le résultat de
+  `char_width` tel quel (`Operand` : une police Type 3 dont la
+  `/FontMatrix` tient une séquence lève l'exception de Python dans
+  `__init__`, après les cadres de l'appel de classe) ;
+  `PDFPageAggregator::create` et `PDFPageAggregatorWithMarkedContent::create`
+  sont l'appel de classe (cadres de la chaîne des `__init__`), `new` reste
+  sans cadre ; `CurItem::{add, last, type_str}`.
+- L'analyse d'une page (`group_objects`, `group_textlines`,
+  `group_textboxes`) ne compte toujours pas les cadres de ce qu'elle
+  appelle (`layout.rs`, « Recursion ») : `end_page` ne l'appelle jamais
+  près de la limite depuis l'interpréteur (`process_page` est peu
+  profond) ; les frontières de `end_page` sont vérifiées sur des pages
+  sans caractères.
+- `pdftrace::font_case` (le chargeur des polices de `fonts_unit.rs`,
+  déplacé) et `pdftrace::layout_dump` (les lignes de l'étape `layout` :
+  `_RawDump`, `_analyzed`, `id_ranks`, et `RecordedIds`, que
+  `layout_unit.rs` utilise aussi) ; l'étape Rust `layout` est écrite
+  (`stages/layout.rs`, `run: Some`) et attend l'interpréteur.
+- `oracle/unit/converter.py` → `converter_unit.rs` (natif et WASI) : voir
+  `verification.md`. Les états graphiques sont partagés par valeur (une
+  `Rc` par valeur distincte d'un cas : l'identité n'est pas observable) et
+  les flux d'images vidés de leurs données (`LTImage` ne les lit pas ; la
+  ligne `raw` montre donc `x""` dans le rejeu) ; l'ensemble réel est
+  `all` (vingt premières pages), pas `quick`/`upstream` ; `adv-interp`
+  s'y ajoutera à la jonction.
+- **Statistique `CreationOrder`** (mesurée par le rejeu du corpus,
+  `CONVERTER_CREATION_ORDER=1 cargo test --release -p pdftrace --test
+  converter_unit corpus`, en attendant l'étape `layout` complète) : sur les
+  3 657 pages des vingt premières pages de `all`, l'analyse
+  `LAParams()` avec l'ordre par défaut de la bibliothèque donne le
+  résultat de Python (lignes `ids` exclues) sur 3 413 pages (93,3 % ;
+  deux passes identiques sur le corpus régénéré pour les sources finales,
+  3 430 sur une version antérieure du générateur) ; les 244 autres ont des paires de boîtes à égale distance que l'ordre des
+  `id()` de Python départage autrement.
+- **Mutations** (sur le diff final `wave3/base..wave3/converter`,
+  `--in-diff`, `-j 1`, `--profile mutants`, rejeux sans `corpus`) :
+  - passe ordinaire de `converter.rs`, `page.rs`, `pdfdevice.rs`,
+    `re_cache.rs`, `layout_dump.rs` (`converter_unit`, `--timeout 20`) :
+    338 mutants, 122 tués, 207 non compilables, 7 délais, 2 survivants ;
+    `pdfinternals.rs`, `font_case.rs`, `stages/py_process.rs`
+    (`converter_unit`, `document_unit`, `fonts_unit`) : 30 mutants, 10
+    tués, 20 non compilables ; `re_cache.rs` repassé avec `--timeout 180`
+    (ses cinq délais venaient de la recompilation des crates en aval,
+    comptée dans le temps du test) : 9 mutants, 5 tués, 4 non compilables.
+    Les deux délais restants (`subpaths`, `+=` en `-=`/`*=`) bouclent ;
+  - passes `Ok(..)` (`scripts/mutants-ok.sh`, diff des fichiers réécrits) :
+    `converter.rs`, `layout.rs`, `pdfdevice.rs`, `re_cache.rs`,
+    `layout_dump.rs`, `font_case.rs` (`converter_unit`, `layout_unit`,
+    `fonts_unit`) : 60 mutants, 15 tués, 34 non compilables, 11
+    survivants ; `page.rs`, `pdfinternals.rs` (`converter_unit`,
+    `document_unit`) : 9 mutants, 7 tués, 2 non compilables ; les corps aux types sans `Default`
+    remplacés à la main par une valeur concrète (`cur_item`, `apply_pt`,
+    `render_char`, `get_result`, `apply_matrix_rect_counted`,
+    `LTComponent::init`, `LTCurve::init`/`new_line`/`new_rect`,
+    `LTLayoutContainer::init`, `LTFigure::new_obj`, `FontDoc::getobj`,
+    et dans `page.rs` `marked_content::render_char` et
+    `PDFPageAggregatorWithMarkedContent::create`) : 16 mutants, tous tués
+    (`class_call`, dont le résultat n'est qu'un garde, est couvert par les
+    mutants des cadres) ;
+  - mutants à la main des cadres (chaque `py_frame`, `leaf`,
+    `c_called_leaf`, `eval_entry`, `class_call`, `init_frames` ajouté
+    retiré, `leaf(n)` décalé de ±1, `LTComponent::init` et
+    `LTLayoutContainer::init` remplacés par `new`, `apply_matrix_rect`
+    non compté, `SUBPATH_COMPILE_DEPTH` ±1) : 94 mutants, 56 tués, 38
+    survivants (dont les 4 de `LTFigure::new`, ci-dessous). Ils ont
+    fait ajouter les sondes de profondeur de `LTRect` (un rectangle fermé
+    par `h` et par un `l` : les coins aléatoires des autres sondes font
+    des courbes) et retirer le comptage de `LTFigure::new`, que seul
+    `layout_unit` appelle (le convertisseur passe par `new_obj`).
+
+  Survivants, tous équivalents :
+  - **unités C seules** (`class_call` des constructeurs `LT*` et du
+    périphérique, `eval_entry` des `super().m(*args, **kwargs)` de
+    pdfplumber et de `decode_text`, `c_called_leaf` des reprises du
+    générateur de `"".join` dont le cadre est couvert par la création du
+    générateur) : quand une méthode du périphérique s'exécute, les unités C
+    en cours sont celles de la pile d'appels de l'interpréteur (au plus
+    trois par cadre Python, `func(*args)` compris) et une constante ; avec
+    au plus 1 000 cadres Python, elles restent loin des 10 000 de
+    `Py_C_RECURSION_LIMIT` : une vérification d'unités C ne peut échouer
+    la première dans aucun état que pdfplumber atteint ;
+  - **cadres dominés** : une vérification à la profondeur `d` précédée, dans
+    le même cadre, d'une vérification à `d` ou plus profonde, sans rien
+    entre elles qui puisse lever : la création du générateur de `paint_path`
+    (suivie de sa reprise depuis `str.join`), les `cast` et
+    `apply_matrix_pt` des compréhensions (après le générateur),
+    `tag_cur_item` (après la méthode de `super()`, au même niveau, qui a
+    réussi), `get_bound` de `LTCurve.__init__` (suivi de
+    `LTComponent.__init__`), `get_any` de `LTImage.__init__` (après
+    `set_bbox`, plus profond), `LTComponent.__init__`/`set_bbox` et le
+    second `font.is_vertical()` de `LTChar.__init__` (après
+    `apply_matrix_rect`/`apply_matrix_pt` aux mêmes profondeurs), et son
+    premier `font.is_vertical()` : à l'horizontale `get_descent` suit
+    aussitôt, à la verticale la police est une `PDFCIDFont`, dont le
+    `to_unichr` appelé plus tôt par `render_char` atteint la même
+    profondeur (`get_unichr`, ou `handle_undefined_char` → `log.debug`) ;
+    une police verticale dont le `/W2` donne un `vy` qu'`LTChar` rejette
+    vérifie la `TypeError` qui suit, à chaque profondeur ;
+  - **inatteignables par le périphérique de pdfplumber** :
+    `PDFLayoutAnalyzer.receive_layout` (`pass`, surchargée par
+    `PDFPageAggregator`, comme dans tous les périphériques du port) et les
+    corps par défaut de `pdfdevice::device` que
+    `PDFPageAggregatorWithMarkedContent` surcharge (tous sauf `set_ctm` et
+    `do_tag`, tués) : à couvrir à la jonction par un périphérique qui les
+    garde (celui d'INTERP) ;
+  - **`RecordedIds`** (`self.next - 1` en `+ 1` ou `/ 1`) : les ids de
+    repli ne sont que comparés ; toute suite croissante d'ids neufs
+    au-dessus des rangs enregistrés donne le même ordre.
+
+  `stages/layout.rs` n'est pas muté : il attend l'interpréteur.
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 

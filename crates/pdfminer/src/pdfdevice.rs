@@ -261,7 +261,9 @@ pub trait PDFDevice {
     }
 }
 
-/// The bodies of `PDFDevice`'s methods (`super()` for a direct subclass).
+/// The bodies of `PDFDevice`'s methods (`super()` for a direct subclass):
+/// `set_ctm` sets `self.ctm`, the others only `pass` (each only checks its
+/// frame: nothing is called under it).
 #[allow(unused_variables)] // the methods that only `pass`
 pub mod device {
     use super::*;

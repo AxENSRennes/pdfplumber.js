@@ -242,6 +242,17 @@ Lecture :
   identiques sur `all` (1 853), `micro` (17) et `adv-interp` (279) ;
   mutations : survivants tous justifiés (résultats et mesures :
   `architecture.md`, « Vague 3 », « Réalisation »).
+  Chantier CONVERTER (`wave3/converter`) : `converter.rs`, le
+  périphérique de pdfplumber et les cadres des constructeurs du layout
+  portés, vérifiés sans l'interpréteur par `oracle/unit/converter.py`
+  (suites d'appels générées, frontières de récursion, appels des 20
+  premières pages de `all`) ; l'étape Rust `layout` est écrite et attend
+  l'interpréteur (chantier INTERP).
+  Rejeux identiques (natif et `wasm32-wasip1`) : 429 cas générés, 606
+  cas de profondeur, 3 657 pages du corpus ; mutations sans survivant
+  non justifié (`architecture.md`, « Chantier CONVERTER ») ; cache
+  Python de l'étape `layout` construit sur `all` (1 853 fichiers, aucun
+  délai, 1,8 Go).
 - **Vagues suivantes**, dans l'ordre des dépendances :
   1. `pdfinterp`, `pdfdevice`, `converter` (`PDFPageAggregator` vers
      `layout`) : étapes `fonts`, `interp`, `layout` (comptage des cadres de

@@ -3,12 +3,12 @@
 //! Ported: `_normalize_box`, `_invert_box` and the box attributes that
 //! `Page.__init__` computes from the `PDFPage` ([`PageBoxes`]: `rotation`,
 //! `mediabox`, `cropbox`, `trimbox`, `bleedbox`, `artbox`, `bbox`,
-//! `initial_doctop`, and the `width`/`height` properties). **Wave 3
-//! skeleton** (workstream CONVERTER, `docs/architecture.md`, "Vague 3"):
-//! `PDFPageAggregatorWithMarkedContent` ([`PDFPageAggregatorWithMarkedContent`],
-//! [`marked_content`], the payload [`PlumberPayload`]). Not ported yet: the
-//! rest of `Page` (objects, layout, annotations, cropping) and
-//! `CroppedPage` (wave 4).
+//! `initial_doctop`, and the `width`/`height` properties), and the device
+//! `Page.layout` drives, `PDFPageAggregatorWithMarkedContent`
+//! ([`PDFPageAggregatorWithMarkedContent`], its methods' bodies
+//! [`marked_content`], the layout payload [`PlumberPayload`]; wave 3,
+//! `docs/architecture.md`, "Vague 3"). Not ported yet: the rest of `Page`
+//! (objects, layout, annotations, cropping) and `CroppedPage` (wave 4).
 //!
 //! A box is a 4-tuple of the numbers the file holds (`int`, `float` or
 //! `bool`, which `numbers.Number` accepts), kept as [`PDFObject`]s so that
@@ -28,13 +28,13 @@ use pdfminer::pdffont::{FontName, PDFFont};
 use pdfminer::pdfinterp::{Color, PDFGraphicState, PDFResourceManager, PDFStackT, PDFTextState};
 use pdfminer::pdfpage::PDFPage;
 use pdfminer::pdftypes::{PDFObject, PDFStream};
-use pdfminer::psparser::PSLiteral;
+use pdfminer::psparser::{LiteralName, PSLiteral};
 use pdfminer::utils::{Matrix, PathSegment};
 use pycompat::bytes_format::bytes_mod_int;
-use pycompat::recursion::py_frame;
+use pycompat::recursion::{eval_entry, py_frame};
 use pycompat::{exc, ExcKind, Num, PyErr, PyInt, PyResult};
 
-use crate::utils::pdfinternals::resolve_all;
+use crate::utils::pdfinternals::{decode_text, resolve_all, TextArg};
 
 /// `T_bbox`: four numbers.
 pub type BBox = [PDFObject; 4];
@@ -196,10 +196,9 @@ impl PageBoxes {
 }
 
 // ---------------------------------------------------------------------------
-// Wave 3 skeleton (workstream CONVERTER): pdfplumber's device. The bodies
-// are todo!() until ported; see pdfminer's `converter` and `pdfdevice` for
-// the pattern (a struct of attributes, accessor traits, the methods' bodies
-// as free functions usable as `super()`).
+// pdfplumber's device. See pdfminer's `converter` and `pdfdevice` for the
+// pattern (a struct of attributes, accessor traits, the methods' bodies as
+// free functions usable as `super()`).
 
 /// The value of an attribute pdfplumber sets on a layout object
 /// (pdfplumber/page.py:130 `PDFPageAggregatorWithMarkedContent.tag_cur_item`):
@@ -249,33 +248,67 @@ pub trait MarkedContent: PageAggregator<PlumberPayload> {
     fn marked_mut(&mut self) -> &mut MarkedContentState;
 }
 
-/// The bodies of `PDFPageAggregatorWithMarkedContent`'s methods.
-#[allow(unused_variables)] // wave 3 skeleton: the bodies are todo!()
+/// The bodies of `PDFPageAggregatorWithMarkedContent`'s methods. The
+/// overrides of `render_char`, `render_image` and `paint_path` take
+/// `*args, **kwargs` and call `super().<method>(*args, **kwargs)`: a call
+/// from C (`CALL_FUNCTION_EX` on a bound method: `PyObject_Call`, then the
+/// evaluation loop entered for the method's frame, two C units measured by
+/// `oracle/unit/converter.py`'s probe).
 pub mod marked_content {
     use super::*;
 
     // pdfplumber/page.py:117 PDFPageAggregatorWithMarkedContent.begin_tag
+    /// Handle beginning of tag, setting current MCID if any:
+    /// `cur_tag = decode_text(tag.name)`, `cur_mcid = props["MCID"]` when
+    /// `props` is a dict that has it, else `None`.
     pub fn begin_tag<D: MarkedContent + ?Sized>(
         dev: &mut D,
         tag: &PSLiteral,
         props: Option<&PDFStackT>,
     ) -> PyResult<()> {
-        todo!("wave 3 CONVERTER")
+        let _frame = py_frame()?;
+        let cur_tag = match tag.name() {
+            LiteralName::Str(s) => decode_text(TextArg::Str(s))?,
+            LiteralName::Bytes(b) => decode_text(TextArg::Bytes(b))?,
+        };
+        let marked = dev.marked_mut();
+        marked.cur_tag = Some(cur_tag);
+        marked.cur_mcid = match props {
+            Some(PDFObject::Dict(d)) => d.get("MCID").unwrap_or(PDFObject::Null),
+            _ => PDFObject::Null,
+        };
+        Ok(())
     }
 
     // pdfplumber/page.py:125 PDFPageAggregatorWithMarkedContent.end_tag
+    /// Handle beginning of tag, clearing current MCID.
     pub fn end_tag<D: MarkedContent + ?Sized>(dev: &mut D) -> PyResult<()> {
-        todo!("wave 3 CONVERTER")
+        let _frame = py_frame()?;
+        let marked = dev.marked_mut();
+        marked.cur_tag = None;
+        marked.cur_mcid = PDFObject::Null;
+        Ok(())
     }
 
     // pdfplumber/page.py:130 PDFPageAggregatorWithMarkedContent.tag_cur_item
-    /// Sets `mcid`, then `tag`, on the last object of `cur_item`, if any
-    /// (`layout::LTItem::set_attr`).
+    /// Add current MCID to what we hope to be the most recent object
+    /// created by pdfminer.six: sets `mcid`, then `tag`, on the last object
+    /// of `cur_item`, if any (`layout::LTItem::set_attr`).
     pub fn tag_cur_item<D: MarkedContent + ?Sized>(dev: &mut D) -> PyResult<()> {
-        todo!("wave 3 CONVERTER")
+        let _frame = py_frame()?;
+        let Some(item) = dev.analyzer().cur_item.as_ref() else {
+            return Err(exc::AttributeError("'PDFPageAggregatorWithMarkedContent' object has no attribute 'cur_item'"));
+        };
+        if let Some(cur_obj) = item.last() {
+            let marked = dev.marked();
+            cur_obj.set_attr("mcid", MarkedContentAttr::Mcid(marked.cur_mcid.clone()));
+            cur_obj.set_attr("tag", MarkedContentAttr::Tag(marked.cur_tag.clone()));
+        }
+        Ok(())
     }
 
     // pdfplumber/page.py:144 PDFPageAggregatorWithMarkedContent.render_char
+    /// Hook for rendering characters, adding the `mcid` attribute:
     /// `super().render_char(...)` (`converter::layout_analyzer::render_char`),
     /// then `tag_cur_item`.
     pub fn render_char<D: MarkedContent + ?Sized>(
@@ -289,15 +322,28 @@ pub mod marked_content {
         ncs: &Rc<PDFColorSpace>,
         graphicstate: &Rc<PDFGraphicState>,
     ) -> PyResult<Num> {
-        todo!("wave 3 CONVERTER")
+        let _frame = py_frame()?;
+        let adv = {
+            let _entry = eval_entry()?;
+            layout_analyzer::render_char(dev, matrix, font, fontsize, scaling, rise, cid, ncs, graphicstate)?
+        };
+        tag_cur_item(dev)?;
+        Ok(adv)
     }
 
     // pdfplumber/page.py:150 PDFPageAggregatorWithMarkedContent.render_image
+    /// Hook for rendering images, adding the `mcid` attribute.
     pub fn render_image<D: MarkedContent + ?Sized>(dev: &mut D, name: &str, stream: &Rc<PDFStream>) -> PyResult<()> {
-        todo!("wave 3 CONVERTER")
+        let _frame = py_frame()?;
+        {
+            let _entry = eval_entry()?;
+            layout_analyzer::render_image(dev, name, stream)?;
+        }
+        tag_cur_item(dev)
     }
 
     // pdfplumber/page.py:155 PDFPageAggregatorWithMarkedContent.paint_path
+    /// Hook for rendering lines and curves, adding the `mcid` attribute:
     /// `super().paint_path(...)`, whose subpaths come back through
     /// `dev.paint_path` (this function again: each subpath is tagged), then
     /// `tag_cur_item`.
@@ -309,7 +355,12 @@ pub mod marked_content {
         evenodd: bool,
         path: &[PathSegment],
     ) -> PyResult<()> {
-        todo!("wave 3 CONVERTER")
+        let _frame = py_frame()?;
+        {
+            let _entry = eval_entry()?;
+            layout_analyzer::paint_path(dev, graphicstate, stroke, fill, evenodd, path)?;
+        }
+        tag_cur_item(dev)
     }
 }
 
@@ -324,13 +375,26 @@ pub struct PDFPageAggregatorWithMarkedContent {
 }
 
 impl PDFPageAggregatorWithMarkedContent {
-    /// `PDFPageAggregatorWithMarkedContent(rsrcmgr, pageno=pageno,
-    /// laparams=laparams)` (`PDFPageAggregator.__init__`).
+    /// The attributes of `PDFPageAggregatorWithMarkedContent(rsrcmgr,
+    /// pageno=pageno, laparams=laparams)` (`PDFPageAggregator.__init__`),
+    /// without the frames of the class call ([`Self::create`]).
     pub fn new(rsrcmgr: Rc<PDFResourceManager>, pageno: PyInt, laparams: Option<LAParams>) -> Self {
         PDFPageAggregatorWithMarkedContent {
             aggregator: PDFPageAggregator::new(rsrcmgr, pageno, laparams),
             marked: MarkedContentState::default(),
         }
+    }
+
+    /// `PDFPageAggregatorWithMarkedContent(rsrcmgr, pageno=pageno,
+    /// laparams=laparams)`, as pdfplumber/page.py:256 `Page.layout` calls
+    /// it: the class call's C unit and evaluation loop entry, the frames of
+    /// `PDFPageAggregator.__init__` -> `PDFLayoutAnalyzer.__init__` ->
+    /// `PDFDevice.__init__` (no `__init__` of its own), then the
+    /// attributes.
+    pub fn create(rsrcmgr: Rc<PDFResourceManager>, pageno: PyInt, laparams: Option<LAParams>) -> PyResult<Self> {
+        let _call = pdfminer::layout::class_call()?;
+        PDFPageAggregator::<PlumberPayload>::init_frames()?;
+        Ok(PDFPageAggregatorWithMarkedContent::new(rsrcmgr, pageno, laparams))
     }
 }
 

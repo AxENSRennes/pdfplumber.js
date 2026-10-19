@@ -20,6 +20,8 @@
 //! - [`unicodedata`]: `unicodedata.normalize` (NFC, NFKC, NFD, NFKD).
 //! - [`io`]: the `io.BytesIO` file object parsers read.
 //! - [`logging`]: the Python frames of a `logging` call (`Logger._cache`).
+//! - [`re_cache`]: the Python frames of a call into `re` (its cache of
+//!   compiled patterns).
 //! - [`memory`]: whether an allocation CPython would make succeeds (`MemoryError`).
 //! - [`recursion`]: CPython's two recursion limits (Python frames, C
 //!   units), counted where the ported code recurses.
@@ -49,6 +51,7 @@ pub mod memory;
 mod libm_tables;
 pub mod num;
 pub mod pystr;
+pub mod re_cache;
 pub mod recursion;
 pub mod repr;
 pub mod text;

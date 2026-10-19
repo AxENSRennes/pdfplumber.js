@@ -1,51 +1,52 @@
 //! Stage `layout`: the `LTPage` of each page, raw (`laparams=None`) and
-//! analyzed with `LAParams()`, every attribute included.
+//! analyzed with `LAParams()`, every attribute included. The traversal and
+//! the line format are those of `oracle/stages/layout.py`; the lines are
+//! written by [`crate::layout_dump`], which `tests/converter_unit.rs`
+//! checks against Python on device-call sequences replayed without the
+//! interpreter (`oracle/unit/converter.py`).
 //!
-//! Not implemented yet (wave 3, workstream CONVERTER). The traversal and
-//! the line format are those of `oracle/stages/layout.py`. Implemented
-//! here: reading Python's `id()` order from the oracle's trace
-//! ([`oracle_ids`]).
+//! For each page, the body of pdfplumber/page.py:256 `Page.layout` with
+//! `laparams=None` (`common::page_layout`: one frame;
+//! `PDFPageAggregatorWithMarkedContent::create`, `PDFPageInterpreter`,
+//! `process_page`), `get_result()`, the raw lines; then the analysis of
+//! that page with `LAParams()` two frames further down (`_process_page`,
+//! `_end_page` of the Python stage, standing for `process_page` and
+//! `end_page`), with the `id()` order of the oracle's trace when
+//! `--oracle-dir` gives it ([`oracle_ids`], one entry per `ids` line, taken
+//! in order by the pages whose analysis runs; `RecordedIds`), else the
+//! library's `CreationOrder`; the analyzed lines (or the `analyze` line);
+//! the `ids` line of the Rust analysis (ranked by the ids it used).
 //!
-//! # The runner, once the converter is ported
-//!
-//! ```text
-//! let ids = input.oracle.map(oracle_ids);          // one entry per `ids` line
-//! terminated(out, |lines| {
-//!     let doc = open_document(input)?;
-//!     let rsrcmgr = Rc::new(PDFResourceManager::new(true));
-//!     for (pageno, page) in PDFPage::create_pages(&doc).enumerate() {   // from 1
-//!         page line
-//!         _page(...): one frame (Page.layout); PDFPageAggregatorWithMarkedContent
-//!             (laparams None), PDFPageInterpreter::new, process_page (error line
-//!             and next page if it raised), the raw lines; then two frames
-//!             (_process_page, _end_page) and
-//!             ltpage.analyze_with_ids(&LAParams::default(), &mut recorded)
-//!             where `recorded` is the IdSource of the next `ids` entry (the
-//!             ids of this page's analysis), or CreationOrder without
-//!             --oracle-dir; the analyzed lines (or the analyze line); the
-//!             ids line of the Rust result
-//!         stop after max_pages
-//!     }
-//! })
-//! ```
-//!
-//! The `IdSource` keyed by `(min_char, n_boxes)` is the replay's
-//! `RecordedIds` (`tests/layout_unit.rs`), to move here and share; a key
-//! that Python's ranking does not have (the Rust analysis built another
-//! box or group) takes an id after every recorded one, in creation order,
-//! and the trace then differs at the latest on the `ids` line. The dump of
-//! a raw or analyzed object is shared with `layout_unit.rs` where it can
-//! be (the same `__dict__` order: `LTItem::dict_keys`).
+//! Inline images: Python's trace names them `inline{"n": k}` by their
+//! name `str(id(stream))`; here they are the names the interpreter gave
+//! (`pdfinterp::inline_image_name(k)`, `k` below
+//! `PDFPageInterpreter::inline_images`): the two agree but on a PDF that
+//! names an XObject like the port names inline images (`inline-0`)
+//! (`docs/architecture.md`, "Vague 3").
 //!
 //! The statistic of `docs/architecture.md` ("Vague 3": how often the
 //! library's default order, `CreationOrder`, gives Python's result) is
-//! this stage run without `--oracle-dir` on the set `all`, compared page by
-//! page with the oracle once the stage is identical with it.
+//! this stage run without `--oracle-dir`, compared page by page with the
+//! oracle's trace, the `ids` lines left out.
 
-use super::Stage;
+use std::collections::HashSet;
+use std::io::{self, Write};
+use std::rc::Rc;
+
+use pdfminer::layout::{CreationOrder, IdSource, LAParams};
+use pdfminer::pdfinterp::{inline_image_name, PDFResourceManager};
+use pdfminer::pdfpage::PDFPage;
+use pdfplumber::page::{PDFPageAggregatorWithMarkedContent, PlumberPayload};
+use pycompat::recursion::{leaf, py_frames};
+use pycompat::{PyInt, PyResult};
+
+use super::common::{open_document, page_layout, terminated, Lines};
+use super::{Stage, StageInput};
+use crate::canon::{canon_exc, canon_obj};
+use crate::layout_dump::{analyzed, id_ranks, ids_line, raw_index, RawDump, RecordedIds};
 use crate::typed_json::{parse_json, Json};
 
-pub const STAGE: Stage = Stage { name: "layout", run: None, oracle_input: true };
+pub const STAGE: Stage = Stage { name: "layout", run: Some(run), oracle_input: true };
 
 /// The `[min_char, n_boxes, rank]` items of an `ids` line.
 pub type IdRanks = Vec<[i64; 3]>;
@@ -71,6 +72,77 @@ pub fn oracle_ids(trace: &str) -> Result<Vec<IdRanks>, String> {
         pages.push(ranks);
     }
     Ok(pages)
+}
+
+/// `_page(rsrcmgr, page, pageno)` of the Python stage: the lines of one
+/// page.
+fn page_lines(
+    lines: &mut Lines,
+    rsrcmgr: &Rc<PDFResourceManager>,
+    page: &PDFPage,
+    pageno: usize,
+    oracle: &mut Option<std::vec::IntoIter<IdRanks>>,
+) -> PyResult<()> {
+    let pageno_int = PyInt::Small(i64::try_from(pageno).expect("a page number"));
+    let (device, interpreter, error) = page_layout(rsrcmgr, page, || {
+        PDFPageAggregatorWithMarkedContent::create(rsrcmgr.clone(), pageno_int.clone(), None)
+    })?;
+    if let Some(e) = error {
+        lines.push(format!("error {}", canon_exc(&e)));
+        return Ok(());
+    }
+    // ltpage = device.get_result(), from _page
+    leaf(2)?; // _page, get_result
+    let Some(mut ltpage) = device.borrow_mut().aggregator.result.take() else {
+        unreachable!("process_page returned: end_page gave the result")
+    };
+    let inline: HashSet<String> = (0..interpreter.inline_images.get()).map(inline_image_name).collect();
+    let is_inline = |name: &str| inline.contains(name);
+    let raw = RawDump::new(&ltpage.layout._objs, &is_inline);
+    let index = raw.index.clone();
+    for l in RawDump::new(&ltpage.layout._objs, &is_inline).write(&ltpage) {
+        lines.push(l);
+    }
+    let mut ids: Box<dyn IdSource<PlumberPayload>> = match oracle {
+        Some(pages) => Box::new(RecordedIds::new(&pages.next().unwrap_or_default(), raw_index(&ltpage.layout._objs))),
+        None => Box::new(CreationOrder::default()),
+    };
+    // _page -> _process_page -> _end_page -> ltpage.analyze(LAParams())
+    let analysis = {
+        let _frames = py_frames(3)?;
+        ltpage.analyze_with_ids(&LAParams::default(), &mut *ids)
+    };
+    match analysis {
+        Err(e) => lines.push(format!("analyze {}", canon_exc(&e))),
+        Ok(()) => {
+            for l in analyzed(&ltpage, &raw) {
+                lines.push(l);
+            }
+        }
+    }
+    lines.push(ids_line(&id_ranks(&ltpage, &index, &mut *ids)));
+    Ok(())
+}
+
+fn run(input: &StageInput<'_>, out: &mut dyn Write) -> io::Result<()> {
+    let mut oracle = match input.oracle.map(oracle_ids).transpose() {
+        Ok(pages) => pages.map(Vec::into_iter),
+        Err(e) => return Err(io::Error::new(io::ErrorKind::InvalidData, format!("the oracle's trace: {e}"))),
+    };
+    terminated(out, |lines: &mut Lines| {
+        let doc = open_document(input)?;
+        let rsrcmgr = Rc::new(PDFResourceManager::new(true));
+        for (pageno, page) in PDFPage::create_pages(&doc).enumerate() {
+            let pageno = pageno + 1;
+            let page = page?;
+            lines.line("page", &[&pageno.to_string(), &canon_obj(&page.pageid)]);
+            page_lines(lines, &rsrcmgr, &page, pageno, &mut oracle)?;
+            if input.max_pages.is_some_and(|max| pageno >= max) {
+                break;
+            }
+        }
+        Ok(())
+    })
 }
 
 #[cfg(test)]
