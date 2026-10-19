@@ -1116,6 +1116,17 @@ de la revue sous `/tmp/claude-review-w3-*`) :
   `interp`, `fonts`, 79 d'`adv-pages`, 23 d'`adv-objects`, le profil
   `dist` en Wasm identique au natif ; paquet JS et construction Wasm
   `dist`, budget de taille ; auto-tests de l'oracle).
+- **Finalisation** (revue de l'intégration) : `interp_text` et
+  `fonts_text` repassés sur `all` (1 853 identiques chacune, caches de
+  l'oracle reconstruits) ; les deux tests d'appel nul de
+  `js_runtime_unit` (`a_void_call_*`), qui sortaient sans rien vérifier en
+  Wasm, y sont ignorés dans la passe commune (le saut se voit dans les
+  comptes) et relancés seuls par `scripts/check.sh`, un processus WASI
+  chacun (pas de fil neuf par test en Wasm : les CMaps chargées
+  resteraient dans le fournisseur et les caches de `CMapDB`) ; la
+  comparaison Wasm/natif sur `quick` est versionnée
+  (`oracle/wasm_parity.py`, fournisseur de CMaps et `--oracle-dir`
+  passés explicitement, `verification.md`, « Définition de « fini » »).
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 

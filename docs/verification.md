@@ -620,6 +620,6 @@ l'environnement : sans lui, les deux binaires s'accorderaient sur une trace
 des `id()` de Python ; fichiers dont l'oracle n'est pas `ok` écartés comme
 dans `verify`). Un fichier par processus, la sortie Wasm redirigée vers un
 fichier (le WASI de Node écrit un tube sans bloquer et une longue trace y
-échoue par `EAGAIN`). Vague 3 : `interp`, `fonts`, `layout`, WASM_PARITY_RESULT.
+échoue par `EAGAIN`). Vague 3 (finalisation) : `interp`, `fonts`, `layout`, 150 fichiers chacune, identiques.
 `oracle.verify` ne mène pas le binaire Wasm lui-même : `--out` nomme ses
 fichiers temporaires par le numéro de processus, que WASI n'a pas.

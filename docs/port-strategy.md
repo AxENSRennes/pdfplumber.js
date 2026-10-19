@@ -270,14 +270,27 @@ Lecture :
     fichiers, 20 premières pages), `adv-objects` (333), `adv-pages` (285)
     et `adv-interp` (353), plus `interp_text` et `fonts_text` sur
     `adv-interp` ; aucun délai, aucune erreur de l'oracle.
-    `scripts/check.sh` vert (66 suites natives et `wasm32-wasip1`, porte
+    `scripts/check.sh` vert (33 harnais `cargo test` par cible, dont 5 de
+    doc-tests, certains vides : 206 tests réussis et 1 ignoré en natif,
+    200 et 5 ignorés en `wasm32-wasip1`, dont les deux tests d'appel nul
+    de `js_runtime_unit` relancés seuls, un processus WASI chacun ; porte
     de profondeur `dist` : 188 fenêtres d'`adv-interp` × 3 étapes, 79
     d'`adv-pages`, 23 d'`adv-objects`), `scripts/check-browsers.sh` (102
-    tests : Chromium, Firefox, WebKit) ; `pdftrace` compilé en Wasm
-    (`dist`) donne les traces natives sur `quick` pour `interp`, `fonts`
-    et `layout` (150 fichiers chacune). Mutations : aucun survivant non justifié
-    (`architecture.md`, « Jonction », « Corrections de la revue ») ; la
-    fusion est sans conflit et n'a modifié aucun code.
+    tests : Chromium, Firefox, WebKit). Mutations : aucun survivant non
+    justifié (`architecture.md`, « Jonction », « Corrections de la
+    revue ») ; la fusion est sans conflit et n'a modifié aucun code.
+  - Finalisation (revue de l'intégration) : `interp_text` et `fonts_text`
+    repassés sur `all` après les changements de `wave3/fix` (premier
+    `str(x)` de `literal_name`, état du processus remis) : 1 853
+    identiques chacune ; `pdftrace` compilé en Wasm (`dist`) donne les
+    traces natives sur `quick` pour `interp`, `fonts` et `layout` (150
+    fichiers chacune), par `python -m oracle.wasm_parity`, qui passe le
+    fournisseur de CMaps explicitement (3 fichiers de `quick` en
+    dépendent) et le rang des `id()` de Python à `layout` ; les tests
+    d'appel nul tournent désormais en Wasm ; l'en-tête de la porte de
+    profondeur dit pourquoi ses traces `layout` (`CreationOrder`) sont
+    celles de `verify` (188 fichiers identiques avec et sans
+    `--oracle-dir`).
   - Temps (étape `layout`, 20 premières pages de `all`) : `pdftrace` 54 ms
     par page contre 288 ms pour Python hors démarrage (5,3 fois), dont
     l'essentiel à écrire la trace.
