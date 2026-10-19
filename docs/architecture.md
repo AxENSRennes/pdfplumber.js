@@ -581,6 +581,37 @@ l'interpréteur avec un générateur unitaire qui le mène sur un
     précède un cadre Python et en prend deux, si bien qu'à 1 000 cadres il
     en reste plus de 7 000 sur 10 000 (l'interpréteur n'appelle pas de
     `repr` récursif sur ses opérandes).
+- **Autres mutations** (`--in-diff` du chantier sur `pdfinterp.rs` et
+  `pdfdevice.rs`, `--profile mutants -j 1`, rejeux `interp_unit` et, pour le
+  parseur, `psparser_unit`) : passe ordinaire 180 mutants (136 tués, 11 non
+  compilables, 33 survivants au premier passage) et 1 du parseur (tué) ;
+  les survivants ont montré un trou du corpus (`color-spaces-*` : aucun
+  `scn` ne s'exécutait, l'espace `INone` faisant lever `init_resources` à
+  chaque page) et des chemins sans cas (opérandes laissés sur la pile,
+  `/ProcSet` par référence, `/Rotate`), ajoutés à `adv-interp` ; relancés,
+  24 tués, 15 équivalents : les bras de `Op::from_method` des opérateurs
+  sans opérande qui ne font rien (`F`, `W`, `W*`, `ET`, `BX`, `EX`, `BI`,
+  `ID` : un mot-clé non distribué ne dépile rien, comme un appel sans
+  argument ; seul le cadre de la méthode diffère, masqué) ; `nargs > 0`
+  en `>=` dans `execute` (`pop(0)` rend `[]`, même appel) ; `is_truthy`
+  d'un entier (`wordspace` n'est un entier que pour une police
+  multi-octets, et vaut alors `0` : ajouter `0` ne change ni la valeur ni
+  le type, `x` ne valant jamais `-0.0`) ; dans `pop_obj`, `v < 0` et
+  `neg < 0` en `<=` (zéro est rendu avant) ; `components[:-1]` de
+  `do_SCN`/`do_scn` (`+`, `/`) : la branche des motifs non colorés est
+  inatteignable (un espace nommé `Pattern` est le prédéfini, à une
+  composante, donc une seule composante dépilée) ; la garde `KeyError` de
+  `do_Do` sur `stream_value` (aucun chemin de `resolve1`/`getobj` ne lève
+  `KeyError` : `getobj` rattrape celui de `get_pos`, `_get_objects` celui
+  de `/N`, `PDFParser` celui de `/Length`). Passe `Ok(..)`
+  (`scripts/mutants-ok.sh`) : 151 mutants, 110 tués, 22 équivalents (corps
+  qui ne font que prendre leur cadre : `pass` de `PDFDevice`,
+  `get_procset`, `do_gs`, `do_sh`, `do_F`, `do_W`, `do_W*`, `do_ET`,
+  `do_BX`, `do_EX`, `do_BI`, `do_ID`), 19 non compilables, remplacés à la
+  main (26 mutants, `hand_ok`) : tués, sauf `PDFTextState()` et
+  `PDFGraphicState()` rendus sans leurs cadres (équivalents, ci-dessus) et
+  `self.resources.copy()` remplacé par le même dict (personne ne modifie
+  les ressources). `device::new`, sans appelant, a été supprimé.
 
 ### Chantier CONVERTER
 

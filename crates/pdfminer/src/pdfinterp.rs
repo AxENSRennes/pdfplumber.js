@@ -1431,7 +1431,7 @@ impl PDFPageInterpreter {
         self.do_S()
     }
 
-    // pdfminer/pdfinterp.py:676 PDFPageInterpreter.do_f
+    // pdfminer/pdfinterp.py:675 PDFPageInterpreter.do_f
     /// Fill path using nonzero winding number rule
     pub fn do_f(&mut self) -> PyResult<()> {
         let _frame = py_frame()?;

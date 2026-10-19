@@ -237,8 +237,11 @@ Lecture :
   Chantier INTERP (branche `wave3/interp`) : `pdfinterp` et `pdfdevice`
   complets, cadres comptés ; étapes Rust `fonts`, `interp` (en attente du
   convertisseur) et `fonts_text`, `interp_text` (sur `PDFTextDevice`,
-  Python et Rust) ; corpus adverse `adv-interp` et rejeu `interp_unit`
-  (résultats et mesures : `architecture.md`, « Vague 3 », « Réalisation »).
+  Python et Rust) ; corpus adverse `adv-interp`, balayages de profondeur
+  `interp_deep` et rejeu `interp_unit` ; `interp_text` et `fonts_text`
+  identiques sur `all` (1 853), `micro` (17) et `adv-interp` (279) ;
+  mutations : survivants tous justifiés (résultats et mesures :
+  `architecture.md`, « Vague 3 », « Réalisation »).
 - **Vagues suivantes**, dans l'ordre des dépendances :
   1. `pdfinterp`, `pdfdevice`, `converter` (`PDFPageAggregator` vers
      `layout`) : étapes `fonts`, `interp`, `layout` (comptage des cadres de

@@ -2,8 +2,8 @@
 (``interp_text.TextDevice``), so that the fonts the interpreter obtains are
 checked without pdfplumber's device.
 
-Exercises what the ``fonts`` stage does (pdfminer/pdfinterp.py:212
-``PDFResourceManager.get_font`` and its cache, :397
+Exercises what the ``fonts`` stage does (the font cache of
+pdfminer/pdfinterp.py:212 ``PDFResourceManager.get_font``, :397
 ``PDFPageInterpreter.init_resources``, :1142 ``do_Tf``, pdfminer/pdffont.py),
 on pages that pdfplumber's device does not stop (an ``LTChar`` or an
 ``LTFigure`` it cannot build): see ``oracle/stages/interp_text.py``.
