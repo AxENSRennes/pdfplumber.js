@@ -11,10 +11,8 @@
 //! (`crate::fonts_report`). [`run_with`] is shared with the `fonts_text`
 //! stage.
 //!
-//! Wave 3: this stage needs the converter (`PDFLayoutAnalyzer`,
-//! `PDFPageAggregatorWithMarkedContent`), ported by the CONVERTER
-//! workstream; until it is merged, the `fonts_text` stage checks the same
-//! lines on `PDFTextDevice`.
+//! The `fonts_text` stage checks the same lines on pdfminer's
+//! `PDFTextDevice`, without the converter (`stages::fonts_text`).
 
 use std::collections::{HashMap, HashSet};
 use std::io::{self, Write};

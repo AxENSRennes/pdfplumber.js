@@ -19,10 +19,11 @@
 //! names an XObject like the port names inline images (`inline-0`), which
 //! no corpus does (`docs/architecture.md`, "Vague 3").
 //!
-//! Wave 3: this stage needs the converter (`PDFLayoutAnalyzer`,
-//! `PDFPageAggregatorWithMarkedContent`), ported by the CONVERTER
-//! workstream; until it is merged, its bodies are `todo!()` and the
-//! `interp_text` stage checks the interpreter on `PDFTextDevice`.
+//! The `interp_text` stage checks the interpreter on pdfminer's
+//! `PDFTextDevice`, without the converter (`stages::interp_text`), whose
+//! operator paths stay shallower than the content parser; pdfplumber's
+//! device goes deeper (the layout objects), so this stage is where the
+//! frames of the device paths decide the outcome at the recursion limit.
 
 use std::collections::{HashMap, HashSet};
 use std::io::{self, Write};
