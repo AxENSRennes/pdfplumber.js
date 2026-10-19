@@ -778,8 +778,10 @@ def depth_kinds() -> dict[str, Any]:
     }
 
 
-#: The stages whose first failing depth bounds a window.
-DEPTH_STAGES = ("interp_text", "interp", "fonts")
+#: The stages whose first failing depth bounds a window (``layout``: the
+#: frames of pdfplumber's own device, without the tracing overrides of
+#: ``interp`` and ``fonts``).
+DEPTH_STAGES = ("interp_text", "interp", "fonts", "layout")
 
 
 def _fails(stage: str, data: bytes) -> bool:

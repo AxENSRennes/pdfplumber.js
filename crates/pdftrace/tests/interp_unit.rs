@@ -1,7 +1,10 @@
-//! Replays `oracle/unit/interp.py`: the traces of the `interp_text` and
-//! `fonts_text` stages (the interpreter and the fonts it obtains, on
-//! pdfminer's `PDFTextDevice`) on the adversarial corpus `adv-interp` (its
-//! depth windows included), `micro` and small files of `quick`; and
+//! Replays `oracle/unit/interp.py`: the traces of the `interp`, `fonts`
+//! and `layout` stages (the interpreter, the fonts it obtains and the
+//! layout, on pdfplumber's device; `layout` is given its Python trace as
+//! its oracle input, the `id()` order of the analysis) and of
+//! `interp_text` and `fonts_text` (on pdfminer's `PDFTextDevice`) on the
+//! adversarial corpus `adv-interp` (its depth windows included, also from
+//! deeper stage entries), `micro` and small files of `quick`; and
 //! `oracle/unit/interp_deep.py` (`deep_sweeps`): `interp_text` with the
 //! device of `DeepTracingDevice` (each method descends `descent` frames
 //! first, `stages::interp_text::run_deep`) on `adv-interp`, each file from
@@ -114,6 +117,7 @@ fn stage_traces() {
     let mut n = 0;
     let mut depth_cases = 0;
     let mut deeper_entries = 0;
+    let mut per_stage = std::collections::BTreeMap::new();
     for (args, expected) in data.cases("stages") {
         let [Value::Str(name), Value::Bytes(pdf), password, Value::Str(what), Value::Int(max_pages), entry] = &args[..]
         else {
@@ -128,9 +132,12 @@ fn stage_traces() {
             _ => String::new(),
         };
         let max_pages = max_pages.as_i64().filter(|&m| m > 0).map(|m| m as usize);
-        let input = StageInput { pdf, password: &password, max_pages, oracle: None };
         let what = what.as_str().expect("a stage");
-        let run = stages::lookup(what).and_then(|s| s.run).expect("an implemented stage");
+        let Value::Str(expected) = &expected else { panic!("bad output") };
+        let expected = expected.as_str().expect("ASCII");
+        let stage = stages::lookup(what).expect("a stage");
+        let input = StageInput { pdf, password: &password, max_pages, oracle: stage.oracle_input.then_some(expected) };
+        let run = stage.run.expect("an implemented stage");
         let mut out = Vec::new();
         match entry {
             Value::None => run(&input, &mut out).expect("write to memory"),
@@ -140,9 +147,8 @@ fn stage_traces() {
             }
         }
         let got = String::from_utf8(out).expect("ASCII");
-        let Value::Str(expected) = &expected else { panic!("bad output") };
-        let expected = expected.as_str().expect("ASCII");
         n += 1;
+        *per_stage.entry(what.to_owned()).or_insert(0) += 1;
         if expected.contains("RecursionError") {
             depth_cases += 1;
         }
@@ -152,6 +158,9 @@ fn stage_traces() {
     }
     if only.is_none() {
         assert!(n > 500, "only {n} traces");
+        for what in ["interp_text", "fonts_text", "interp", "fonts", "layout"] {
+            assert!(per_stage.get(what).is_some_and(|&k| k > 300), "{what}: {per_stage:?}");
+        }
         assert!(depth_cases > 50, "only {depth_cases} traces reach the recursion limit");
         assert!(deeper_entries > 100, "only {deeper_entries} traces from a deeper entry");
     }

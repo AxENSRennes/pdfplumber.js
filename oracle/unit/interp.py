@@ -1,15 +1,17 @@
 """Unit cases of the interpreter (``pdfinterp``, ``pdfdevice``), replayed by
 ``crates/pdftrace/tests/interp_unit.rs``.
 
-The ``interp_text`` and ``fonts_text`` stages (the ``interp`` and ``fonts``
-stages on pdfminer's ``PDFTextDevice``, ``oracle/stages/interp_text.py``)
-over files are the main check of these modules (``python -m oracle.verify
---set all``); this generator makes the same checks runnable by ``cargo
-test`` (and so by ``cargo mutants``):
+The stages that drive the pages (``interp``, ``fonts``, ``layout``, as
+pdfplumber does, and ``interp_text``, ``fonts_text``, the first two on
+pdfminer's ``PDFTextDevice``, ``oracle/stages/interp_text.py``) over files
+are the main check of these modules (``python -m oracle.verify --set
+all``); this generator makes the same checks runnable by ``cargo test``
+(and so by ``cargo mutants``):
 
 - ``stages.jsonl``: ``{"in": [name, pdf, password, what, max_pages,
-  entry], "out": trace}``, the trace of stage ``what`` (``interp_text``,
-  ``fonts_text``) of each PDF of the adversarial corpus ``adv-interp``
+  entry], "out": trace}``, the trace of stage ``what`` (``STAGES``; the
+  replay hands a ``layout`` trace to the Rust stage as its oracle input,
+  for the ``id()`` order of its analysis) of each PDF of the adversarial corpus ``adv-interp``
   (regenerated first, from ``oracle/adversarial/interp.py``, its depth
   windows included), of ``micro`` and of the small files of the ``quick``
   set. ``entry`` is ``None`` for a trace run as ``oracle.verify`` runs it;
@@ -37,8 +39,11 @@ from collections.abc import Iterator
 from ..adversarial import interp as adv_interp
 from ..codegen import cmaps as codegen_cmaps
 from ..corpus import cache_dir, load_set
-from ..stages import fonts_text as _fonts_text_stage  # noqa: F401  (loaded before the children fork)
+from ..stages import fonts as _fonts_stage  # noqa: F401  (loaded before the children fork)
+from ..stages import fonts_text as _fonts_text_stage  # noqa: F401
+from ..stages import interp as _interp_stage  # noqa: F401
 from ..stages import interp_text as _interp_text_stage  # noqa: F401
+from ..stages import layout as _layout_stage  # noqa: F401
 from ..depth import depth_here
 from ..stages import _in_stage_thread, get_stage, trace_lines
 from ..stages._common import terminated
@@ -48,7 +53,7 @@ from .document import in_child, process_state
 MODULE = "interp"
 #: Files of the quick set at most this large are included.
 QUICK_MAX_BYTES = 60_000
-STAGES = ("interp_text", "fonts_text")
+STAGES = ("interp_text", "fonts_text", "interp", "fonts", "layout")
 MAX_PAGES = 20
 #: Extra frames below the stage body for the depth windows.
 DEPTH_OFFSETS = (1, 2)

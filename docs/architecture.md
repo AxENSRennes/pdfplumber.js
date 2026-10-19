@@ -476,10 +476,10 @@ l'interpréteur avec un générateur unitaire qui le mène sur un
   `PDFStream.__contains__` (depuis le C) par `c_called_leaf`. Le
   `re.sub` de `PDFContentParser.get_inline_data` prend 2 cadres, et 11 à
   la première compilation de son motif dans un processus (mesuré avec
-  `oracle/depth_probe.py`) : état de processus
-  (`pdfinterp::reset_process_state`, appelé par
-  `pdftrace::stages::py_process::start`). Le chantier CONVERTER a annoncé
-  un `pycompat::re_cache` pour ses propres motifs : à unifier à la jonction.
+  `oracle/depth_probe.py`) : état de processus, depuis la jonction celui
+  de `pycompat::re_cache` (un seul cache de motifs compilés par processus,
+  comme celui de `re`, remis à zéro par
+  `pdftrace::stages::py_process::start`).
 - **Étapes sans convertisseur** : `interp` et `fonts` (Rust, écrites contre
   le contrat) ont besoin de `PDFPageAggregatorWithMarkedContent`. Pour
   vérifier l'interpréteur seul, deux étapes de plus,
@@ -777,7 +777,55 @@ une `Rc<PDFGraphicState>` par `render_string` d'origine.
     repli ne sont que comparés ; toute suite croissante d'ids neufs
     au-dessus des rangs enregistrés donne le même ordre.
 
-  `stages/layout.rs` n'est pas muté : il attend l'interpréteur.
+  `stages/layout.rs` est muté à la jonction (ci-dessous).
+
+### Jonction (branche `wave3/join`)
+
+`wave3/interp` puis la fusion de `wave3/converter`. Conflits résolus en
+gardant les deux intentions : les corps de `pdfdevice::device` d'INTERP
+(`set_ctm` vérifie son cadre par `leaf(1)` là où CONVERTER le tenait :
+rien n'est appelé dessous, même sémantique) ; `py_process::start` vide
+`re_cache` et les caches de `CMapDB` ; `fonts_unit.rs` garde les deux
+extractions (`fonts_report`, `font_case`). Ensuite :
+
+- **Un seul cache de motifs `re`** : le `re.sub` de `get_inline_data` passe
+  par `pycompat::re_cache::compile_frames` (`EOL_COMPILE_DEPTH` = 11) au
+  lieu de son propre drapeau ; `pdfinterp::reset_process_state` disparaît.
+- **Un seul modèle d'appel de classe** : `pycompat::recursion::class_call`
+  (l'unité C de `_PyObject_MakeTpCall`, puis l'entrée de boucle de
+  `__init__` : trois unités, mesurées par CONVERTER) et `class_call_leaf` ;
+  les instanciations de `pdfinterp` (`PDFContentParser`, `PDFStream`,
+  `PDFTextState`, `PDFGraphicState`, `CMap`, `PDFColorSpace`,
+  `PDFPageInterpreter`) en comptaient deux ; `layout::class_call` en est
+  la réexportation. Seules des unités C changent (inobservable depuis
+  pdfplumber, voir les survivants « unités C seules »). Les constructeurs
+  des vagues précédentes (`PDFPage`, `PDFParser`, `xref`...) gardent deux
+  unités : même argument, à reprendre si une étape approche un jour la
+  limite C.
+- **Bout à bout** : l'étape Rust `layout` mène l'interpréteur porté dans
+  `PDFPageAggregatorWithMarkedContent` puis l'analyse, avec l'ordre des
+  `id()` lu dans la trace Python (`--oracle-dir`, passé par
+  `oracle.verify`) ; `interp` et `fonts` tournent sur le périphérique de
+  pdfplumber.
+- **Fenêtres de profondeur** : `adv-interp` cherche aussi le premier niveau
+  qui échoue pour `layout` (`DEPTH_STAGES`), dont le périphérique n'a pas
+  les surcharges de trace d'`interp` et `fonts`.
+- **Rejeu** : `oracle/unit/interp.py` trace aussi `interp`, `fonts` et
+  `layout` (la trace de `layout` est donnée à l'étape Rust comme entrée de
+  l'oracle) ; `interp_unit` vérifie donc le périphérique de pdfplumber, le
+  convertisseur et l'analyse avec le vrai interpréteur, fenêtres de
+  profondeur et entrées plus profondes comprises, et sert de rejeu aux
+  mutants des étapes et des cadres.
+- **CMaps paresseuses** (`tests/lazy_cmap.rs`) : sur une page dont la
+  police `Type0` demande `90ms-RKSJ-H` et `to-unicode-Adobe-Japan1`, un
+  fournisseur qui les retient (comme celui de JavaScript avant
+  téléchargement) les voit demandées par `layout`, `interp` et `fonts`
+  bien que pdfminer rattrape `CMapNotFound` ; la relance après remise des
+  fichiers, avec un nouveau gestionnaire de ressources, donne la trace
+  d'une exécution complète (celle de Python, vérifiée par
+  `oracle.trace`).
+
+JOIN_RESULTS
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 
