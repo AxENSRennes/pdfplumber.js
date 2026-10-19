@@ -294,7 +294,14 @@ Mode d'emploi détaillé : [`oracle/README.md`](../oracle/README.md).
   (`DIR/<sha256>.txt`, ou `.pw-<12 hexa>.txt`, nommée comme le cache), que le
   Rust lit (`StageInput::oracle`) ; `verify` la passe toujours pour ces
   étapes, et les autres étapes la refusent. Sans elle, `layout` analyse
-  avec l'ordre par défaut de la bibliothèque (`CreationOrder`).
+  avec l'ordre par défaut de la bibliothèque (`CreationOrder`). C'est le
+  cas de `scripts/wasm-depth-gate.sh`, qui compare le Wasm au natif sans
+  cache de l'oracle : ses traces `layout` ne sont celles que `verify`
+  compare à Python que parce que ses fenêtres n'ont aucune page dont
+  l'analyse dépend du rang des `id()` (mesuré à la finalisation de la
+  vague 3 : les 188 fichiers `depth-*` et `climit-*` d'`adv-interp` donnent
+  la même trace `layout` native avec et sans `--oracle-dir`) ; la porte
+  vérifie la pile, pas la parité.
 - `pdftrace --cmap-dir DIR` (par défaut `$PDFPLUMBER_CMAP_DIR`) : le
   fournisseur des CMaps prédéfinies (`<cache>/cmap/<empreinte>/`, le
   `cmap_dir` des données unitaires `cmaps` ou `interp`). Les étapes
@@ -600,11 +607,19 @@ La version Wasm est vérifiée par les mêmes rejeux unitaires compilés pour
 `wasm32-wasip1` (`scripts/check.sh`), par `scripts/wasm-depth-gate.sh` (le
 profil `dist` sur les fenêtres de profondeur des corpus adverses, comparé au
 natif) et, à l'intégration d'une vague, par `pdftrace` compilé en Wasm
-(`dist`, sous le WASI de Node, un fichier par processus, sa sortie
-redirigée vers un fichier : le WASI de Node écrit un tube sans bloquer et
-une longue trace y échoue par `EAGAIN`) comparé au natif sur
-`quick` pour les étapes de la vague (vague 3 : `interp`, `fonts`, `layout`,
-150 fichiers chacune, identiques ; comparaison menée par un script ponctuel,
-pas encore versionné).
+(`dist`, sous le WASI de Node) comparé au natif sur `quick` pour les étapes
+de la vague : `scripts/heavy.sh .venv/bin/python -m oracle.wasm_parity
+--set quick [--stages interp,fonts,layout]` (`oracle/wasm_parity.py`, les
+deux binaires construits d'abord). Les deux binaires reçoivent ce que
+`oracle.verify` donne au natif, si bien qu'une trace identique est la
+parité avec Python du Wasm partout où `verify` trouve le natif identique :
+le fournisseur de CMaps passé explicitement (`--cmap-dir`, quel que soit
+l'environnement : sans lui, les deux binaires s'accorderaient sur une trace
+« no CMap provider » pour les fichiers à CMap prédéfinie, 3 des 150 de
+`quick`), et pour `layout` le cache de l'oracle (`--oracle-dir`, le rang
+des `id()` de Python ; fichiers dont l'oracle n'est pas `ok` écartés comme
+dans `verify`). Un fichier par processus, la sortie Wasm redirigée vers un
+fichier (le WASI de Node écrit un tube sans bloquer et une longue trace y
+échoue par `EAGAIN`). Vague 3 : `interp`, `fonts`, `layout`, WASM_PARITY_RESULT.
 `oracle.verify` ne mène pas le binaire Wasm lui-même : `--out` nomme ses
 fichiers temporaires par le numéro de processus, que WASI n'a pas.

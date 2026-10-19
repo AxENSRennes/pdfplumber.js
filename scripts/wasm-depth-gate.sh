@@ -20,7 +20,7 @@
 # windows have no page whose analysis depends on that ranking: measured in
 # October 2026 at the wave 3 finalization, the 188 `adv-interp` depth and
 # C-limit files give identical native `layout` traces with and without
-# `--oracle-dir` (docs/verification.md, "Étapes"). A new depth file whose
+# `--oracle-dir` (docs/verification.md, "Outils"). A new depth file whose
 # layout has `id()` ties would still be gated for the stack (wasm = native),
 # not for Python parity.
 #

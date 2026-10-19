@@ -32,6 +32,7 @@ overrides the cache directory (default `$PDFPLUMBER_ROOT/.cache`).
 | `trace.py` | CLI: one trace on stdout |
 | `cache.py` | trace cache under `.cache/oracle/` |
 | `verify.py` | CLI: build the cache, run `pdftrace`, compare |
+| `wasm_parity.py` | CLI: the `dist` Wasm `pdftrace` against the native one, with what `verify` gives the native one (CMap provider, `--oracle-dir`) |
 | `unit/<module>.py` | generators of unit cases replayed by `crates/pdftrace/tests/<module>_unit.rs` (`unit/_common.py`: output and `meta.json`) |
 | `adversarial/<stage>.py` | generators of the adversarial corpora `adv-<stage>` (`<cache>/corpus/adv-<stage>/`, passwords in its `manifest.json`); `_pdf.py` writes the PDFs |
 | `codegen/` | generators of the Rust tables taken from upstream data (`libm`, `saslprep`, pdfminer tables, CCITT codes) and of the compact predefined CMaps |
@@ -136,6 +137,18 @@ Warm the cache without Rust (and see the slowest files and timeouts):
 ```bash
 $PY -m oracle.verify --stage streams --set all --oracle-only
 $PY -m oracle.verify --stage streams --set all --oracle-only --retry-timeouts --timeout 600
+```
+
+The WebAssembly build (`dist`, under Node's WASI) against the native one,
+file by file, with the CMap provider passed explicitly and, for `layout`,
+the oracle cache (`--oracle-dir`): an identical trace is Python parity for
+the Wasm build wherever `verify` finds the native one identical. Build both
+binaries first (`cargo build --release -p pdftrace --bin pdftrace`,
+`cargo build --profile dist --target wasm32-wasip1 -p pdftrace --bin
+pdftrace`), then:
+
+```bash
+scripts/heavy.sh $PY -m oracle.wasm_parity --set quick --stages interp,fonts,layout
 ```
 
 ## Cache
