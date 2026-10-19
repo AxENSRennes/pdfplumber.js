@@ -600,7 +600,11 @@ La version Wasm est vérifiée par les mêmes rejeux unitaires compilés pour
 `wasm32-wasip1` (`scripts/check.sh`), par `scripts/wasm-depth-gate.sh` (le
 profil `dist` sur les fenêtres de profondeur des corpus adverses, comparé au
 natif) et, à l'intégration d'une vague, par `pdftrace` compilé en Wasm
-(`dist`, sous le WASI de Node, un fichier par processus) comparé au natif sur
-`quick` pour les étapes de la vague (vague 3 : `interp`, `fonts`, `layout`).
+(`dist`, sous le WASI de Node, un fichier par processus, sa sortie
+redirigée vers un fichier : le WASI de Node écrit un tube sans bloquer et
+une longue trace y échoue par `EAGAIN`) comparé au natif sur
+`quick` pour les étapes de la vague (vague 3 : `interp`, `fonts`, `layout`,
+150 fichiers chacune, identiques ; comparaison menée par un script ponctuel,
+pas encore versionné).
 `oracle.verify` ne mène pas le binaire Wasm lui-même : `--out` nomme ses
 fichiers temporaires par le numéro de processus, que WASI n'a pas.

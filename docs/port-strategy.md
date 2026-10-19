@@ -275,7 +275,7 @@ Lecture :
     d'`adv-pages`, 23 d'`adv-objects`), `scripts/check-browsers.sh` (102
     tests : Chromium, Firefox, WebKit) ; `pdftrace` compilé en Wasm
     (`dist`) donne les traces natives sur `quick` pour `interp`, `fonts`
-    et `layout` (WASMQ). Mutations : aucun survivant non justifié
+    et `layout` (150 fichiers chacune). Mutations : aucun survivant non justifié
     (`architecture.md`, « Jonction », « Corrections de la revue ») ; la
     fusion est sans conflit et n'a modifié aucun code.
   - Temps (étape `layout`, 20 premières pages de `all`) : `pdftrace` 54 ms
