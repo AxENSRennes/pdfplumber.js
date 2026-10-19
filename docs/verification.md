@@ -95,7 +95,7 @@ Chaque étape a un nom stable, une implémentation Python
 | `fonts` | les polices obtenues par l'interpréteur (le `fontmap` de la page, les entrées ajoutées au cache du `PDFResourceManager`) : classe et attributs, puis, pour chaque chaîne affichée, `decode` et, par code, `to_unichr`, `char_width`, `char_disp` |
 | `interp` | chaque appel de l'interpréteur au périphérique de pdfplumber (`set_ctm`, pages, figures, `paint_path`, `render_image`, `render_string`/`render_char` et l'avance rendue, balises), avec les états graphique et texte, et où remontent les exceptions |
 | `fonts_text`, `interp_text` | `fonts` et `interp` sur le `PDFTextDevice` de pdfminer (`render_char` rend `0`) au lieu du périphérique de pdfplumber : l'interpréteur vérifié sans convertisseur (`oracle/stages/interp_text.py`) |
-| `layout` | le `LTPage` brut (`laparams=None`, le défaut de pdfplumber) puis analysé (`LAParams()`), tous attributs (`mcid`, `tag` compris), et le rang des `id()` de l'analyse (`ids`) |
+| `layout` | le `LTPage` brut (`laparams=None`, le défaut de pdfplumber) puis analysé (`LAParams()`), tous attributs (`mcid`, `tag` compris), et le rang des `id()` de l'analyse (`ids`) ; non reproductible d'une construction du cache à l'autre sur les pages où des boîtes sont à égale distance (les `id()` sont des adresses : un tirage), la parité suivant le tirage du cache (`pdftrace --oracle-dir`) |
 | `plumber_objects` | `page.objects` de pdfplumber, tous attributs, plus boîtes et `doctop` |
 | `plumber_text` | `extract_text` (simple, `layout=True`, options), `extract_words`, `extract_text_lines`, `search`, `dedupe_chars` |
 | `plumber_tables` | `find_tables`/`extract_tables` pour les stratégies `lines`, `lines_strict`, `text`, `explicit` |
@@ -534,7 +534,12 @@ les fichiers partagés tous les rejeux qui les exercent (`utils.rs` :
 `pdfinterp.rs` : `interp_unit`, `psparser_unit`, `document_unit` ;
 `pdfdevice.rs` : `interp_unit` ; `converter.rs`, `pdfplumber/src/page.rs` :
 `converter_unit` et `interp_unit` ; `pdftrace/src/stages/{interp,fonts,
-layout,common}.rs` : `interp_unit`, `lazy_cmap`).
+layout,common}.rs` : `interp_unit`, `lazy_cmap` ; `pycompat/src/specialize.rs`
+et le site de `literal_name` : `pdftypes_unit`, `psparser_unit`,
+`cmaps_unit`, `interp_unit` ; `pdfminer/src/process_state.rs` et les
+fonctions d'instantané qu'il appelle, `wasm/src/ops.rs` : `lazy_cmap`,
+`js_runtime_unit` ; `pdftrace/src/stages/py_process.rs` : `interp_unit`,
+`document_unit`, `lazy_cmap`).
 
 ```sh
 HEAVY_SLOTS=1 scripts/heavy.sh cargo mutants -f crates/pdfminer/src/psparser.rs \
