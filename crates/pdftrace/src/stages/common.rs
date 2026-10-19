@@ -11,7 +11,7 @@ use pdfminer::pdfdocument::PDFDocument;
 use pdfminer::pdfinterp::{PDFPageInterpreter, PDFResourceManager};
 use pdfminer::pdfpage::PDFPage;
 use pdfminer::pdfparser::FileKind;
-use pdfminer::pdftypes::{ObjId, PDFObject};
+use pdfminer::pdftypes::ObjId;
 use pycompat::recursion::{py_frame, py_frames, with_depth, Depth};
 use pycompat::{PyErr, PyResult};
 
@@ -104,11 +104,6 @@ pub fn fetch_order(objids: &[ObjId]) -> Vec<ObjId> {
 /// `canon(objid)`
 pub fn canon_id(id: &ObjId) -> String {
     canon_obj(id.obj())
-}
-
-/// `canon(obj)` of an optional object (`None` when absent).
-pub fn canon_opt(obj: Option<&PDFObject>) -> String {
-    obj.map_or_else(|| "None".to_owned(), canon_obj)
 }
 
 /// `interp.page_layout` of `oracle/stages/interp.py`, shared by the

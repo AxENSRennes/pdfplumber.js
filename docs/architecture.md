@@ -825,7 +825,104 @@ extractions (`fonts_report`, `font_case`). Ensuite :
   d'une exécution complète (celle de Python, vérifiée par
   `oracle.trace`).
 
-JOIN_RESULTS
+#### Résultats de la jonction
+
+- **Parité des étapes** (`oracle.verify`, `--timeout 600`, 20 premières
+  pages, code final) : `interp`, `fonts` et `layout` identiques sur `all`
+  (1 853/1 853 chacune), `adv-interp` (279), `adv-pages` (285) et
+  `adv-objects` (333) ; `interp_text` sur `adv-interp` (279) ; régression
+  `psparser`, `objects`, `streams`, `pages` sur `quick` (150 chacune).
+  Aucun délai, aucune erreur d'oracle. (Le corpus que la commande de la
+  vague appelait `adv-content` est `adv-interp`.)
+- **Rejeux** : `interp_unit` 3 165 traces d'étapes (contre 1 266 avant la
+  jonction), `deep_sweeps` et `get_cmap` identiques ; `lazy_cmap` ; les
+  autres rejeux par `scripts/check.sh` (natif et `wasm32-wasip1`).
+- **Statistique `CreationOrder`** (l'étape `layout` sans `--oracle-dir`,
+  comparée page à page à la trace de Python, lignes `ids` exclues) : sur
+  les 3 659 pages des 20 premières pages de `all`, 3 425 identiques
+  (93,6 %) ; 1 756 fichiers sur 1 853 (94,8 %). Parmi les 2 208 pages dont
+  l'analyse classe au moins deux boîtes ou groupes (ligne `ids` à deux
+  entrées ou plus), 1 974 (89,4 %). Les 234 autres pages ont des paires à
+  égale distance que l'ordre des `id()` de Python départage autrement.
+  C'est une statistique, pas un critère de parité : la bibliothèque et
+  l'API JS gardent `CreationOrder`.
+- **Temps** (étape `layout`, 20 premières pages de `all`, 1 836 fichiers
+  sans mot de passe, 3 640 pages ; Python : `seconds` des constructions du
+  cache, un processus par trace, `-j 3` ; Rust : `_times.tsv`, un
+  processus par lot) : Python 1 410 s (1 050 s sans les 0,196 s de
+  démarrage et d'imports par processus), `pdftrace` 198 s ; par page
+  387 ms (288 ms sans démarrage) contre 54 ms, soit 5,3 fois plus rapide
+  hors démarrage (médiane par fichier 4,9 ; de 0,5 à 13,5 sur les 214
+  fichiers de plus de 50 ms des deux côtés). Fichier le plus lent :
+  `pdfjs-issue19624-text.pdf`, 6,7 s contre 43,7 s. Points chauds de
+  `pdftrace --stage layout` (régions instrumentées sur une copie, temps
+  inclusifs) : sur 150 fichiers tirés au hasard, l'écriture des lignes
+  `raw` de la trace 65 % (le banc d'essai : `canon` de chaque attribut),
+  l'interprétation avec le convertisseur 15 % (dont `render_string`
+  5 %, `nextobject` 5 %, `LTChar` 4 %), les lignes `analyzed` 5 %,
+  `group_textboxes` 2 % ; sur les 30 fichiers les plus lents, lignes
+  `raw` 61 %, `group_textboxes` 13 % (78 % de `pdfjs-issue19624-text.pdf` :
+  l'algorithme quadratique de pdfminer, tas de toutes les paires),
+  interprétation 12 %. Pour la bibliothèque seule, l'interprétation et
+  `group_textboxes` sont donc les cibles ; la trace n'existe que dans
+  `pdftrace`.
+
+- **Mutations** (`--profile mutants`, `-j 1`, `heavy.sh`) :
+  - passe ordinaire du diff de la jonction (`--in-diff` : `pdfinterp.rs`,
+    `recursion.rs`, `page.rs`, `layout.rs`, `py_process.rs` ; rejeux
+    `interp_unit`, `psparser_unit`, `converter_unit` sans `corpus`,
+    `lazy_cmap`, `layout_unit`) : 28 mutants, 1 tué, 27 non compilables ;
+    passe `Ok(..)` (diff des fichiers réécrits) : 7 mutants, 2 tués, 4 non
+    compilables, 1 survivant, `class_call_leaf` rendu `Ok(())` (ses sites :
+    `PDFGraphicState()`, `PDFColorSpace(...)`, `PDFStream(d, data)`,
+    `PDFPageInterpreter(...)`, tous dominés par un point antérieur au
+    moins aussi profond — `set_ctm`, `resolve1`, la compilation du motif
+    de `re.sub`, la chaîne d'`__init__` du périphérique —, plus des unités C
+    seules) ; les non compilables `class_call` (des gardes d'unités C) et
+    les corps de `get_cmap`, `get_colorspace`,
+    `PDFPageAggregatorWithMarkedContent::create`, inchangés hors de la
+    ligne de l'appel de classe, déjà remplacés à la main par INTERP et
+    CONVERTER (tués) ;
+  - passe ordinaire des étapes devenues réelles (`stages/layout.rs`,
+    `interp.rs`, `fonts.rs`, `common.rs`, fichiers entiers ; `--lib`,
+    `interp_unit`, `lazy_cmap`) : 234 mutants, 40 tués, 184 non
+    compilables, 10 survivants ; repris avec `document_unit` (le rejeu des
+    étapes `objects`/`streams`/`psparser`), `fetch_order` et `canon_id`
+    sont tués ; `canon_opt`, sans appelant depuis la vague 2, est
+    supprimé. Équivalents : `marked`/`marked_mut` de `FontsDevice` et
+    `TracingDevice` rendant un état neuf (l'état des balises ne fait que
+    remplir `mcid`/`tag` des objets `LT*`, que ces étapes n'écrivent pas ;
+    `decode_text` est appelé quand même, et ne lève jamais : `IndexError`
+    rattrapée) ; `page_frames > 0` en `>=` (`py_frames(0)` ne vérifie
+    rien) ;
+  - passe `Ok(..)` des mêmes fichiers : 42 mutants, 26 tués, 8 non
+    compilables, 8 survivants, tous des méthodes de `FontsDevice` (et
+    `receive_layout` de `TracingDevice`) qui délèguent au périphérique de
+    pdfplumber et dont l'étape n'écrit pas l'effet : `begin_tag`,
+    `end_tag`, `do_tag` (moins profonds que le parseur de la même
+    `execute`, mesure d'INTERP ; `decode_text` ne lève pas), `end_page` et `receive_layout` (appelés depuis
+    `process_page`, peu profond ; `laparams=None`), `paint_path` et
+    `render_image` (aucune exception hors `RecursionError` pour des points
+    numériques, et la frontière de `layout` sur `depth-subpaths` est celle
+    d'`interp_text`, donc `paint_path` ne la décide pas). Les non
+    compilables aux types sans `Default` remplacés à la main par une valeur
+    (`render_char` de `FontsDevice` et de `TracingDevice` → `0.0`, `1.0`,
+    `traced_render_char` → `0.0`, `page_layout` sans `process_page`) : 5
+    mutants, tous tués ;
+  - mutants des cadres à la main, contre les étapes réelles
+    (`interp_unit`, `stage_traces` : `interp`, `fonts` et `layout` sur
+    `adv-interp`, fenêtres et entrées plus profondes comprises) : chaque
+    instruction qui portait un survivant d'INTERP ou de CONVERTER (149
+    mutants : les 132 d'INTERP et les 34 de CONVERTER encore présents,
+    regroupés par instruction, plus quelques instructions identiques des
+    mêmes fonctions) et les 16 que la jonction a écrites (appels de
+    classe de `pdfinterp`, `EOL_COMPILE_DEPTH` ±1, motif toujours ou
+    jamais compilé, retour en cache de `re_cache::compile_frames` ±1 ou
+    supprimé) : 165 mutants, 8 tués (les 7 de `re_cache`/`EOL`, et le
+    cadre de `PDFContentParser.__init__`), 157 survivants : les
+    survivants des deux chantiers le restent avec le vrai interpréteur et
+    le vrai périphérique (leurs justifications tiennent), et les appels de
+    classe de `pdfinterp` sont des unités C seules ou dominés (ci-dessus).
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 

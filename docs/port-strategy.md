@@ -253,6 +253,16 @@ Lecture :
   non justifié (`architecture.md`, « Chantier CONVERTER ») ; cache
   Python de l'étape `layout` construit sur `all` (1 853 fichiers, aucun
   délai, 1,8 Go).
+  Jonction (`wave3/join`) : les deux chantiers fusionnés, un seul cache
+  de motifs `re` et un seul modèle d'appel de classe ; `interp`, `fonts`
+  et `layout` identiques à Python sur `all` (1 853, 20 premières pages),
+  `adv-interp` (279), `adv-pages` (285), `adv-objects` (333), avec
+  l'ordre des `id()` de la trace Python ; `CreationOrder` seul donne le
+  résultat de Python sur 93,6 % des pages de `all` ; `pdftrace` 5,3 fois
+  plus rapide que Python par page hors démarrage (54 ms contre 288 ms) ;
+  protocole des CMaps paresseuses vérifié à travers l'interpréteur
+  (`lazy_cmap`) ; mutations sans survivant non justifié
+  (`architecture.md`, « Jonction »).
 - **Vagues suivantes**, dans l'ordre des dépendances :
   1. `pdfinterp`, `pdfdevice`, `converter` (`PDFPageAggregator` vers
      `layout`) : étapes `fonts`, `interp`, `layout` (comptage des cadres de
