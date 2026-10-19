@@ -82,7 +82,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use pycompat::pystr::PyStrBuilder;
-use pycompat::recursion::{c_call, eval_entry, py_frame, Guard};
+use pycompat::recursion::{eval_entry, py_frame, Guard};
 use pycompat::{exc, Num, PyInt, PyResult, PyStr};
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -116,14 +116,9 @@ fn c_called_frame() -> PyResult<(Guard, Guard)> {
     Ok((entry, py_frame()?))
 }
 
-/// A class call, `Cls(...)` (see the module documentation, "Recursion"):
-/// `_PyObject_MakeTpCall`'s C unit, then the evaluation loop entry of
-/// `__init__` (called from C), held for the call; the caller then takes
-/// the `__init__` frame.
-pub fn class_call() -> PyResult<(Guard, Guard)> {
-    let unit = c_call(" while calling a Python object")?;
-    Ok((unit, eval_entry()?))
-}
+// A class call, `Cls(...)` (see the module documentation, "Recursion"),
+// shared with the other modules.
+pub use pycompat::recursion::class_call;
 
 /// `apply_matrix_rect(m, rect)` with its frames (`utils` does not count
 /// them): its own, and the leaf of each `apply_matrix_pt` (all at the same

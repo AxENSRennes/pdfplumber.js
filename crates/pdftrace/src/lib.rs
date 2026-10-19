@@ -14,8 +14,8 @@
 //!   of Python's analysis (`RecordedIds`).
 
 pub mod canon;
-pub mod fonts_report;
 pub mod font_case;
+pub mod fonts_report;
 pub mod layout_dump;
 pub mod plumber;
 pub mod stages;

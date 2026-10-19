@@ -392,7 +392,7 @@ impl PDFPageAggregatorWithMarkedContent {
     /// `PDFDevice.__init__` (no `__init__` of its own), then the
     /// attributes.
     pub fn create(rsrcmgr: Rc<PDFResourceManager>, pageno: PyInt, laparams: Option<LAParams>) -> PyResult<Self> {
-        let _call = pdfminer::layout::class_call()?;
+        let _call = pycompat::recursion::class_call()?;
         PDFPageAggregator::<PlumberPayload>::init_frames()?;
         Ok(PDFPageAggregatorWithMarkedContent::new(rsrcmgr, pageno, laparams))
     }

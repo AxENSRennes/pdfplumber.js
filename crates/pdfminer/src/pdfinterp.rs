@@ -41,8 +41,10 @@
 //! evaluation loop entry (`eval_entry`) before the operator's frame
 //! (measure it with `oracle/depth_probe.py` rather than assume it);
 //! class instantiations (`PDFTextState()`, `PDFGraphicState()`,
-//! `self.__class__(...)` in `dup`, the device's objects) take the entry and
-//! the `__init__` frame (`c_called_leaf` when it returns at once);
+//! `self.__class__(...)` in `dup`, the device's objects) take the class
+//! call's units (`recursion::class_call`: three C units, as
+//! `oracle/unit/converter.py` measured for the layout objects) and the
+//! `__init__` frame (`class_call_leaf` when it returns at once);
 //! `log.debug(...)` of `render_contents`, `execute` (one per operator),
 //! `init_resources`, `do_Do`, and every `log.warning(...)` take theirs
 //! through `pycompat::logging` (`Logger::new("pdfminer.pdfinterp")`,
@@ -73,7 +75,7 @@ use indexmap::IndexMap;
 use pycompat::io::{BytesIO, Pos};
 use pycompat::logging::Logger;
 use pycompat::re_cache;
-use pycompat::recursion::{c_called_leaf, eval_entry, leaf, py_frame};
+use pycompat::recursion::{c_called_leaf, class_call, class_call_leaf, eval_entry, leaf, py_frame};
 use pycompat::text::decode_utf8_ignore;
 use pycompat::{exc, ExcKind, Num, PyInt, PyResult};
 use rustc_hash::FxBuildHasher;
@@ -115,8 +117,8 @@ impl PSStackParser<ContentStreams> {
     // pdfminer/pdfinterp.py:257 PDFContentParser.__init__
     /// `PDFContentParser(streams)`; raises `PSEOF` when there is no stream.
     pub fn new(streams: Vec<PDFObject>) -> PyResult<PDFContentParser> {
-        // the class is called (from C)
-        let _entry = eval_entry()?;
+        // the class is called, its __init__ run from C
+        let _call = class_call()?;
         let _frame = py_frame()?;
         // PSStackParser.__init__(fp=None) is safe only because we've
         // overloaded all the methods that would attempt to access self.fp
@@ -322,7 +324,7 @@ fn inline_image(p: &mut PDFContentParser, pos: Pos) -> PyResult<()> {
         data.extend_from_slice(eos);
     }
     // PDFStream(d, data): its __init__, called from C
-    c_called_leaf()?;
+    class_call_leaf()?;
     let obj = PDFStream::new(d, Rc::from(data), None);
     p.push((pos, PDFObject::Stream(Rc::new(obj))))?;
     if eos == b"EI" {
@@ -436,7 +438,7 @@ impl PDFTextState {
     /// `reset()`. Takes the frames of the class call.
     pub fn new() -> PyResult<PDFTextState> {
         // the class is called: __init__ runs from C
-        let _entry = eval_entry()?;
+        let _call = class_call()?;
         let _frame = py_frame()?;
         let mut state = PDFTextState::initial();
         state.reset()?;
@@ -534,7 +536,7 @@ impl PDFGraphicState {
     /// space, `pdfcolor::predefined_colorspace`) and the gray `0`.
     pub fn new() -> PyResult<PDFGraphicState> {
         // the class is called: __init__ runs from C and returns
-        c_called_leaf()?;
+        class_call_leaf()?;
         Ok(PDFGraphicState::initial())
     }
 
@@ -599,7 +601,7 @@ impl PDFResourceManager {
                     return Err(e);
                 }
                 // CMap(): CMap.__init__ (from C), then CMapBase.__init__
-                let _entry = eval_entry()?;
+                let _call = class_call()?;
                 let _init = py_frame()?;
                 leaf(1)?;
                 Ok(Rc::new(CMap::new(Attrs::default())))
@@ -682,12 +684,12 @@ fn get_colorspace(spec: &PDFObject) -> PyResult<Option<Rc<PDFColorSpace>>> {
             if name == "ICCBased" {
                 let ncomponents = stream_value(&second)?.getitem("N")?;
                 // PDFColorSpace(...): __init__ called from C
-                c_called_leaf()?;
+                class_call_leaf()?;
                 return Ok(Some(Rc::new(PDFColorSpace::new(name, ncomponents))));
             }
             if name == "DeviceN" {
                 let n = list_value(&second)?.len();
-                c_called_leaf()?;
+                class_call_leaf()?;
                 return Ok(Some(Rc::new(PDFColorSpace::new(name, PDFObject::Int(PyInt::Small(n as i64))))));
             }
         }
@@ -1027,7 +1029,7 @@ impl PDFPageInterpreter {
     /// call.
     pub fn new(rsrcmgr: Rc<PDFResourceManager>, device: Rc<RefCell<dyn PDFDevice>>) -> PyResult<PDFPageInterpreter> {
         // the class is called: __init__ runs from C and only assigns
-        c_called_leaf()?;
+        class_call_leaf()?;
         Ok(PDFPageInterpreter {
             rsrcmgr,
             device,

@@ -148,6 +148,24 @@ pub fn c_called_leaf() -> PyResult<()> {
     leaf(1)
 }
 
+/// A Python class called by Python code (`Cls(...)`, a class without
+/// `tp_vectorcall`, so every class pdfminer and pdfplumber define):
+/// `_PyObject_MakeTpCall`'s C unit (`" while calling a Python object"`),
+/// then `__init__`, run by `slot_tp_init` from C (an [`eval_entry`]), both
+/// held until the instance is made; `__init__` then takes its frame
+/// ([`py_frame`]).
+pub fn class_call() -> PyResult<(Guard, Guard)> {
+    let unit = c_call(" while calling a Python object")?;
+    Ok((unit, eval_entry()?))
+}
+
+/// [`class_call`] of a class whose `__init__` only assigns and returns:
+/// its units and the `__init__` frame, only checked.
+pub fn class_call_leaf() -> PyResult<()> {
+    let _call = class_call()?;
+    leaf(1)
+}
+
 /// `Py_EnterRecursiveCall(what)`: one C unit, or `RecursionError` with
 /// `what` appended to the message (`" while getting the repr of an
 /// object"`) when all are in use.
