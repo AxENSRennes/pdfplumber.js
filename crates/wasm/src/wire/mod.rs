@@ -201,6 +201,8 @@ pub fn write_value<W: Writer + ?Sized>(w: &mut W, v: &PyValue) -> PyResult<()> {
                 PDFObject::Int(i) => w.int(&i),
                 PDFObject::Float(x) => w.float(x),
                 PDFObject::Bytes(b) => w.bytes(&b),
+                // a value pdfplumber's metadata decoding wrote into the document
+                PDFObject::Str(s) => write_str(w, &s)?,
                 PDFObject::Literal(lit) => {
                     w.literal();
                     match lit.name() {

@@ -20,7 +20,7 @@ use pycompat::recursion::{eval_entry, py_frame};
 use pycompat::specialize::CallSite;
 use pycompat::{exc, ExcKind, PyResult, PyStr};
 
-use crate::obj::{py_iter, Obj, PyValue};
+use crate::obj::{py_iter, PyValue};
 
 /// `decode_text(s)` of a `str` or `bytes` (a literal's name).
 pub enum TextArg<'a> {
@@ -240,71 +240,103 @@ pub static DECODE_TEXT_STR: CallSite = CallSite::new("pdfinternals.decode_text s
 
 // pdfplumber/utils/pdfinternals.py:24 resolve_and_decode
 /// Recursively resolve the metadata values: a reference resolved (one
-/// level), a `list` element by element (`list(map(resolve_and_decode,
-/// obj))`: each call from C), a `PSLiteral` or `str`/`bytes` through
-/// `decode_text`, a `dict` value by value, anything else as it is.
+/// level: `obj.resolve()`, `None` for a missing object), a `list` element
+/// by element into a **new** list (`list(map(resolve_and_decode, obj))`:
+/// each call from C), a `PSLiteral` or `str`/`bytes` through `decode_text`,
+/// a `dict` value by value **in place** (`obj[k] = resolve_and_decode(v)`
+/// on the PDF's own dict, which it returns), anything else as it is.
 ///
-/// Python decodes a `dict` **in place** (`obj[k] = ...` on the PDF's own
-/// dict, which it returns): a dict reached again (twice in the metadata,
-/// or later by other code reading the document) holds the decoded values.
-/// The port returns a new `dict` and leaves the PDF's as it is (a
-/// `PDFObject` cannot hold a Python `str`): a dict reached twice is
-/// decoded from its PDF values each time, where Python decodes what the
-/// first pass left (the same text but for characters PDFDocEncoding maps
-/// again: `\x16`, `\x7f`... of a UTF-16 string), and code reading the
-/// document afterwards sees the PDF values (deviation noted in
-/// `docs/architecture.md`, "Vague 4"; the metadata is workstream DOC's).
+/// The in-place decoding is visible: a dict reached twice (in the metadata,
+/// or by whatever reads the document afterwards: the page tree, the
+/// structure tree, annotations) holds the decoded values, Python `str`s
+/// ([`PDFObject::Str`]), new lists and resolved references; a dict that
+/// refers to itself is decoded until `RecursionError`, keeping what the
+/// levels already left. See [`resolve_and_decode_obj`].
 pub fn resolve_and_decode(obj: &PyValue) -> PyResult<PyValue> {
-    let _frame = py_frame()?;
-    // if hasattr(obj, "resolve"): obj = obj.resolve()
-    let resolved;
-    let obj = match obj {
-        PyValue::Pdf(PDFObject::Ref(r)) => {
-            resolved = PyValue::from_pdf(r.resolve(&PDFObject::Null)?);
-            &resolved
-        }
-        other => other,
-    };
     match obj {
-        PyValue::List(items) => resolve_and_decode_list(items),
-        PyValue::Pdf(PDFObject::List(l)) => {
-            let items: Vec<PyValue> = l.to_vec().into_iter().map(PyValue::from_pdf).collect();
-            resolve_and_decode_list(&items)
+        // A value that is not a PDF object (no caller passes a Python list
+        // or dict): the same operations on a copy.
+        PyValue::List(items) => {
+            let _frame = py_frame()?;
+            let mut out = Vec::with_capacity(items.len());
+            for v in items.iter() {
+                let _entry = eval_entry()?;
+                out.push(resolve_and_decode(v)?);
+            }
+            Ok(PyValue::List(out.into()))
         }
-        PyValue::Pdf(PDFObject::Literal(lit)) => Ok(PyValue::Str(PyStr::from(literal_text(lit.name())?))),
-        PyValue::Str(_) | PyValue::Bytes(_) => Ok(PyValue::Str(decode_text_value(obj)?)),
         PyValue::Dict(d) => {
+            let _frame = py_frame()?;
             let mut out = d.clone();
             for (k, v) in d.items() {
-                let decoded = resolve_and_decode(v)?;
-                out.set(k, decoded);
+                out.set(k, resolve_and_decode(v)?);
             }
             Ok(PyValue::Dict(out))
         }
-        PyValue::Pdf(PDFObject::Dict(d)) => {
-            let mut out = Obj::new();
-            for (k, v) in d.items() {
-                out.set(&*k, PyValue::from_pdf(v));
+        PyValue::Str(s) => Ok(PyValue::from_pdf(resolve_and_decode_obj(&PDFObject::Str(s.clone()))?)),
+        PyValue::Pdf(o) => Ok(PyValue::from_pdf(resolve_and_decode_obj(o)?)),
+        other => match pdf_scalar(other) {
+            Some(o) => Ok(PyValue::from_pdf(resolve_and_decode_obj(&o)?)),
+            None => {
+                let _frame = py_frame()?;
+                Ok(other.clone())
             }
-            let items = out.items().to_vec();
-            for (k, v) in &items {
-                let decoded = resolve_and_decode(v)?;
-                out.set(k, decoded);
-            }
-            Ok(PyValue::Dict(out))
-        }
-        other => Ok(other.clone()),
+        },
     }
 }
 
-/// `list(map(resolve_and_decode, obj))`
-fn resolve_and_decode_list(items: &[PyValue]) -> PyResult<PyValue> {
-    let mut out = Vec::with_capacity(items.len());
-    for v in items {
-        let _entry = eval_entry()?;
-        out.push(resolve_and_decode(v)?);
+/// A Python scalar as the PDF object it comes from.
+fn pdf_scalar(v: &PyValue) -> Option<PDFObject> {
+    Some(match v {
+        PyValue::None => PDFObject::Null,
+        PyValue::Bool(b) => PDFObject::Bool(*b),
+        PyValue::Int(i) => PDFObject::Int(i.clone()),
+        PyValue::Float(f) => PDFObject::Float(f.get()),
+        PyValue::Bytes(b) => PDFObject::Bytes(b.clone()),
+        _ => return None,
+    })
+}
+
+// pdfplumber/utils/pdfinternals.py:24 resolve_and_decode
+/// [`resolve_and_decode`] of a PDF object: what `PDF.__init__` runs on each
+/// metadata value. A dict is decoded in place (see above).
+pub fn resolve_and_decode_obj(obj: &PDFObject) -> PyResult<PDFObject> {
+    let _frame = py_frame()?;
+    // if hasattr(obj, "resolve"): obj = obj.resolve()
+    let obj = match obj {
+        PDFObject::Ref(r) => r.resolve(&PDFObject::Null)?,
+        other => other.clone(),
+    };
+    match &obj {
+        PDFObject::List(l) => {
+            // list(map(resolve_and_decode, obj)): map calls it from C, while
+            // the list iterator reads the (live) list
+            let mut out = Vec::with_capacity(l.len());
+            let mut i = 0;
+            while let Some(v) = l.get(i) {
+                let _entry = eval_entry()?;
+                out.push(resolve_and_decode_obj(&v)?);
+                i += 1;
+            }
+            Ok(PDFObject::List(PDFList::new(out)))
+        }
+        PDFObject::Literal(lit) => Ok(PDFObject::Str(PyStr::from(literal_text(lit.name())?))),
+        PDFObject::Bytes(b) => Ok(PDFObject::Str(decode_text_value(&PyValue::Bytes(b.clone()))?)),
+        PDFObject::Str(s) => Ok(PDFObject::Str(decode_text_value(&PyValue::Str(s.clone()))?)),
+        PDFObject::Dict(d) => {
+            // for k, v in obj.items(): obj[k] = resolve_and_decode(v)
+            // (assigning an existing key changes no size: the iteration goes
+            // on over the live dict)
+            let mut i = 0;
+            while let Some((k, v)) = d.get_index(i) {
+                let decoded = resolve_and_decode_obj(&v)?;
+                d.insert(k, decoded);
+                i += 1;
+            }
+            Ok(obj.clone())
+        }
+        _ => Ok(obj),
     }
-    Ok(PyValue::List(out.into()))
 }
 
 /// `decode_text(lit.name)`

@@ -50,7 +50,7 @@ use std::sync::LazyLock;
 use indexmap::IndexMap;
 use pycompat::recursion::{self, Guard};
 use pycompat::repr::{bytes_repr, float_repr, str_repr};
-use pycompat::{exc, zlib, ExcKind, Num, PyErr, PyInt, PyResult};
+use pycompat::{exc, zlib, ExcKind, Num, PyErr, PyInt, PyResult, PyStr};
 use rustc_hash::FxBuildHasher;
 
 use crate::ascii85::{ascii85decode, asciihexdecode};
@@ -100,6 +100,12 @@ pub enum PDFObject {
     Dict(PDFDict),
     Stream(Rc<PDFStream>),
     Ref(PDFObjRef),
+    /// A Python `str`. pdfminer's parsers never make one: pdfplumber's
+    /// metadata decoding (pdfplumber/utils/pdfinternals.py:24
+    /// `resolve_and_decode`) writes its decoded values into the
+    /// document's own dicts, in place, where everything that reads the
+    /// document afterwards finds them (see `pdfplumber::pdf`, "Metadata").
+    Str(PyStr),
 }
 
 /// A Python `list` of objects.
@@ -298,6 +304,7 @@ impl PDFObject {
             PDFObject::Dict(_) => "dict",
             PDFObject::Stream(_) => "PDFStream",
             PDFObject::Ref(_) => "PDFObjRef",
+            PDFObject::Str(_) => "str",
         }
     }
 
@@ -323,6 +330,7 @@ impl PDFObject {
             PDFObject::Bytes(b) => !b.is_empty(),
             PDFObject::List(l) => !l.is_empty(),
             PDFObject::Dict(d) => !d.is_empty(),
+            PDFObject::Str(s) => !s.is_empty(),
             PDFObject::Literal(_) | PDFObject::Keyword(_) | PDFObject::Stream(_) | PDFObject::Ref(_) => true,
         }
     }
@@ -354,8 +362,11 @@ impl PDFObject {
         match self {
             PDFObject::Dict(d) => Ok(d.contains_key(key)),
             PDFObject::Stream(s) => Ok(s.contains(key)),
-            // no element of a list of PDF objects equals a str
-            PDFObject::List(_) => Ok(false),
+            // only a str element equals a str (one that pdfplumber's metadata
+            // decoding wrote)
+            PDFObject::List(l) => Ok(l.to_vec().iter().any(|x| matches!(x, PDFObject::Str(s) if s.as_str() == Some(key)))),
+            // a substring
+            PDFObject::Str(s) => Ok(s.contains(&PyStr::new(key))),
             PDFObject::Bytes(_) => Err(exc::TypeError("a bytes-like object is required, not 'str'")),
             other => Err(exc::TypeError(format!("argument of type '{}' is not iterable", other.type_name()))),
         }
@@ -371,6 +382,10 @@ impl PDFObject {
             },
             // dict[0]: str(KeyError(0)) is repr(0)
             PDFObject::Dict(_) => Err(exc::KeyError("0")),
+            PDFObject::Str(s) => match s.code_points().next() {
+                Some(c) => Ok(PDFObject::Str(PyStr::from_code_point(c))),
+                None => Err(exc::IndexError("string index out of range")),
+            },
             // PDFStream.__getitem__ looks the key up in attrs
             PDFObject::Stream(s) => Err(s.missing_attribute("0")),
             other => Err(exc::TypeError(format!("'{}' object is not subscriptable", other.type_name()))),
@@ -450,6 +465,12 @@ impl Renderer {
     /// `PyObject_Repr(x)` or `PyObject_Str(x)`: one unit while `x` is
     /// written.
     fn visit(&mut self, item: Item, conv: Conv) -> PyResult<()> {
+        // PyObject_Str of a str is the str itself (no unit: PyUnicode_CheckExact
+        // comes first)
+        if let (Item::Obj(PDFObject::Str(s)), Conv::Str) = (&item, conv) {
+            self.out.push_str(&s.to_string_lossy());
+            return Ok(());
+        }
         let unit = recursion::c_call(if conv == Conv::Repr { WHILE_REPR } else { WHILE_STR })?;
         let obj = match item {
             Item::Obj(obj) => obj,
@@ -481,6 +502,7 @@ impl Renderer {
                 self.out.push_str(&format!("<PDFObjRef:{}>", r.objid().py_str()?));
             }
             PDFObject::Stream(s) => return self.stream(&s, unit),
+            PDFObject::Str(s) => self.out.push_str(&s.repr()),
             PDFObject::List(l) => {
                 let items = l.to_vec();
                 if items.is_empty() {
@@ -610,6 +632,11 @@ impl PartialEq for PDFObject {
             }
             match (&a, &b) {
                 (PDFObject::Bytes(x), PDFObject::Bytes(y)) => {
+                    if x != y {
+                        return false;
+                    }
+                }
+                (PDFObject::Str(x), PDFObject::Str(y)) => {
                     if x != y {
                         return false;
                     }
@@ -788,6 +815,7 @@ impl PartialEq for ObjId {
             (Some(_), None) | (None, Some(_)) => false,
             (None, None) => match (&self.0, &other.0) {
                 (PDFObject::Bytes(a), PDFObject::Bytes(b)) => a == b,
+                (PDFObject::Str(a), PDFObject::Str(b)) => a == b,
                 (a, b) => same_object(a, b),
             },
         }
@@ -826,6 +854,10 @@ impl std::hash::Hash for ObjId {
             PDFObject::Stream(s) => {
                 state.write_u8(5);
                 std::ptr::hash(Rc::as_ptr(s), state);
+            }
+            PDFObject::Str(s) => {
+                state.write_u8(6);
+                s.hash(state);
             }
             _ => unreachable!("numbers are hashed above; lists and dicts are not ids"),
         }
