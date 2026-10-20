@@ -1,8 +1,7 @@
 //! Port of `pdfplumber/convert.py`: the `Serializer` of `to_json` and
 //! `to_csv` (`crate::container::Container`).
 //!
-//! Wave 4 (base): the interface, bodies `todo!()` (workstream PAGE,
-//! `docs/architecture.md`, "Vague 4").
+//! Wave 4, workstream PAGE (`docs/architecture.md`, "Vague 4").
 //!
 //! `Serializer.serialize` dispatches on `type(obj)` (`do_<type name>`), so
 //! the values it meets in pdfplumber's dicts decide the output:
@@ -22,9 +21,14 @@
 //! `tuple(...)`): three frames per level of a nested list (two for a
 //! dict, a comprehension). See `crate::container` ("Recursion").
 
-use pycompat::{PyResult, PyStr};
+use pdfminer::pdftypes::PDFObject;
+use pdfminer::psparser::LiteralName;
+use pycompat::json::{JsonKind, JsonValue};
+use pycompat::recursion::{class_call, eval_entry, leaf, py_frame};
+use pycompat::{exc, Num, PyResult, PyStr};
 
-use crate::obj::PyValue;
+use crate::obj::{Obj, PyValue};
+use crate::utils::pdfinternals::{decode_text, TextArg};
 
 // pdfplumber/convert.py:8 ENCODINGS_TO_TRY
 pub const ENCODINGS_TO_TRY: [&str; 4] = ["utf-8", "latin-1", "utf-16", "utf-16le"];
@@ -50,8 +54,11 @@ pub enum AttrFilter {
 impl AttrFilter {
     /// `attr_filter(attr)`
     pub fn accepts(&self, attr: &PyStr) -> bool {
-        let _ = attr;
-        todo!("the lambdas of pdfplumber/convert.py:33 get_attr_filter")
+        match self {
+            AttrFilter::All => true,
+            AttrFilter::Include(incl) => incl.contains(attr),
+            AttrFilter::Exclude(excl) => !excl.contains(attr),
+        }
     }
 }
 
@@ -59,14 +66,37 @@ impl AttrFilter {
 /// `ValueError` for both lists, or for an excluded required attribute
 /// (`"Cannot exclude these required properties: ['object_type']"`).
 pub fn get_attr_filter(include_attrs: Option<&[PyStr]>, exclude_attrs: Option<&[PyStr]>) -> PyResult<AttrFilter> {
-    let _ = (include_attrs, exclude_attrs);
-    todo!("pdfplumber/convert.py:33 get_attr_filter")
+    let _frame = py_frame()?;
+    match (include_attrs, exclude_attrs) {
+        (Some(_), Some(_)) => {
+            Err(exc::ValueError("Cannot specify `include_attrs` and `exclude_attrs` at the same time."))
+        }
+        (Some(incl), None) => {
+            let mut set: Vec<PyStr> = CSV_COLS_REQUIRED.iter().map(|c| PyStr::new(c)).collect();
+            set.extend(incl.iter().cloned());
+            Ok(AttrFilter::Include(set))
+        }
+        (None, Some(excl)) => {
+            let required: Vec<PyStr> = CSV_COLS_REQUIRED.iter().map(|c| PyStr::new(c)).collect();
+            // set(exclude_attrs).intersection(set(CSV_COLS_REQUIRED)): a
+            // set of one item at most, printed as a list
+            let nonexcludable: Vec<&PyStr> = required.iter().filter(|r| excl.contains(r)).collect();
+            if !nonexcludable.is_empty() {
+                let list = nonexcludable.iter().map(|r| r.repr()).collect::<Vec<_>>().join(", ");
+                return Err(exc::ValueError(format!("Cannot exclude these required properties: [{list}]")));
+            }
+            Ok(AttrFilter::Exclude(excl.to_vec()))
+        }
+        (None, None) => Ok(AttrFilter::All),
+    }
 }
 
 // pdfplumber/convert.py:58 to_b64
-pub fn to_b64(data: &[u8]) -> PyStr {
-    let _ = data;
-    todo!("pdfplumber/convert.py:58 to_b64 (pycompat::base64)")
+pub fn to_b64(data: &[u8]) -> PyResult<PyStr> {
+    let _frame = py_frame()?;
+    // base64.b64encode(data): a Python function of the standard library
+    leaf(1)?;
+    Ok(PyStr::from(pycompat::base64::b64encode(data)))
 }
 
 /// pdfplumber/convert.py:62 `Serializer`
@@ -79,35 +109,161 @@ pub struct Serializer {
 
 impl Serializer {
     // pdfplumber/convert.py:63 Serializer.__init__
+    /// `Serializer(precision=..., include_attrs=..., exclude_attrs=...)`:
+    /// the class call and `__init__`.
     pub fn new(
         precision: Option<PyValue>,
         include_attrs: Option<&[PyStr]>,
         exclude_attrs: Option<&[PyStr]>,
     ) -> PyResult<Serializer> {
-        let _ = (precision, include_attrs, exclude_attrs);
-        todo!("pdfplumber/convert.py:63 Serializer.__init__")
+        let _call = class_call()?;
+        let _frame = py_frame()?;
+        let attr_filter = get_attr_filter(include_attrs, exclude_attrs)?;
+        Ok(Serializer { precision: precision.filter(|p| !p.is_none()), attr_filter })
     }
 
     // pdfplumber/convert.py:75 Serializer.serialize
-    /// The serialized value: `None`, `bool`... as described in the module
-    /// documentation; a result made of `None`, `int`, `float`, `str`,
-    /// `list`, `tuple` and `dict` values.
+    /// The serialized value: `None` and `int`/`str` as they are, then the
+    /// `do_<type>` method of the value's type (`float`, `bool`, `list`,
+    /// `tuple`, `dict`, `PDFStream`, `PSLiteral`, `bytes`), else `str(obj)`.
+    /// The result is made of `None`, `int`, `float`, `str`, `list`, `tuple`
+    /// and `dict` values (PDF lists and dicts become Python ones).
     pub fn serialize(&self, obj: &PyValue) -> PyResult<PyValue> {
-        let _ = obj;
-        todo!("pdfplumber/convert.py:75 Serializer.serialize")
+        let _frame = py_frame()?;
+        match obj {
+            PyValue::None | PyValue::Pdf(PDFObject::Null) => Ok(PyValue::None),
+            PyValue::Int(_) | PyValue::Str(_) => Ok(obj.clone()),
+            PyValue::Pdf(PDFObject::Int(i)) => Ok(PyValue::Int(i.clone())),
+            PyValue::Float(_) => self.do_float(obj),
+            PyValue::Pdf(PDFObject::Float(x)) => self.do_float(&PyValue::float(*x)),
+            PyValue::Bool(b) | PyValue::Pdf(PDFObject::Bool(b)) => {
+                // do_bool: int(x)
+                leaf(1)?;
+                Ok(PyValue::from(i64::from(*b)))
+            }
+            PyValue::List(items) => self.do_seq(items, false),
+            PyValue::Tuple(items) => self.do_seq(items, true),
+            PyValue::Pdf(PDFObject::List(l)) => {
+                let items: Vec<PyValue> = l.to_vec().into_iter().map(PyValue::from_pdf).collect();
+                self.do_seq(&items, false)
+            }
+            PyValue::Dict(d) => self.do_dict(d.items().iter().map(|(k, v)| (k.clone(), v.clone())).collect()),
+            PyValue::Pdf(PDFObject::Dict(d)) => {
+                self.do_dict(d.items().into_iter().map(|(k, v)| (PyStr::new(&k), PyValue::from_pdf(v))).collect())
+            }
+            PyValue::Pdf(PDFObject::Stream(s)) => {
+                // pdfplumber/convert.py:112 Serializer.do_PDFStream
+                let _frame = py_frame()?;
+                let rawdata = s.rawdata();
+                let value = match rawdata {
+                    Some(raw) if !raw.is_empty() => PyValue::Str(to_b64(&raw)?),
+                    _ => PyValue::None,
+                };
+                Ok(PyValue::Dict(Obj::from_pairs([("rawdata", value)])))
+            }
+            PyValue::Pdf(PDFObject::Literal(lit)) => {
+                // pdfplumber/convert.py:115 Serializer.do_PSLiteral
+                let _frame = py_frame()?;
+                let text = match lit.name() {
+                    LiteralName::Str(s) => decode_text(TextArg::Str(s))?,
+                    LiteralName::Bytes(b) => decode_text(TextArg::Bytes(b))?,
+                };
+                Ok(PyValue::Str(PyStr::from(text)))
+            }
+            PyValue::Bytes(b) | PyValue::Pdf(PDFObject::Bytes(b)) => self.do_bytes(b),
+            // str(obj): PDFObjRef, PSKeyword, a Page...
+            other => Ok(PyValue::Str(other.str_counted()?)),
+        }
     }
 
     // pdfplumber/convert.py:94 Serializer.do_float
+    /// `x if self.precision is None else round(x, self.precision)`
     pub fn do_float(&self, x: &PyValue) -> PyResult<PyValue> {
-        let _ = x;
-        todo!("pdfplumber/convert.py:94 Serializer.do_float")
+        let _frame = py_frame()?;
+        let Some(precision) = &self.precision else {
+            return Ok(x.clone());
+        };
+        let Some(Num::Float(f)) = x.as_num() else { unreachable!("a float") };
+        // round(x, ndigits): ndigits through __index__, clipped to Py_ssize_t
+        let ndigits = match precision {
+            PyValue::Int(i) | PyValue::Pdf(PDFObject::Int(i)) => {
+                i.as_i64().unwrap_or(if i.is_negative() { i64::MIN } else { i64::MAX })
+            }
+            PyValue::Bool(b) => i64::from(*b),
+            other => {
+                return Err(exc::TypeError(format!(
+                    "'{}' object cannot be interpreted as an integer",
+                    other.type_name()
+                )))
+            }
+        };
+        Ok(PyValue::float(pycompat::float::round_float_ndigits(f, ndigits)?))
+    }
+
+    // pdfplumber/convert.py:100 Serializer.do_list
+    // pdfplumber/convert.py:103 Serializer.do_tuple
+    /// `list(self.serialize(x) for x in obj)` (or `tuple(...)`): the
+    /// generator expression resumed from C, once per item and once more.
+    fn do_seq(&self, items: &[PyValue], tuple: bool) -> PyResult<PyValue> {
+        let _frame = py_frame()?;
+        leaf(1)?; // the generator expression is created
+        let mut out = Vec::with_capacity(items.len());
+        for x in items {
+            let _entry = eval_entry()?;
+            let _genexpr = py_frame()?;
+            out.push(self.serialize(x)?);
+        }
+        let _entry = eval_entry()?;
+        leaf(1)?;
+        Ok(if tuple { PyValue::Tuple(out.into()) } else { PyValue::List(out.into()) })
+    }
+
+    // pdfplumber/convert.py:106 Serializer.do_dict
+    /// A dict comprehension (no frame of its own): with an `object_type`
+    /// key, the items whose key `self.attr_filter` accepts (the lambda, a
+    /// frame per key).
+    fn do_dict(&self, items: Vec<(PyStr, PyValue)>) -> PyResult<PyValue> {
+        let _frame = py_frame()?;
+        let filtered = items.iter().any(|(k, _)| *k == "object_type");
+        let mut out = Obj::new();
+        for (k, v) in &items {
+            if filtered {
+                leaf(1)?;
+                if !self.attr_filter.accepts(k) {
+                    continue;
+                }
+            }
+            let value = self.serialize(v)?;
+            out.set(k, value);
+        }
+        Ok(PyValue::Dict(out))
     }
 
     // pdfplumber/convert.py:118 Serializer.do_bytes
     /// `obj.decode("utf-8")`, `None` when that raises (the loop returns at
     /// its first encoding either way).
     pub fn do_bytes(&self, obj: &[u8]) -> PyResult<PyValue> {
-        let _ = obj;
-        todo!("pdfplumber/convert.py:118 Serializer.do_bytes")
+        let _frame = py_frame()?;
+        Ok(match std::str::from_utf8(obj) {
+            Ok(s) => PyValue::str(s),
+            Err(_) => PyValue::None,
+        })
+    }
+}
+
+/// The values `Serializer.serialize` produces, for `json.dumps`
+/// (`pycompat::json`); any other value is not JSON serializable.
+impl JsonValue for PyValue {
+    fn json_kind(&self) -> JsonKind<'_, PyValue> {
+        match self {
+            PyValue::None => JsonKind::None,
+            PyValue::Bool(b) => JsonKind::Bool(*b),
+            PyValue::Int(i) => JsonKind::Int(i),
+            PyValue::Float(x) => JsonKind::Float(x.get()),
+            PyValue::Str(s) => JsonKind::Str(s),
+            PyValue::List(items) | PyValue::Tuple(items) => JsonKind::List(items),
+            PyValue::Dict(d) => JsonKind::Dict(d.items()),
+            other => JsonKind::Other(other.type_name()),
+        }
     }
 }

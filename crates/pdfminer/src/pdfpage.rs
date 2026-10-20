@@ -343,6 +343,14 @@ pub struct CreatePages {
 }
 
 impl CreatePages {
+    /// The generator resumed by C code (the builtin `next(gen)` of
+    /// pdfplumber/pdf.py:145 `PDF.pages`): each step enters the evaluation
+    /// loop.
+    pub fn resumed_from_c(mut self) -> CreatePages {
+        self.from_c = true;
+        self
+    }
+
     fn step(&mut self) -> PyResult<Option<PDFPage>> {
         // the frame of the create_pages generator, resumed
         let _entry = if self.from_c { Some(eval_entry()?) } else { None };

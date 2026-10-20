@@ -1,12 +1,19 @@
 //! Port of `pdfplumber/pdf.py`: `PDF`, what `pdfplumber.open` returns.
 //!
-//! Wave 4 (base): the interface, bodies `todo!()` (workstream PAGE; the
-//! metadata, `annots`, `hyperlinks` and `structure_tree` parts are
-//! workstream DOC's: `docs/architecture.md`, "Vague 4").
+//! Workstream PAGE wrote `open`, `close`, `pages`, `objects`, `to_dict`;
+//! the metadata ([`read_metadata`]), `annots`, `hyperlinks` and
+//! `structure_tree` are workstream DOC's (`docs/architecture.md`, "Vague
+//! 4").
 //!
 //! Out of scope (`docs/public-api.md`): `repair=True` (pdfplumber/repair.py
 //! runs Ghostscript in a subprocess: `PDF::open` refuses it with
-//! `NotPorted`), `gs_path`, `repair_setting`.
+//! `NotPorted`), `gs_path`, `repair_setting`. Not modelled (documented
+//! deviations): a `laparams` margin that is not a number (Python stores
+//! any object and fails at its first use in the analysis; the port refuses
+//! it at `open` with `NotPorted`), a `password` that is neither `None` nor
+//! a `str` (`NotPorted`), and the closed file of a `PDF` opened from a path
+//! after `close()` (Python raises `ValueError: seek of closed file` at the
+//! next read of the document; the port reads on).
 //!
 //! # State
 //!
@@ -33,27 +40,23 @@
 //! - `pdf.objects` concatenates each page's `objects` (the same dicts,
 //!   new lists) and is cached; `pdf.annots`, `pdf.hyperlinks` and
 //!   `pdf.structure_tree` are recomputed at each use.
-//! - `close()` flushes the cache (`_pages` included: the next `pdf.pages`
-//!   builds new `Page` objects, which `close` then closes) and closes the
-//!   file when the `PDF` opened it (a path): any later read of the
-//!   document raises the `ValueError` of a closed file (`seek of closed
-//!   file`, `read of closed file`), a state `pdfparser` does not model
-//!   yet (to add with `close`).
+//! - `close()` flushes the cache (`_pages` included: the `pdf.pages` that
+//!   `close` reads builds new `Page` objects, which it then closes).
 //!
 //! # Recursion
 //!
 //! `pdfplumber.open(...)` is `PDF.open` (a frame), the class call
 //! (`pycompat::recursion::class_call`), `PDF.__init__` (a frame), in which
-//! `LAParams(**laparams)` (class call and `__init__`), `PDFParser(stream)`
-//! and `PDFDocument(...)` (counted by `pdfminer`), `PDFResourceManager()`
-//! (class call and `__init__`), and, for each metadata value,
-//! `resolve_and_decode` (recursive: one frame per level, `map()` calling it
-//! from C for a list) and the `logger.warning` of an unparsable value
-//! (`pycompat::logging`, logger `pdfplumber.pdf`, disabled as everywhere:
-//! `docs/verification.md`, "Étapes"). `pdf.pages` is a frame, its
-//! `iter_pages` generator a frame per resumption (on top of
-//! `create_pages`' own), each `Page(...)` a class call and the frames of
-//! `Page.__init__`.
+//! `LAParams(**laparams)` (class call, `__init__`, `_validate`),
+//! `PDFParser(stream)` and `PDFDocument(...)` (counted by `pdfminer`),
+//! `PDFResourceManager()` (class call and `__init__`), and, for each
+//! metadata value, `resolve_and_decode` (recursive: one frame per level,
+//! `map()` calling it from C for a list) and the `logger.warning` of an
+//! unparsable value (`pycompat::logging`, logger `pdfplumber.pdf`, disabled
+//! as everywhere: `docs/verification.md`, "Étapes"). `pdf.pages` is a
+//! frame, its `iter_pages` generator a frame per resumption from C
+//! (`enumerate`), whose `next(gen)` resumes `create_pages` from C, and each
+//! `Page(...)` a class call and the frames of `Page.__init__`.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -61,12 +64,21 @@ use std::rc::Rc;
 use pdfminer::layout::{IdSource, LAParams};
 use pdfminer::pdfdocument::PDFDocument;
 use pdfminer::pdfinterp::PDFResourceManager;
+use pdfminer::pdfpage::PDFPage;
 use pdfminer::pdfparser::FileKind;
-use pycompat::{PyInt, PyResult, PyStr};
+use pdfminer::pdftypes::PDFObject;
+use pycompat::logging::Logger;
+use pycompat::recursion::{c_call, class_call, eval_entry, leaf, py_frame};
+use pycompat::{exc, ExcKind, Num, PyErr, PyInt, PyResult, PyStr};
 
 use crate::container::{Container, ContainerCache, Objects};
-use crate::obj::{Obj, PyValue};
+use crate::obj::{py_contains, Obj, PyValue};
 use crate::page::{Page, PlumberPayload};
+use crate::utils::exceptions::pdfminer_exception;
+use crate::utils::pdfinternals::resolve_and_decode;
+
+/// `logger = logging.getLogger(__name__)` of `pdfplumber/pdf.py`.
+static LOG: Logger = Logger::new("pdfplumber.pdf");
 
 /// What `pdfplumber.open` reads (`path_or_fp`).
 #[derive(Clone)]
@@ -110,6 +122,13 @@ pub struct OpenOptions {
     /// Not a Python option: the `id()` order of the analyses (see
     /// [`IdsFactory`]); `None`: `CreationOrder`.
     pub ids: Option<IdsFactory>,
+}
+
+impl OpenOptions {
+    /// The defaults of `pdfplumber.open(path)` (`raise_unicode_errors=True`).
+    pub fn new() -> OpenOptions {
+        OpenOptions { raise_unicode_errors: true, ..OpenOptions::default() }
+    }
 }
 
 /// What a `Page` reads of its `PDF` (`page.pdf.*`), shared by the `PDF`
@@ -156,6 +175,128 @@ pub struct PdfCache {
     pub objects: Option<Rc<Objects>>,
 }
 
+/// The names of `LAParams.__init__`'s parameters, in order
+/// (pdfminer/layout.py:76 `LAParams.__init__`).
+const LAPARAMS_NAMES: [&str; 7] =
+    ["line_overlap", "char_margin", "line_margin", "word_margin", "boxes_flow", "detect_vertical", "all_texts"];
+
+/// `LAParams(**laparams)`: the `TypeError`s of `**` (a value that is not a
+/// mapping, a key that is not a `str`) and of an unknown keyword, then
+/// pdfminer/layout.py:76 `LAParams.__init__` and :96 `LAParams._validate`.
+fn laparams_from(laparams: &PyValue) -> PyResult<LAParams> {
+    let pairs: Vec<(PyValue, PyValue)> = match laparams {
+        PyValue::Dict(d) => d.items().iter().map(|(k, v)| (PyValue::Str(k.clone()), v.clone())).collect(),
+        PyValue::Pdf(PDFObject::Dict(d)) => {
+            d.items().into_iter().map(|(k, v)| (PyValue::str(&k), PyValue::from_pdf(v))).collect()
+        }
+        other => {
+            return Err(exc::TypeError(format!(
+                "pdfminer.layout.LAParams() argument after ** must be a mapping, not {}",
+                other.type_name()
+            )))
+        }
+    };
+    let mut values: [Option<PyValue>; 7] = Default::default();
+    for (k, v) in &pairs {
+        let PyValue::Str(k) = k else { return Err(exc::TypeError("keywords must be strings")) };
+        match LAPARAMS_NAMES.iter().position(|n| *k == **n) {
+            Some(i) => values[i] = Some(v.clone()),
+            None => {
+                return Err(PyErr::with_message(
+                    ExcKind::TypeError,
+                    &PyStr::new("LAParams.__init__() got an unexpected keyword argument ")
+                        .concat(&PyStr::from(k.repr())),
+                ))
+            }
+        }
+    }
+    // the class call, __init__ (which calls _validate)
+    let _call = class_call()?;
+    let _init = py_frame()?;
+    let margin = |i: usize, default: f64| -> PyResult<Num> {
+        match &values[i] {
+            None => Ok(Num::Float(default)),
+            Some(v) => v.as_num().ok_or_else(|| {
+                not_modelled(&format!(
+                    "LAParams({}=<{}>): a layout parameter that is not a number",
+                    LAPARAMS_NAMES[i],
+                    v.type_name()
+                ))
+            }),
+        }
+    };
+    let line_overlap = margin(0, 0.5)?;
+    let char_margin = margin(1, 2.0)?;
+    let line_margin = margin(2, 0.5)?;
+    let word_margin = margin(3, 0.1)?;
+    leaf(1)?; // self._validate()
+    let boxes_flow = match &values[4] {
+        None => Some(Num::Float(0.5)),
+        Some(v) if v.is_none() => None,
+        Some(v) => match v.as_num() {
+            Some(n) => Some(n),
+            None => return Err(exc::PDFTypeError("LAParam boxes_flow should be None, or a number between -1 and +1")),
+        },
+    };
+    let truth = |i: usize| values[i].as_ref().is_some_and(PyValue::truthy);
+    LAParams::new(line_overlap, char_margin, line_margin, word_margin, boxes_flow, truth(5), truth(6))
+}
+
+/// A documented deviation (see the module documentation).
+fn not_modelled(what: &str) -> PyErr {
+    PyErr::new(ExcKind::NotPorted, format!("not modelled: {what}"))
+}
+
+/// `password or ""` as the `str` `PDFDocument` receives.
+fn password_str(password: &Option<PyValue>) -> PyResult<String> {
+    match password {
+        Some(p) if p.truthy() => match p {
+            PyValue::Str(s) => match s.as_str() {
+                Some(s) => Ok(s.to_owned()),
+                None => Err(not_modelled("a password holding a lone surrogate")),
+            },
+            other => Err(not_modelled(&format!("a password of type '{}'", other.type_name()))),
+        },
+        _ => Ok(String::new()),
+    }
+}
+
+// pdfplumber/pdf.py:28 PDF.__init__
+/// The metadata of `PDF.__init__`: `self.metadata = {}`, updated with each
+/// dict of `self.doc.info`, then each value replaced by
+/// `resolve_and_decode(v)`; an exception there is raised with
+/// `strict_metadata`, else logged (`logger.warning`, the value left as it
+/// was). Workstream DOC.
+pub fn read_metadata(doc: &PDFDocument, strict_metadata: bool) -> PyResult<Obj> {
+    let mut metadata = Obj::new();
+    for info in doc.info() {
+        // self.metadata.update(info)
+        for (k, v) in info.items() {
+            metadata.set(&*k, PyValue::from_pdf(v));
+        }
+    }
+    let items = metadata.items().to_vec();
+    for (k, v) in &items {
+        match resolve_and_decode(v) {
+            Ok(decoded) => metadata.set(k, decoded),
+            Err(e) => {
+                if strict_metadata {
+                    // Raise an exception since unable to resolve the
+                    // metadata value.
+                    return Err(e);
+                }
+                // This metadata value could not be parsed. Instead of
+                // failing the PDF read, treat it as a warning only if
+                // `strict_metadata=False`: the f-string's str(e) (a call
+                // of the builtin) before the call.
+                drop(c_call(" while calling a Python object")?);
+                LOG.warning()?;
+            }
+        }
+    }
+    Ok(metadata)
+}
+
 impl PDF {
     // pdfplumber/pdf.py:73 PDF.open
     /// `pdfplumber.open(path_or_fp, **options)`: the classmethod, then the
@@ -165,13 +306,85 @@ impl PDF {
     /// `LAParams(**laparams)` or of the metadata (with `strict_metadata`)
     /// is raised as it is.
     pub fn open(source: Source, options: OpenOptions) -> PyResult<PDF> {
-        let _ = (source, options);
-        todo!("pdfplumber/pdf.py:73 PDF.open, pdfplumber/pdf.py:28 PDF.__init__")
+        let _frame = py_frame()?;
+        if options.repair {
+            return Err(PyErr::new(
+                ExcKind::NotPorted,
+                "out of scope: pdfplumber.open(repair=True) runs Ghostscript (pdfplumber/repair.py)",
+            ));
+        }
+        let (data, file, stream_is_external, path) = match source {
+            Source::Path { data, path } => (data, FileKind::BufferedReader, false, Some(path)),
+            Source::Stream { data, kind } => (data, kind, true, None),
+        };
+        // cls(stream, path=path, pages=pages, ...); on a PdfminerException a
+        // stream the PDF opened is closed (nothing to do here)
+        let _call = class_call()?;
+        PDF::init(data, file, stream_is_external, path, options)
+    }
+
+    // pdfplumber/pdf.py:28 PDF.__init__
+    fn init(
+        data: Rc<[u8]>,
+        file: FileKind,
+        stream_is_external: bool,
+        path: Option<PyStr>,
+        options: OpenOptions,
+    ) -> PyResult<PDF> {
+        let _frame = py_frame()?;
+        let laparams = match &options.laparams {
+            Some(l) if !l.is_none() => Some(laparams_from(l)?),
+            _ => None,
+        };
+        let password = password_str(&options.password)?;
+        let doc = match PDFDocument::open(data, file, &password) {
+            Ok(doc) => doc,
+            Err(e) => {
+                // raise PdfminerException(e): the class call of an
+                // Exception subclass without __init__ of its own
+                drop(c_call(" while calling a Python object")?);
+                return Err(pdfminer_exception(e));
+            }
+        };
+        // PDFResourceManager(): the class call, its __init__
+        pycompat::recursion::class_call_leaf()?;
+        let rsrcmgr = Rc::new(PDFResourceManager::new(true));
+        let metadata = read_metadata(&doc, options.strict_metadata)?;
+        let core = PdfCore {
+            doc,
+            rsrcmgr,
+            laparams,
+            unicode_norm: options.unicode_norm.clone().filter(|n| !n.is_none()),
+            raise_unicode_errors: options.raise_unicode_errors,
+            ids: options.ids.clone(),
+        };
+        Ok(PDF {
+            core: Rc::new(core),
+            stream_is_external,
+            path,
+            pages_to_parse: options.pages.clone().filter(|p| !p.is_none()),
+            password: options.password.clone(),
+            metadata,
+            cache: RefCell::new(PdfCache::default()),
+            container: RefCell::new(ContainerCache::default()),
+        })
     }
 
     // pdfplumber/pdf.py:124 PDF.close
+    /// `flush_cache()`, then `page.close()` for each page of `self.pages`
+    /// (built again: the cache was just flushed), then the file closed
+    /// when the `PDF` opened it (not modelled, see the module
+    /// documentation).
     pub fn close(&self) -> PyResult<()> {
-        todo!("pdfplumber/pdf.py:124 PDF.close")
+        let _frame = py_frame()?;
+        {
+            let _flush = py_frame()?;
+            Container::flush_cache(self, None);
+        }
+        for page in self.pages()? {
+            page.close()?;
+        }
+        Ok(())
     }
 
     // pdfplumber/pdf.py:145 PDF.pages
@@ -179,32 +392,117 @@ impl PDF {
     /// tree is `PdfminerException(e)`, one of `Page.__init__` is raised as
     /// it is (the cache keeps the pages built before it).
     pub fn pages(&self) -> PyResult<Vec<Rc<Page>>> {
-        todo!("pdfplumber/pdf.py:145 PDF.pages")
+        let _frame = py_frame()?;
+        if let Some(pages) = &self.cache.borrow().pages {
+            return Ok(pages.clone());
+        }
+        let mut doctop = PyValue::Int(PyInt::ZERO);
+        let pp = self.pages_to_parse.clone();
+        self.cache.borrow_mut().pages = Some(Vec::new());
+        // iter_pages(): the generator is created
+        leaf(1)?;
+        let mut gen = PDFPage::create_pages(&self.core.doc).resumed_from_c();
+        let mut i: i64 = 0;
+        loop {
+            // enumerate() resumes iter_pages from C; its `next(gen)` resumes
+            // create_pages from C
+            let page = {
+                let _entry = eval_entry()?;
+                let _iter_pages = py_frame()?;
+                match gen.next() {
+                    None => break,
+                    Some(Ok(page)) => page,
+                    Some(Err(e)) => {
+                        // except Exception as e: raise PdfminerException(e)
+                        drop(c_call(" while calling a Python object")?);
+                        return Err(pdfminer_exception(e));
+                    }
+                }
+            };
+            let page_number = PyInt::Small(i + 1);
+            i += 1;
+            if let Some(pp) = &pp {
+                // `page_number not in pp`
+                if !py_contains(pp, &PyValue::Int(page_number.clone()))? {
+                    continue;
+                }
+            }
+            let p = Rc::new(Page::new(self.core.clone(), Rc::new(page), page_number, doctop.clone())?);
+            self.cache.borrow_mut().pages.as_mut().expect("set above").push(p.clone());
+            doctop = doctop.add(&p.height()?)?;
+        }
+        Ok(self.cache.borrow().pages.clone().expect("set above"))
     }
 
     // pdfplumber/pdf.py:173 PDF.objects
     pub fn objects(&self) -> PyResult<Rc<Objects>> {
-        todo!("pdfplumber/pdf.py:173 PDF.objects")
+        let _frame = py_frame()?;
+        if let Some(objects) = &self.cache.borrow().objects {
+            return Ok(objects.clone());
+        }
+        let mut all_objects = Objects::new();
+        for p in self.pages()? {
+            let objects = p.objects()?;
+            for kind in objects.keys() {
+                // all_objects[kind] = all_objects.get(kind, []) + p.objects[kind]
+                let mut list = all_objects.get_key(kind).map(<[Obj]>::to_vec).unwrap_or_default();
+                list.extend(p.objects()?.get_key(kind).unwrap_or(&[]).iter().cloned());
+                all_objects.insert(kind.clone(), list);
+            }
+        }
+        let all_objects = Rc::new(all_objects);
+        self.cache.borrow_mut().objects = Some(all_objects.clone());
+        Ok(all_objects)
     }
 
     // pdfplumber/pdf.py:184 PDF.annots
-    /// Workstream DOC.
+    /// `list(itertools.chain(*(p.annots for p in self.pages)))`. Workstream
+    /// DOC (`Page::annots`).
     pub fn annots(&self) -> PyResult<Vec<Obj>> {
-        todo!("pdfplumber/pdf.py:184 PDF.annots")
+        let _frame = py_frame()?;
+        let pages = self.pages()?;
+        // the generator expression is created, then unpacked (resumed from
+        // C, once per page and once more) into chain()
+        leaf(1)?;
+        let mut out = Vec::new();
+        for p in &pages {
+            let _entry = eval_entry()?;
+            let _gen = py_frame()?;
+            out.extend(p.annots()?);
+        }
+        let _entry = eval_entry()?;
+        leaf(1)?;
+        Ok(out)
     }
 
     // pdfplumber/pdf.py:189 PDF.hyperlinks
-    /// Workstream DOC.
+    /// `list(itertools.chain(*(p.hyperlinks for p in self.pages)))`.
+    /// Workstream DOC (`Page::hyperlinks`).
     pub fn hyperlinks(&self) -> PyResult<Vec<Obj>> {
-        todo!("pdfplumber/pdf.py:189 PDF.hyperlinks")
+        let _frame = py_frame()?;
+        let pages = self.pages()?;
+        leaf(1)?;
+        let mut out = Vec::new();
+        for p in &pages {
+            let _entry = eval_entry()?;
+            let _gen = py_frame()?;
+            out.extend(p.hyperlinks()?);
+        }
+        let _entry = eval_entry()?;
+        leaf(1)?;
+        Ok(out)
     }
 
     // pdfplumber/pdf.py:194 PDF.structure_tree
     /// `[elem.to_dict() for elem in PDFStructTree(self)]`, `[]` when the
-    /// document has no structure. Workstream DOC
-    /// (`crate::structure`).
+    /// document has no structure. Workstream DOC (`crate::structure`).
     pub fn structure_tree(&self) -> PyResult<Vec<PyValue>> {
-        todo!("pdfplumber/pdf.py:194 PDF.structure_tree")
+        todo!("pdfplumber/pdf.py:194 PDF.structure_tree (workstream DOC)")
+    }
+
+    /// `pdf.metadata` as a value.
+    pub fn metadata_value(&self) -> PyValue {
+        PyValue::Dict(self.metadata.clone())
     }
 }
 
@@ -220,21 +518,44 @@ impl Container for PDF {
     // pdfplumber/pdf.py:201 PDF.to_dict
     /// `{"metadata": ..., "pages": [page.to_dict(object_types) ...]}`
     fn to_dict(&self, object_types: Option<&[PyStr]>) -> PyResult<Obj> {
-        let _ = object_types;
-        todo!("pdfplumber/pdf.py:201 PDF.to_dict")
+        let _frame = py_frame()?;
+        let mut pages = Vec::new();
+        for page in PDF::pages(self)? {
+            pages.push(PyValue::Dict(page.to_dict(object_types)?));
+        }
+        Ok(Obj::from_pairs([("metadata", self.metadata_value()), ("pages", PyValue::List(pages.into()))]))
     }
 
     fn container_cache(&self) -> &RefCell<ContainerCache> {
         &self.container
     }
 
+    /// `getattr(pdf, name)` for the attribute names of the container's
+    /// lists (`chars`, `rects`...), `pages`, `objects`, `metadata`,
+    /// `annots`, `hyperlinks` and the edges; `AttributeError` for a name
+    /// that is not an attribute; `NotPorted` for a method or another
+    /// attribute that is not a value of the object model.
     fn attribute(&self, name: &PyStr) -> PyResult<PyValue> {
-        let _ = name;
-        todo!("getattr(pdf, name) for pdfplumber/container.py:132 Container.to_csv")
+        match name.as_str() {
+            Some("pages") => Ok(PyValue::List(PDF::pages(self)?.iter().map(|p| PyValue::Page(p.as_value())).collect())),
+            Some("metadata") => Ok(self.metadata_value()),
+            Some("annots") => Ok(crate::container::obj_list(self.annots()?)),
+            Some("hyperlinks") => Ok(crate::container::obj_list(self.hyperlinks()?)),
+            _ => crate::container::container_attribute(self, "PDF", name),
+        }
     }
 
     fn flush_cache(&self, properties: Option<&[&str]>) {
-        let _ = (properties, &self.cache);
-        todo!("pdfplumber/container.py:28 Container.flush_cache (PDF: + _pages)")
+        // cached_properties = Container.cached_properties + ["_pages"]
+        let props = properties.unwrap_or(&["_rect_edges", "_curve_edges", "_edges", "_objects", "_pages"]);
+        crate::container::flush_container_cache(&self.container, props);
+        let mut cache = self.cache.borrow_mut();
+        for p in props {
+            match *p {
+                "_objects" => cache.objects = None,
+                "_pages" => cache.pages = None,
+                _ => {}
+            }
+        }
     }
 }
