@@ -1557,7 +1557,7 @@ et sans `raise_unicode_errors`), sur pages tournées.
 - **Résultats** : `plumber_doc` sur `all` (20 premières pages), 1 853
   fichiers identiques (le dernier après la fermeture du fichier) ;
   `plumber_doc` et `plumber_objects` sur `adv-structure`, 434 identiques
-  chacune ; `structure_unit` (648 traces, 3 300 cas de `codecs`).
+  chacune ; `structure_unit` (661 traces, 5 148 cas de `codecs`, et les tests Rust du garde des cycles).
 
 ### Plan de comptage des cadres
 
