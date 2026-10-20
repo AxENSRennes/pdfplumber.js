@@ -226,7 +226,7 @@ fn textmap_kwargs(kwargs: &Kwargs) -> Kwargs {
 }
 
 /// `run_op(page, op)`: a frame; the value of the op.
-fn run_op(page: &Rc<Page>, op: &[Value], spans: Option<Vec<RegexMatch>>) -> PyResult<Value> {
+pub fn run_op(page: &Rc<Page>, op: &[Value], spans: Option<Vec<RegexMatch>>) -> PyResult<Value> {
     let _frame = py_frame()?;
     let name = str_of(&op[0]);
     let objs = |v: Vec<Obj>| Value::List(v.iter().map(obj_value).collect());

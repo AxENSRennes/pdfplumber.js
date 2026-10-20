@@ -149,6 +149,7 @@ pub fn start() {
         pdfminer::cmapdb::CMapDB::clear_caches();
     });
     pycompat::re_cache::reset();
+    pycompat::typing_cache::reset();
 }
 
 #[cfg(test)]

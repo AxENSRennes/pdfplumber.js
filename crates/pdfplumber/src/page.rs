@@ -42,6 +42,7 @@ use pdfminer::utils::{Matrix, PathSegment, Point};
 use pycompat::bytes_format::bytes_mod_int;
 use pycompat::recursion::{c_call, c_called_leaf, class_call, eval_entry, leaf, py_frame, py_frames};
 use pycompat::repr::bytes_repr;
+use pycompat::typing_cache::Subscription;
 use pycompat::{codecs, diagnostics};
 use pycompat::{exc, ExcKind, Num, PyErr, PyInt, PyResult, PyStr};
 
@@ -574,7 +575,7 @@ pub fn page_layout<D: PDFDevice + 'static>(
 // page has (in `__init__`'s order) and [`PageKind`] says which class it is
 // and what a derived page adds (`parent_page`, `_crop_fn`, `filter_fn`).
 // Methods that a subclass overrides (`objects`) dispatch on the kind.
-// `is_original` is `matches!(kind, PageKind::Original)`.
+// `is_original` (no use in the library) is `matches!(kind, PageKind::Original)`.
 //
 // # Laziness and caching
 //
@@ -747,6 +748,25 @@ pub const ALL_ATTRS: [&str; 27] = [
     "tag",
 ];
 
+// The subscriptions of `typing` aliases in the annotations of the nested
+// functions, evaluated each time the enclosing function runs, with their
+// depths below its frame (measured: `python -m oracle.depth_probe typing`;
+// `pycompat::typing_cache`).
+
+// `process_attr`, nested in pdfplumber/page.py:353 Page.process_object:
+// `item: Tuple[str, Any]`
+const PROCESS_ATTR_ITEM: Subscription = Subscription::new("Tuple[str, Any]", 7, 1);
+// `process_attr`, nested in pdfplumber/page.py:353 Page.process_object:
+// `-> Optional[Tuple[str, Any]]` (its
+// `Tuple[str, Any]` cached by the parameter's)
+const PROCESS_ATTR_RETURN: Subscription = Subscription::new("Optional[Tuple[str, Any]]", 10, 2);
+// `sorter`, nested in pdfplumber/page.py:464 Page.find_table: `->
+// Tuple[int, T_num, T_num]`
+const SORTER_RETURN: Subscription = Subscription::new("Tuple[int, T_num, T_num]", 7, 2);
+// `rotate_point`, nested in pdfplumber/page.py:273 Page.annots: `pt:
+// Tuple[float, float]` and `-> Tuple[float, float]`
+const ROTATE_POINT_TUPLE: Subscription = Subscription::new("Tuple[float, float]", 7, 1);
+
 // pdfplumber/page.py:83 CP936_FONTNAMES
 pub const CP936_FONTNAMES: [(&[u8], &str); 5] = [
     (b"\xcb\xce\xcc\xe5", "SimSun,Regular"),
@@ -811,14 +831,17 @@ pub fn test_proposed_bbox(bbox: &PyValue, parent_bbox: &PyValue) -> PyResult<()>
         }
         PyErr::with_message(ExcKind::ValueError, &m)
     };
+    leaf(1)?; // utils.calculate_area
     let bbox_area = calculate_area(bbox)?;
     if bbox_area.py_eq(&PyValue::from(0i64)) {
         return Err(message(" has an area of zero.", false));
     }
+    leaf(1)?; // utils.get_bbox_overlap
     let overlap = get_bbox_overlap(&bbox_from_value(bbox)?, &bbox_from_value(parent_bbox)?)?;
     let Some(overlap) = overlap else {
         return Err(message(" is entirely outside parent page bounding box ", true));
     };
+    leaf(1)?; // utils.calculate_area
     let overlap_area = calculate_area(&bbox_value(&overlap))?;
     if overlap_area.lt(&bbox_area)? {
         return Err(message(" is not fully within parent page bounding box ", true));
@@ -1183,11 +1206,6 @@ impl Page {
         self.root_page.as_ref().unwrap_or(this)
     }
 
-    /// `is_original`
-    pub fn is_original(&self) -> bool {
-        matches!(self.kind, PageKind::Original)
-    }
-
     /// The Python class name (`Page`, `CroppedPage`, `FilteredPage`).
     pub fn class_name(&self) -> &'static str {
         match self.kind {
@@ -1286,6 +1304,11 @@ impl Page {
     /// crops them with its `_crop_fn`.
     pub fn annots(&self) -> PyResult<Vec<Obj>> {
         let _frame = py_frame()?;
+        // def rotate_point(pt: Tuple[float, float], r: int) -> Tuple[float,
+        // float]: its annotations, evaluated at each call (the second one
+        // hits the cache the first one filled)
+        ROTATE_POINT_TUPLE.eval()?;
+        ROTATE_POINT_TUPLE.eval()?;
         let raw = resolve_all(&self.page_obj.annots)?;
         let raw = if raw.is_truthy() { raw } else { PDFObject::List(PDFList::default()) };
         // list(map(parse, raw)): parse is called from C for each item
@@ -1510,6 +1533,10 @@ impl Page {
         // re.sub(lt_pat, "", obj.__class__.__name__).lower(): re.sub ->
         // re._compile (a compiled pattern: returned as it is)
         leaf(2)?;
+        // def process_attr(item: Tuple[str, Any]) -> Optional[Tuple[str,
+        // Any]]: its annotations, evaluated at each call
+        PROCESS_ATTR_ITEM.eval()?;
+        PROCESS_ATTR_RETURN.eval()?;
         let class_name = obj.class_name();
         let kind = class_name.strip_prefix("LT").unwrap_or(class_name).to_lowercase();
 
@@ -1736,6 +1763,8 @@ impl Page {
             return Ok(None);
         }
         // Return the largest table, as measured by number of cells.
+        // def sorter(x: Table) -> Tuple[int, T_num, T_num]: its annotation
+        SORTER_RETURN.eval()?;
         let mut keys = Vec::with_capacity(tables.len());
         for t in &tables {
             // sorter(x) = (-len(x.cells), x.bbox[1], x.bbox[0]), called from C

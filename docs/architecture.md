@@ -1341,6 +1341,26 @@ dégénérés, `cases_depth` pour chaque chemin récursif
   conversion de la position, `I/O operation on closed file.` pour un
   `BytesIO`) : relire après `close()` un objet jamais lu lève
   `ValueError` comme en Python (`closed_objects` de `plumber_doc`).
+- **Balayages de profondeur** (`oracle/unit/plumber_sweep.py`,
+  `tests/plumber_sweep.rs`) : les étapes appellent les méthodes de page
+  loin de la limite, et les fenêtres `depth-*` ne l'atteignent que dans
+  l'interprétation, `resolve_all` et `Serializer`. Chaque opération de la
+  couche page est donc lancée sur une page neuve depuis chaque profondeur
+  entre la place de son cadre le plus profond et aucune : une
+  `RecursionError` arrive au premier instant où l'opération dépasse la
+  limite, si bien que chaque cadre sur le chemin de chaque profondeur
+  atteinte est le premier au-delà dans une des traces. Ils ont trouvé les
+  cadres que le port ne comptait pas : les annotations des fonctions
+  imbriquées, évaluées à chaque appel de la fonction englobante
+  (pdfplumber n'importe pas `annotations` de `__future__`) et dont chaque
+  indice d'alias de `typing` passe par le `lru_cache` de `_tp_cache`,
+  plusieurs cadres plus bas la première fois dans un processus
+  (`pycompat::typing_cache`, état de processus comme `re_cache` ;
+  `iter_pages` de `PDF.pages`, `rotate_point` de `Page.annots`,
+  `process_attr`, `sorter`) ; `pathlib.Path(path)` de `PDF.open` ;
+  `TableFinder.__init__`, `get_edges` et `Table.extract`, au-dessus des
+  propriétés de la page qui l'interprètent ; les `calculate_area` et
+  `get_bbox_overlap` de `test_proposed_bbox`.
 - **Cadres mesurés** (`oracle/depth_probe.py`, sous limites) :
   `lru_cache()(f)` de `Page.__init__` et `DerivedPage.__init__` (`lru_cache`
   un cadre, puis `decorating_function` → `update_wrapper`, deux),
@@ -1571,7 +1591,10 @@ et `update_wrapper` de `Page.__init__`, `re.sub` de `process_object`,
 `decode_text` est un site de `pycompat::specialize` (à déclarer dans
 `oracle/depth.py`, `_call_sites` : premier commit de PAGE, ci-dessus). Le code de la vague 1 (`utils/text.rs`, `table.rs`, géométrie,
 regroupement) ne compte pas de cadres : il ne récurse pas et pdfplumber
-l'appelle au niveau de l'utilisateur ; restent les unités C des
+l'appelle au niveau de l'utilisateur, sauf sur le chemin d'une propriété de
+la page qui l'interprète (`TableFinder.__init__` et `get_edges` vers
+`page.edges` et `page.extract_words`, `Table.extract` vers `page.chars`,
+réalisation de PAGE ci-dessus) ; restent les unités C des
 comparaisons, `hash` et `repr` de valeurs imbriquées (`obj.rs`), à compter
 avec leurs cas de `adv-plumber`. Les constructeurs des vagues 0 à 2
 gardent deux unités par appel de classe (sans effet observable).

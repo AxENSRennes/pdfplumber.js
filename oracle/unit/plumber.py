@@ -138,8 +138,26 @@ OPEN_VARIANTS: list[dict[str, Any]] = [
     {"unicode_norm": "NFKD"},
     {"unicode_norm": "bad"},
     {"unicode_norm": 3},
+    {"unicode_norm": "\ud800"},
+    {"unicode_norm": "NFC\udfff"},
     {"raise_unicode_errors": False},
 ]
+
+
+#: A ToUnicode CMap mapping ``a`` to the empty text and ``b`` to ``b``.
+TOUNICODE_EMPTY = (b"/CIDInit /ProcSet findresource begin 12 dict begin begincmap /CMapName /E def "
+                   b"1 begincodespacerange <00> <FF> endcodespacerange 2 beginbfchar <61> <> <62> <0062> endbfchar "
+                   b"endcmap CMapName currentdict /CMap defineresource pop end end")
+
+
+def empty_text_doc() -> bytes:
+    """A page whose only chars have an empty text (``unicodedata.normalize``
+    returns an empty text before it checks the form), and a page with an
+    empty char next to a ``b``."""
+    def res(b: adv_plumber.Builder) -> dict:
+        return {"Font": {"E": b.obj({**adv_plumber.HELVETICA, "ToUnicode": b.stream(TOUNICODE_EMPTY)})}}
+    return adv_plumber.doc([(adv_plumber.text(20, 180, b"aa", font=b"E"), {}),
+                            (adv_plumber.text(20, 180, b"ab", font=b"E"), {})], res)
 
 
 def open_lines(path: str, options: dict[str, Any]) -> Iterator[str]:
@@ -172,7 +190,8 @@ def open_cases() -> Iterator[tuple[list, str]]:
     ``open_lines`` run as a stage: a fresh thread, ``terminated``)."""
     docs = [("scene.pdf", adv_plumber.doc([(adv_plumber.SCENE, {})] * 3)),
             ("layout.pdf", adv_plumber.doc([(adv_plumber.text(20, 180, b"one two") + adv_plumber.text(20, 160, b"three")
-                                             + adv_plumber.text(120, 180, b"right") + adv_plumber.text(20, 20, b"foot"), {})] * 2))]
+                                             + adv_plumber.text(120, 180, b"right") + adv_plumber.text(20, 20, b"foot"), {})] * 2)),
+            ("empty-text.pdf", empty_text_doc())]
     for name, data in docs:
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
             f.write(data)

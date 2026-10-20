@@ -204,7 +204,7 @@ impl IdSource<P> for SharedIds {
 
 /// `content_ids(ltpage)`: `[key, rank]` of the boxes and groups of the
 /// page's groups and its figures' (depth first), ranked by their ids.
-fn content_ids(ltpage: &LTPage<P>, ids: &mut ContentIds) -> Value {
+pub fn content_ids(ltpage: &LTPage<P>, ids: &mut ContentIds) -> Value {
     let mut roots: Vec<TextGroupElement<P>> = ltpage.layout.groups.clone().unwrap_or_default();
     let mut containers: Vec<LTItem<P>> =
         ltpage.layout._objs.iter().filter(|o| matches!(o, LTItem::Figure(_))).cloned().collect();
@@ -368,12 +368,12 @@ fn pdf_lines(lines: &mut Lines, pdf: &PDF) -> PyResult<()> {
 }
 
 /// The analyses' ids of the pages a `PDF` opens, by page number.
-type IdsRegistry = Rc<RefCell<HashMap<i64, Rc<RefCell<ContentIds>>>>>;
+pub type IdsRegistry = Rc<RefCell<HashMap<i64, Rc<RefCell<ContentIds>>>>>;
 
 /// An `IdsFactory` giving each page's analysis the ranks of the oracle's
 /// `ids` line of that page ([`ContentIds`]), and the registry where the
 /// stage finds them again.
-fn ids_factory(oracle: &HashMap<i64, Vec<(String, u64)>>) -> (IdsFactory, IdsRegistry) {
+pub fn ids_factory(oracle: &HashMap<i64, Vec<(String, u64)>>) -> (IdsFactory, IdsRegistry) {
     let registry: IdsRegistry = Rc::default();
     let factory: IdsFactory = {
         let registry = registry.clone();

@@ -721,6 +721,8 @@ impl Table {
     // pdfplumber/table.py:421 Table.extract
     /// The text of each cell (`None` where a row has no cell).
     pub fn extract(&self, page: &dyn TablePage, kwargs: &Kwargs) -> PyResult<Vec<Vec<Option<PyStr>>>> {
+        // its frame, above `self.page.chars`
+        let _frame = pycompat::recursion::py_frame()?;
         let chars = page.chars()?;
         let mut kwargs = kwargs.clone();
         let mut table_arr = Vec::new();
@@ -1089,6 +1091,10 @@ fn explicit_items(v: &PyValue) -> PyResult<Vec<PyValue>> {
 impl TableFinder {
     // pdfplumber/table.py:588 TableFinder.__init__
     pub fn new(page: &dyn TablePage, settings: TableSettings) -> PyResult<TableFinder> {
+        // the frames down to the page's properties, whose first access
+        // interprets the page (the rest counts none: docs/architecture.md):
+        // TableSettings.resolve(settings) returns a TableSettings as it is
+        pycompat::recursion::leaf(1)?;
         let edges = TableFinder::get_edges(page, &settings)?;
         let intersections = edges_to_intersections(
             &edges,
@@ -1102,6 +1108,8 @@ impl TableFinder {
 
     // pdfplumber/table.py:602 TableFinder.get_edges
     pub fn get_edges(page: &dyn TablePage, settings: &TableSettings) -> PyResult<Vec<Obj>> {
+        // its frame, above `page.extract_words`, `page.edges`
+        let _frame = pycompat::recursion::py_frame()?;
         for (orientation, strategy, lines) in [
             ("vertical", &settings.vertical_strategy, &settings.explicit_vertical_lines),
             ("horizontal", &settings.horizontal_strategy, &settings.explicit_horizontal_lines),

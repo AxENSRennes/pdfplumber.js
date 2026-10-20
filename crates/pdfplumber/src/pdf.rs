@@ -84,6 +84,7 @@ use pdfminer::pdfparser::FileKind;
 use pdfminer::pdftypes::PDFObject;
 use pycompat::logging::Logger;
 use pycompat::recursion::{c_call, class_call, eval_entry, leaf, py_frame};
+use pycompat::typing_cache::Subscription;
 use pycompat::{exc, ExcKind, Num, PyErr, PyInt, PyResult, PyStr};
 
 use pdfminer::pdftypes::PDFDict;
@@ -96,6 +97,12 @@ use crate::page::{Page, PlumberPayload};
 use crate::structure::{PDFStructTree, Scope};
 use crate::utils::exceptions::pdfminer_exception;
 use crate::utils::pdfinternals::resolve_and_decode_obj;
+
+// `iter_pages`, nested in pdfplumber/pdf.py:145 PDF.pages: `->
+// Generator[PDFPage, None, None]`,
+// evaluated at each call of `PDF.pages` (depths below its frame, measured:
+// `python -m oracle.depth_probe typing`; `pycompat::typing_cache`)
+const ITER_PAGES_RETURN: Subscription = Subscription::new("Generator[PDFPage, None, None]", 7, 1);
 
 /// `logger = logging.getLogger(__name__)` of `pdfplumber/pdf.py`.
 static LOG: Logger = Logger::new("pdfplumber.pdf");
@@ -298,7 +305,17 @@ impl PDF {
             ));
         }
         let (data, file, stream_is_external, path) = match source {
-            Source::Path { data, path } => (data, FileKind::BufferedReader, false, Some(path)),
+            Source::Path { data, path } => {
+                // open(path_or_fp, "rb") (C), then pathlib.Path(path_or_fp):
+                // the class call, `Path.__new__`, `__init__` and the
+                // `PurePath.__init__` it calls (measured: two frames deep,
+                // `python -m oracle.depth_probe open`)
+                {
+                    let _call = class_call()?;
+                    leaf(2)?;
+                }
+                (data, FileKind::BufferedReader, false, Some(path))
+            }
             Source::Stream { data, kind } => (data, kind, true, None),
         };
         // cls(stream, path=path, pages=pages, ...); on a PdfminerException a
@@ -386,6 +403,9 @@ impl PDF {
         let mut doctop = PyValue::Int(PyInt::ZERO);
         let pp = self.pages_to_parse.clone();
         self.cache.borrow_mut().pages = Some(Vec::new());
+        // def iter_pages() -> Generator[PDFPage, None, None]: its
+        // annotation, evaluated at each call
+        ITER_PAGES_RETURN.eval()?;
         // iter_pages(): the generator is created
         leaf(1)?;
         let mut gen = PDFPage::create_pages(&self.core.doc).resumed_from_c();

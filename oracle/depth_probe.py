@@ -24,6 +24,23 @@ util-linux 2.39, every command run that way crashes at once.)
 for missing names, the deepest frame of ``CMapDB._load_data(name)`` (the
 logger caches cleared before each), as ``depth path`` lines grouped by
 depth. ``_load_data`` itself is depth 1.
+
+``open``: the standard library under ``pdfplumber.open(path)``: the
+``pathlib.Path(path)`` of ``PDF.open`` (its ``__new__``, its ``__init__``
+and the ``PurePath.__init__`` it calls), for a few paths.
+
+``typing``: the annotations of pdfplumber's nested functions, evaluated each
+time the enclosing function runs (pdfplumber's modules do not import
+``annotations`` from ``__future__``): each subscription of a ``typing``
+alias goes through the ``functools.lru_cache`` of ``typing._tp_cache``.
+For each one (``TYPING_SUBSCRIPTIONS``, in the module the annotation is
+in), the deepest frame below the evaluating function's frame the first
+time a process evaluates it (a miss: ``typing`` builds the alias), the
+next times (a hit: the ``inner`` wrapper, and the ``__hash__`` of an
+argument that is itself an alias), and the first time after every other
+subscription of the list was evaluated (the misses do not depend on one
+another when it equals the first). Each one is measured in a process
+forked from this one, which imported pdfplumber as the unit generators do.
 """
 
 from __future__ import annotations
@@ -144,11 +161,76 @@ def structure() -> None:
         print(f"{label}: depth {depth} ({outcome}): {' -> '.join(path or [])}")
 
 
+#: ``(module, subscription)``: the subscriptions of the annotations of
+#: pdfplumber's nested functions, as ``pycompat::typing_cache`` names them.
+TYPING_SUBSCRIPTIONS: list[tuple[str, str]] = [
+    ("pdfplumber.page", "Tuple[str, Any]"),
+    ("pdfplumber.page", "Optional[Tuple[str, Any]]"),
+    ("pdfplumber.page", "Tuple[int, T_num, T_num]"),
+    ("pdfplumber.page", "Tuple[float, float]"),
+    ("pdfplumber.pdf", "Generator[PDFPage, None, None]"),
+    ("pdfplumber.table", "Tuple[str, T_num]"),
+    ("pdfplumber.table", "Set[T_bbox]"),
+    ("pdfplumber.table", "List[T_point]"),
+    ("pdfplumber.table", "Optional[T_bbox]"),
+    ("pdfplumber.table", "Tuple[T_point, T_point, T_point, T_point]"),
+    ("pdfplumber.utils.text", "Optional[T_obj]"),
+    ("pdfplumber.utils.text", "Generator[T_obj_list, None, None]"),
+    ("pdfplumber.utils.text", "Generator[T_obj, None, None]"),
+    ("pdfplumber.structure", "List[Any]"),
+]
+
+
+def _subscription_depth(module: str, expr: str) -> int:
+    """The deepest frame of evaluating ``expr`` in ``module``, below the
+    evaluating frame (the expression's own frame here)."""
+    import importlib
+
+    namespace = vars(importlib.import_module(module))
+    code = compile(expr, "<annotation>", "eval")
+    _, depth = max_depth(eval, code, namespace)
+    return depth - 1
+
+
+def typing_depths() -> list[dict[str, Any]]:
+    """The miss and hit depths of each of ``TYPING_SUBSCRIPTIONS`` (see the
+    module docstring), each measured in a forked child."""
+    from .unit.document import in_child
+
+    import pdfplumber  # noqa: F401  (the state the generators fork from)
+
+    out = []
+    for module, expr in TYPING_SUBSCRIPTIONS:
+        def first_and_again() -> list[int]:
+            return [_subscription_depth(module, expr), _subscription_depth(module, expr)]
+
+        def after_others() -> int:
+            for m, e in TYPING_SUBSCRIPTIONS:
+                if (m, e) != (module, expr):
+                    _subscription_depth(m, e)
+            return _subscription_depth(module, expr)
+
+        miss, hit = in_child(first_and_again)
+        out.append({"module": module, "expr": expr, "miss": miss, "hit": hit, "miss_after_others": in_child(after_others)})
+    return out
+
+
+def open_() -> None:
+    for p in ("/tmp/a.pdf", "/tmp/b/c.pdf", "rel.pdf", "/"):
+        depth, path = deepest_path(pathlib.Path, p)
+        print(f"pathlib.Path({p!r}): depth {depth}: {' -> '.join(path)}")
+
+
+def typing_() -> None:
+    for d in typing_depths():
+        print(f"{d['module']} {d['expr']}: miss {d['miss']}, hit {d['hit']}, miss after the others {d['miss_after_others']}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(prog="python -m oracle.depth_probe")
-    ap.add_argument("what", choices=["cmaps", "structure"])
+    ap.add_argument("what", choices=["cmaps", "structure", "open", "typing"])
     args = ap.parse_args()
-    {"cmaps": cmaps, "structure": structure}[args.what]()
+    {"cmaps": cmaps, "structure": structure, "open": open_, "typing": typing_}[args.what]()
 
 
 if __name__ == "__main__":

@@ -54,7 +54,7 @@ fn rows_v(rows: &[Vec<Option<PyStr>>]) -> Value {
 }
 
 /// `settings_of(page, op)`: a frame.
-fn settings_of(page: &Page, op: &[Value]) -> PyResult<pdfplumber::utils::text::Kwargs> {
+pub fn settings_of(page: &Page, op: &[Value]) -> PyResult<pdfplumber::utils::text::Kwargs> {
     let _frame = py_frame()?;
     let name = op[0].as_str().expect("an op name");
     let settings = kwargs_of(&op[1]);

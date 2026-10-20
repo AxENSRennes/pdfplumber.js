@@ -5,7 +5,8 @@
 //!
 //! A Python process remembers what it has done: the symbols it interned
 //! (`psparser::py_intern`), the patterns `re` compiled
-//! (`pycompat::re_cache`), the logger caches (`pycompat::logging`), the
+//! (`pycompat::re_cache`), the subscriptions of `typing` aliases cached
+//! (`pycompat::typing_cache`), the logger caches (`pycompat::logging`), the
 //! call sites the adaptive interpreter specialized (`pycompat::specialize`)
 //! and the CMaps `CMapDB` loaded (`cmapdb`). Each is per thread in the
 //! port, as the recursion counters are.
@@ -26,6 +27,7 @@ use crate::psparser::{py_symbols_restore, py_symbols_snapshot, PyInterned};
 pub struct ProcessState {
     interned: PyInterned,
     compiled: Vec<&'static str>,
+    subscriptions: Vec<&'static str>,
     loggers: pycompat::logging::LoggerCaches,
     call_sites: Vec<&'static str>,
     cmaps: CMapDBCaches,
@@ -37,6 +39,7 @@ impl ProcessState {
         ProcessState {
             interned: py_symbols_snapshot(),
             compiled: pycompat::re_cache::snapshot(),
+            subscriptions: pycompat::typing_cache::snapshot(),
             loggers: pycompat::logging::snapshot(),
             call_sites: pycompat::specialize::snapshot(),
             cmaps: CMapDB::caches_snapshot(),
@@ -47,6 +50,7 @@ impl ProcessState {
     pub fn restore(self) {
         py_symbols_restore(self.interned);
         pycompat::re_cache::restore(self.compiled);
+        pycompat::typing_cache::restore(self.subscriptions);
         pycompat::logging::restore(self.loggers);
         pycompat::specialize::restore(self.call_sites);
         CMapDB::restore_caches(self.cmaps);
