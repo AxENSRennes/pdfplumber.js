@@ -247,12 +247,10 @@ Not modelled (the core raises `NotPorted` where Python would go on):
   (`"extract_word"` gives `extract_words`): Python serializes the bound
   method's `str()`.
 
-Not modelled either, without an error: after `close()`, a document opened
-from a path (`Source::Path` in Rust) can still be read, where Python
-raises `ValueError: seek of closed file` when an object not read before
-is needed; and the order Python gives a NaN coordinate in the sets of
-`cluster_objects` (words, lines, table edges) follows its memory address,
-which the port cannot reproduce (it puts NaN values last).
+Not modelled either, without an error: the order Python gives a NaN
+coordinate in the sets of `cluster_objects` (words, lines, table edges)
+follows its memory address, which the port cannot reproduce (it puts NaN
+values last).
 
 ## Runtime Contract
 

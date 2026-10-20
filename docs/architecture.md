@@ -1334,6 +1334,13 @@ dégénérés, `cases_depth` pour chaque chemin récursif
   `csv` (le `writerow` de `_csv.c` : guillemet doublé, `\` échappé par
   lui-même sans guillemets, `,`, `\r`, `\n` entre guillemets, un seul
   champ vide écrit `""`), `base64::b64encode`, `PyStr::replace`.
+- **Fichier fermé** : `PDF.close` ferme le fichier qu'il a ouvert
+  (`PDFDocument::close_file`) ; `pycompat::io::BytesIO` partage un état
+  « fermé » entre ses copies et son `seek` lève alors l'erreur de CPython
+  (`seek of closed file` pour un `BufferedReader`, vérifiée avant la
+  conversion de la position, `I/O operation on closed file.` pour un
+  `BytesIO`) : relire après `close()` un objet jamais lu lève
+  `ValueError` comme en Python (`closed_objects` de `plumber_doc`).
 - **Cadres mesurés** (`oracle/depth_probe.py`, sous limites) :
   `lru_cache()(f)` de `Page.__init__` et `DerivedPage.__init__` (`lru_cache`
   un cadre, puis `decorating_function` → `update_wrapper`, deux),
@@ -1358,11 +1365,7 @@ dégénérés, `cases_depth` pour chaque chemin récursif
 - **Écarts documentés** (`docs/public-api.md`, « Not Ported ») : une
   marge de `laparams` qui n'est pas un nombre (Python la garde et échoue à
   son premier usage dans l'analyse : `NotPorted` à l'ouverture) ; un mot
-  de passe qui n'est ni `None` ni une `str` (`NotPorted`) ; le fichier
-  fermé d'un `PDF` ouvert par chemin après `close()` (Python lève
-  `ValueError: seek of closed file` à la lecture suivante du document ; le
-  port lit encore : seul un objet jamais lu avant la fermeture le
-  montrerait) ; `getattr` d'une méthode dans `to_dict`/`to_csv`
+  de passe qui n'est ni `None` ni une `str` (`NotPorted`) ; `getattr` d'une méthode dans `to_dict`/`to_csv`
   (`object_types=["extract_word"]` : une méthode liée, `NotPorted`) ; un
   XObject nommé comme le port nomme les images en ligne (`inline-<k>` :
   les deux noms se confondent) ; l'ordre d'un NaN dans un `set` de
