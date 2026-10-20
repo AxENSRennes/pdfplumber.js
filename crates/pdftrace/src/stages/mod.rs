@@ -51,6 +51,10 @@ pub struct StageInput<'a> {
     pub pdf: &'a [u8],
     /// `--password` (empty by default, like `pdfplumber.open`).
     pub password: &'a str,
+    /// Whether `--password` was given (the Python stage receives `None`
+    /// otherwise: `plumber_doc` tries the document without its password
+    /// only when it has one, `""` included).
+    pub password_given: bool,
     /// `--max-pages`: page-by-page stages stop after this many pages
     /// (`None`: every page).
     pub max_pages: Option<usize>,
