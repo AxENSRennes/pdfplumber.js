@@ -505,7 +505,7 @@ d'écrire ses cas) :
   arbre de noms par `api_trace`), une fenêtre de longueurs autour du
   premier niveau qui échoue en Python (`docs/architecture.md`,
   « Profondeur de récursion »).
-- `oracle/adversarial/structure.py` → `adv-structure` (437 PDF ; vérifié
+- `oracle/adversarial/structure.py` → `adv-structure` (441 PDF ; vérifié
   par `plumber_doc` et `plumber_objects`, rejoué par
   `oracle/unit/structure.py`) : arbres de structure (`/StructTreeRoot`
   absent ou de tout type, `/K` de toute sorte et imbrication, MCR et OBJR
@@ -519,7 +519,7 @@ d'écrire ses cas) :
   (`/Info` de tout type, partagées, imbriquées, qui se désignent
   elles-mêmes, désignent le catalogue, une page, un élément, deux `/Info`),
   annotations (`/Rect`, `/A`, `/URI`, `/T`, `/Contents` de tout type,
-  chaînes non décodables, flux, pages tournées) ; `cases_depth` : quinze
+  chaînes non décodables, flux, pages tournées) ; `cases_depth` : seize
   fenêtres autour du premier niveau qui échoue en Python (`--probe`, par
   dichotomie sur l'étape) : `to_dict`, `prune`, `repr`, unités C de
   `repr(ref)`, de `str(s)` (première exécution du site et suivantes) et du

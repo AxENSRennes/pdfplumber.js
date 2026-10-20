@@ -738,6 +738,18 @@ def _w11(n: int) -> bytes:
                          13: elem("Span", 11, [1, 2], ActualText=Raw(b"[300 " + bytes(_ser(nested_list(n, 1))) + b"]"))})
 
 
+# C units: decode_text's str(s) in the tree of the second page: the
+# property `page.structure_tree` of the stage's lambda is loaded by a
+# specialized instruction there (no unit), by the generic one for the first
+# page (two)
+@window("actualtext-str-page2", 9992)
+def _w16(n: int) -> bytes:
+    deep = Raw(b"[300 " + bytes(_ser(nested_list(n, 1))) + b"]")
+    return tagged(npages=2, elems={11: elem("Document", ROOT, [Ref(12), Ref(13), Ref(14)]),
+                                   14: elem("P", 11, [0], Pg=Ref(PAGE0 + 1), ActualText=deep)},
+                  parent_tree={"Nums": [0, [Ref(12), Ref(13), Ref(13)], 1, [Ref(14)]]})
+
+
 # C units: the repr of an element's nested attribute (element_repr)
 @window("attribute-repr", 9991)
 def _w12(n: int) -> bytes:
@@ -798,6 +810,7 @@ def probe() -> None:
         "actualtext-str-first": lambda t: "RecursionError" in _line(t, "structure_tree "),
         "actualtext-str-second": lambda t: "RecursionError" in _line(t, "structure_tree "),
         "attribute-repr": lambda t: _line(t, "element_repr ").startswith("element_repr !"),
+        "actualtext-str-page2": lambda t: "RecursionError" in _page_line(t, 2, "page_structure_tree "),
         "metadata-nested-dicts": lambda t: _line(t, "open !RecursionError") != "",
         "metadata-nested-lists": lambda t: _line(t, "open !RecursionError") != "",
         "parent-tree-kids": lambda t: "RecursionError" in _line(t, "page_structure_tree "),
@@ -825,6 +838,17 @@ def probe() -> None:
                 else:
                     lo = mid
             print(f"{name}: first failing {hi}", flush=True)
+
+
+def _page_line(trace: list[str], page: int, prefix: str) -> str:
+    """The first line starting with ``prefix`` after ``page <page>``."""
+    seen = False
+    for line in trace:
+        if line.startswith(f"page {page} "):
+            seen = True
+        elif seen and line.startswith(prefix):
+            return line
+    return ""
 
 
 def _line(trace: list[str], prefix: str) -> str:
