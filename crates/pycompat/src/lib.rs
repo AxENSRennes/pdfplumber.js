@@ -14,6 +14,8 @@
 //! - [`builtins`]: `sum()` (3.12 compensated float sum), `min()`/`max()`
 //!   (first wins on ties), `round()`.
 //! - [`repr`]: `repr()` of float, bytes and str; `json.dumps(str)`.
+//! - [`codecs`]: `bytes.decode("utf-8")` and `bytes.decode("utf-16")`
+//!   (strict), with CPython's `UnicodeDecodeError`.
 //! - [`text`]: `bytes`/`str` character classes (`\s`, `isspace`,
 //!   `isprintable`, decimal digits), from generated Unicode 15.0 tables.
 //! - [`pystr`]: Python's `str` ([`PyStr`]), which holds lone surrogates.
@@ -40,6 +42,7 @@ pub mod base64;
 pub mod binascii;
 pub mod builtins;
 pub mod bytes_format;
+pub mod codecs;
 pub mod diagnostics;
 pub mod err;
 pub mod float;
