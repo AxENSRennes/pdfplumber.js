@@ -16,15 +16,11 @@ initialized submodules):
   SHA-256 starts with a byte below ``QUICK_BYTE_LIMIT`` (about 7 %, ~145 files
   today). Membership depends only on the file's own content, so adding files
   never removes a file from the sample.
-- ``adv-<name>``: ``<cache>/corpus/adv-<name>`` (generated adversarial PDFs),
-  ``<name>`` a stage (``oracle/stages/<name>.py``) or the generator that
-  writes it (``oracle/adversarial/<name>.py``: ``adv-plumber`` and
-  ``adv-structure`` are verified by several ``plumber_*`` stages)
+- ``adv-<stage>``: ``<cache>/corpus/adv-<stage>`` (generated adversarial PDFs)
 
-A set directory that does not exist, or an ``adv-<name>`` set of an unknown
-stage or generator, or never generated, raises ``CorpusError``: a parity run
-must never pass by comparing an empty set (a worktree without
-``PDFPLUMBER_ROOT``, a typo).
+A set directory that does not exist, or an ``adv-<stage>`` set of an unknown
+stage or never generated, raises ``CorpusError``: a parity run must never pass
+by comparing an empty set (a worktree without ``PDFPLUMBER_ROOT``, a typo).
 
 The cache directory is ``PDFPLUMBER_CACHE`` if set, else ``<root>/.cache``.
 
@@ -306,9 +302,8 @@ def load_set(name: str, root: Path | None = None) -> list[CorpusFile]:
             files = [f for f in files if f.sha256 in micro or int(f.sha256[:2], 16) < QUICK_BYTE_LIMIT]
     elif name.startswith("adv-") and len(name) > 4:
         stage = name[4:]
-        known = any((PACKAGE_DIR / d / f"{stage}.py").is_file() for d in ("stages", "adversarial"))
-        if not known or stage.startswith("_"):
-            raise CorpusError(f"unknown corpus set {name!r}: no stage or generator {stage!r} (oracle/stages/, oracle/adversarial/)")
+        if not (PACKAGE_DIR / "stages" / f"{stage}.py").is_file() or stage.startswith("_"):
+            raise CorpusError(f"unknown corpus set {name!r}: no stage {stage!r} (oracle/stages/)")
         directory = cache_dir() / "corpus" / name
         if not directory.is_dir():
             raise CorpusError(f"corpus set {name!r} was never generated ({directory} is missing; see oracle/adversarial/{stage}.py)")

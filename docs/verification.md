@@ -399,7 +399,7 @@ Les constantes mesurées sont aussi vérifiées par les cas de l'ensemble
 | `pdfjs` | `upstream/pdfjs/test/pdfs` (937 PDF, beaucoup de cas tordus) |
 | `quick` | tout `micro`, plus les fichiers de `all` dont le SHA-256 commence par un octet < 18 (~7 % ; 150 PDF en tout aujourd'hui) : l'appartenance ne dépend que du contenu du fichier, en ajouter n'en retire aucun |
 | `all` | tout ce qui précède (1 853 PDF distincts aujourd'hui) |
-| `adv-<nom>` | corpus adverse généré pour une étape, ou par un générateur `oracle/adversarial/<nom>.py` que plusieurs étapes vérifient (`adv-plumber`, `adv-structure` de la vague 4 : à écrire, `architecture.md`, « Vague 4 ») ; plusieurs étapes peuvent vérifier le même ; aujourd'hui `adv-objects` (333 PDF), `adv-pages` (285) et `adv-interp` (353), sur lesquels chaque étape implémentée est vérifiée à l'intégration d'une vague (`interp_text` et `fonts_text` : `adv-interp`) |
+| `adv-<étape>` | corpus adverse généré pour une étape (voir plus bas ; la vague 4 étend le nom à un générateur que plusieurs étapes vérifient, `adv-plumber`, `adv-structure` : `architecture.md`, « Vague 4 ») ; plusieurs étapes peuvent vérifier le même ; aujourd'hui `adv-objects` (333 PDF), `adv-pages` (285) et `adv-interp` (353), sur lesquels chaque étape implémentée est vérifiée à l'intégration d'une vague (`interp_text` et `fonts_text` : `adv-interp`) |
 
 Un fichier est tout `*.pdf` (casse ignorée) des dossiers, récursivement, en
 ordre de chemin relatif. Les fichiers identiques sont dédoublonnés par SHA-256

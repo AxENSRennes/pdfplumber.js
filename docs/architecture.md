@@ -1173,9 +1173,17 @@ et ne modifient pas le contrat ci-dessous sans accord : un changement d'une
   `{"page_number": n}` en JavaScript en attendant l'API des pages) ;
   `page_layout` (le corps de `Page.layout`) déplacé de `pdftrace` dans
   `pdfplumber::page` (les étapes `interp`, `fonts`, `layout` l'importent) ;
-  `oracle.verify` passe toujours `--cmap-dir` (outillage, ci-dessous) ;
-  `adv-<nom>` accepte un générateur `oracle/adversarial/<nom>.py` qui n'est
-  pas une étape (`adv-plumber`, `adv-structure`).
+  `oracle.verify` passe toujours `--cmap-dir` (outillage, ci-dessous).
+- **Laissé au premier commit de PAGE**, parce que ces fichiers sont dans
+  l'empreinte de tous les caches (`oracle/depth.py` : de toutes les
+  étapes de l'oracle et de toutes les données unitaires ;
+  `oracle/corpus.py` : de toutes les données unitaires, 2,3 Go, des heures
+  à régénérer) et qu'il vaut mieux les invalider une seule fois, avant
+  toute construction de cache de la vague : le site d'appel `decode_text
+  str(s)` dans `_call_sites` de `oracle/depth.py`, et un nom `adv-<nom>`
+  pour un générateur `oracle/adversarial/<nom>.py` qui n'est pas une étape
+  (`oracle/corpus.py` n'accepte aujourd'hui que `adv-<étape>` ; il faut
+  `adv-plumber` et `adv-structure`). DOC rebase sur ce commit.
 
 ### Décisions
 
@@ -1216,13 +1224,13 @@ et ne modifient pas le contrat ci-dessous sans accord : un changement d'une
   `pdftrace` appellent la bibliothèque (`PDF::open`, `Page`).
 - **Mesures de la spécification** (`--set quick`, `heavy.sh`,
   `--oracle-only -j 3 --timeout 600`, 150 fichiers, aucune erreur ni
-  délai) : `plumber_objects` 77 s (198 s cumulées ; avant les références
-  `lchars`, 309 Mo), `plumber_text` 113 s (249 s, 38 Mo), `plumber_tables`
-  90 s (229 s, 33 Mo), `plumber_doc` 110 s (275 s, 4 Mo) ; fichiers les
-  plus lents : `highlights.pdf` 53 s (`plumber_text`),
-  `pdfjs-issue5509.pdf` 49 s (`plumber_doc`). Sur `all` (×12) : environ
-  3 h 10 de calcul cumulé (1 h 05 avec `-j 3`) et 2,5 Go de cache ;
-  construire avec `--timeout 600`.
+  délai) : `plumber_objects` 86 s (218 s cumulées, 188 Mo de traces ;
+  309 Mo sans les références `lchars`), `plumber_text` 113 s (249 s,
+  38 Mo), `plumber_tables` 90 s (229 s, 33 Mo), `plumber_doc` 110 s
+  (275 s, 4 Mo) ; fichiers les plus lents : `highlights.pdf` 53 s
+  (`plumber_text`), `pdfjs-issue5509.pdf` 49 s (`plumber_doc`). Sur
+  `all` (×12) : environ 3 h 15 de calcul cumulé (1 h 10 avec `-j 3`) et
+  3,2 Go de cache ; construire avec `--timeout 600`.
 
 ### Contrat entre les chantiers
 
@@ -1323,9 +1331,7 @@ et `update_wrapper` de `Page.__init__`, `re.sub` de `process_object`,
 `warnings.warn`, `dataclasses.asdict`, `copy.deepcopy`,
 `reprlib.recursive_repr`, `json.dumps`, `csv`) ; le `str(s)` de
 `decode_text` est un site de `pycompat::specialize` (à déclarer dans
-`oracle/depth.py`, `_call_sites`, ce qui invalide tous les caches de
-l'oracle : PAGE le fait dans son premier commit, avant de construire des
-caches). Le code de la vague 1 (`utils/text.rs`, `table.rs`, géométrie,
+`oracle/depth.py`, `_call_sites` : premier commit de PAGE, ci-dessus). Le code de la vague 1 (`utils/text.rs`, `table.rs`, géométrie,
 regroupement) ne compte pas de cadres : il ne récurse pas et pdfplumber
 l'appelle au niveau de l'utilisateur ; restent les unités C des
 comparaisons, `hash` et `repr` de valeurs imbriquées (`obj.rs`), à compter

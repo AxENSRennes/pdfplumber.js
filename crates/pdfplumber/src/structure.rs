@@ -50,6 +50,7 @@ use pycompat::{PyInt, PyResult, PyStr};
 
 use crate::obj::{Bbox, Obj, PyValue};
 use crate::page::Page;
+use crate::pdf::PDF;
 
 /// What `find_all` and `find` match
 /// (pdfplumber/structure.py:39 `_find_all`): an element type (`x.type == matcher`), or a function of
@@ -109,10 +110,11 @@ impl PDFStructElement {
     }
 }
 
-/// The scope of a tree: the document (its pages, `doc.pages`: built
-/// first), or one page.
+/// The scope of a tree: the document (whose `pages` the constructor reads
+/// after the root, `/RoleMap` and `/ClassMap`, as Python does), or one
+/// page.
 pub enum Scope<'a> {
-    Document(&'a [Rc<Page>]),
+    Document(&'a PDF),
     Page(&'a Rc<Page>),
 }
 

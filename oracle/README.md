@@ -26,7 +26,7 @@ overrides the cache directory (default `$PDFPLUMBER_ROOT/.cache`).
 |---|---|
 | `canon.py` | `canon(v)`: the canonical text of a value (trace format) |
 | `typed_json.py` | lossless JSON encoding of Python values (unit cases) |
-| `corpus.py` | PDF sets (`micro`, `upstream`, `real`, `pdfjs`, `quick`, `all`, `adv-<stage or generator>`) and per-file passwords |
+| `corpus.py` | PDF sets (`micro`, `upstream`, `real`, `pdfjs`, `quick`, `all`, `adv-<stage>`) and per-file passwords |
 | `stages/<name>.py` | one stage each; the docstring lists the upstream code exercised, the exact traversal and every line format |
 | `stages/__init__.py` | stage registry and runner (`trace_lines`) |
 | `trace.py` | CLI: one trace on stdout |

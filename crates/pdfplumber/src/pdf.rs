@@ -67,7 +67,6 @@ use pycompat::{PyInt, PyResult, PyStr};
 use crate::container::{Container, ContainerCache, Objects};
 use crate::obj::{Obj, PyValue};
 use crate::page::{Page, PlumberPayload};
-use crate::utils::text::Kwargs;
 
 /// What `pdfplumber.open` reads (`path_or_fp`).
 #[derive(Clone)]
@@ -94,10 +93,12 @@ pub struct OpenOptions {
     /// `pages`: the page numbers to build (`page_number not in pp`), any
     /// container; `None`: every page.
     pub pages: Option<PyValue>,
-    /// `laparams`: the keyword arguments of `LAParams(**laparams)`.
-    pub laparams: Option<Kwargs>,
-    /// `password` (`None` and `""` both open with `""`).
-    pub password: Option<PyStr>,
+    /// `laparams`, as given: `LAParams(**laparams)` (a mapping of keyword
+    /// arguments; anything else raises the `TypeError` of `**`).
+    pub laparams: Option<PyValue>,
+    /// `password`, as given (`None` and `""` both open with `""`;
+    /// pdfminer's security handlers decide what else they accept).
+    pub password: Option<PyValue>,
     pub strict_metadata: bool,
     /// `unicode_norm`, as given: `normalize_unicode(form, text)` runs (and
     /// raises for a form it does not know) in `Page.process_object`.
@@ -138,7 +139,7 @@ pub struct PDF {
     /// `self.pages_to_parse`
     pub pages_to_parse: Option<PyValue>,
     /// `self.password`
-    pub password: Option<PyStr>,
+    pub password: Option<PyValue>,
     /// `self.metadata`: the `/Info` dicts merged, each value through
     /// `resolve_and_decode` (`str` keys: the PDF dict's).
     pub metadata: Obj,
