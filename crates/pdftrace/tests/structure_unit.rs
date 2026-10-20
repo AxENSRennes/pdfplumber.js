@@ -176,6 +176,9 @@ fn tagged_pdf(elems: &[(u32, &str)], parents: &str) -> Vec<u8> {
     out
 }
 
+/// Structure elements: `(object number, dict)`.
+type Elems<'a> = &'a [(u32, &'a str)];
+
 /// `page.structure_tree` of the first page of `pdf`.
 fn page_tree(pdf: Vec<u8>) -> PyResult<Vec<pdfplumber::obj::PyValue>> {
     use pdfplumber::pdf::{OpenOptions, Source, PDF};
@@ -190,7 +193,7 @@ fn page_tree(pdf: Vec<u8>) -> PyResult<Vec<pdfplumber::obj::PyValue>> {
 /// every element was processed (`pdfplumber::structure`, "Not modeled").
 #[test]
 fn page_scope_cycles_raise_memory_error() {
-    let cases: [(&str, &[(u32, &str)], &str); 3] = [
+    let cases: [(&str, Elems<'_>, &str); 3] = [
         // the element's parent among its children
         (
             "parent",
