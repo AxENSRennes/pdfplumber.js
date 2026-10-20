@@ -70,6 +70,10 @@ GENERATORS: dict[str, tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]] = {
     "interp_deep": (("meta.json",), ((),)),
     # what the JavaScript tests replay through the WebAssembly boundary (seconds)
     "js_runtime": (("meta.json",), ((),)),
+    # the adversarial corpus adv-plumber (written first, its depth windows
+    # bisected on the oracle: minutes), then the traces of the plumber_*
+    # stages on it, micro and small quick files (minutes)
+    "plumber": (("meta.json",), ((),)),
 }
 
 
