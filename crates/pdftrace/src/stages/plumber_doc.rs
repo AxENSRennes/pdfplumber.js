@@ -35,11 +35,11 @@ use pycompat::{exc, PyErr, PyInt, PyResult, PyStr};
 use super::common::{terminated, Lines};
 use super::plumber_common::{digest, exc as exc_line, open_pdf, select, table, Names};
 use super::plumber_objects::annot_value;
-use super::plumber_text::derive;
 use super::plumber_ops::{
     DOC_DERIVED, DOC_DERIVED_BASE, DOC_DERIVED_PER_PAGE, DOC_MAX_ELEMENTS, DOC_MAX_FOUND, DOC_MAX_PROBED,
     DOC_NORM_PAGES, DOC_OPEN_OPTIONS, DOC_SERIALIZE, DOC_SERIALIZE_PER_PAGE, DOC_WRONG_PASSWORD, OUT_LIMIT,
 };
+use super::plumber_text::derive;
 use super::{Stage, StageInput};
 use crate::canon::{canon, sha256_hex};
 use crate::plumber::{from_value, to_value};

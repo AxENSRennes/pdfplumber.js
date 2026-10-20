@@ -163,5 +163,11 @@ fn codecs() {
             failures.push(format!("{b:02x?}: expected {expected:?}, got {got:?}"));
         }
     }
-    assert!(failures.is_empty(), "{} of {} differ:\n{}", failures.len(), cases.len(), failures[..failures.len().min(20)].join("\n"));
+    assert!(
+        failures.is_empty(),
+        "{} of {} differ:\n{}",
+        failures.len(),
+        cases.len(),
+        failures[..failures.len().min(20)].join("\n")
+    );
 }

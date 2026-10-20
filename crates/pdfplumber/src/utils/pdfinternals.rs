@@ -219,10 +219,7 @@ pub fn decode_text_value(s: &PyValue) -> PyResult<PyStr> {
                     }
                 },
                 other => {
-                    return Err(exc::TypeError(format!(
-                        "string indices must be integers, not '{}'",
-                        other.type_name()
-                    )))
+                    return Err(exc::TypeError(format!("string indices must be integers, not '{}'", other.type_name())))
                 }
             };
             // PDFDocEncoding[o]: a str of 256 characters
