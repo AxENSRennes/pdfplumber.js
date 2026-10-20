@@ -102,7 +102,11 @@ impl Names {
         for (_, objs) in objects.iter() {
             for o in objs {
                 let image = o.get("object_type").and_then(PyValue::as_str) == Some("image");
-                if image && o.contains("stream") {
+                // Python: `name == str(id(stream))`; the port's inline image
+                // streams are the content parser's, without an object id
+                let inline_stream = matches!(o.get("stream"),
+                    Some(PyValue::Pdf(pdfminer::pdftypes::PDFObject::Stream(st))) if st.objid().is_none());
+                if image && inline_stream {
                     if let Some(PyValue::Str(name)) = o.get("name") {
                         if is_inline_name(name) && !self.inline.contains(name) {
                             self.inline.push(name.clone());
@@ -116,7 +120,10 @@ impl Names {
     fn value(&self, v: &PyValue) -> Value {
         if let PyValue::Str(name) = v {
             if let Some(k) = self.inline.iter().position(|n| n == name) {
-                return Value::Named { name: "inline".into(), fields: vec![(s("n"), Value::Int(PyInt::from(k as i64)))] };
+                return Value::Named {
+                    name: "inline".into(),
+                    fields: vec![(s("n"), Value::Int(PyInt::from(k as i64)))],
+                };
             }
         }
         to_value(v)
@@ -148,7 +155,12 @@ impl Names {
     /// replaced by `<inline k>`.
     fn text(&self, text: &PyStr) -> PyStr {
         let mut out = text.clone();
-        for (k, name) in self.inline.iter().enumerate() {
+        // Python's names (addresses) all have the same length; the port's
+        // are prefixes of one another (`inline-1`, `inline-10`): the longer
+        // ones are replaced first
+        let mut order: Vec<(usize, &PyStr)> = self.inline.iter().enumerate().collect();
+        order.sort_by_key(|(_, name)| std::cmp::Reverse(name.len()));
+        for (k, name) in order {
             let parts = out.split(name);
             let mut joined = PyStr::empty();
             for (i, part) in parts.iter().enumerate() {
@@ -201,7 +213,11 @@ fn objects_digest(page: &Page) -> PyResult<Value> {
     let mut out = Vec::new();
     for (kind, objs) in objects.iter() {
         let values = Value::List(objs.iter().map(|o| names.dict(o)).collect());
-        out.push(Value::List(vec![Value::py_str(kind), Value::Int(PyInt::from(objs.len() as i64)), s(&digest(&values))]));
+        out.push(Value::List(vec![
+            Value::py_str(kind),
+            Value::Int(PyInt::from(objs.len() as i64)),
+            s(&digest(&values)),
+        ]));
     }
     Ok(Value::List(out))
 }
@@ -220,9 +236,7 @@ fn annots_digest(annots: &[Obj]) -> PyResult<String> {
 /// password=password, **options)`.
 fn open_pdf(input: &StageInput<'_>, password: Option<&str>, options: OpenOptions) -> PyResult<PDF> {
     let _frame = py_frame()?;
-    let pages = input
-        .max_pages
-        .map(|n| PyValue::list((1..=n as i64).map(|i| PyValue::Int(PyInt::from(i)))));
+    let pages = input.max_pages.map(|n| PyValue::list((1..=n as i64).map(|i| PyValue::Int(PyInt::from(i)))));
     open_with(input, password, OpenOptions { pages, ..options })
 }
 
@@ -384,7 +398,9 @@ fn tree_lines(
             Err(e) => lines.push(format!("mcids {path} {}", exc_text(&e))),
         }
         match tree.element_bbox(&el) {
-            Ok(bbox) => lines.push(format!("element_bbox {path} {}", canon(&Value::Tuple(bbox.iter().map(to_value).collect())))),
+            Ok(bbox) => {
+                lines.push(format!("element_bbox {path} {}", canon(&Value::Tuple(bbox.iter().map(to_value).collect()))))
+            }
             Err(e) => lines.push(format!("element_bbox {path} {}", exc_text(&e))),
         }
     }
@@ -395,11 +411,7 @@ fn tree_lines(
             first.repr()
         };
         match text {
-            Ok(text) => lines.push(format!(
-                "element_repr {} {}",
-                text.len(),
-                &sha256_hex(text.as_bytes())[..16]
-            )),
+            Ok(text) => lines.push(format!("element_repr {} {}", text.len(), &sha256_hex(text.as_bytes())[..16])),
             Err(e) => lines.push(format!("element_repr {}", exc_text(&e))),
         }
     }
@@ -623,7 +635,8 @@ fn option_lines(lines: &mut Lines, input: &StageInput<'_>, options: &Value) -> P
         };
         let selected = pdf.pages().map(|pages| {
             Value::List(
-                pages.iter()
+                pages
+                    .iter()
                     .map(|p| Value::Tuple(vec![Value::Int(p.page_number.clone()), to_value(&p.initial_doctop)]))
                     .collect(),
             )
@@ -654,9 +667,9 @@ fn option_lines(lines: &mut Lines, input: &StageInput<'_>, options: &Value) -> P
     };
     if has_option(options, "unicode_norm") {
         for page in pages.iter().take(DOC_NORM_PAGES) {
-            let texts = page.chars().and_then(|chars| {
-                chars.iter().map(|c| c.item("text").map(to_value)).collect::<PyResult<Vec<_>>>()
-            });
+            let texts = page
+                .chars()
+                .and_then(|chars| chars.iter().map(|c| c.item("text").map(to_value)).collect::<PyResult<Vec<_>>>());
             match texts {
                 Ok(texts) => lines.push(bounded(&format!("texts {}", page.page_number), &Value::List(texts))),
                 Err(e) => lines.push(format!("texts {} {}", page.page_number, exc_text(&e))),
@@ -666,7 +679,9 @@ fn option_lines(lines: &mut Lines, input: &StageInput<'_>, options: &Value) -> P
     }
     for page in &pages {
         match page.annots() {
-            Ok(annots) => lines.push(format!("annots {} {} {}", page.page_number, annots.len(), annots_digest(&annots)?)),
+            Ok(annots) => {
+                lines.push(format!("annots {} {} {}", page.page_number, annots.len(), annots_digest(&annots)?))
+            }
             Err(e) => lines.push(format!("annots {} {}", page.page_number, exc_text(&e))),
         }
     }
@@ -736,7 +751,8 @@ fn body(input: &StageInput<'_>, lines: &mut Lines) -> PyResult<()> {
         page_lines(lines, &pdf, page, &sha, index)?;
     }
     let to_dict = (|| -> PyResult<Value> {
-        let object_types: Vec<PyStr> = ["char", "rect", "line", "curve", "image"].iter().map(|t| PyStr::new(t)).collect();
+        let object_types: Vec<PyStr> =
+            ["char", "rect", "line", "curve", "image"].iter().map(|t| PyStr::new(t)).collect();
         let value = pdf.to_dict(Some(&object_types))?;
         let pages = pdf.pages()?;
         let mut items = Vec::new();

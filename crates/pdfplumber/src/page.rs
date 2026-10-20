@@ -41,8 +41,8 @@ use pdfminer::psparser::{LiteralName, PSLiteral};
 use pdfminer::utils::{Matrix, PathSegment, Point};
 use pycompat::bytes_format::bytes_mod_int;
 use pycompat::recursion::{c_call, c_called_leaf, class_call, eval_entry, leaf, py_frame, py_frames};
-use pycompat::{codecs, diagnostics};
 use pycompat::repr::bytes_repr;
+use pycompat::{codecs, diagnostics};
 use pycompat::{exc, ExcKind, Num, PyErr, PyInt, PyResult, PyStr};
 
 use crate::container::{Container, ContainerCache, Objects};
@@ -1308,7 +1308,9 @@ impl Page {
         };
         // range(turns)
         let turns = match turns {
-            Num::Int(i) => i.as_i64().ok_or_else(|| exc::OverflowError("Python int too large to convert to C ssize_t"))?,
+            Num::Int(i) => {
+                i.as_i64().ok_or_else(|| exc::OverflowError("Python int too large to convert to C ssize_t"))?
+            }
             Num::Float(_) => return Err(exc::TypeError("'float' object cannot be interpreted as an integer")),
         };
         let mut pt = pt;

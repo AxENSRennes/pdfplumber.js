@@ -170,9 +170,14 @@ impl Names {
 
     /// `text(s)`: each inline name replaced by `<inline k>`.
     pub fn text(&self, s: &PyStr) -> PyStr {
+        // Python's names (addresses) all have the same length; the port's
+        // are prefixes of one another (`inline-1`, `inline-10`): the longer
+        // ones are replaced first
+        let mut order: Vec<usize> = (0..self.inline.len()).collect();
+        order.sort_by_key(|&k| std::cmp::Reverse(self.inline[k].len()));
         let mut s = s.clone();
-        for (k, name) in self.inline.iter().enumerate() {
-            s = s.replace(name, &PyStr::new(&format!("<inline {k}>")));
+        for k in order {
+            s = s.replace(&self.inline[k], &PyStr::new(&format!("<inline {k}>")));
         }
         s
     }

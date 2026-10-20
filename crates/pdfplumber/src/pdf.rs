@@ -91,11 +91,11 @@ use pycompat::diagnostics;
 use pycompat::recursion::c_called_leaf;
 
 use crate::container::{Container, ContainerCache, Objects};
-use crate::structure::{PDFStructTree, Scope};
-use crate::utils::pdfinternals::resolve_and_decode_obj;
 use crate::obj::{py_contains, Obj, PyValue};
 use crate::page::{Page, PlumberPayload};
+use crate::structure::{PDFStructTree, Scope};
 use crate::utils::exceptions::pdfminer_exception;
+use crate::utils::pdfinternals::resolve_and_decode_obj;
 
 /// `logger = logging.getLogger(__name__)` of `pdfplumber/pdf.py`.
 static LOG: Logger = Logger::new("pdfplumber.pdf");
@@ -526,7 +526,10 @@ pub fn read_metadata(doc: &PDFDocument, strict_metadata: bool) -> PyResult<Obj> 
                 // the builtin) before the call.
                 drop(c_call(" while calling a Python object")?);
                 diagnostics::emit("pdfplumber.pdf", diagnostics::Level::Warning, || {
-                    format!("[WARNING] Metadata key \"{k}\" could not be parsed due to exception: {}", e.py_message().to_string_lossy())
+                    format!(
+                        "[WARNING] Metadata key \"{k}\" could not be parsed due to exception: {}",
+                        e.py_message().to_string_lossy()
+                    )
                 });
                 LOG.warning()?;
             }

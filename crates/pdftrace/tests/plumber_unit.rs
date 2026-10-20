@@ -1,7 +1,7 @@
 //! Replays `oracle/unit/plumber.py`: the traces of the `plumber_objects`,
-//! `plumber_text` and `plumber_tables` stages (pdfplumber's page layer:
-//! `PDF`, `Page` and its derived pages, `Container`, the text and table
-//! methods) on the adversarial corpus `adv-plumber` (its depth windows
+//! `plumber_text`, `plumber_tables` and `plumber_doc` stages (pdfplumber's
+//! page layer: `PDF`, `Page` and its derived pages, `Container`, the text
+//! and table methods, serialization, the structure tree) on the adversarial corpus `adv-plumber` (its depth windows
 //! included, also from deeper stage entries), `micro` and small files of
 //! `quick`. An `ORACLE_INPUT` stage is given its Python trace (the `id()`
 //! order of the analysis, the matches of `search`).
@@ -86,6 +86,7 @@ fn stage_traces() {
         if only.as_ref().is_some_and(|o| !o.split(',').any(|s| name.contains(s))) {
             continue;
         }
+        let password_given = matches!(password, Value::Str(_));
         let password = match password {
             Value::Str(p) => p.as_str().expect("a password").to_owned(),
             _ => String::new(),
@@ -95,7 +96,13 @@ fn stage_traces() {
         let Value::Str(expected) = &expected else { panic!("bad output") };
         let expected = expected.as_str().expect("ASCII");
         let stage = stages::lookup(what).expect("a stage");
-        let input = StageInput { pdf, password: &password, max_pages, oracle: stage.oracle_input.then_some(expected) };
+        let input = StageInput {
+            pdf,
+            password: &password,
+            password_given,
+            max_pages,
+            oracle: stage.oracle_input.then_some(expected),
+        };
         let run = stage.run.expect("an implemented stage");
         let mut out = Vec::new();
         match entry {
@@ -117,7 +124,7 @@ fn stage_traces() {
     }
     if only.is_none() {
         assert!(n > 300, "only {n} traces");
-        for what in ["plumber_objects", "plumber_text", "plumber_tables"] {
+        for what in ["plumber_objects", "plumber_text", "plumber_tables", "plumber_doc"] {
             assert!(per_stage.get(what).is_some_and(|&k| k > 100), "{what}: {per_stage:?}");
         }
         assert!(depth_cases > 20, "only {depth_cases} traces reach the recursion limit");

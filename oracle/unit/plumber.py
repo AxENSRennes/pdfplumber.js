@@ -1,5 +1,6 @@
 """Unit cases of pdfplumber's page layer (``pdf``, ``page``, ``container``,
-``convert``, ``utils/pdfinternals``), replayed by
+``convert``, ``utils/pdfinternals``, and ``structure`` through
+``plumber_doc``), replayed by
 ``crates/pdftrace/tests/plumber_unit.rs``.
 
 The ``plumber_*`` stages over files are the main check of these modules
@@ -34,7 +35,8 @@ from collections.abc import Iterator
 from ..adversarial import plumber as adv_plumber
 from ..codegen import cmaps as codegen_cmaps
 from ..corpus import cache_dir, load_set
-from ..stages import plumber_objects as _plumber_objects_stage  # noqa: F401  (loaded before the children fork)
+from ..stages import plumber_doc as _plumber_doc_stage  # noqa: F401  (loaded before the children fork)
+from ..stages import plumber_objects as _plumber_objects_stage  # noqa: F401
 from ..stages import plumber_tables as _plumber_tables_stage  # noqa: F401
 from ..stages import plumber_text as _plumber_text_stage  # noqa: F401
 from ..stages import trace_lines
@@ -45,7 +47,7 @@ from .interp import deeper_trace, entry_at
 MODULE = "plumber"
 #: Files of the quick set at most this large are included.
 QUICK_MAX_BYTES = 60_000
-STAGES = ("plumber_objects", "plumber_text", "plumber_tables")
+STAGES = ("plumber_objects", "plumber_text", "plumber_tables", "plumber_doc")
 MAX_PAGES = 20
 #: Extra frames below the stage body for the depth windows.
 DEPTH_OFFSETS = (1, 2)

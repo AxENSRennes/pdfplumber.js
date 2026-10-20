@@ -83,7 +83,7 @@ use pycompat::repr::str_repr;
 use pycompat::{exc, PyInt, PyResult, PyStr};
 
 use crate::obj::{Bbox, Obj, PyValue};
-use crate::page::{apply_crop_fn, Page, PageKind, _invert_box, _normalize_box};
+use crate::page::{_invert_box, _normalize_box, apply_crop_fn, Page, PageKind};
 use crate::pdf::PDF;
 use crate::utils::geometry;
 use crate::utils::pdfinternals::{decode_text, decode_text_value, TextArg};
@@ -862,7 +862,8 @@ impl PDFStructTree {
                 obj_tag = decode_name(&py_getitem(&self.role_map, &obj_tag)?)?;
             }
         }
-        let mut children = if py_in(obj, "K")? { resolve(&py_getitem(obj, "K")?)? } else { PDFObject::List(PDFList::default()) };
+        let mut children =
+            if py_in(obj, "K")? { resolve(&py_getitem(obj, "K")?)? } else { PDFObject::List(PDFList::default()) };
         if is_int(&children) {
             // ugh... isinstance...
             children = PDFObject::List(PDFList::new(vec![children]));
@@ -1231,11 +1232,7 @@ impl PDFStructTree {
 
     /// `self.pages[page_number]`
     fn page_of(&self, n: &PyInt) -> PyResult<Rc<Page>> {
-        self.pages
-            .iter()
-            .find(|(k, _)| k == n)
-            .map(|(_, p)| p.clone())
-            .ok_or_else(|| exc::KeyError(n.to_string()))
+        self.pages.iter().find(|(k, _)| k == n).map(|(_, p)| p.clone()).ok_or_else(|| exc::KeyError(n.to_string()))
     }
 
     // pdfplumber/structure.py:75 Findable.find_all

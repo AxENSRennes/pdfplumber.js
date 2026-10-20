@@ -122,7 +122,13 @@ fn stage_traces() {
         let Value::Str(expected) = &expected else { panic!("bad output") };
         let expected = expected.as_str().expect("ASCII");
         let stage = stages::lookup(what).expect("a stage");
-        let input = StageInput { pdf, password: &password, password_given, max_pages, oracle: stage.oracle_input.then_some(expected) };
+        let input = StageInput {
+            pdf,
+            password: &password,
+            password_given,
+            max_pages,
+            oracle: stage.oracle_input.then_some(expected),
+        };
         let run = stage.run.expect("an implemented stage");
         let mut out = Vec::new();
         match entry {
