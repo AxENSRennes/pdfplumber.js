@@ -280,6 +280,18 @@ impl PDFDocument {
         self.with_parser(|p| Ok(p.ext.file))
     }
 
+    /// `self._parser.fp.close()`: what pdfplumber's `PDF.close` does to
+    /// the file it opened from a path (`stream.close()`); a later read of
+    /// an object not cached yet raises the file's `ValueError`.
+    pub fn close_file(&self) -> PyResult<()> {
+        self.with_parser(|p| {
+            if let Some(fp) = p.fp.as_mut() {
+                fp.close();
+            }
+            Ok(())
+        })
+    }
+
     /// `self.xrefs`
     pub fn xrefs(&self) -> Vec<Rc<PDFBaseXRef>> {
         self.xrefs.borrow().clone()

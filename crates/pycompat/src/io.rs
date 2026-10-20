@@ -23,11 +23,34 @@ pub struct BytesIO {
     data: Rc<[u8]>,
     /// `self->pos`; never negative, may be past the end.
     pos: Pos,
+    /// Whether `close()` was called.
+    closed: bool,
 }
 
 impl BytesIO {
     pub fn new(data: Rc<[u8]>) -> BytesIO {
-        BytesIO { data, pos: 0 }
+        BytesIO { data, pos: 0, closed: false }
+    }
+
+    /// `close()`: every later operation that the reader checks with
+    /// [`Self::check_open`] raises.
+    pub fn close(&mut self) {
+        self.closed = true;
+    }
+
+    /// `ValueError` for operation `op` (`"seek"`, `"read"`, `"tell"`) on a
+    /// closed file, as an `io.BufferedReader` words it (the only file a
+    /// pdfplumber `PDF` closes is one it opened from a path:
+    /// `"seek of closed file"`, `"read of closed file"`, `"I/O operation
+    /// on closed file"` for the others).
+    pub fn check_open(&self, op: &str) -> PyResult<()> {
+        if !self.closed {
+            return Ok(());
+        }
+        Err(match op {
+            "seek" | "read" => exc::ValueError(format!("{op} of closed file")),
+            _ => exc::ValueError("I/O operation on closed file"),
+        })
     }
 
     /// The whole underlying buffer (`getvalue()`, without copying).
