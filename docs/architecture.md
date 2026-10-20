@@ -1377,6 +1377,20 @@ dégénérés, `cases_depth` pour chaque chemin récursif
   `ObjectsWriter`, `box_lines`. Chaque générateur et fonction des étapes
   Python prend son cadre, pour que pdfplumber s'exécute à la profondeur
   où Python l'exécute.
+- **Limite de la clé de contenu des `id()`** : deux boîtes de texte
+  identiques (même texte dessiné deux fois au même endroit, en gras
+  simulé) ont la même clé ; la base les suppose interchangeables, mais
+  l'analyse ne l'est pas tout à fait (l'ordre d'insertion du `Plane` et
+  la position dans la liste des boîtes départagent aussi). Sur `all`, un
+  fichier le montre, `pdfjs-issue19624-text.pdf` (page 2 : 55 clés
+  dupliquées, jusqu'à 31 copies) : Python y donne une trace différente à
+  chaque exécution (cinq exécutions, cinq traces : les adresses
+  changent), et le port, avec le rang des `id()` d'une trace, ne
+  reconstruit pas toujours les mêmes groupes (les objets sont identiques
+  sur trois tirages sur quatre, la ligne `ids` diffère). Le corriger
+  demande une clé qui distingue les doublons (un rang dans l'ordre brut
+  des caractères, invisible à travers pdfplumber), donc un changement de
+  l'étape Python et de tous ses caches.
 - **Corpus et données unitaires** : `oracle/adversarial/plumber.py` →
   `adv-plumber` (boîtes et rotations, géométrie aux bords des pages
   dérivées, chemins dégénérés et infinis, tirets et couleurs, images,
