@@ -311,6 +311,7 @@ fn scalar(obj: &PDFObject) -> Value {
         PDFObject::Literal(lit) => Value::Literal(NameValue::from(&lit.name())),
         PDFObject::Keyword(kwd) => Value::Keyword(kwd.name().to_vec()),
         PDFObject::Ref(r) => Value::Ref(r.objid().clone()),
+        PDFObject::Str(s) => Value::py_str(s),
         PDFObject::List(_) | PDFObject::Dict(_) | PDFObject::Stream(_) => unreachable!("a container"),
     }
 }

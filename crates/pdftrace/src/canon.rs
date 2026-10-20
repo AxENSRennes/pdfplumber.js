@@ -289,6 +289,7 @@ pub fn write_canon_obj(out: &mut String, obj: &PDFObject) {
             }
             PDFObject::Float(f) => out.push_str(&float_repr(f)),
             PDFObject::Bytes(b) => write_bytes(out, &b),
+            PDFObject::Str(s) => out.push_str(&s.json()),
             PDFObject::Literal(lit) => {
                 out.push('/');
                 match lit.name() {

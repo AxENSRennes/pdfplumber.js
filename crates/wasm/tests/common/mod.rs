@@ -91,6 +91,7 @@ pub fn pdf_view(o: &PDFObject) -> Js {
         PDFObject::Int(i) => int_view(i),
         PDFObject::Float(x) => Js::Num(*x),
         PDFObject::Bytes(b) => Js::Bytes(b.to_vec()),
+        PDFObject::Str(t) => Js::Str(t.to_utf16()),
         PDFObject::Literal(l) => Js::Lit(Box::new(match l.name() {
             LiteralName::Str(t) => s(t),
             LiteralName::Bytes(b) => Js::Bytes(b.to_vec()),

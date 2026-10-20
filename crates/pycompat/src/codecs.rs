@@ -102,7 +102,7 @@ mod tests {
     use super::*;
 
     fn msg(r: PyResult<PyStr>) -> String {
-        r.expect_err("an error").message
+        r.expect_err("an error").message.clone()
     }
 
     #[test]

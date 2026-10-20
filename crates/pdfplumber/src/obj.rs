@@ -581,6 +581,7 @@ impl PyValue {
             PDFObject::Int(i) => PyValue::Int(i),
             PDFObject::Float(x) => PyValue::float(x),
             PDFObject::Bytes(b) => PyValue::Bytes(b),
+            PDFObject::Str(s) => PyValue::Str(s),
             other => PyValue::Pdf(other),
         }
     }
