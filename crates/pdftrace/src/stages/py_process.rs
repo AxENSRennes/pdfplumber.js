@@ -30,7 +30,8 @@ use crate::value::Value;
 /// The call sites of the port whose first execution differs
 /// (`pycompat::specialize`), as `oracle/depth.py` (`CALL_SITES`) names
 /// them.
-pub const CALL_SITES: &[&CallSite] = &[&pdfminer::psparser::LITERAL_NAME_STR];
+pub const CALL_SITES: &[&CallSite] =
+    &[&pdfminer::psparser::LITERAL_NAME_STR, &pdfplumber::utils::pdfinternals::DECODE_TEXT_STR];
 
 /// A process state.
 #[derive(Clone, Debug, Default)]

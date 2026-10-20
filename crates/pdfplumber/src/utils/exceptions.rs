@@ -11,12 +11,11 @@
 //! wrapper (`exc` of `oracle/stages/plumber_objects.py`: `!PdfminerException("...")
 //! cause !PDFSyntaxError("...")`).
 //!
-//! Wave 4 (base): the interface. `MalformedPDFException(msg)` raised with a
-//! message (`_normalize_box`) is `PyErr::new(ExcKind::MalformedPDFException,
-//! msg)`; `resolve_all` (`pdfinternals.rs`) still builds its
-//! `MalformedPDFException(RecursionError)` without the cause (to switch to
-//! [`wrap`]: no trace changes, the cause is only written by the
-//! `plumber_*` stages).
+//! `MalformedPDFException(msg)` raised with a message (`_normalize_box`) is
+//! `PyErr::new(ExcKind::MalformedPDFException, msg)`; `resolve_all`
+//! (`pdfinternals.rs`) raises `MalformedPDFException(e)` with [`wrap`] (the
+//! cause is only written by the `plumber_*` stages: the traces of the
+//! earlier stages do not change).
 
 use pycompat::{ExcKind, PyErr};
 

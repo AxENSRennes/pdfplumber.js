@@ -85,8 +85,13 @@ def _call_sites() -> dict[str, tuple[Any, int, tuple]]:
     (``pdftrace::stages::py_process::CALL_SITES``): ``name -> (function,
     line of the call, arguments that run it)``."""
     from pdfminer.psparser import literal_name
+    from pdfplumber.utils.pdfinternals import decode_text
 
-    return {"psparser.literal_name str(x)": (literal_name, 121, (0,))}
+    return {
+        "psparser.literal_name str(x)": (literal_name, 121, (0,)),
+        # an item past PDFDocEncoding: the IndexError, then str(s)
+        "pdfinternals.decode_text str(s)": (decode_text, 21, ([256],)),
+    }
 
 
 def executed_call_sites() -> list[str]:

@@ -323,7 +323,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(prog="python -m oracle.verify", description=__doc__.split("\n\n")[0])
     ap.add_argument("--stage", required=True, choices=available_stages())
     src = ap.add_mutually_exclusive_group(required=True)
-    src.add_argument("--set", help=f"corpus set: {', '.join(SET_NAMES)}, adv-<stage>")
+    src.add_argument("--set", help=f"corpus set: {', '.join(SET_NAMES)}, adv-<name>")
     src.add_argument("--files", nargs="+", metavar="PDF", help="explicit PDF files")
     ap.add_argument("-j", "--jobs", type=int, default=DEFAULT_JOBS, help="parallel oracle processes and pdftrace batches (default 3)")
     ap.add_argument("--max-pages", type=int, default=DEFAULT_MAX_PAGES, help="pages per document for paged stages (0 = all; default 20)")
