@@ -234,7 +234,25 @@ Every other `pdfplumber.open` option is ported (`pages`, `laparams`,
 Inline images: pdfminer names an inline image `str(id(stream))`, a memory
 address; the port names it `inline-<k>` (`k`: its rank among the page's
 inline images). This name is the `name` of the image in `page.images` and,
-with `laparams`, of its figure.
+with `laparams`, of its figure. An image XObject that a PDF names
+`inline-0` gets the same name as the page's first inline image.
+
+Not modelled (the core raises `NotPorted` where Python would go on):
+
+- a `laparams` margin (`line_overlap`, `char_margin`, `line_margin`,
+  `word_margin`) that is not a number: Python stores any value and fails
+  at its first use in the layout analysis;
+- a `password` that is neither `null` nor a string;
+- `to_dict`/`to_csv` with an `object_types` entry that names a method
+  (`"extract_word"` gives `extract_words`): Python serializes the bound
+  method's `str()`.
+
+Not modelled either, without an error: after `close()`, a document opened
+from a path (`Source::Path` in Rust) can still be read, where Python
+raises `ValueError: seek of closed file` when an object not read before
+is needed; and the order Python gives a NaN coordinate in the sets of
+`cluster_objects` (words, lines, table edges) follows its memory address,
+which the port cannot reproduce (it puts NaN values last).
 
 ## Runtime Contract
 

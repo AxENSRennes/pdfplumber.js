@@ -28,7 +28,7 @@ use std::rc::Rc;
 use pdfminer::layout::{IdSource, LTChar, LTItem, LTPage, TextGroupElement, TextLineElement};
 use pdfplumber::obj::{Obj, PyValue};
 use pdfplumber::page::{Page, PlumberPayload};
-use pdfplumber::pdf::{IdsFactory, PDF};
+use pdfplumber::pdf::{IdsFactory, OpenOptions, Source, PDF};
 use pycompat::recursion::{eval_entry, leaf, py_frame};
 use pycompat::{PyInt, PyResult};
 
@@ -367,16 +367,14 @@ fn pdf_lines(lines: &mut Lines, pdf: &PDF) -> PyResult<()> {
     Ok(())
 }
 
-/// `_laparams_lines(path, password, max_pages, chars)`
-fn laparams_lines(
-    lines: &mut Lines,
-    input: &StageInput<'_>,
-    chars: &HashMap<i64, HashMap<String, usize>>,
-    oracle: &HashMap<i64, Vec<(String, u64)>>,
-) -> PyResult<()> {
-    let _gen = py_frame()?;
-    lines.push("laparams {}");
-    let registry: Rc<RefCell<HashMap<i64, Rc<RefCell<ContentIds>>>>> = Rc::default();
+/// The analyses' ids of the pages a `PDF` opens, by page number.
+type IdsRegistry = Rc<RefCell<HashMap<i64, Rc<RefCell<ContentIds>>>>>;
+
+/// An `IdsFactory` giving each page's analysis the ranks of the oracle's
+/// `ids` line of that page ([`ContentIds`]), and the registry where the
+/// stage finds them again.
+fn ids_factory(oracle: &HashMap<i64, Vec<(String, u64)>>) -> (IdsFactory, IdsRegistry) {
+    let registry: IdsRegistry = Rc::default();
     let factory: IdsFactory = {
         let registry = registry.clone();
         let oracle = oracle.clone();
@@ -387,6 +385,79 @@ fn laparams_lines(
             Box::new(SharedIds(ids)) as Box<dyn IdSource<P>>
         })
     };
+    (factory, registry)
+}
+
+/// `open_lines(path, options)` of `oracle/unit/plumber.py` (the `open`
+/// cases, replayed by `tests/plumber_unit.rs`): `pdfplumber.open(path,
+/// **options)`, then for each page its `initial_doctop`, its objects and,
+/// with `laparams`, the `id()` ranking of its analysis, with the oracle's
+/// ranks (`input.oracle`, the expected trace).
+pub fn open_trace(input: &StageInput<'_>, options: &Obj, out: &mut dyn Write) -> io::Result<()> {
+    let oracle = match input.oracle.map(oracle_ids).transpose() {
+        Ok(ids) => ids.unwrap_or_default(),
+        Err(e) => return Err(io::Error::new(io::ErrorKind::InvalidData, format!("the oracle's trace: {e}"))),
+    };
+    terminated(out, |lines: &mut Lines| {
+        let (factory, registry) = ids_factory(&oracle);
+        let mut o = OpenOptions::new();
+        for (k, v) in options.items() {
+            match k.as_str() {
+                Some("pages") => o.pages = Some(v.clone()),
+                Some("laparams") => o.laparams = Some(v.clone()),
+                Some("password") => o.password = Some(v.clone()),
+                Some("strict_metadata") => o.strict_metadata = v.truthy(),
+                Some("unicode_norm") => o.unicode_norm = Some(v.clone()),
+                Some("raise_unicode_errors") => o.raise_unicode_errors = v.truthy(),
+                other => panic!("an option of pdfplumber.open: {other:?}"),
+            }
+        }
+        o.ids = Some(factory);
+        let pdf = match PDF::open(Source::Path { data: Rc::from(input.pdf), path: pycompat::PyStr::new("") }, o) {
+            Ok(pdf) => pdf,
+            Err(e) => {
+                lines.push(format!("open {}", exc(&e)));
+                return Ok(());
+            }
+        };
+        let pages = match pdf.pages() {
+            Ok(pages) => pages,
+            Err(e) => {
+                lines.push(format!("pages {}", exc(&e)));
+                return Ok(());
+            }
+        };
+        for page in &pages {
+            lines.push(format!("page {} {}", page.page_number, canon(&to_value(&page.initial_doctop))));
+            let n = page.page_number.as_i64().expect("a page number");
+            // list(objects_lines(page)): the generator resumed from C
+            let ok = {
+                let _entry = eval_entry()?;
+                let _gen = py_frame()?;
+                objects_lines(lines, page, &mut ObjectsWriter::default(), None)
+            };
+            if pdf.core.laparams.is_some() && ok {
+                let layout = page.layout()?;
+                leaf(1)?;
+                let ids = registry.borrow().get(&n).cloned().unwrap_or_default();
+                let value = content_ids(&layout, &mut ids.borrow_mut());
+                lines.push(format!("ids {n} {}", canon(&value)));
+            }
+        }
+        Ok(())
+    })
+}
+
+/// `_laparams_lines(path, password, max_pages, chars)`
+fn laparams_lines(
+    lines: &mut Lines,
+    input: &StageInput<'_>,
+    chars: &HashMap<i64, HashMap<String, usize>>,
+    oracle: &HashMap<i64, Vec<(String, u64)>>,
+) -> PyResult<()> {
+    let _gen = py_frame()?;
+    lines.push("laparams {}");
+    let (factory, registry) = ids_factory(oracle);
     let pdf = match open_pdf(input, |o| {
         o.laparams = Some(PyValue::Dict(Obj::new()));
         o.ids = Some(factory);
@@ -474,7 +545,7 @@ mod tests {
 
     #[test]
     fn a_key_takes_its_ranks_in_order() {
-        let mut ids = ContentIds::new(&[("k".into(), 3), ("k".into(), 1)]);
+        let ids = ContentIds::new(&[("k".into(), 3), ("k".into(), 1)]);
         assert_eq!(ids.ranks["k"], [1, 3]);
         assert_eq!(ids.next, 4);
         assert_eq!(key_of("box", vec!["b".into(), "a".into()]), key_of("box", vec!["a".into(), "b".into()]));
