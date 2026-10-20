@@ -1,9 +1,13 @@
 //! Port of `pdfplumber/utils/pdfinternals.py` (partial).
 //!
-//! Ported: `decode_text`, `resolve`, `get_dict_type`, `resolve_all` (what
-//! `Page.__init__` reads its boxes through). Not ported yet:
-//! `resolve_and_decode` and `decode_psl_list` (metadata and structure
-//! tree, whose values are not PDF objects).
+//! Ported: `decode_text` of a `str` or `bytes`, `resolve`, `get_dict_type`,
+//! `resolve_all` (what `Page.__init__` reads its boxes through).
+//!
+//! Wave 4 (base): the interface of the rest, bodies `todo!()` (workstream
+//! PAGE, `docs/architecture.md`, "Vague 4"): `decode_text` of any value
+//! ([`decode_text_value`]: the structure tree decodes whatever `/ID`,
+//! `/T`, `/Lang`, `/Alt`, `/ActualText` resolve to), `resolve_and_decode`
+//! (metadata, `ncs` names) and `decode_psl_list`.
 //!
 //! `resolve_all` recurses as upstream does, one Python frame per level
 //! (and the generator expression's for a list), so a reference cycle ends
@@ -14,7 +18,9 @@ use pdfminer::pdftypes::{PDFDict, PDFList, PDFObject};
 use pdfminer::psparser::LiteralName;
 use pdfminer::utils::PDF_DOC_ENCODING;
 use pycompat::recursion::{eval_entry, py_frame};
-use pycompat::{ExcKind, PyErr, PyResult};
+use pycompat::{ExcKind, PyErr, PyResult, PyStr};
+
+use crate::obj::PyValue;
 
 /// `decode_text(s)` of a `str` or `bytes` (a literal's name).
 pub enum TextArg<'a> {
@@ -148,4 +154,38 @@ pub fn resolve_all(x: &PDFObject) -> PyResult<PDFObject> {
         }
         other => Ok(other.clone()),
     }
+}
+
+// pdfplumber/utils/pdfinternals.py:10 decode_text
+/// `decode_text(s)` of any value: a `bytes` starting with `\xfe\xff` as
+/// UTF-16BE; otherwise each item of `s` (characters of a `str`, ints of
+/// `bytes`, items of a `list`, keys of a `dict`...: `TypeError` for a value
+/// that is not iterable) through `PDFDocEncoding[ord(c) if isinstance(c,
+/// str) else c]` (`TypeError` for an index that is not an `int`), and on
+/// the first `IndexError` (an int past 255, or negative past -256) `str(s)`,
+/// which recurses into a nested value with C units: a call site of
+/// `pycompat::specialize` (its first execution in a process takes one unit
+/// more), to declare with `oracle/depth.py` `_call_sites` (which every
+/// oracle cache's fingerprint covers: add it before building caches) and
+/// `pdftrace::stages::py_process`.
+pub fn decode_text_value(s: &PyValue) -> PyResult<PyStr> {
+    let _ = s;
+    todo!("pdfplumber/utils/pdfinternals.py:10 decode_text")
+}
+
+// pdfplumber/utils/pdfinternals.py:24 resolve_and_decode
+/// Recursively resolve the metadata values: a reference resolved, a
+/// `list` element by element (`map` from C), a `PSLiteral` or `str`/`bytes`
+/// through `decode_text`, a `dict` value by value **in place** (Python
+/// mutates the PDF's dict and returns it: a dict reached twice is decoded
+/// twice), anything else as it is.
+pub fn resolve_and_decode(obj: &PyValue) -> PyResult<PyValue> {
+    let _ = obj;
+    todo!("pdfplumber/utils/pdfinternals.py:24 resolve_and_decode")
+}
+
+// pdfplumber/utils/pdfinternals.py:42 decode_psl_list
+pub fn decode_psl_list(list: &[PyValue]) -> PyResult<Vec<PyValue>> {
+    let _ = list;
+    todo!("pdfplumber/utils/pdfinternals.py:42 decode_psl_list")
 }

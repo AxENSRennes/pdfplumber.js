@@ -27,6 +27,11 @@ pub fn to_value(v: &PyValue) -> Value {
         PyValue::List(t) => Value::List(t.iter().map(to_value).collect()),
         PyValue::Dict(d) => obj_value(d),
         PyValue::Pdf(o) => Value::from(o),
+        // `Page{"page_number": n}` (oracle/stages/plumber_objects.py `Names`)
+        PyValue::Page(p) => Value::Named {
+            name: "Page".into(),
+            fields: vec![(Value::py_str(&pycompat::PyStr::from("page_number")), Value::Int(p.page_number().clone()))],
+        },
     }
 }
 

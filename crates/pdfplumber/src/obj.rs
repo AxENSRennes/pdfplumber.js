@@ -310,6 +310,51 @@ pub enum PyValue {
     /// (`PSLiteral`, `PSKeyword`, `PDFStream`, `PDFObjRef`, and the `list`
     /// and `dict` objects of a PDF structure, which keep their identity).
     Pdf(PDFObject),
+    /// A pdfplumber `Page` held as a value (see [`PageRef`]).
+    Page(PageRef),
+}
+
+/// A pdfplumber `Page` as a value: pdfplumber/page.py:273 `Page.annots`
+/// replaces the `/P` of each annotation's `data` by the page itself
+/// (`annot["P"] = self`). What a value sees of it: its type (`Page`), its
+/// `repr()`/`str()` (pdfplumber/page.py:636 `Page.__repr__`: `<Page:n>`),
+/// equality and hashing by identity (the default `__eq__`/`__hash__`); it
+/// is not iterable, not subscriptable, not ordered. A page makes one
+/// `PageRef` and hands out clones of it (`crate::page::Page::as_value`),
+/// so that the values of one page are the same object.
+#[derive(Clone)]
+pub struct PageRef(Rc<PageRefData>);
+
+struct PageRefData {
+    page_number: PyInt,
+}
+
+impl PageRef {
+    /// A new page object (a new identity).
+    pub fn new(page_number: PyInt) -> PageRef {
+        PageRef(Rc::new(PageRefData { page_number }))
+    }
+
+    /// `page.page_number`
+    pub fn page_number(&self) -> &PyInt {
+        &self.0.page_number
+    }
+
+    /// `a is b`
+    pub fn ptr_eq(&self, other: &PageRef) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+
+    /// `repr(page)`: `<Page:n>`
+    pub fn repr(&self) -> String {
+        format!("<Page:{}>", self.0.page_number)
+    }
+}
+
+impl std::fmt::Debug for PageRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.repr())
+    }
 }
 
 /// The value of a Python `float` object. A NaN carries its object's
@@ -583,6 +628,7 @@ impl PyValue {
                 PDFObject::Ref(_) => "PDFObjRef",
                 _ => self.as_python().expect("a Python value").type_name(),
             },
+            PyValue::Page(_) => "Page",
         }
     }
 
@@ -599,6 +645,7 @@ impl PyValue {
             PyValue::Dict(d) => !d.is_empty(),
             // names, keywords, streams and references are always true
             PyValue::Pdf(_) => self.as_python().is_none_or(|v| v.truthy()),
+            PyValue::Page(_) => true,
         }
     }
 
@@ -699,6 +746,7 @@ impl PyValue {
                 Ok(text) => out.push_str(&text),
                 Err(_) => out.push_str("<?>"),
             },
+            PyValue::Page(p) => out.push_str(&p.repr()),
         }
     }
 
@@ -744,6 +792,7 @@ impl PyValue {
             }
             (PyValue::Dict(a), PyValue::Dict(b)) => a.py_eq(b),
             (PyValue::Pdf(a), PyValue::Pdf(b)) => a == b,
+            (PyValue::Page(a), PyValue::Page(b)) => a.ptr_eq(b),
             _ => false,
         }
     }

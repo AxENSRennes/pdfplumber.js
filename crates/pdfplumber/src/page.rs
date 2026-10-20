@@ -1,40 +1,52 @@
-//! Port of `pdfplumber/page.py` (partial).
+//! Port of `pdfplumber/page.py`.
 //!
 //! Ported: `_normalize_box`, `_invert_box` and the box attributes that
 //! `Page.__init__` computes from the `PDFPage` ([`PageBoxes`]: `rotation`,
 //! `mediabox`, `cropbox`, `trimbox`, `bleedbox`, `artbox`, `bbox`,
-//! `initial_doctop`, and the `width`/`height` properties), and the device
+//! `initial_doctop`, and the `width`/`height` properties), the device
 //! `Page.layout` drives, `PDFPageAggregatorWithMarkedContent`
 //! ([`PDFPageAggregatorWithMarkedContent`], its methods' bodies
 //! [`marked_content`], the layout payload [`PlumberPayload`]; wave 3,
-//! `docs/architecture.md`, "Vague 3"). Not ported yet: the rest of `Page`
-//! (objects, layout, annotations, cropping) and `CroppedPage` (wave 4).
+//! `docs/architecture.md`, "Vague 3") and the body of `Page.layout`
+//! ([`page_layout`], moved here from `pdftrace` in wave 4).
+//!
+//! Wave 4 (base): the interface of [`Page`] (`Page`, `DerivedPage`,
+//! `CroppedPage`, `FilteredPage`), bodies `todo!()` (see the section
+//! "`Page`" below and `docs/architecture.md`, "Vague 4"). Out of scope:
+//! `Page.to_image` (pdfplumber/display.py: rendering with pypdfium2 and
+//! PIL).
 //!
 //! A box is a 4-tuple of the numbers the file holds (`int`, `float` or
 //! `bool`, which `numbers.Number` accepts), kept as [`PDFObject`]s so that
 //! an `int` stays an `int` and a `bool` a `bool`; the arithmetic on them is
 //! Python's ([`Num`]).
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use pdfminer::converter::{
     layout_analyzer, page_aggregator, InterpPayload, LayoutAnalyzer, PDFLayoutAnalyzer, PDFPageAggregator,
     PageAggregator,
 };
-use pdfminer::layout::{LAParams, LTPage, LTPayload};
+use pdfminer::layout::{LAParams, LTItem, LTPage, LTPayload};
 use pdfminer::pdfcolor::PDFColorSpace;
 use pdfminer::pdfdevice::{text_device, ObjSeq, PDFDevice, PDFDeviceAttrs, PDFTextDevice, PDFTextSeq};
 use pdfminer::pdffont::{FontName, PDFFont};
-use pdfminer::pdfinterp::{Color, PDFGraphicState, PDFResourceManager, PDFStackT, PDFTextState};
+use pdfminer::pdfinterp::{Color, PDFGraphicState, PDFPageInterpreter, PDFResourceManager, PDFStackT, PDFTextState};
 use pdfminer::pdfpage::PDFPage;
 use pdfminer::pdftypes::{PDFObject, PDFStream};
 use pdfminer::psparser::{LiteralName, PSLiteral};
 use pdfminer::utils::{Matrix, PathSegment};
 use pycompat::bytes_format::bytes_mod_int;
 use pycompat::recursion::{eval_entry, py_frame};
-use pycompat::{exc, ExcKind, Num, PyErr, PyInt, PyResult};
+use pycompat::{exc, ExcKind, Num, PyErr, PyInt, PyResult, PyStr};
 
+use crate::container::{Container, ContainerCache, Objects};
+use crate::obj::{bbox_from_value, Bbox, HashKey, Obj, PageRef, PyValue};
+use crate::pdf::PdfCore;
+use crate::table::{Table, TableFinder, TablePage};
 use crate::utils::pdfinternals::{decode_text, resolve_all, TextArg};
+use crate::utils::text::{Kwargs, RegexMatch, TextMap};
 
 /// `T_bbox`: four numbers.
 pub type BBox = [PDFObject; 4];
@@ -504,5 +516,532 @@ impl MarkedContent for PDFPageAggregatorWithMarkedContent {
 
     fn marked_mut(&mut self) -> &mut MarkedContentState {
         &mut self.marked
+    }
+}
+
+// ---------------------------------------------------------------------------
+// `Page.layout`'s driving (wave 3 code, moved from `pdftrace` in wave 4).
+
+// pdfplumber/page.py:256 Page.layout
+/// The body of `Page.layout`, on the document's resource manager, with
+/// the device `make` builds (pdfplumber's: [`PDFPageAggregatorWithMarkedContent::create`];
+/// the stages of `pdftrace` give subclasses that record the calls): one
+/// frame (the property's), `device = make()`, `PDFPageInterpreter(rsrcmgr,
+/// device)`, `interpreter.process_page(page)`. Returns the device, the
+/// interpreter (the `fonts` stage reads its `fontmap`, the `layout` stage
+/// its `inline_images`) and what `process_page` raised (unwrapped:
+/// [`Page::layout`] wraps it in `PdfminerException`).
+pub fn page_layout<D: PDFDevice + 'static>(
+    rsrcmgr: &Rc<PDFResourceManager>,
+    page: &PDFPage,
+    make: impl FnOnce() -> PyResult<D>,
+) -> PyResult<(Rc<RefCell<D>>, PDFPageInterpreter, Option<PyErr>)> {
+    let _frame = py_frame()?;
+    let device = Rc::new(RefCell::new(make()?));
+    let shared: Rc<RefCell<dyn PDFDevice>> = device.clone();
+    let mut interpreter = PDFPageInterpreter::new(rsrcmgr.clone(), shared)?;
+    let error = interpreter.process_page(page).err();
+    Ok((device, interpreter, error))
+}
+
+// ---------------------------------------------------------------------------
+// `Page`, `DerivedPage`, `CroppedPage`, `FilteredPage` (wave 4).
+//
+// Wave 4 (base): the interface, bodies `todo!()`; workstream PAGE, except
+// `structure_tree`, `annots`, `hyperlinks` (workstream DOC):
+// `docs/architecture.md`, "Vague 4".
+//
+// # Classes
+//
+// One struct for the four classes: [`Page`] holds the attributes every
+// page has (in `__init__`'s order) and [`PageKind`] says which class it is
+// and what a derived page adds (`parent_page`, `_crop_fn`, `filter_fn`).
+// Methods that a subclass overrides (`objects`) dispatch on the kind.
+// `is_original` is `matches!(kind, PageKind::Original)`.
+//
+// # Laziness and caching
+//
+// - `layout` (`_layout`), `objects` (`_objects`), the edges of
+//   `Container` are computed on first use and kept ([`PageCache`],
+//   `ContainerCache`); `close` and `flush_cache` drop them. A derived
+//   page computes its own (`DerivedPage.__init__` flushes
+//   `Container.cached_properties`) from its parent's `objects`.
+// - `get_textmap` is `lru_cache()(self._get_textmap)` (maxsize 128, keyed by
+//   the keyword arguments in the order given, after `tuplify_list_kwargs`;
+//   an unhashable value raises `TypeError` before anything is computed; a
+//   result is shared: `extract_text`, `search` and `extract_text_lines`
+//   with the same arguments reuse one `TextMap`).
+// - `dedupe_chars` returns a `FilteredPage` whose `_objects` is set at
+//   once (the parent's dict copied, `"char"` replaced).
+//
+// # Recursion (frame-counting plan)
+//
+// pdfplumber's calls, each a Python frame unless said otherwise (counted
+// with `pycompat::recursion`, measured with `oracle/depth_probe.py` where
+// the standard library is involved):
+// - `Page(...)`: class call, `__init__`, `get_attr` (nested) and
+//   `resolve_all` for each box (`PageBoxes::new` already counts them),
+//   `_normalize_box`/`_invert_box`, then `lru_cache()` (`functools.lru_cache`,
+//   `decorating_function`, `update_wrapper`: Python frames of the standard
+//   library, to measure);
+// - `objects` -> `parse_objects` -> `layout` (see [`page_layout`]) ->
+//   `iter_layout_objects` (a generator: `yield from` itself for each
+//   `LTContainer` level, so the chain of suspended generators is resumed at
+//   each object: one frame per level of figure nesting) -> `process_object`
+//   -> `re.sub` (Python frames: `re.sub`, `re._compile`), `dict(filter(None,
+//   map(process_attr, ...)))` (each `process_attr` called from C:
+//   `eval_entry`), `resolve_all` (recursive, `pdfinternals.rs`: a value
+//   nested deep, an `mcid` from a property list or an image's
+//   `colorspace`, raises `RecursionError` there, unwrapped),
+//   `resolve_and_decode`, `get_text` (`LTChar.get_text`, or
+//   `LTTextContainer.get_text`: `"".join` of a generator over the
+//   children, recursive), `normalize_unicode` (C), `map(self.point2coord,
+//   ...)` (each call from C);
+// - text and tables: `utils/text.rs`, `table.rs`, `utils/geometry.rs`,
+//   `utils/clustering.rs` (wave 1) count no frames: they never recurse,
+//   and pdfplumber calls them from a user's level; their only
+//   depth-dependent behavior is C recursion inside values (`==`, `<`,
+//   `hash`, `repr` of nested `tuple`/`list` values: an `mcid` list nested
+//   10^4 deep compared by `extract_words(extra_attrs=["mcid"])` or
+//   `dedupe_chars(extra_attrs=("mcid",))`), which `obj.rs` does not count
+//   yet: to add (C units per level, as `PDFObject::repr` counts them) with
+//   cases of `adv-plumber` at the limit;
+// - `annots` -> `resolve_all(self.page_obj.annots)` -> `parse` (from C, a
+//   `map`), `rotate_point`, `_normalize_box`, `_invert_box`; the
+//   `warnings.warn` of `raise_unicode_errors=False` runs Python frames of
+//   `warnings` (`_showwarnmsg`, `_formatwarnmsg`...: to measure);
+// - `to_json`/`to_csv`: `crate::container`, `crate::convert`.
+// `decode_text` of a `str` or `bytes` (`begin_tag`) is counted
+// (`pdfinternals.rs`).
+
+/// The class of a page and what a derived page adds.
+pub enum PageKind {
+    /// pdfplumber/page.py:186 `Page`
+    Original,
+    /// pdfplumber/page.py:677 `CroppedPage`: `crop_bbox` as given (or
+    /// offset by the parent's origin when `relative`), `_crop_fn` the
+    /// function given.
+    Cropped { parent: Rc<Page>, crop_bbox: PyValue, crop_fn: CropFn },
+    /// pdfplumber/page.py:717 `FilteredPage`
+    Filtered { parent: Rc<Page>, filter_fn: FilterFn },
+}
+
+/// The `crop_fn` of a `CroppedPage` (`crop` and `within_bbox`/
+/// `outside_bbox`): `utils.crop_to_bbox`, `utils.within_bbox`,
+/// `utils.outside_bbox` (`crate::utils::geometry`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CropFn {
+    CropToBbox,
+    WithinBbox,
+    OutsideBbox,
+}
+
+/// `test_function` of `Page.filter`: called on each object (from C:
+/// `filter()`), its result taken for its truthiness. The JavaScript
+/// boundary evaluates a JavaScript function on the objects already made
+/// and gives a mask (`docs/architecture.md`, "Frontière JavaScript").
+pub type FilterFn = Rc<dyn Fn(&Obj) -> PyResult<PyValue>>;
+
+/// The `lru_cache` of `get_textmap`: the text maps by keyword arguments
+/// (in the order given, values after `tuplify_list_kwargs`), at most 128,
+/// least recently used dropped first.
+#[derive(Default)]
+pub struct TextMapCache {
+    pub entries: Vec<(TextMapKey, Rc<TextMap>)>,
+}
+
+/// The key of a [`TextMapCache`] entry: the keyword arguments, in order.
+pub type TextMapKey = Vec<(PyStr, HashKey)>;
+
+/// The cached properties of a page besides `ContainerCache`.
+#[derive(Default)]
+pub struct PageCache {
+    /// `_layout`
+    pub layout: Option<Rc<LTPage<PlumberPayload>>>,
+    /// `_objects`
+    pub objects: Option<Rc<Objects>>,
+    /// `get_textmap`'s cache
+    pub textmaps: TextMapCache,
+}
+
+/// pdfplumber/page.py:186 `Page` (and its subclasses, [`PageKind`]).
+pub struct Page {
+    /// `self.pdf`
+    pub pdf: Rc<PdfCore>,
+    /// `self.root_page`: `None` for an original page (itself).
+    pub root_page: Option<Rc<Page>>,
+    /// `self.page_obj`
+    pub page_obj: Rc<PDFPage>,
+    /// `self.page_number`
+    pub page_number: PyInt,
+    /// `self.initial_doctop`: the sum of the heights of the pages before
+    /// it (`PDF.pages`), a number.
+    pub initial_doctop: PyValue,
+    /// `self.rotation`
+    pub rotation: PyValue,
+    /// `self.mediabox`, `self.cropbox`: tuples of four numbers.
+    pub mediabox: PyValue,
+    pub cropbox: PyValue,
+    /// `self.trimbox`, `self.bleedbox`, `self.artbox`: set only when the
+    /// page has the box (`hasattr`).
+    pub trimbox: Option<PyValue>,
+    pub bleedbox: Option<PyValue>,
+    pub artbox: Option<PyValue>,
+    /// `self.bbox`: the mediabox, or the crop box as given (a `tuple` or a
+    /// `list`: messages print it).
+    pub bbox: PyValue,
+    pub kind: PageKind,
+    /// This page as a value ([`PageRef`]: `annot["data"]["P"]`).
+    value: PageRef,
+    cache: RefCell<PageCache>,
+    container: RefCell<ContainerCache>,
+}
+
+// pdfplumber/page.py:44 ALL_ATTRS
+/// The attributes of a layout object that `process_object` keeps (a
+/// `set`: membership only).
+pub const ALL_ATTRS: [&str; 27] = [
+    "adv",
+    "height",
+    "linewidth",
+    "pts",
+    "size",
+    "srcsize",
+    "width",
+    "x0",
+    "x1",
+    "y0",
+    "y1",
+    "bits",
+    "matrix",
+    "upright",
+    "fontname",
+    "text",
+    "imagemask",
+    "colorspace",
+    "evenodd",
+    "fill",
+    "non_stroking_color",
+    "stroke",
+    "stroking_color",
+    "stream",
+    "name",
+    "mcid",
+    "tag",
+];
+
+// pdfplumber/page.py:83 CP936_FONTNAMES
+pub const CP936_FONTNAMES: [(&[u8], &str); 5] = [
+    (b"\xcb\xce\xcc\xe5", "SimSun,Regular"),
+    (b"\xba\xda\xcc\xe5", "SimHei,Regular"),
+    (b"\xbf\xac\xcc\xe5_GB2312", "SimKai,Regular"),
+    (b"\xb7\xc2\xcb\xce_GB2312", "SimFang,Regular"),
+    (b"\xc1\xa5\xca\xe9", "SimLi,Regular"),
+];
+
+// pdfplumber/page.py:92 fix_fontname_bytes
+pub fn fix_fontname_bytes(fontname: &[u8]) -> PyResult<PyStr> {
+    let _ = fontname;
+    todo!("pdfplumber/page.py:92 fix_fontname_bytes")
+}
+
+// pdfplumber/page.py:103 tuplify_list_kwargs
+/// A `list` value becomes a `tuple` (top level only).
+pub fn tuplify_list_kwargs(kwargs: &Kwargs) -> PyResult<Kwargs> {
+    let _ = kwargs;
+    todo!("pdfplumber/page.py:103 tuplify_list_kwargs")
+}
+
+// pdfplumber/page.py:657 test_proposed_bbox
+/// `ValueError` for a box of zero area, outside the parent's box, or not
+/// fully within it (each message prints both boxes as given).
+pub fn test_proposed_bbox(bbox: &PyValue, parent_bbox: &PyValue) -> PyResult<()> {
+    let _ = (bbox, parent_bbox);
+    todo!("pdfplumber/page.py:657 test_proposed_bbox")
+}
+
+/// The keyword arguments of `Page.search` besides the text map's.
+#[derive(Clone, Copy, Debug)]
+pub struct SearchArgs {
+    pub main_group: usize,
+    pub return_chars: bool,
+    pub return_groups: bool,
+}
+
+impl Page {
+    // pdfplumber/page.py:191 Page.__init__
+    /// `Page(pdf, page_obj, page_number=page_number,
+    /// initial_doctop=initial_doctop)`: the class call, `__init__`.
+    pub fn new(pdf: Rc<PdfCore>, page_obj: Rc<PDFPage>, page_number: PyInt, initial_doctop: PyValue) -> PyResult<Page> {
+        let _ = (pdf, page_obj, page_number, initial_doctop);
+        todo!("pdfplumber/page.py:191 Page.__init__ (PageBoxes::new)")
+    }
+
+    /// This page as a value (the same object each time).
+    pub fn as_value(&self) -> PageRef {
+        self.value.clone()
+    }
+
+    // pdfplumber/page.py:235 Page.close
+    pub fn close(&self) {
+        todo!("pdfplumber/page.py:235 Page.close")
+    }
+
+    // pdfplumber/page.py:240 Page.width
+    pub fn width(&self) -> PyResult<PyValue> {
+        todo!("pdfplumber/page.py:240 Page.width")
+    }
+
+    // pdfplumber/page.py:244 Page.height
+    pub fn height(&self) -> PyResult<PyValue> {
+        todo!("pdfplumber/page.py:244 Page.height")
+    }
+
+    // pdfplumber/page.py:248 Page.structure_tree
+    /// Workstream DOC (`crate::structure`): the `to_dict()` of each element
+    /// of `PDFStructTree(self.pdf, self)`, `[]` without a structure tree.
+    pub fn structure_tree(self: &Rc<Self>) -> PyResult<Vec<PyValue>> {
+        todo!("pdfplumber/page.py:248 Page.structure_tree")
+    }
+
+    // pdfplumber/page.py:256 Page.layout
+    /// The page's `LTPage` (analyzed when the `PDF` has `laparams`, with
+    /// the `IdSource` of [`PdfCore::ids`]), cached; `PdfminerException(e)`
+    /// when the interpretation raises (nothing cached). See [`page_layout`].
+    pub fn layout(&self) -> PyResult<Rc<LTPage<PlumberPayload>>> {
+        todo!("pdfplumber/page.py:256 Page.layout")
+    }
+
+    // pdfplumber/page.py:273 Page.annots
+    /// Workstream DOC. The annotations of the page (`resolve_all` of
+    /// `/Annots`), each parsed (`rotate_point`, `parse`, nested): its
+    /// geometry, `uri`/`title`/`contents` decoded (UTF-8, then UTF-16; with
+    /// `raise_unicode_errors` false, a `warnings.warn` and the bytes kept),
+    /// and `data`, the annotation's dict as a [`PyValue::Dict`] whose `P`,
+    /// when present, is this page ([`Page::as_value`]); a `CroppedPage`
+    /// crops them with its `_crop_fn`.
+    pub fn annots(&self) -> PyResult<Vec<Obj>> {
+        todo!("pdfplumber/page.py:273 Page.annots")
+    }
+
+    // pdfplumber/page.py:339 Page.hyperlinks
+    /// Workstream DOC: the annotations whose `uri` is not `None`
+    /// (`self.annots` computed again).
+    pub fn hyperlinks(&self) -> PyResult<Vec<Obj>> {
+        todo!("pdfplumber/page.py:339 Page.hyperlinks")
+    }
+
+    // pdfplumber/page.py:343 Page.objects
+    // pdfplumber/page.py:708 CroppedPage.objects
+    // pdfplumber/page.py:724 FilteredPage.objects
+    /// The objects by kind, cached: `parse_objects` for an original page,
+    /// the parent's through `_crop_fn` or `filter_fn` for a derived one.
+    pub fn objects(&self) -> PyResult<Rc<Objects>> {
+        todo!("pdfplumber/page.py:343 Page.objects")
+    }
+
+    // pdfplumber/page.py:349 Page.point2coord
+    pub fn point2coord(&self, pt: &PyValue) -> PyResult<PyValue> {
+        let _ = pt;
+        todo!("pdfplumber/page.py:349 Page.point2coord")
+    }
+
+    // pdfplumber/page.py:353 Page.process_object
+    /// The dict of a layout object: the attributes of `ALL_ATTRS` in the
+    /// order of its `__dict__` (through `resolve_all`), `object_type` (the
+    /// class name without `LT`, lowercased), `page_number`, `ncs`/`scs`,
+    /// `text` (`unicode_norm`), the colors of a char's graphic state,
+    /// `fontname` bytes fixed, a curve's `pts`, `path`, `dash`, then `top`,
+    /// `bottom`, `doctop`, and `x0`/`x1` shifted by a mediabox that does
+    /// not start at 0. Inline image names are `inline-<k>`
+    /// (`docs/architecture.md`, "Vague 3").
+    pub fn process_object(&self, obj: &LTItem<PlumberPayload>) -> PyResult<Obj> {
+        let _ = obj;
+        todo!("pdfplumber/page.py:353 Page.process_object")
+    }
+
+    // pdfplumber/page.py:427 Page.iter_layout_objects
+    /// The objects of `layout_objects` and, recursively, of their
+    /// children (a container itself only with `laparams`), each through
+    /// `process_object`, in the generator's order; `visit` gets each one
+    /// (the generator's consumer, `parse_objects`).
+    pub fn iter_layout_objects(
+        &self,
+        layout_objects: &[LTItem<PlumberPayload>],
+        visit: &mut dyn FnMut(Obj) -> PyResult<()>,
+    ) -> PyResult<()> {
+        let _ = (layout_objects, visit);
+        todo!("pdfplumber/page.py:427 Page.iter_layout_objects")
+    }
+
+    // pdfplumber/page.py:441 Page.parse_objects
+    /// The objects of the layout by kind (`anno` left out).
+    pub fn parse_objects(&self) -> PyResult<Objects> {
+        todo!("pdfplumber/page.py:441 Page.parse_objects")
+    }
+
+    // pdfplumber/page.py:452 Page.debug_tablefinder
+    pub fn debug_tablefinder(&self, table_settings: Option<&Kwargs>) -> PyResult<TableFinder> {
+        let _ = table_settings;
+        todo!("pdfplumber/page.py:452 Page.debug_tablefinder")
+    }
+
+    // pdfplumber/page.py:458 Page.find_tables
+    pub fn find_tables(&self, table_settings: Option<&Kwargs>) -> PyResult<Vec<Table>> {
+        let _ = table_settings;
+        todo!("pdfplumber/page.py:458 Page.find_tables")
+    }
+
+    // pdfplumber/page.py:464 Page.find_table
+    /// The largest table (most cells, then top, then left: `sorter`,
+    /// nested), or `None`.
+    pub fn find_table(&self, table_settings: Option<&Kwargs>) -> PyResult<Option<Table>> {
+        let _ = table_settings;
+        todo!("pdfplumber/page.py:464 Page.find_table")
+    }
+
+    // pdfplumber/page.py:481 Page.extract_tables
+    pub fn extract_tables(&self, table_settings: Option<&Kwargs>) -> PyResult<Vec<Vec<Vec<Option<PyStr>>>>> {
+        let _ = table_settings;
+        todo!("pdfplumber/page.py:481 Page.extract_tables")
+    }
+
+    // pdfplumber/page.py:488 Page.extract_table
+    pub fn extract_table(&self, table_settings: Option<&Kwargs>) -> PyResult<Option<Vec<Vec<Option<PyStr>>>>> {
+        let _ = table_settings;
+        todo!("pdfplumber/page.py:488 Page.extract_table")
+    }
+
+    // pdfplumber/page.py:498 Page._get_textmap
+    /// `get_textmap(**kwargs)`: the cached text map of the chars
+    /// (`TextMapCache`), `layout_bbox`, `layout_width`, `layout_height`
+    /// defaulting to the page's.
+    pub fn get_textmap(&self, kwargs: &Kwargs) -> PyResult<Rc<TextMap>> {
+        let _ = kwargs;
+        todo!("pdfplumber/page.py:498 Page._get_textmap (and its lru_cache)")
+    }
+
+    // pdfplumber/page.py:509 Page.search
+    /// `page.search(pattern, regex, case, main_group, return_chars,
+    /// return_groups, **kwargs)`: the matches of `pattern` are the
+    /// caller's (`matches` gets `as_string` of the text map and returns
+    /// the spans of each match, as Python's `re.finditer` of
+    /// `re.compile(pattern if regex else re.escape(pattern), re.I if case
+    /// is False else 0)` would: `docs/architecture.md`, "Frontière
+    /// JavaScript").
+    pub fn search(
+        &self,
+        matches: &mut dyn FnMut(&PyStr) -> PyResult<Vec<RegexMatch>>,
+        args: SearchArgs,
+        kwargs: &Kwargs,
+    ) -> PyResult<Vec<Obj>> {
+        let _ = (matches, args, kwargs);
+        todo!("pdfplumber/page.py:509 Page.search")
+    }
+
+    // pdfplumber/page.py:529 Page.extract_text
+    pub fn extract_text(&self, kwargs: &Kwargs) -> PyResult<PyStr> {
+        let _ = kwargs;
+        todo!("pdfplumber/page.py:529 Page.extract_text")
+    }
+
+    // pdfplumber/page.py:532 Page.extract_text_simple
+    pub fn extract_text_simple(&self, kwargs: &Kwargs) -> PyResult<PyStr> {
+        let _ = kwargs;
+        todo!("pdfplumber/page.py:532 Page.extract_text_simple")
+    }
+
+    // pdfplumber/page.py:535 Page.extract_words
+    pub fn extract_words(&self, kwargs: &Kwargs) -> PyResult<Vec<Obj>> {
+        let _ = kwargs;
+        todo!("pdfplumber/page.py:535 Page.extract_words")
+    }
+
+    // pdfplumber/page.py:538 Page.extract_text_lines
+    pub fn extract_text_lines(&self, strip: bool, return_chars: bool, kwargs: &Kwargs) -> PyResult<Vec<Obj>> {
+        let _ = (strip, return_chars, kwargs);
+        todo!("pdfplumber/page.py:538 Page.extract_text_lines")
+    }
+
+    // pdfplumber/page.py:545 Page.crop
+    // pdfplumber/page.py:550 Page.within_bbox
+    // pdfplumber/page.py:560 Page.outside_bbox
+    /// `page.crop(bbox, relative, strict)` (`CropFn::CropToBbox`),
+    /// `within_bbox` (`WithinBbox`), `outside_bbox` (`OutsideBbox`): a
+    /// `CroppedPage` (pdfplumber/page.py:678 `CroppedPage.__init__`, then
+    /// :643 `DerivedPage.__init__`). `bbox` as given (any value: it is
+    /// unpacked, tested, printed).
+    pub fn crop(self: &Rc<Self>, bbox: PyValue, crop_fn: CropFn, relative: bool, strict: bool) -> PyResult<Rc<Page>> {
+        let _ = (bbox, crop_fn, relative, strict);
+        todo!("pdfplumber/page.py:545 Page.crop, :678 CroppedPage.__init__")
+    }
+
+    // pdfplumber/page.py:570 Page.filter
+    /// A `FilteredPage` (pdfplumber/page.py:718 `FilteredPage.__init__`).
+    pub fn filter(self: &Rc<Self>, test_function: FilterFn) -> PyResult<Rc<Page>> {
+        let _ = test_function;
+        todo!("pdfplumber/page.py:570 Page.filter, :718 FilteredPage.__init__")
+    }
+
+    // pdfplumber/page.py:573 Page.dedupe_chars
+    /// A `FilteredPage` whose objects are this page's with the chars of
+    /// `utils.dedupe_chars(self.chars, **kwargs)`, computed now.
+    pub fn dedupe_chars(self: &Rc<Self>, kwargs: &Kwargs) -> PyResult<Rc<Page>> {
+        let _ = kwargs;
+        todo!("pdfplumber/page.py:573 Page.dedupe_chars")
+    }
+
+    // pdfplumber/page.py:636 Page.__repr__
+    /// `<Page:n>` (every kind of page).
+    pub fn repr(&self) -> String {
+        self.value.repr()
+    }
+}
+
+impl Container for Page {
+    fn pages(&self) -> PyResult<Option<Vec<Rc<Page>>>> {
+        Ok(None)
+    }
+
+    fn objects(&self) -> PyResult<Rc<Objects>> {
+        Page::objects(self)
+    }
+
+    // pdfplumber/page.py:617 Page.to_dict
+    fn to_dict(&self, object_types: Option<&[PyStr]>) -> PyResult<Obj> {
+        let _ = object_types;
+        todo!("pdfplumber/page.py:617 Page.to_dict")
+    }
+
+    fn container_cache(&self) -> &RefCell<ContainerCache> {
+        &self.container
+    }
+
+    fn attribute(&self, name: &PyStr) -> PyResult<PyValue> {
+        let _ = name;
+        todo!("getattr(page, name) for pdfplumber/page.py:617 Page.to_dict")
+    }
+
+    fn flush_cache(&self, properties: Option<&[&str]>) {
+        let _ = (properties, &self.cache);
+        todo!("pdfplumber/container.py:28 Container.flush_cache (Page: + _layout)")
+    }
+}
+
+impl TablePage for Page {
+    fn chars(&self) -> PyResult<Vec<Obj>> {
+        Container::chars(self)
+    }
+
+    fn edges(&self) -> PyResult<Vec<Obj>> {
+        Container::edges(self).map(|e| e.to_vec())
+    }
+
+    fn bbox(&self) -> PyResult<Bbox> {
+        bbox_from_value(&self.bbox)
+    }
+
+    fn extract_words(&self, kwargs: &Kwargs) -> PyResult<Vec<Obj>> {
+        Page::extract_words(self, kwargs)
     }
 }

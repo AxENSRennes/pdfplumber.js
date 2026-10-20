@@ -186,6 +186,14 @@ pub fn write_value<W: Writer + ?Sized>(w: &mut W, v: &PyValue) -> PyResult<()> {
                 }
                 PyValue::Dict(d) => push_obj(w, &mut stack, d),
                 PyValue::Pdf(o) => stack.push(Work::Pdf(o.clone())),
+                // a `Page` (`annot["data"]["P"]`): `{"page_number": n}`
+                // until the JavaScript page API gives pages a value of
+                // their own (wave 4 join)
+                PyValue::Page(p) => {
+                    w.dict(1);
+                    w.str("page_number");
+                    w.int(p.page_number());
+                }
             },
             Work::Pdf(o) => match o {
                 PDFObject::Null => w.none(),

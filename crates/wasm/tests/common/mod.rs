@@ -79,6 +79,7 @@ pub fn js_view(v: &PyValue) -> Js {
         PyValue::List(items) | PyValue::Tuple(items) => Js::Arr(items.iter().map(js_view).collect()),
         PyValue::Dict(d) => Js::Obj(d.items().iter().map(|(k, v)| (k.to_utf16(), js_view(v))).collect()),
         PyValue::Pdf(o) => pdf_view(o),
+        PyValue::Page(p) => Js::Obj(vec![("page_number".encode_utf16().collect(), int_view(p.page_number()))]),
     }
 }
 

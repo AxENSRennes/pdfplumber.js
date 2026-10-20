@@ -39,8 +39,8 @@ directions that ``validate_directions`` prints, whose order depends on
 (``VALID_DIRS_REPR``, the port's).
 
 Inline images: their ``name`` (an image's, and with ``laparams`` its
-figure's) is ``str(id(stream))`` (pdfminer/pdfinterp.py:1309
-``PDFPageInterpreter.do_EI``), an address; ``Names`` writes such a name
+figure's) is ``str(id(stream))``
+(pdfminer/pdfinterp.py:1309 ``PDFPageInterpreter.do_EI``), an address; ``Names`` writes such a name
 ``inline{"n": k}``, ``k`` numbering the distinct inline names of the page
 in the order the lines first write them (the port names them
 ``inline-<j>``, ``docs/architecture.md``, "Vague 3"). A value that is a
@@ -48,7 +48,9 @@ pdfplumber ``Page`` (``annot["P"]``, which ``Page.annots`` replaces by the
 page itself) is written ``Page{"page_number": n}``.
 
 Objects (``Objects.write``): for each kind of ``page.objects``, in the
-dict's order, each object as the tuple of its values; a ``keys`` line gives
+dict's order, each object as the tuple of its values (a char of the
+``laparams`` variant by reference, ``lchars``: the analysis reorders the
+same chars); a ``keys`` line gives
 the attribute names before the first object of a kind and again whenever
 they change (``mcid``/``tag`` are not on every object).
 
@@ -98,6 +100,11 @@ Lines::
     kinds <[kind, ...]>                  the keys of page.objects
     keys <kind> <[attr, ...]>
     obj <kind> <i> <(value, ...)>
+    lchars <[j | None, ...]>             laparams only, after the chars: for each char of
+                                         page.objects["char"], the index j of the first char
+                                         of the same page in the first opening with the same
+                                         keys and values (same canonical texts), whose line
+                                         is then left out; None for a char written in full
     annots <exc> | annots <n>            page.annots, then each:
     annot <i> <dict>
     hyperlinks <exc> | hyperlinks <n>    page.hyperlinks, then each:
@@ -152,8 +159,8 @@ def open_pdf(path: str, password: str | None, max_pages: int, **options: Any) ->
     return pdfplumber.open(path, pages=pages, password=password, **options)
 
 
-#: ``str(valid_dirs)`` in the messages of pdfplumber/utils/text.py:132
-#: ``validate_directions``: a ``set`` of ``str``, whose order changes with
+#: ``str(valid_dirs)`` in the messages of
+#: pdfplumber/utils/text.py:78 ``validate_directions``: a ``set`` of ``str``, whose order changes with
 #: ``PYTHONHASHSEED``; written in the order of ``POSITION_KEYS``, as the port
 #: prints it (``oracle/unit/_plumber_ops.py``).
 VALID_DIRS_REPR = "{'ttb', 'btt', 'ltr', 'rtl'}"
@@ -223,23 +230,44 @@ class Names:
 
 
 class Objects:
-    """The ``kinds``/``keys``/``obj`` lines of a page's objects."""
+    """The ``kinds``/``keys``/``obj`` (and ``lchars``) lines of a page's
+    objects. ``chars`` collects, for each char written, the canonical text
+    of its ``keys`` line and of its values (``char_texts``): the char
+    index of the page, which the ``laparams`` variant refers to."""
 
     def __init__(self, names: Names) -> None:
         self.names = names
         self.keys: dict[str, list[str]] = {}
+        #: canonical text of a char (its keys and values) -> its first index
+        self.chars: dict[str, int] = {}
 
-    def write(self, objects: dict[str, list[dict[str, Any]]], label: str = "") -> Iterator[str]:
+    def write(self, objects: dict[str, list[dict[str, Any]]], refer: dict[str, int] | None = None) -> Iterator[str]:
+        """The lines of ``objects``; with ``refer`` (the ``chars`` of the
+        default variant's page), the chars found there are written as their
+        index there (an ``lchars`` line after the others of the kind)."""
         self.names.learn(objects)
-        yield label + "kinds " + canon(list(objects.keys()))
+        yield "kinds " + canon(list(objects.keys()))
         for kind, objs in objects.items():
+            refs: list[int | None] = []
             for i, o in enumerate(objs):
                 o = self.names.obj(o)
                 keys = list(o.keys())
+                values = canon(tuple(o.values()))
+                if kind == "char":
+                    text = canon(keys) + " " + values
+                    if refer is not None:
+                        j = refer.get(text)
+                        refs.append(j)
+                        if j is not None:
+                            continue
+                    else:
+                        self.chars.setdefault(text, i)
                 if self.keys.get(kind) != keys:
                     self.keys[kind] = keys
-                    yield label + "keys " + canon(kind) + " " + canon(keys)
-                yield label + "obj " + canon(kind) + " " + str(i) + " " + canon(tuple(o.values()))
+                    yield "keys " + canon(kind) + " " + canon(keys)
+                yield "obj " + canon(kind) + " " + str(i) + " " + values
+            if refer is not None and kind == "char":
+                yield "lchars " + canon(refs)
 
 
 def boxes(page: Page) -> Iterator[str]:
@@ -318,21 +346,21 @@ def annots_lines(label: str, item: str, get: Any, names: Names) -> Iterator[str]
         yield f"{item} {i} " + canon(annot_value(a, names))
 
 
-def objects_lines(page: Page) -> Iterator[str]:
+def objects_lines(page: Page, writer: Objects | None = None, refer: dict[str, int] | None = None) -> Iterator[str]:
     """The ``objects`` or ``kinds``/``keys``/``obj`` lines of a page."""
-    names = Names()
+    writer = writer or Objects(Names())
     try:
         objs = page.objects
     except Exception as e:
         yield "objects " + exc(e)
         return
-    yield from Objects(names).write(objs)
+    yield from writer.write(objs, refer)
 
 
-def page_lines(page: Page) -> Iterator[str]:
+def page_lines(page: Page, writer: Objects | None = None) -> Iterator[str]:
     yield f"page {page.page_number}"
     yield from boxes(page)
-    yield from objects_lines(page)
+    yield from objects_lines(page, writer)
     names = Names()
     yield from annots_lines("annots", "annot", lambda: page.annots, names)
     yield from annots_lines("hyperlinks", "hyperlink", lambda: page.hyperlinks, names)
@@ -355,7 +383,7 @@ def _pdf_lines(pdf: pdfplumber.PDF) -> Iterator[str]:
             yield f"pdf {what} {len(values)} " + digest([annot_value(a, names) for a in values])
 
 
-def _laparams_lines(path: str, password: str | None, max_pages: int) -> Iterator[str]:
+def _laparams_lines(path: str, password: str | None, max_pages: int, chars: dict[Any, dict[str, int]]) -> Iterator[str]:
     yield "laparams {}"
     try:
         pdf = open_pdf(path, password, max_pages, laparams={})
@@ -369,7 +397,7 @@ def _laparams_lines(path: str, password: str | None, max_pages: int) -> Iterator
         return
     for page in pages:
         yield f"page {page.page_number}"
-        lines = list(objects_lines(page))
+        lines = list(objects_lines(page, refer=chars.get(page.page_number, {})))
         yield from lines
         if not lines[0].startswith("objects "):
             yield f"ids {page.page_number} " + canon(content_ids(page.layout))
@@ -387,10 +415,13 @@ def run(path: str, password: str | None, max_pages: int) -> Iterator[str]:
     except Exception as e:
         yield "pages " + exc(e)
         pages = []
+    chars: dict[Any, dict[str, int]] = {}
     for page in pages:
-        yield from page_lines(page)
+        writer = Objects(Names())
+        yield from page_lines(page, writer)
+        chars[page.page_number] = writer.chars
     yield from _pdf_lines(pdf)
-    yield from _laparams_lines(path, password, max_pages)
+    yield from _laparams_lines(path, password, max_pages, chars)
 
 
 __all__ = [
