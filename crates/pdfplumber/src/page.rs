@@ -36,17 +36,19 @@ use pdfminer::pdfinterp::{
     Color, PDFGraphicState, PDFPageInterpreter, PDFResourceManager, PDFStackT, PDFTextState, StandardColor,
 };
 use pdfminer::pdfpage::PDFPage;
-use pdfminer::pdftypes::{PDFObject, PDFStream};
+use pdfminer::pdftypes::{PDFDict, PDFList, PDFObject, PDFStream};
 use pdfminer::psparser::{LiteralName, PSLiteral};
 use pdfminer::utils::{Matrix, PathSegment, Point};
 use pycompat::bytes_format::bytes_mod_int;
-use pycompat::recursion::{c_call, class_call, eval_entry, leaf, py_frame, py_frames};
+use pycompat::recursion::{c_call, c_called_leaf, class_call, eval_entry, leaf, py_frame, py_frames};
+use pycompat::{codecs, diagnostics};
 use pycompat::repr::bytes_repr;
 use pycompat::{exc, ExcKind, Num, PyErr, PyInt, PyResult, PyStr};
 
 use crate::container::{Container, ContainerCache, Objects};
 use crate::obj::{bbox_from_value, bbox_value, Bbox, HashKey, Obj, PageRef, PyValue};
 use crate::pdf::PdfCore;
+use crate::structure::{self, PDFStructTree, Scope};
 use crate::table::{Table, TableFinder, TablePage, TableSettings};
 use crate::utils::exceptions::pdfminer_exception;
 use crate::utils::geometry::{calculate_area, crop_to_bbox, get_bbox_overlap, outside_bbox, within_bbox};
@@ -816,6 +818,34 @@ pub fn test_proposed_bbox(bbox: &PyValue, parent_bbox: &PyValue) -> PyResult<()>
     Ok(())
 }
 
+// pdfplumber/page.py:161 _normalize_box
+/// `_normalize_box(box)` of the 4-tuple of values `Page.annots` builds
+/// (`rotation` 0): every coordinate a number (`numbers.Number`: `bool`,
+/// `int`, `float`), else `MalformedPDFException` with the tuple's `str()`;
+/// each pair sorted.
+fn normalize_box_values(b: [PyValue; 4]) -> PyResult<[PyValue; 4]> {
+    let _frame = py_frame()?;
+    if !b.iter().all(|x| x.as_num().is_some() && !matches!(x, PyValue::Pdf(_))) {
+        let text = PyValue::tuple(b).str_counted()?;
+        return Err(PyErr::new(
+            ExcKind::MalformedPDFException,
+            format!("Bounding box contains non-number coordinate(s): {}", text.to_string_lossy()),
+        ));
+    }
+    let [a, b0, c, d] = b;
+    let (x0, x1) = if c.lt(&a)? { (c, a) } else { (a, c) };
+    let (y0, y1) = if d.lt(&b0)? { (d, b0) } else { (b0, d) };
+    Ok([x0, y0, x1, y1])
+}
+
+// pdfplumber/page.py:181 _invert_box
+/// `_invert_box(box, mb_height)` of values.
+fn invert_box_values(b: [PyValue; 4], mb_height: &PyValue) -> PyResult<[PyValue; 4]> {
+    let _frame = py_frame()?;
+    let [x0, y0, x1, y1] = b;
+    Ok([x0, mb_height.sub(&y1)?, x1, mb_height.sub(&y0)?])
+}
+
 /// The keyword arguments of `Page.search` besides the text map's.
 #[derive(Clone, Copy, Debug)]
 pub struct SearchArgs {
@@ -1190,7 +1220,16 @@ impl Page {
     /// Workstream DOC (`crate::structure`): the `to_dict()` of each element
     /// of `PDFStructTree(self.pdf, self)`, `[]` without a structure tree.
     pub fn structure_tree(self: &Rc<Self>) -> PyResult<Vec<PyValue>> {
-        Err(PyErr::not_ported("pdfplumber/page.py:248 Page.structure_tree (workstream DOC)"))
+        let _frame = py_frame()?;
+        let tree = match PDFStructTree::new(&self.pdf.doc, Scope::Page(self)) {
+            Ok(tree) => tree,
+            Err(e) if e.is_instance(ExcKind::StructTreeMissing) => return Ok(Vec::new()),
+            Err(e) => return Err(e),
+        };
+        // [elem.to_dict() for elem in tree]: PDFStructTree.__iter__, run by C
+        c_called_leaf()?;
+        let file = self.pdf.doc.file_kind()?;
+        tree.iter().iter().map(|elem| elem.to_dict(file)).collect()
     }
 
     // pdfplumber/page.py:256 Page.layout
@@ -1238,14 +1277,147 @@ impl Page {
     /// when present, is this page ([`Page::as_value`]); a `CroppedPage`
     /// crops them with its `_crop_fn`.
     pub fn annots(&self) -> PyResult<Vec<Obj>> {
-        Err(PyErr::not_ported("pdfplumber/page.py:273 Page.annots (workstream DOC)"))
+        let _frame = py_frame()?;
+        let raw = resolve_all(&self.page_obj.annots)?;
+        let raw = if raw.is_truthy() { raw } else { PDFObject::List(PDFList::default()) };
+        // list(map(parse, raw)): parse is called from C for each item
+        let mut parsed = Vec::new();
+        for annot in structure::py_iter(&raw)? {
+            let _entry = eval_entry()?;
+            parsed.push(self.parse_annot(annot)?);
+        }
+        match &self.kind {
+            PageKind::Cropped { crop_bbox, crop_fn, .. } => apply_crop_fn(*crop_fn, crop_bbox, &parsed),
+            _ => Ok(parsed),
+        }
+    }
+
+    // pdfplumber/page.py:274 Page.annots.rotate_point
+    /// The nested `rotate_point(pt, r)`: `r // 90` quarter turns, each
+    /// `(x, y) -> (y, comp - x)`, `comp` this page's width or height.
+    fn rotate_point(&self, pt: (PyValue, PyValue), r: &PyValue) -> PyResult<(PyValue, PyValue)> {
+        let _frame = py_frame()?;
+        let turns = match r.as_num() {
+            Some(n) => n.floordiv(&Num::from(90))?,
+            None => {
+                return Err(exc::TypeError(format!(
+                    "unsupported operand type(s) for //: '{}' and 'int'",
+                    r.type_name()
+                )))
+            }
+        };
+        // range(turns)
+        let turns = match turns {
+            Num::Int(i) => i.as_i64().ok_or_else(|| exc::OverflowError("Python int too large to convert to C ssize_t"))?,
+            Num::Float(_) => return Err(exc::TypeError("'float' object cannot be interpreted as an integer")),
+        };
+        let mut pt = pt;
+        for i in 0..turns.max(0) {
+            let (x, y) = pt;
+            // `i == turns % 2`
+            let comp = if i == turns.rem_euclid(2) { self.width()? } else { self.height()? };
+            pt = (y, comp.sub(&x)?);
+        }
+        Ok(pt)
+    }
+
+    // pdfplumber/page.py:283 Page.annots.parse
+    /// The nested `parse(annot)`: an annotation's geometry (its `/Rect`
+    /// turned with the page and flipped), `uri` (`/A`'s `/URI`), `title`
+    /// (`/T`) and `contents` (`/Contents`) decoded as UTF-8 then UTF-16, and
+    /// `data`, the annotation, whose `/P` becomes this page.
+    fn parse_annot(&self, annot: PDFObject) -> PyResult<Obj> {
+        let _frame = py_frame()?;
+        let [a, b, c, d] = bbox_from_value(&PyValue::from_pdf(structure::py_getitem(&annot, "Rect")?))?;
+        let pt0 = self.rotate_point((a, b), &self.rotation)?;
+        let pt1 = self.rotate_point((c, d), &self.rotation)?;
+        let rh = self.root().height()?;
+        let [x0, top, x1, bottom] = invert_box_values(normalize_box_values([pt0.0, pt0.1, pt1.0, pt1.1])?, &rh)?;
+
+        let a = structure::py_get(&annot, "A", PDFObject::Dict(PDFDict::new()))?;
+        let mut extras = [
+            ("uri", structure::py_get(&a, "URI", PDFObject::Null)?),
+            ("title", structure::py_get(&annot, "T", PDFObject::Null)?),
+            ("contents", structure::py_get(&annot, "Contents", PDFObject::Null)?),
+        ]
+        .map(|(k, v)| (k, PyValue::from_pdf(v)));
+        for (k, v) in extras.iter_mut() {
+            if v.is_none() {
+                continue;
+            }
+            let PyValue::Bytes(bytes) = &*v else {
+                return Err(exc::AttributeError(format!("'{}' object has no attribute 'decode'", v.type_name())));
+            };
+            match codecs::decode_utf8(bytes) {
+                Ok(text) => *v = PyValue::Str(text),
+                Err(_) => match codecs::decode_utf16(bytes) {
+                    Ok(text) => *v = PyValue::Str(text),
+                    Err(e) => {
+                        if self.pdf.raise_unicode_errors {
+                            return Err(e);
+                        }
+                        diagnostics::emit("UserWarning", diagnostics::Level::Warning, || {
+                            format!("Could not decode {k} of annotation. {k} will be missing.")
+                        });
+                    }
+                },
+            }
+        }
+
+        let mut parsed = Obj::new();
+        parsed.set("page_number", PyValue::Int(self.page_number.clone()));
+        parsed.set("object_type", PyValue::str("annot"));
+        parsed.set("x0", x0.clone());
+        parsed.set("y0", rh.sub(&bottom)?);
+        parsed.set("x1", x1.clone());
+        parsed.set("y1", rh.sub(&top)?);
+        parsed.set("doctop", self.initial_doctop.add(&top)?);
+        parsed.set("top", top.clone());
+        parsed.set("bottom", bottom.clone());
+        parsed.set("width", x1.sub(&x0)?);
+        parsed.set("height", bottom.sub(&top)?);
+        for (k, v) in extras {
+            parsed.set(k, v);
+        }
+        // Replace the indirect reference to the page dictionary with a
+        // pointer to our actual page
+        let as_obj = |d: &PDFDict| Obj::from_pairs(d.items().into_iter().map(|(k, v)| (k, PyValue::from_pdf(v))));
+        let data = if structure::py_in(&annot, "P")? {
+            match &annot {
+                PDFObject::Dict(d) => {
+                    let mut data = as_obj(d);
+                    data.set("P", PyValue::Page(self.as_value()));
+                    PyValue::Dict(data)
+                }
+                other => {
+                    return Err(exc::TypeError(format!(
+                        "'{}' object does not support item assignment",
+                        other.type_name()
+                    )))
+                }
+            }
+        } else {
+            match &annot {
+                PDFObject::Dict(d) => PyValue::Dict(as_obj(d)),
+                other => PyValue::from_pdf(other.clone()),
+            }
+        };
+        parsed.set("data", data);
+        Ok(parsed)
+    }
+
+    /// `self.root_page`
+    fn root(&self) -> &Page {
+        self.root_page.as_deref().unwrap_or(self)
     }
 
     // pdfplumber/page.py:339 Page.hyperlinks
     /// Workstream DOC: the annotations whose `uri` is not `None`
     /// (`self.annots` computed again).
     pub fn hyperlinks(&self) -> PyResult<Vec<Obj>> {
-        Err(PyErr::not_ported("pdfplumber/page.py:339 Page.hyperlinks (workstream DOC)"))
+        let _frame = py_frame()?;
+        let annots = self.annots()?;
+        Ok(annots.into_iter().filter(|a| !a.get("uri").is_some_and(PyValue::is_none)).collect())
     }
 
     // pdfplumber/page.py:343 Page.objects
@@ -1787,7 +1959,7 @@ impl Page {
 /// in `CroppedPage.__init__`, and the function of `utils`: a frame each).
 /// The box is unpacked by the function for the first object (an empty list
 /// never looks at it).
-fn apply_crop_fn(crop_fn: CropFn, crop_bbox: &PyValue, objs: &[Obj]) -> PyResult<Vec<Obj>> {
+pub(crate) fn apply_crop_fn(crop_fn: CropFn, crop_bbox: &PyValue, objs: &[Obj]) -> PyResult<Vec<Obj>> {
     let _crop_fn = py_frame()?;
     let _utils = py_frame()?;
     if objs.is_empty() {

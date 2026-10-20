@@ -35,7 +35,7 @@
 use std::cell::RefCell;
 
 use crate::err::PyResult;
-use crate::recursion::{c_call, Guard};
+use crate::recursion::{c_call, eval_entry, Guard};
 
 /// A call site of the ported code (named by its upstream `file:line` and
 /// call), whose first execution in a process differs.
@@ -71,6 +71,20 @@ impl CallSite {
         }
         set_executed(self.name, true);
         c_call(" while calling a Python object").map(Some)
+    }
+
+    /// The C units of a `LOAD_ATTR` of a property at this site, held by
+    /// the caller while the getter runs: the generic instruction's the
+    /// first time the process executes the site (`PyObject_GetAttr` ->
+    /// `property.__get__` calls the getter from C, an entry of the
+    /// evaluation loop: two units), none once it is specialized
+    /// (`LOAD_ATTR_PROPERTY` pushes the getter's frame inline).
+    pub fn property_load(&self) -> PyResult<Option<Guard>> {
+        if self.executed() {
+            return Ok(None);
+        }
+        set_executed(self.name, true);
+        eval_entry().map(Some)
     }
 }
 
