@@ -562,6 +562,10 @@ def cases_annots() -> list[Case]:
     for rot in (90, 180, 270, -90, 450, 90.0):
         an(f"rotate-{rot}", [Ref(30)], page={"Rotate": rot})
     an("rotate-string", [Ref(30)], page={"Rotate": b"%d"})
+    # a page that is not square: rotate_point takes its width or its height
+    for rot in (90, 180, 270):
+        an(f"rotate-{rot}-portrait", [Ref(30)], page={"Rotate": rot, "MediaBox": [0, 0, 200, 300]})
+    an("rotate-90-cropbox", [Ref(30)], page={"Rotate": 90, "MediaBox": [0, 0, 200, 300], "CropBox": [10, 20, 150, 250]})
     an("cropbox", [Ref(30)], page={"CropBox": [5, 5, 150, 150]})
     an("mediabox-offset", [Ref(30)], page={"MediaBox": [50, 50, 250, 300]})
     for label, rect in [("swapped", [110, 40, 10, 20]), ("floats", [1.5, 2.5, 3.5, 4.5]), ("short", [1, 2, 3]),
