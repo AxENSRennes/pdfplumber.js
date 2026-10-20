@@ -1187,8 +1187,10 @@ impl<X: PSStackParserExt> PSStackParser<X> {
 
     /// `self.fp`, which Python would dereference.
     pub fn fp_mut(&mut self, attr: &str) -> PyResult<&mut BytesIO> {
-        let fp =
-            self.fp.as_mut().ok_or_else(|| exc::AttributeError(format!("'NoneType' object has no attribute '{attr}'")))?;
+        let fp = self
+            .fp
+            .as_mut()
+            .ok_or_else(|| exc::AttributeError(format!("'NoneType' object has no attribute '{attr}'")))?;
         // a file the PDF closed (pdfplumber/pdf.py:124 PDF.close)
         fp.check_open(attr)?;
         Ok(fp)
