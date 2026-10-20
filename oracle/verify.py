@@ -1,8 +1,8 @@
 """Compare the Rust ``pdftrace`` with the Python oracle, file by file.
 
     python -m oracle.verify --stage S --set NAME [-j N] [--max-pages N]
-                            [--pdftrace PATH] [--limit K] [--files F ...]
-                            [--json] [--oracle-only]
+                            [--pdftrace PATH] [--cmap-dir DIR] [--limit K]
+                            [--files F ...] [--json] [--oracle-only]
 
 1. Lists the files of the set (``oracle/corpus.py``), or ``--files``; keeps the
    first ``--limit`` ones.
@@ -12,7 +12,17 @@
 3. Runs the Rust binary (default ``<repo>/target/release/pdftrace``) in
    batches of files sharing a password::
 
-       pdftrace --stage S --max-pages N [--password=P] [--oracle-dir C] --out DIR F1.pdf F2.pdf ...
+       pdftrace --stage S --max-pages N [--password=P] --cmap-dir M [--oracle-dir C] --out DIR F1.pdf F2.pdf ...
+
+   ``M`` is the provider of pdfminer's predefined CMaps, the compact files
+   of ``oracle/codegen/cmaps.py`` (``--cmap-dir``; by default its
+   directory under the cache, written first when missing: ``cmaps.ensure``),
+   passed for every stage whatever ``PDFPLUMBER_CMAP_DIR`` says: without it,
+   a stage that interprets pages raises ``RuntimeError("no CMap provider
+   installed ...")`` where a font needs a predefined CMap, a difference that
+   is the harness's, not the port's. A ``--cmap-dir`` that is not such a
+   directory (no ``names.txt``) stops verify at once (status 2), before
+   the oracle cache is built.
 
    (``--oracle-dir`` only for a stage whose module sets ``ORACLE_INPUT``:
    ``C`` is the oracle cache directory of the stage, where ``pdftrace`` reads
@@ -90,14 +100,36 @@ class RustRun:
 
 
 def _pdftrace_command(
-    pdftrace: Path, stage: str, max_pages: int, password: str | None, files: list[CorpusFile], out: Path, oracle_dir: Path | None = None
+    pdftrace: Path,
+    stage: str,
+    max_pages: int,
+    password: str | None,
+    files: list[CorpusFile],
+    out: Path,
+    oracle_dir: Path | None = None,
+    cmap_dir: Path | None = None,
 ) -> list[str]:
     cmd = [str(pdftrace), "--stage", stage, "--max-pages", str(max_pages)]
     if password is not None:
         cmd.append(f"--password={password}")  # one argument: the password may start with "-"
+    if cmap_dir is not None:
+        cmd += ["--cmap-dir", str(cmap_dir)]
     if oracle_dir is not None:
         cmd += ["--oracle-dir", str(oracle_dir)]
     return cmd + ["--out", str(out), *(str(f.path) for f in files)]
+
+
+def cmap_provider(given: Path | None) -> Path | str:
+    """The CMap directory to pass to ``pdftrace``: ``given``, or the one of
+    ``oracle/codegen/cmaps.py`` under the cache (written when missing). A
+    message (``str``) when ``given`` is not such a directory."""
+    if given is None:
+        from .codegen import cmaps  # imports pdfminer: only when comparing
+
+        return cmaps.ensure()
+    if not (given / "names.txt").is_file():
+        return f"--cmap-dir {given}: not a directory of predefined CMaps (no names.txt; see python -m oracle.codegen.cmaps)"
+    return given
 
 
 def oracle_input(stage: str) -> bool:
@@ -183,6 +215,7 @@ def run_rust(
     timeout: float,
     batch_size: int,
     oracle_dir: Path | None = None,
+    cmap_dir: Path | None = None,
 ) -> RustRun:
     """Run pdftrace over ``files``; raise StageNotImplemented on exit status 2."""
     groups: dict[str | None, list[CorpusFile]] = {}
@@ -197,7 +230,7 @@ def run_rust(
         password, batch = item
         out = out_root / f"batch-{next(counter)}"
         out.mkdir(parents=True)
-        code, err = _run_pdftrace(_pdftrace_command(pdftrace, stage, max_pages, password, batch, out, oracle_dir), out, timeout)
+        code, err = _run_pdftrace(_pdftrace_command(pdftrace, stage, max_pages, password, batch, out, oracle_dir, cmap_dir), out, timeout)
         if code == 2:
             raise StageNotImplemented(err or f"pdftrace: stage {stage!r} not implemented")
         times = _elapsed(out)
@@ -295,6 +328,11 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     ap.add_argument("-j", "--jobs", type=int, default=DEFAULT_JOBS, help="parallel oracle processes and pdftrace batches (default 3)")
     ap.add_argument("--max-pages", type=int, default=DEFAULT_MAX_PAGES, help="pages per document for paged stages (0 = all; default 20)")
     ap.add_argument("--pdftrace", type=Path, default=Path(os.environ.get("PDFTRACE", DEFAULT_PDFTRACE)), help="Rust trace binary")
+    ap.add_argument(
+        "--cmap-dir",
+        type=Path,
+        help="predefined CMaps for pdftrace (default: the directory of oracle/codegen/cmaps.py under the cache, written when missing)",
+    )
     ap.add_argument("--limit", type=int, help="only the first K files of the set")
     ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT, help="seconds per file (oracle and pdftrace; default 120)")
     ap.add_argument("--retry-timeouts", action="store_true", help="rebuild oracle traces cached as !Timeout")
@@ -356,6 +394,10 @@ def main(argv: list[str] | None = None) -> int:
         if rust_stage_implemented(args.pdftrace, args.stage) is False:
             print(f"verify: pdftrace does not implement stage {args.stage!r} yet (see pdftrace --list-stages); nothing compared", file=sys.stderr)
             return 2
+        cmap_dir = cmap_provider(args.cmap_dir)
+        if isinstance(cmap_dir, str):
+            print(f"verify: {cmap_dir}", file=sys.stderr)
+            return 2
     cache = OracleCache(args.stage, args.max_pages)
     started = time.monotonic()
     oracle = cache.build(files, jobs=args.jobs, timeout=args.timeout, retry_timeouts=args.retry_timeouts, progress=not args.json)
@@ -369,7 +411,16 @@ def main(argv: list[str] | None = None) -> int:
         try:
             oracle_dir = cache.dir if oracle_input(args.stage) else None
             rust = run_rust(
-                args.pdftrace, args.stage, args.max_pages, comparable, out_root, args.jobs, args.timeout, args.batch_size, oracle_dir
+                args.pdftrace,
+                args.stage,
+                args.max_pages,
+                comparable,
+                out_root,
+                args.jobs,
+                args.timeout,
+                args.batch_size,
+                oracle_dir,
+                cmap_dir,
             )
         except StageNotImplemented as e:
             print(f"verify: pdftrace does not implement stage {args.stage!r} (exit status 2): {e}", file=sys.stderr)

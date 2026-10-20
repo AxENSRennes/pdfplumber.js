@@ -37,12 +37,27 @@ class VerifyWithFakePdftrace(unittest.TestCase):
         cls.pdftrace = cls.tmp / "pdftrace"
         cls.pdftrace.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{FAKE}" "$@"\n')
         cls.pdftrace.chmod(cls.pdftrace.stat().st_mode | stat.S_IXUSR)
+        # a stand-in provider directory (the fake only checks names.txt)
+        cls.cmap_dir = cls.tmp / "cmap-provider"
+        cls.cmap_dir.mkdir()
+        (cls.cmap_dir / "names.txt").write_text("")
 
     @classmethod
     def tearDownClass(cls) -> None:
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
-    def verify(self, *extra: str, mode: str = "copy", target: str = "", cache: str = "cache", files: list[Path] | None = FILES, stage: str = "psparser", line: int = 2, sleep: float = 30) -> tuple[int, dict]:
+    def verify(
+        self,
+        *extra: str,
+        mode: str = "copy",
+        target: str = "",
+        cache: str = "cache",
+        files: list[Path] | None = FILES,
+        stage: str = "psparser",
+        line: int = 2,
+        sleep: float = 30,
+        cmap: bool = True,
+    ) -> tuple[int, dict]:
         env = dict(os.environ)
         env.update(
             PDFPLUMBER_ROOT=str(REPO),
@@ -54,6 +69,8 @@ class VerifyWithFakePdftrace(unittest.TestCase):
             FAKE_PDFTRACE_SLEEP=str(sleep),
         )
         cmd = [sys.executable, "-m", "oracle.verify", "--stage", stage, "--json", "--pdftrace", str(self.pdftrace)]
+        if cmap:
+            cmd += ["--cmap-dir", str(self.cmap_dir)]
         cmd += [*extra, *(["--files", *map(str, files)] if files is not None else [])]
         proc = subprocess.run(cmd, env=env, capture_output=True, cwd=REPO)
         self.stderr = proc.stderr.decode("utf-8", "replace")
@@ -69,6 +86,23 @@ class VerifyWithFakePdftrace(unittest.TestCase):
         self.assertEqual(summary["counts"]["identical"], len(FILES))
         self.assertEqual(summary["counts"]["total"], len(FILES))
         self.assertEqual(summary["files"], [])
+
+    def test_cmap_provider_by_default(self) -> None:
+        # without --cmap-dir, verify writes the provider of
+        # oracle/codegen/cmaps.py under the cache and passes it (the fake
+        # fails without a provider)
+        code, summary = self.verify(cache="cache-cmap", files=FILES[:1], cmap=False)
+        self.assertEqual(code, 0, (summary, self.stderr))
+        self.assertEqual(summary["counts"]["identical"], 1)
+        (names,) = (self.tmp / "cache-cmap").glob("cmap/*/names.txt")
+        self.assertIn("UniJIS-UCS2-H", names.read_text().split())
+
+    def test_not_a_cmap_provider_fails_fast(self) -> None:
+        code, summary = self.verify("--cmap-dir", str(self.tmp / "no-such-dir"), cache="cache-nocmap", cmap=False)
+        self.assertEqual(code, 2)
+        self.assertEqual(summary, {})
+        self.assertIn("not a directory of predefined CMaps", self.stderr)
+        self.assertFalse((self.tmp / "cache-nocmap" / "oracle").exists())
 
     def test_password_from_manifest(self) -> None:
         # corpus/micro/manifest.json gives encrypted-password.pdf its password:
