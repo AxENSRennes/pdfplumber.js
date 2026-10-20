@@ -1531,7 +1531,7 @@ et sans `raise_unicode_errors`), sur pages tournées.
   `password_given` : l'étape Python reçoit `None` sans mot de passe, et
   ses lignes `password` diffèrent pour un mot de passe vide donné (cinq
   fichiers du corpus).
-- **Corpus `adv-structure`** (`oracle/adversarial/structure.py`, 434
+- **Corpus `adv-structure`** (`oracle/adversarial/structure.py`, 437
   PDF) : les cas de la liste ci-dessus, et 15 fenêtres de profondeur
   autour du premier niveau qui échoue en Python, cherché par dichotomie
   sur l'étape (`--probe`) : `to_dict` d'une chaîne d'éléments (330 ;
@@ -1556,7 +1556,7 @@ et sans `raise_unicode_errors`), sur pages tournées.
   (`stream_is_external`) : `close()` ne le ferme pas.
 - **Résultats** : `plumber_doc` sur `all` (20 premières pages), 1 853
   fichiers identiques (le dernier après la fermeture du fichier) ;
-  `plumber_doc` et `plumber_objects` sur `adv-structure`, 434 identiques
+  `plumber_doc` et `plumber_objects` sur `adv-structure`, 437 identiques
   chacune ; `structure_unit` (661 traces, 5 148 cas de `codecs`, et les tests Rust du garde des cycles).
 
 ### Plan de comptage des cadres

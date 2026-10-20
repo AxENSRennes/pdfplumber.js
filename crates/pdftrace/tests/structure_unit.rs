@@ -15,6 +15,7 @@
 //! the file names containing one of them.
 
 use std::fs;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use pdfminer::cmapdb::{CMapDB, DirCMapProvider};
@@ -261,6 +262,52 @@ fn page_scope_dags_end() {
     );
     let err = page_tree(failing).expect_err("the stream's error");
     assert_eq!(err.kind, pycompat::ExcKind::PDFKeyError, "{err:?}");
+}
+
+/// `Findable.find_all`/`find` of an element walk its children as the
+/// tree's walk its own (`_find_all`, the same code): below a single
+/// top-level element that does not match, the tree finds what the element
+/// finds, in the same order (the stage calls the tree's only).
+#[test]
+fn element_find_is_the_tree_find_below_it() {
+    use pdfplumber::pdf::{OpenOptions, Source, PDF};
+    use pdfplumber::structure::{Matcher, PDFStructTree, Scope};
+    let pdf = tagged_pdf(
+        &[
+            (11, "<< /S /Document /P 10 0 R /K [12 0 R 13 0 R] >>"),
+            (12, "<< /S /P /P 11 0 R /K [0 14 0 R] >>"),
+            (13, "<< /S /Div /P 11 0 R /K [15 0 R] >>"),
+            (14, "<< /S /Span /P 12 0 R /K [0] >>"),
+            (15, "<< /S /P /P 13 0 R /K [0] >>"),
+        ],
+        "12 0 R 14 0 R 15 0 R",
+    );
+    let source = Source::Stream { data: pdf.into(), kind: pdfminer::pdfparser::FileKind::BytesIO };
+    let pdf = PDF::open(source, OpenOptions::new()).expect("open");
+    let tree = PDFStructTree::new(&pdf.core.doc, Scope::Document(&pdf)).expect("a tree");
+    let el = tree.children[0].clone();
+    let p = pycompat::PyStr::new("P");
+    let not_document = |e: &pdfplumber::structure::PDFStructElement| Ok(e.r#type.as_str() != Some("Document"));
+    for (m1, m2, m3, m4) in [
+        (Matcher::Tag(&p), Matcher::Tag(&p), Matcher::Tag(&p), Matcher::Tag(&p)),
+        (
+            Matcher::Func(&not_document),
+            Matcher::Func(&not_document),
+            Matcher::Func(&not_document),
+            Matcher::Func(&not_document),
+        ),
+    ] {
+        let from_el: Vec<_> = el.find_all(m1).expect("find_all").map(|e| e.expect("an element")).collect();
+        let from_tree: Vec<_> = tree.find_all(m2).expect("find_all").map(|e| e.expect("an element")).collect();
+        assert!(!from_el.is_empty());
+        assert_eq!(from_el.len(), from_tree.len());
+        assert!(from_el.iter().zip(&from_tree).all(|(a, b)| Rc::ptr_eq(a, b)));
+        let first_el = el.find(m3).expect("find").expect("a match");
+        let first_tree = tree.find(m4).expect("find").expect("a match");
+        assert!(Rc::ptr_eq(&first_el, &from_el[0]) && Rc::ptr_eq(&first_tree, &from_el[0]));
+    }
+    let span = pycompat::PyStr::new("Nothing");
+    assert!(el.find(Matcher::Tag(&span)).expect("find").is_none());
 }
 
 /// The value of a decoding: the text, or the exception.

@@ -364,10 +364,12 @@ def cases_attributes() -> list[Case]:
     # copy of to_dict copies the stream, its attributes (a reference there:
     # the document's file, TypeError) and the security handler of an
     # encrypted document (its decipher method)
-    for label, encrypted, length in (("plain", False, 1), ("encrypted", True, 1), ("ref-length", False, Ref(73))):
+    for label, encrypted, length, items in (("plain", False, 1, [Name("n"), [1]]), ("encrypted", True, 1, [Name("n"), [1]]),
+                                            ("ref-length", False, Ref(73), [Name("n"), [1]]),
+                                            ("ref-in-list", False, 1, [Name("n"), [Ref(73)]])):
         out.append((f"attr-stream-via-info-{label}", tagged(
             elems={12: elem("P", 11, 0, A=Ref(70))}, info={"X": Ref(70)},
-            extra={70: {"O": Name("Layout"), "S": Ref(71)}, 71: {"Length": length, "L": [Name("n"), [1]]}, 73: 1},
+            extra={70: {"O": Name("Layout"), "S": Ref(71)}, 71: {"Length": length, "L": items}, 73: 1},
             streams={71: b"x"}, encrypted=encrypted), None))
     a_case("not-dict-int", A=5)
     a_case("not-dict-string", A=b"x")
@@ -524,6 +526,14 @@ def cases_metadata() -> list[Case]:
     md("refers-to-annot", {"Annot": Ref(30)}, extra={30: {"Type": Name("Annot"), "Subtype": Name("Link"), "Rect": [1, 2, 3, 4],
                                                          "A": {"S": Name("URI"), "URI": b"http://x/"}, "T": b"\xff"}},
        page_extra={0: {"Annots": [Ref(30)]}})
+    # the page dict decoded in place up to a value that refers to itself
+    # (RecursionError, logged): its /Annots, a name, is a str from then on,
+    # which page.annots iterates (its /Type, after, is left a name)
+    for label, annots in (("name", b"/A"), ("empty-name", b"/")):
+        page = (b"<< /Annots " + annots + b" /Bomb 90 0 R /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] "
+                b"/Contents 60 0 R /Resources << /Font << /F1 9 0 R >> >> /StructParents 0 >>")
+        out.append((f"info-mutates-page-annots-{label}", tagged(
+            info={"P": Ref(PAGE0)}, extra={PAGE0: Raw(page), 90: {"Self": Ref(90)}}, page_extra={0: {}}), None))
     md("is-catalog", Ref(1))
     md("is-page", Ref(PAGE0))
     md("not-dict", Raw(b"[1 2]"))

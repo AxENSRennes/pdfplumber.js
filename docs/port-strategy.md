@@ -304,7 +304,7 @@ Lecture :
   `structure.py` porté, métadonnées décodées en place
   (`PDFObject::Str`), `Page.annots`/`hyperlinks`/`structure_tree`,
   fichier fermé par `PDF.close`, étape `plumber_doc` identique sur `all`
-  et sur `adv-structure` (434 PDF, avec `plumber_objects`), rejouée par
+  et sur `adv-structure` (437 PDF, avec `plumber_objects`), rejouée par
   `structure_unit`.
 - **Vagues suivantes**, dans l'ordre des dépendances :
   1. **Vague 4** : pdfplumber `page`, `pdf`, `container`, `structure`,
