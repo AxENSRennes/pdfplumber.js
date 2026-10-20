@@ -53,9 +53,19 @@ impl BytesIO {
     /// The `ValueError` `seek()` raises on a closed file (checked before
     /// the position is converted), `None` while the file is open.
     pub fn seek_closed_error(&self) -> Option<crate::err::PyErr> {
-        self.closed.get().map(|c| match c {
-            Closed::BufferedReader => exc::ValueError("seek of closed file"),
-            Closed::BytesIO => exc::ValueError("I/O operation on closed file."),
+        self.check_open("seek").err()
+    }
+
+    /// `ValueError` for operation `op` (`"seek"`, `"read"`, `"tell"`) on a
+    /// closed file, as its class words it: `"seek of closed file"`, `"read
+    /// of closed file"`, `"I/O operation on closed file"` for a
+    /// `BufferedReader`, `"I/O operation on closed file."` for a `BytesIO`.
+    pub fn check_open(&self, op: &str) -> PyResult<()> {
+        let Some(class) = self.closed.get() else { return Ok(()) };
+        Err(match (class, op) {
+            (Closed::BufferedReader, "seek" | "read") => exc::ValueError(format!("{op} of closed file")),
+            (Closed::BufferedReader, _) => exc::ValueError("I/O operation on closed file"),
+            (Closed::BytesIO, _) => exc::ValueError("I/O operation on closed file."),
         })
     }
 

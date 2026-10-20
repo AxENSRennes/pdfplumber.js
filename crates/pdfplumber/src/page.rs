@@ -82,6 +82,11 @@ fn item(box_raw: &PDFObject, i: usize) -> PyResult<PDFObject> {
             .ok_or_else(|| exc::IndexError("index out of range")),
         // a dict: d[0] (its keys are str)
         PDFObject::Dict(_) => Err(exc::KeyError(i.to_string())),
+        PDFObject::Str(s) => s
+            .code_points()
+            .nth(i)
+            .map(|c| PDFObject::Str(PyStr::from_code_point(c)))
+            .ok_or_else(|| exc::IndexError("string index out of range")),
         other => Err(exc::TypeError(format!("'{}' object is not subscriptable", other.type_name()))),
     }
 }
@@ -106,6 +111,9 @@ pub fn _normalize_box(box_raw: &PDFObject, rotation: &PDFObject) -> PyResult<BBo
         PDFObject::List(l) => l.to_vec().iter().all(|x| x.as_num().is_some()),
         // a dict iterates over its keys: str
         PDFObject::Dict(d) => d.is_empty(),
+        // a str (left by the metadata decoding, or an attribute decoded by
+        // the structure tree) iterates over its characters: str
+        PDFObject::Str(s) => s.is_empty(),
         PDFObject::Bytes(_) => true,
         PDFObject::Stream(_) => return Err(box_raw.py_getitem_index0().expect_err("a stream has no attribute 0")),
         other => return Err(exc::TypeError(format!("'{}' object is not iterable", other.type_name()))),
@@ -1292,7 +1300,7 @@ impl Page {
         }
     }
 
-    // pdfplumber/page.py:274 Page.annots.rotate_point
+    // `rotate_point`, nested in pdfplumber/page.py:273 Page.annots
     /// The nested `rotate_point(pt, r)`: `r // 90` quarter turns, each
     /// `(x, y) -> (y, comp - x)`, `comp` this page's width or height.
     fn rotate_point(&self, pt: (PyValue, PyValue), r: &PyValue) -> PyResult<(PyValue, PyValue)> {
@@ -1323,7 +1331,7 @@ impl Page {
         Ok(pt)
     }
 
-    // pdfplumber/page.py:283 Page.annots.parse
+    // `parse`, nested in pdfplumber/page.py:273 Page.annots
     /// The nested `parse(annot)`: an annotation's geometry (its `/Rect`
     /// turned with the page and flipped), `uri` (`/A`'s `/URI`), `title`
     /// (`/T`) and `contents` (`/Contents`) decoded as UTF-8 then UTF-16, and

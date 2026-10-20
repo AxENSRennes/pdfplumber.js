@@ -234,6 +234,7 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   | `document.py` | `pdfparser`, `pdfdocument` (xrefs, `getobj`, flux d'objets, mot de passe, plans, libellés, noms), `pdfpage`, `pdfplumber::page` (boîtes), `pdfinternals.resolve_all`, `pycompat::bytes_format`, le comptage des cadres (`psparser`, accesseurs, filtres, `pycompat::logging`) | `document_unit.rs` | traces des étapes `objects`, `streams`, `pages`, `psparser` sur `adv-objects` et `adv-pages` (régénérés d'abord ; fenêtres de profondeur autour de la limite des cadres comprises), `micro` et les petits fichiers de `quick` ; `objects` sur un `io.BytesIO` (erreurs de `seek`/`read` d'un `BytesIO`) ; `api` (`get_outlines`, `get_page_labels`, `lookup_name`, `get_dest`, `PDFPage.get_pages`, `repr` des pages) ; chaque trace dans un processus fils créé pour elle (`os.fork`), comme `verify` en lance un par trace, et `py_process.jsonl` (les noms internés au départ des fils), dont le rejeu repart ; `bytes % int` (formats générés, et les largeurs qu'aucune machine ne peut allouer : `MemoryError`) ; `PDFXRefFallback.PDFOBJ_CUE` sur chaque caractère Latin-1 |
   | `interp.py` | `pdfinterp` (tout le module), `pdfdevice`, et par les étapes `interp`, `fonts`, `layout` : `converter`, `pdfplumber::page`, l'analyse du layout, `pdftrace::stages` | `interp_unit.rs` | traces des étapes `interp`, `fonts`, `layout` (la trace Python donnée en entrée de l'oracle : l'ordre des `id()`), `interp_text` et `fonts_text` sur `adv-interp` (régénéré d'abord, fenêtres de profondeur comprises), `micro` et les petits fichiers de `quick`, chaque trace dans un processus fils (`py_process.jsonl`), CMaps prédéfinies du `cmap_dir` de `meta.json` |
   | `interp_deep.py` | les cadres des chemins de l'interpréteur vers le périphérique (`pdfinterp`, `pdfdevice`) | `interp_unit.rs` (`deep_sweeps`) | `interp_text` avec `DeepTracingDevice` (chaque méthode du périphérique descend d'abord `DESCENT` = 60 cadres : chaque appel au périphérique devient plus profond que tout ce qui le précède sur sa page) sur chaque fichier de `adv-interp` hors chaînes `depth-*`, l'interprétation de chaque page (`page_layout`) descendue de 17 profondeurs successives (`down`) qui font passer la limite de récursion d'un cadre au-dessus du point le plus profond des pages du fichier (mesuré par un crochet de profil borné) à 15 cadres plus haut ; puis, sans descente (le périphérique de l'étape), de chaque profondeur entre ce point et le cadre de `page_layout` (ce que la page fait avant son premier appel : `begin_page`, `init_resources`, polices, espaces de couleur, `/ProcSet`, `init_state`) ; le document est ouvert et les lignes écrites à la profondeur de l'étape ; la première trace complète, les autres par leur SHA-256. `api.jsonl` (`resource_manager_get_cmap`) : `PDFResourceManager.get_cmap(name, strict)`, qu'aucune page n'appelle, sur des CMaps identité, prédéfinies, des `UnicodeMap` et des noms absents, et depuis chaque profondeur à 30 cadres de la limite |
+  | `structure.py` | `pdfplumber::structure`, les métadonnées de `pdfplumber::pdf` (`read_metadata`), `Page.annots`/`hyperlinks`/`structure_tree`, `utils::pdfinternals` (`decode_text`, `resolve_and_decode`), `pycompat::codecs`, `pdftrace::stages::plumber_doc` | `structure_unit.rs` | traces de l'étape `plumber_doc` sur `adv-structure` (régénéré d'abord ; fenêtres de profondeur aussi depuis un et deux cadres plus bas) et sur les fichiers de `quick` qui ont un arbre de structure, des métadonnées imbriquées ou des annotations ; `plumber_objects` sur les cas d'annotations ; `bytes.decode("utf-8")` et `("utf-16")` de suites d'octets générées (`codecs`) |
   | `js_runtime.py` | `crates/wasm` (`errors`, `cmaps`, `ops`, `wire`) | `crates/wasm/tests/js_runtime_unit.rs` (et les tests JS de `js/test/shared/`, Node et navigateurs) | MRO de chaque classe d'exception, CMaps prédéfinies par le protocole paresseux, texte, mots, `dedupe_chars`, `TextMap.search`/lignes, tables sur des objets de pages réelles ; documents CJK pour la couche page |
   | `plumber.py` | `pdfplumber::{pdf, page, container, convert, utils::pdfinternals}` (et `structure` par `plumber_doc`), `pycompat::{json, csv}`, `pdftrace::stages::plumber_*` | `plumber_unit.rs` | traces des étapes `plumber_objects`, `plumber_text`, `plumber_tables`, `plumber_doc` sur `adv-plumber` (régénéré d'abord, fenêtres de profondeur comprises, aussi depuis un et deux cadres plus bas), `micro` et les petits fichiers de `quick`, chaque trace dans un processus fils (`py_process.jsonl`), les étapes `ORACLE_INPUT` recevant leur trace Python ; `open.jsonl` : `pdfplumber.open` avec des `laparams` (clés inconnues, `boxes_flow` de tout type et hors domaine, marges entières, booléennes, infinies, NaN), `pages` (listes, tuples, vides, flottants, booléens, `str`, entiers), `password`, `strict_metadata`, `unicode_norm`, `raise_unicode_errors` sur deux petits documents : `doctop`, objets et rang des `id()` de l'analyse |
 
@@ -504,6 +505,27 @@ d'écrire ses cas) :
   arbre de noms par `api_trace`), une fenêtre de longueurs autour du
   premier niveau qui échoue en Python (`docs/architecture.md`,
   « Profondeur de récursion »).
+- `oracle/adversarial/structure.py` → `adv-structure` (426 PDF ; vérifié
+  par `plumber_doc` et `plumber_objects`, rejoué par
+  `oracle/unit/structure.py`) : arbres de structure (`/StructTreeRoot`
+  absent ou de tout type, `/K` de toute sorte et imbrication, MCR et OBJR
+  vers une annotation, un élément, une autre page, DAG, cycles de la
+  portée document, `/Pg` absents, atypiques ou hors des pages choisies,
+  `/RoleMap`, `/ClassMap`, attributs `/A`/`/C` en tableaux avec
+  révisions, références dans les attributs, `/BBox`, MCID absents ou
+  dupliqués, textes `/ID`, `/T`, `/Lang`, `/Alt`, `/ActualText` de tout
+  type), arbres des parents (absent, sans `/StructParents`, imbriqués,
+  avec `null`, parents qui n'atteignent pas la racine), métadonnées
+  (`/Info` de tout type, partagées, imbriquées, qui se désignent
+  elles-mêmes, désignent le catalogue, une page, un élément, deux `/Info`),
+  annotations (`/Rect`, `/A`, `/URI`, `/T`, `/Contents` de tout type,
+  chaînes non décodables, flux, pages tournées) ; `cases_depth` : quinze
+  fenêtres autour du premier niveau qui échoue en Python (`--probe`, par
+  dichotomie sur l'étape) : `to_dict`, `prune`, `repr`, unités C de
+  `repr(ref)`, de `str(s)` (première exécution du site et suivantes) et du
+  `repr` d'un attribut, `resolve_and_decode`, arbre des nombres des
+  parents (`docs/architecture.md`, « Vague 4 », chantier DOC). Pas de
+  cycle par l'arbre des parents d'une page : Python y boucle sans fin.
 
 ## Mutations
 

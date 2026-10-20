@@ -188,40 +188,54 @@ pub fn decode_text_value(s: &PyValue) -> PyResult<PyStr> {
         None => return Err(exc::TypeError(format!("'{}' object is not iterable", s.type_name()))),
     };
     // the two generators created, then resumed by "".join from C (see
-    // decode_text)
-    let _entry = eval_entry()?;
-    pycompat::recursion::leaf(2)?;
-    // "".join materializes the generator first (PySequence_Fast): every
-    // item is looked up before anything is joined
-    let mut out = PyStrBuilder::with_capacity(items.len());
-    for c in &items {
-        let o = match c {
-            // ord(c)
-            PyValue::Str(ch) => {
-                let n = ch.len();
-                if n != 1 {
-                    return Err(exc::TypeError(format!("ord() expected a character, but string of length {n} found")));
+    // decode_text): their units are held until join returns or raises,
+    // before the `except IndexError:` runs `str(s)`
+    let joined = {
+        let _entry = eval_entry()?;
+        pycompat::recursion::leaf(2)?;
+        // "".join materializes the generator first (PySequence_Fast): every
+        // item is looked up before anything is joined
+        let mut out = PyStrBuilder::with_capacity(items.len());
+        let mut index_error = false;
+        for c in &items {
+            let o = match c {
+                // ord(c)
+                PyValue::Str(ch) => {
+                    let n = ch.len();
+                    if n != 1 {
+                        return Err(exc::TypeError(format!(
+                            "ord() expected a character, but string of length {n} found"
+                        )));
+                    }
+                    i64::from(ch.code_points().next().expect("one character"))
                 }
-                i64::from(ch.code_points().next().expect("one character"))
+                PyValue::Bool(b) | PyValue::Pdf(PDFObject::Bool(b)) => i64::from(*b),
+                PyValue::Int(i) | PyValue::Pdf(PDFObject::Int(i)) => match i.as_i64() {
+                    Some(i) => i,
+                    // `cannot fit 'int' into an index-sized integer`: an IndexError
+                    None => {
+                        index_error = true;
+                        break;
+                    }
+                },
+                other => {
+                    return Err(exc::TypeError(format!("string indices must be integers, not '{}'", other.type_name())))
+                }
+            };
+            // PDFDocEncoding[o]: a str of 256 characters
+            let index = if o < 0 { o + 256 } else { o };
+            if !(0..256).contains(&index) {
+                index_error = true;
+                break;
             }
-            PyValue::Bool(b) | PyValue::Pdf(PDFObject::Bool(b)) => i64::from(*b),
-            PyValue::Int(i) | PyValue::Pdf(PDFObject::Int(i)) => match i.as_i64() {
-                Some(i) => i,
-                // `cannot fit 'int' into an index-sized integer`: an IndexError
-                None => return decode_text_str(s),
-            },
-            other => {
-                return Err(exc::TypeError(format!("string indices must be integers, not '{}'", other.type_name())))
-            }
-        };
-        // PDFDocEncoding[o]: a str of 256 characters
-        let index = if o < 0 { o + 256 } else { o };
-        if !(0..256).contains(&index) {
-            return decode_text_str(s);
+            out.push(u32::from(PDF_DOC_ENCODING[index as usize]));
         }
-        out.push(u32::from(PDF_DOC_ENCODING[index as usize]));
+        (!index_error).then(|| out.finish())
+    };
+    match joined {
+        Some(text) => Ok(text),
+        None => decode_text_str(s),
     }
-    Ok(out.finish())
 }
 
 /// `except IndexError: return str(s)` of `decode_text`.

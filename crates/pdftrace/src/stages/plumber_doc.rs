@@ -23,9 +23,9 @@
 use std::io::{self, Write};
 use std::rc::Rc;
 
-use pdfplumber::container::{Container, Objects, SerializeOptions};
+use pdfplumber::container::{Container, SerializeOptions};
 use pdfplumber::obj::{Obj, PyValue};
-use pdfplumber::page::{CropFn, FilterFn, Page};
+use pdfplumber::page::Page;
 use pdfplumber::pdf::{OpenOptions, Source, PDF};
 use pdfplumber::structure::{Matcher, PDFStructElement, PDFStructTree, Scope};
 use pycompat::recursion::{c_call, leaf, py_frame};
@@ -33,11 +33,13 @@ use pycompat::specialize::CallSite;
 use pycompat::{exc, PyErr, PyInt, PyResult, PyStr};
 
 use super::common::{terminated, Lines};
-use super::plumber_common::{digest, exc as exc_line, select, table};
+use super::plumber_common::{digest, exc as exc_line, open_pdf, select, table, Names};
+use super::plumber_objects::annot_value;
 use super::plumber_ops::{
     DOC_DERIVED, DOC_DERIVED_BASE, DOC_DERIVED_PER_PAGE, DOC_MAX_ELEMENTS, DOC_MAX_FOUND, DOC_MAX_PROBED,
     DOC_NORM_PAGES, DOC_OPEN_OPTIONS, DOC_SERIALIZE, DOC_SERIALIZE_PER_PAGE, DOC_WRONG_PASSWORD, OUT_LIMIT,
 };
+use super::plumber_text::derive;
 use super::{Stage, StageInput};
 use crate::canon::{canon, sha256_hex};
 use crate::plumber::{from_value, to_value};
@@ -80,120 +82,6 @@ fn bounded(label: &str, value: &Value) -> String {
 
 // ------------------------------------------------------------------------------ names
 
-/// `Names` of `plumber_objects.py`: the values of a page as written, the
-/// inline image names numbered (`inline{"n": k}`, the port names them
-/// `inline-<k>`), a `Page` as `Page{"page_number": n}`.
-#[derive(Default)]
-struct Names {
-    inline: Vec<PyStr>,
-}
-
-/// Whether `name` is a name the port gives an inline image
-/// (`pdfminer::pdfinterp::inline_image_name`).
-fn is_inline_name(name: &PyStr) -> bool {
-    name.as_str()
-        .and_then(|n| n.strip_prefix("inline-"))
-        .is_some_and(|k| !k.is_empty() && k.bytes().all(|c| c.is_ascii_digit()))
-}
-
-impl Names {
-    /// Records the inline names of the images of `objects`, in order.
-    fn learn(&mut self, objects: &Objects) {
-        for (_, objs) in objects.iter() {
-            for o in objs {
-                let image = o.get("object_type").and_then(PyValue::as_str) == Some("image");
-                // Python: `name == str(id(stream))`; the port's inline image
-                // streams are the content parser's, without an object id
-                let inline_stream = matches!(o.get("stream"),
-                    Some(PyValue::Pdf(pdfminer::pdftypes::PDFObject::Stream(st))) if st.objid().is_none());
-                if image && inline_stream {
-                    if let Some(PyValue::Str(name)) = o.get("name") {
-                        if is_inline_name(name) && !self.inline.contains(name) {
-                            self.inline.push(name.clone());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn value(&self, v: &PyValue) -> Value {
-        if let PyValue::Str(name) = v {
-            if let Some(k) = self.inline.iter().position(|n| n == name) {
-                return Value::Named {
-                    name: "inline".into(),
-                    fields: vec![(s("n"), Value::Int(PyInt::from(k as i64)))],
-                };
-            }
-        }
-        to_value(v)
-    }
-
-    /// An object dict with its `name` and top-level `Page` values written
-    /// as above; `AttributeError` for a value without `items()`.
-    fn obj(&self, o: &PyValue) -> PyResult<Value> {
-        let PyValue::Dict(o) = o else {
-            return Err(exc::AttributeError(format!("'{}' object has no attribute 'items'", o.type_name())));
-        };
-        Ok(self.dict(o))
-    }
-
-    fn dict(&self, o: &Obj) -> Value {
-        Value::Dict(
-            o.items()
-                .iter()
-                .map(|(k, v)| {
-                    let key = k.as_str();
-                    let v = if key == Some("name") || key == Some("P") { self.value(v) } else { to_value(v) };
-                    (Value::py_str(k), v)
-                })
-                .collect(),
-        )
-    }
-
-    /// A text that may hold inline names (`to_json`, `to_csv`): each one
-    /// replaced by `<inline k>`.
-    fn text(&self, text: &PyStr) -> PyStr {
-        let mut out = text.clone();
-        // Python's names (addresses) all have the same length; the port's
-        // are prefixes of one another (`inline-1`, `inline-10`): the longer
-        // ones are replaced first
-        let mut order: Vec<(usize, &PyStr)> = self.inline.iter().enumerate().collect();
-        order.sort_by_key(|(_, name)| std::cmp::Reverse(name.len()));
-        for (k, name) in order {
-            let parts = out.split(name);
-            let mut joined = PyStr::empty();
-            for (i, part) in parts.iter().enumerate() {
-                if i > 0 {
-                    joined = joined.concat(&PyStr::from(format!("<inline {k}>")));
-                }
-                joined = joined.concat(part);
-            }
-            out = joined;
-        }
-        out
-    }
-}
-
-/// `annot_value(a, names)`: an annotation as written (its `data` dict holds
-/// the `Page` in place of `/P`).
-fn annot_value(a: &Obj, names: &Names) -> PyResult<Value> {
-    let data = names.obj(a.get("data").unwrap_or(&PyValue::None))?;
-    let mut items = Vec::with_capacity(a.len());
-    for (k, v) in a.items() {
-        let key = k.as_str();
-        let v = if key == Some("data") {
-            data.clone()
-        } else if key == Some("name") || key == Some("P") {
-            names.value(v)
-        } else {
-            to_value(v)
-        };
-        items.push((Value::py_str(k), v));
-    }
-    Ok(Value::Dict(items))
-}
-
 /// `page_names(page)`: the `Names` of a page's objects (none when
 /// `page.objects` raises).
 fn page_names(page: &Page) -> PyResult<Names> {
@@ -216,7 +104,7 @@ fn objects_digest(page: &Page) -> PyResult<Value> {
     names.learn(&objects);
     let mut out = Vec::new();
     for (kind, objs) in objects.iter() {
-        let values = Value::List(objs.iter().map(|o| names.dict(o)).collect());
+        let values = Value::List(objs.iter().map(|o| names.obj(o)).collect());
         out.push(Value::List(vec![
             Value::py_str(kind),
             Value::Int(PyInt::from(objs.len() as i64)),
@@ -235,31 +123,17 @@ fn annots_digest(annots: &[Obj]) -> PyResult<String> {
 
 // ---------------------------------------------------------------------------- opening
 
-/// `open_pdf(path, password, max_pages, **options)` of
-/// `plumber_objects.py`: `pdfplumber.open(path, pages=PAGES,
-/// password=password, **options)`.
-fn open_pdf(input: &StageInput<'_>, password: Option<&str>, options: OpenOptions) -> PyResult<PDF> {
-    let _frame = py_frame()?;
-    let pages = input.max_pages.map(|n| PyValue::list((1..=n as i64).map(|i| PyValue::Int(PyInt::from(i)))));
-    open_with(input, password, OpenOptions { pages, ..options })
+/// `pdfplumber.open(path, password=password, **options)` (no `open_pdf`
+/// frame, no `pages=` but the options').
+fn open_with(input: &StageInput<'_>, options: OpenOptions) -> PyResult<PDF> {
+    let mut o = options;
+    o.password = if input.password.is_empty() { None } else { Some(PyValue::str(input.password)) };
+    PDF::open(Source::Path { data: Rc::from(input.pdf), path: PyStr::new("") }, o)
 }
 
-/// `pdfplumber.open(path, password=password, **options)`.
-fn open_with(input: &StageInput<'_>, password: Option<&str>, options: OpenOptions) -> PyResult<PDF> {
-    let source = Source::Path { data: Rc::from(input.pdf), path: PyStr::new("input.pdf") };
-    let password = password.map(PyValue::str);
-    PDF::open(source, OpenOptions { password, ..options })
-}
-
-/// The stage's own password: `None` when none was given.
-fn password_of<'a>(input: &StageInput<'a>) -> Option<&'a str> {
-    input.password_given.then_some(input.password)
-}
-
-/// The `OpenOptions` of a dict of keyword arguments (`OPEN_OPTIONS`).
-fn open_options(options: &Value) -> OpenOptions {
+/// Sets the options of a dict of keyword arguments (`OPEN_OPTIONS`).
+fn set_options(out: &mut OpenOptions, options: &Value) {
     let Value::Dict(items) = options else { panic!("an options dict") };
-    let mut out = OpenOptions { raise_unicode_errors: true, ..OpenOptions::default() };
     for (k, v) in items {
         let v = from_value(v).expect("an option value");
         match k.as_str().expect("an option name") {
@@ -270,7 +144,6 @@ fn open_options(options: &Value) -> OpenOptions {
             other => panic!("an option the table does not have: {other}"),
         }
     }
-    out
 }
 
 fn has_option(options: &Value, name: &str) -> bool {
@@ -424,83 +297,11 @@ fn tree_lines(
 
 // ------------------------------------------------------------------------------ pages
 
-/// `PREDICATES` of `plumber_text.py`: Python functions, called by `filter`
-/// from C.
-fn predicate(name: &str) -> FilterFn {
-    match name {
-        // obj.get("upright", True)
-        "upright" => Rc::new(|o: &Obj| {
-            leaf(1)?;
-            Ok(o.get("upright").cloned().unwrap_or(PyValue::Bool(true)))
-        }),
-        // obj["object_type"] != "rect"
-        "not-rect" => Rc::new(|o: &Obj| {
-            leaf(1)?;
-            Ok(PyValue::Bool(!o.item("object_type")?.py_eq(&PyValue::str("rect"))))
-        }),
-        // obj.get("size", 0) < 10
-        "small" => Rc::new(|o: &Obj| {
-            leaf(1)?;
-            let size = o.get("size").cloned().unwrap_or(PyValue::Int(PyInt::ZERO));
-            Ok(PyValue::Bool(size.lt(&PyValue::Int(PyInt::from(10)))?))
-        }),
-        other => panic!("no predicate {other}"),
-    }
-}
-
-/// `derive_bbox(page, fractions, relative)`.
-fn derive_bbox(page: &Page, fractions: &[Value], relative: bool) -> PyResult<PyValue> {
-    let _frame = py_frame()?;
-    let [x0, top, x1, bottom] = pdfplumber::obj::bbox_from_value(&page.bbox)?;
-    let w = x1.sub(&x0)?;
-    let h = bottom.sub(&top)?;
-    let f: Vec<PyValue> = fractions.iter().map(|v| from_value(v).expect("a number")).collect();
-    let [f0, f1, f2, f3] = &f[..] else { panic!("four fractions") };
-    Ok(if relative {
-        PyValue::tuple([w.mul(f0)?, h.mul(f1)?, w.mul(f2)?, h.mul(f3)?])
-    } else {
-        PyValue::tuple([x0.add(&w.mul(f0)?)?, top.add(&h.mul(f1)?)?, x0.add(&w.mul(f2)?)?, top.add(&h.mul(f3)?)?])
-    })
-}
-
-/// `derive(page, steps)` of `plumber_text.py`.
-fn derive(page: &Rc<Page>, steps: &[Value]) -> PyResult<Rc<Page>> {
-    let _frame = py_frame()?;
-    let mut page = page.clone();
-    for step in steps {
-        let Value::List(step) = step else { panic!("a step") };
-        let name = step[0].as_str().expect("a step name");
-        match name {
-            "crop" | "within_bbox" | "outside_bbox" => {
-                let Value::List(fractions) = &step[1] else { panic!("fractions") };
-                let kwargs = crate::plumber::obj_from_value(&step[2]).expect("a kwargs dict");
-                let flag = |k: &str, default: bool| kwargs.get(k).map_or(default, PyValue::truthy);
-                let relative = flag("relative", false);
-                let bbox = derive_bbox(&page, fractions, kwargs.get("relative").is_some_and(PyValue::truthy))?;
-                let crop_fn = match name {
-                    "crop" => CropFn::CropToBbox,
-                    "within_bbox" => CropFn::WithinBbox,
-                    _ => CropFn::OutsideBbox,
-                };
-                page = page.crop(bbox, crop_fn, relative, flag("strict", true))?;
-            }
-            "filter" => page = page.filter(predicate(step[1].as_str().expect("a predicate name")))?,
-            "dedupe_chars" => {
-                let kwargs = crate::plumber::obj_from_value(&step[1]).expect("a kwargs dict");
-                page = page.dedupe_chars(&kwargs)?;
-            }
-            other => panic!("no step {other}"),
-        }
-    }
-    Ok(page)
-}
-
 /// `derived_lines(page, steps)`.
 fn derived_lines(lines: &mut Lines, page: &Rc<Page>, steps: &Value) -> PyResult<()> {
     let _generator = py_frame()?;
     lines.push(format!("derived {}", canon(steps)));
-    let Value::List(list) = steps else { panic!("steps") };
-    let d = match derive(page, list) {
+    let d = match derive(page, steps) {
         Ok(d) => d,
         Err(e) => {
             lines.push(format!("derive {}", exc_text(&e)));
@@ -543,7 +344,11 @@ fn page_dict(value: &Obj, names: &Names) -> PyResult<Value> {
                     objs.iter()
                         .map(|a| match (annots, a) {
                             (true, PyValue::Dict(a)) => annot_value(a, names),
-                            (_, a) => names.obj(a),
+                            (false, PyValue::Dict(a)) => Ok(names.obj(a)),
+                            (_, other) => Err(exc::AttributeError(format!(
+                                "'{}' object has no attribute 'items'",
+                                other.type_name()
+                            ))),
                         })
                         .collect::<PyResult<_>>()?,
                 )
@@ -628,9 +433,10 @@ fn page_lines(lines: &mut Lines, pdf: &PDF, page: &Rc<Page>, sha: &str, index: u
 fn option_lines(lines: &mut Lines, input: &StageInput<'_>, options: &Value) -> PyResult<()> {
     let _generator = py_frame()?;
     lines.push(format!("options {}", canon(options)));
-    let opts = open_options(options);
     if has_option(options, "pages") {
-        let pdf = match open_with(input, password_of(input), opts) {
+        let mut opts = OpenOptions::new();
+        set_options(&mut opts, options);
+        let pdf = match open_with(input, opts) {
             Ok(pdf) => pdf,
             Err(e) => {
                 lines.push(format!("open {}", exc_text(&e)));
@@ -651,7 +457,7 @@ fn option_lines(lines: &mut Lines, input: &StageInput<'_>, options: &Value) -> P
         }
         return Ok(());
     }
-    let pdf = match open_pdf(input, password_of(input), opts) {
+    let pdf = match open_pdf(input, |o| set_options(o, options)) {
         Ok(pdf) => pdf,
         Err(e) => {
             lines.push(format!("open {}", exc_text(&e)));
@@ -706,7 +512,7 @@ fn password_lines(lines: &mut Lines, input: &StageInput<'_>) -> PyResult<()> {
     others.push(Some(&wrong));
     for other in others {
         let label = canon(&other.map_or(Value::None, s));
-        match open_pdf(input, other, OpenOptions { raise_unicode_errors: true, ..OpenOptions::default() }) {
+        match open_pdf(input, |o| o.password = other.map(PyValue::str)) {
             Ok(_) => lines.push(format!("password {label} ok")),
             Err(e) => lines.push(format!("password {label} {}", exc_text(&e))),
         }
@@ -726,8 +532,7 @@ fn body(input: &StageInput<'_>, lines: &mut Lines) -> PyResult<()> {
         leaf(1)?;
         sha256_hex(input.pdf)
     };
-    let defaults = OpenOptions { raise_unicode_errors: true, ..OpenOptions::default() };
-    let pdf = match open_pdf(input, password_of(input), defaults) {
+    let pdf = match open_pdf(input, |_| {}) {
         Ok(pdf) => pdf,
         Err(e) => {
             lines.push(format!("open {}", exc_text(&e)));

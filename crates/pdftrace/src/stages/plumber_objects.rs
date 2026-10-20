@@ -250,13 +250,20 @@ fn content_ids(ltpage: &LTPage<P>, ids: &mut ContentIds) -> Value {
 
 /// `annot_value(a, names)`: an annotation as written, its `data` dict
 /// holding the `Page` in place of `/P`.
-pub fn annot_value(a: &Obj, names: &Names) -> Value {
+pub fn annot_value(a: &Obj, names: &Names) -> PyResult<Value> {
     let mut items = Vec::with_capacity(a.len());
     for (k, v) in a.items() {
         let value = if *k == "data" {
             match v {
                 PyValue::Dict(d) => names.obj(d),
-                other => to_value(other),
+                // names.obj(a["data"]) reads its items(): the stage itself
+                // raises for the data of an annotation that is a stream
+                other => {
+                    return Err(pycompat::exc::AttributeError(format!(
+                        "'{}' object has no attribute 'items'",
+                        other.type_name()
+                    )))
+                }
             }
         } else if *k == "name" || *k == "P" {
             names.value(v)
@@ -265,7 +272,7 @@ pub fn annot_value(a: &Obj, names: &Names) -> Value {
         };
         items.push((Value::py_str(k), value));
     }
-    Value::Dict(items)
+    Ok(Value::Dict(items))
 }
 
 /// `annots_lines(label, item, get, names)`: a generator, and the lambda
@@ -287,7 +294,7 @@ fn annots_lines(
         Ok(annots) => {
             lines.push(format!("{label} {}", annots.len()));
             for (i, a) in annots.iter().enumerate() {
-                lines.push(format!("{item} {i} {}", canon(&annot_value(a, names))));
+                lines.push(format!("{item} {i} {}", canon(&annot_value(a, names)?)));
             }
         }
     }
@@ -352,7 +359,7 @@ fn pdf_lines(lines: &mut Lines, pdf: &PDF) -> PyResult<()> {
         match values {
             Err(e) => lines.push(format!("pdf {what} {}", exc(&e))),
             Ok(values) => {
-                let list = Value::List(values.iter().map(|a| annot_value(a, &names)).collect());
+                let list = Value::List(values.iter().map(|a| annot_value(a, &names)).collect::<PyResult<_>>()?);
                 lines.push(format!("pdf {what} {} {}", values.len(), digest(&list)));
             }
         }

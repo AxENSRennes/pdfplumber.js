@@ -6,7 +6,9 @@
 //! [`PDFObject`] is the union of the Python types pdfminer's parsers
 //! produce: `None`, `bool`, `int` ([`PyInt`]), `float`, `bytes`,
 //! [`PSLiteral`], [`PSKeyword`], `list`, `dict` (keys are `str`),
-//! [`PDFStream`] and [`PDFObjRef`]. Python lists, dicts, streams and
+//! [`PDFStream`] and [`PDFObjRef`], and `str` ([`PDFObject::Str`]), which
+//! the parsers never make but pdfplumber's metadata decoding writes into
+//! the document's dicts. Python lists, dicts, streams and
 //! references are shared, mutable objects; so are [`PDFList`], [`PDFDict`]
 //! (`Rc<RefCell<..>>`), `Rc<PDFStream>` and [`PDFObjRef`]: cloning a
 //! `PDFObject` clones a reference, and an in-place change (`resolve_all` on a
@@ -101,8 +103,8 @@ pub enum PDFObject {
     Stream(Rc<PDFStream>),
     Ref(PDFObjRef),
     /// A Python `str`. pdfminer's parsers never make one: pdfplumber's
-    /// metadata decoding (pdfplumber/utils/pdfinternals.py:24
-    /// `resolve_and_decode`) writes its decoded values into the
+    /// metadata decoding (pdfplumber/utils/pdfinternals.py:24 resolve_and_decode)
+    /// writes its decoded values into the
     /// document's own dicts, in place, where everything that reads the
     /// document afterwards finds them (see `pdfplumber::pdf`, "Metadata").
     Str(PyStr),

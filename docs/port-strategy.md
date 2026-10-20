@@ -300,6 +300,12 @@ Lecture :
   interfaces Rust de `pdf`, `page`, `container`, `convert`, `structure`,
   `utils/exceptions` (squelettes qui compilent), contrat des chantiers
   PAGE et DOC, `oracle.verify` qui passe le fournisseur de CMaps.
+  Chantier DOC (`wave4/doc`, `architecture.md`, « Chantier DOC ») :
+  `structure.py` porté, métadonnées décodées en place
+  (`PDFObject::Str`), `Page.annots`/`hyperlinks`/`structure_tree`,
+  fichier fermé par `PDF.close`, étape `plumber_doc` identique sur `all`
+  et sur `adv-structure` (426 PDF, avec `plumber_objects`), rejouée par
+  `structure_unit`.
 - **Vagues suivantes**, dans l'ordre des dépendances :
   1. **Vague 4** : pdfplumber `page`, `pdf`, `container`, `structure`,
      `convert` : étapes `plumber_objects`, `plumber_text`,

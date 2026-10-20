@@ -264,15 +264,24 @@ def cases_children() -> list[Case]:
     out.append(("dag-repeat", tagged(elems={11: elem("Document", ROOT, [Ref(12), Ref(12), Ref(13)])}), None))
     out.append(("dag-shared-empty", tagged(elems={11: elem("Document", ROOT, [Ref(12), Ref(13)]), 12: elem("P", 11, [Ref(14), 0]),
                                                   13: elem("Div", 11, [Ref(14), 1]), 14: elem("Span", 12, [])}), None))
-    # chains of DAG levels: each level reached twice
+    # chains of DAG levels: each level reached twice. _resolve_children appends
+    # the children of an element each time it reaches it: level i gets
+    # 2**(i + 2) children, 2 * 2**(2 + 3 + ... + (n + 1)) paths to the
+    # leaf for n levels (4 here: 1024)
     dag: dict[int, Any] = {11: elem("Document", ROOT, [Ref(20), Ref(20)])}
-    for i in range(12):
-        dag[20 + i] = elem(f"L{i}", 11, [Ref(21 + i), Ref(21 + i)] if i < 11 else [0])
+    for i in range(4):
+        dag[20 + i] = elem(f"L{i}", 11, [Ref(21 + i), Ref(21 + i)] if i < 3 else [0])
     out.append(("dag-doubling", tagged(elems=dag), None))
     # cycles: the document scope runs out of frames in prune, the page scope
-    # without a parent tree too
-    out.append(("cycle-self", tagged(elems={13: elem("Span", 11, [1, Ref(13)])}), None))
-    out.append(("cycle-parent", tagged(elems={13: elem("Span", 11, [1, Ref(11)])}), None))
+    # without a parent tree too. Through a page's parent tree, Python's
+    # _resolve_children loops for ever (the port raises MemoryError once
+    # the walk only repeats itself): the pages here have no
+    # /StructParents, so their trees stop before.
+    no_parents = {0: {"StructParents": None}}
+    out.append(("cycle-self", tagged(elems={13: elem("Span", 11, [1, Ref(13)])}, page_extra=no_parents), None))
+    out.append(("cycle-parent", tagged(elems={13: elem("Span", 11, [1, Ref(11)])}, page_extra=no_parents), None))
+    out.append(("cycle-objr", tagged(elems={13: elem("Span", 11, [1, {"Type": Name("OBJR"), "Obj": Ref(11)}])},
+                                     page_extra=no_parents), None))
     out.append(("cycle-self-no-parent-tree", tagged(elems={13: elem("Span", 11, [1, Ref(13)])}, root_extra={"ParentTree": None}), None))
     # elements without content are pruned; elements on unparsed pages
     out.append(("empty-element", tagged(elems={11: elem("Document", ROOT, [Ref(12), Ref(13), Ref(14)]), 14: elem("Empty", 11, [])}), None))
@@ -299,6 +308,9 @@ def cases_children() -> list[Case]:
     out.append(("mcid-unmarked-content", tagged(contents={0: b"BT /F1 12 Tf 10 150 Td (Hello) Tj ET"}), None))
     out.append(("element-not-dict", tagged(elems={13: Raw(b"[1 2 3]")}), None))
     out.append(("element-int", tagged(elems={13: 7}), None))
+    # an object that fails to parse is read again after pdf.close(): the
+    # closed file raises (closed_objects)
+    out.append(("closed-file-reread", tagged(extra={9: Raw(b"<< /Type /Font /Subtype /Type1 /BaseFont >>")}), None))
     out.append(("element-stream", tagged(elems={13: {"S": Name("Span"), "K": [1, 2], "P": Ref(11), "Pg": Ref(PAGE0)}},
                                          streams={13: b"stream"}), None))
     out.append(("element-mcr-direct", tagged(elems={13: {"Type": Name("MCR"), "MCID": 1, "Pg": Ref(PAGE0)}}), None))

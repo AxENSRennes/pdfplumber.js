@@ -247,10 +247,33 @@ Not modelled (the core raises `NotPorted` where Python would go on):
   (`"extract_word"` gives `extract_words`): Python serializes the bound
   method's `str()`.
 
-Not modelled either, without an error: the order Python gives a NaN
-coordinate in the sets of `cluster_objects` (words, lines, table edges)
-follows its memory address, which the port cannot reproduce (it puts NaN
-values last).
+After `close()`, a document opened from a path (`Source::Path` in Rust)
+raises `ValueError: seek of closed file` when an object not read before
+is needed, as in Python (a document read from bytes is the caller's
+stream, which `close()` leaves open).
+
+Not modelled either, without an error: the order Python gives a NaN coordinate in the sets of
+`cluster_objects` (words, lines, table edges) follows its memory address,
+which the port cannot reproduce (it puts NaN values last).
+
+Structure tree, metadata and annotations (`docs/architecture.md`,
+"Vague 4", workstream DOC):
+
+- a cycle among the structure elements that a page's parent tree reaches
+  makes pdfplumber's `PDFStructTree(pdf, page)` (and `page.structure_tree`)
+  loop until memory runs out; the core raises `MemoryError` once the walk
+  only repeats itself;
+- `structure_tree` deep-copies the attribute values of the elements
+  (`dataclasses.asdict`): for a document read from bytes (`io.BytesIO`,
+  what JavaScript gives), a reference among them copies the whole document
+  in Python, which the core does not do (it keeps the reference, an equal
+  value) nor count in the recursion depth; for a document opened from a
+  path, Python and the core raise the same `TypeError` (the file object
+  cannot be copied);
+- pdfplumber decodes the metadata in place, in the document's own
+  dictionaries: whatever an `/Info` value reaches (the catalog, a page, an
+  annotation, a structure element) is read decoded afterwards, by the
+  pages, the structure tree and the annotations. The core does the same.
 
 ## Runtime Contract
 

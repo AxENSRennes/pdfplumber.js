@@ -30,7 +30,7 @@
 //! `PDFObjRef` (or a `PDFStream` of an encrypted document, whose `decipher`
 //! is a method of the document) copies its document, whose file object
 //! refuses to be copied when it is an `io.BufferedReader` (`TypeError:
-//! cannot pickle '_io.BufferedReader' object`), and is copied whole for an
+//! cannot pickle 'BufferedReader' instances`), and is copied whole for an
 //! `io.BytesIO` (JavaScript): the result depends on
 //! `pdfminer::pdfparser::FileKind` ([`PDFStructElement::to_dict`]).
 //!
@@ -99,6 +99,18 @@ const WHILE_REPR: &str = " while getting the repr of an object";
 pub mod frames {
     /// `dataclasses._is_dataclass_instance(obj)`: a Python function.
     pub const IS_DATACLASS_INSTANCE: u32 = 1;
+    /// `copy.deepcopy` of a `PSLiteral` or a `PSKeyword`: `deepcopy`,
+    /// `_reconstruct`, `deepcopy` of the state, `_deepcopy_dict`,
+    /// `deepcopy` of the name, `_deepcopy_atomic` (the same the first time
+    /// a process copies the class).
+    pub const DEEPCOPY_NAME: u32 = 6;
+    /// `copy.deepcopy` of a `PDFObjRef`, down to the `TypeError` of the
+    /// file object: the deepest frame is in the document's cross-reference
+    /// sections (`xrefs` comes before `_parser` in the document's
+    /// `__dict__`), a reference of a trailer copied down to its object id:
+    /// 22. Not modeled: a document whose `xrefs`, `info` or `catalog` hold
+    /// direct objects nested deeper than that.
+    pub const DEEPCOPY_DOCUMENT: u32 = 22;
 }
 
 // ---------------------------------------------------------------------------
@@ -217,11 +229,10 @@ fn value(x: PDFObject) -> PyValue {
 
 /// What `find_all` and `find` match
 /// (pdfplumber/structure.py:39 `_find_all`): an element type (`x.type ==
-/// matcher`, pdfplumber/structure.py:47 `match_tag`), or a function of the
-/// element (`matcher(x)`, its result taken for its truth; `matcher.match(x.type)`
-/// of an `re.Pattern`, pdfplumber/structure.py:51 `match_regex`: the
-/// JavaScript API gives a `RegExp` as a function). The function takes its
-/// own frames.
+/// matcher`, its nested `match_tag`), or a function of the element
+/// (`matcher(x)`, its result taken for its truth; `matcher.match(x.type)`
+/// of an `re.Pattern`, its nested `match_regex`: the JavaScript API gives a
+/// `RegExp` as a function). The function takes its own frames.
 pub enum Matcher<'a> {
     Tag(&'a PyStr),
     Func(&'a dyn Fn(&PDFStructElement) -> PyResult<bool>),
@@ -622,8 +633,13 @@ fn deepcopy(v: &PyValue, file: FileKind) -> PyResult<PyValue> {
         PyValue::Pdf(PDFObject::Stream(s)) => s.decipher.is_some(),
         _ => false,
     };
-    if copies_document && file == FileKind::BufferedReader {
-        return Err(exc::TypeError("cannot pickle '_io.BufferedReader' object"));
+    if copies_document {
+        leaf(frames::DEEPCOPY_DOCUMENT)?;
+        if file == FileKind::BufferedReader {
+            return Err(exc::TypeError("cannot pickle 'BufferedReader' instances"));
+        }
+    } else {
+        leaf(frames::DEEPCOPY_NAME)?;
     }
     Ok(v.clone())
 }
@@ -1019,7 +1035,7 @@ impl PDFStructTree {
         self._resolve_children(&s)
     }
 
-    // pdfplumber/structure.py:391 PDFStructTree._parse_struct_tree.prune
+    // `prune`, nested in pdfplumber/structure.py:351 PDFStructTree._parse_struct_tree
     /// The nested `prune(elements)`: the elements with children (MCIDs, or
     /// elements that have some), recursively; `s` keeps their pruned
     /// children and loses the others.
