@@ -70,6 +70,10 @@ GENERATORS: dict[str, tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]] = {
     "interp_deep": (("meta.json",), ((),)),
     # what the JavaScript tests replay through the WebAssembly boundary (seconds)
     "js_runtime": (("meta.json",), ((),)),
+    # the adversarial corpus adv-structure (written first), then the
+    # plumber_doc traces on it and on the quick files with structure trees,
+    # metadata containers or annotations; codecs cases (minutes)
+    "structure": (("meta.json",), ((),)),
 }
 
 
