@@ -196,12 +196,16 @@ fn annot_value(a: &Obj, names: &Names) -> PyResult<Value> {
 
 /// `page_names(page)`: the `Names` of a page's objects (none when
 /// `page.objects` raises).
-fn page_names(page: &Page) -> Names {
+fn page_names(page: &Page) -> PyResult<Names> {
+    // a Python function: its frame, then `Names()` (a class call and its
+    // __init__), then `page.objects` in a try block
+    let _frame = py_frame()?;
+    pycompat::recursion::class_call_leaf()?;
     let mut names = Names::default();
     if let Ok(objects) = page.objects() {
         names.learn(&objects);
     }
-    names
+    Ok(names)
 }
 
 /// `objects_digest(page)`: `[kind, n, digest]` of each kind.
@@ -568,11 +572,11 @@ fn serialize_lines(lines: &mut Lines, page: &Rc<Page>, op: &Value) -> PyResult<(
     let names = |page: &Page| page_names(page);
     let value = match method {
         "to_dict" => page.to_dict(options.object_types.as_deref()).map(|d| {
-            let names = names(page);
+            let names = names(page)?;
             page_dict(&d, &names)
         }),
-        "to_json" => page.to_json(&options).map(|t| Ok(Value::py_str(&names(page).text(&t)))),
-        "to_csv" => page.to_csv(&options).map(|t| Ok(Value::py_str(&names(page).text(&t)))),
+        "to_json" => page.to_json(&options).map(|t| names(page).map(|n| Value::py_str(&n.text(&t)))),
+        "to_csv" => page.to_csv(&options).map(|t| names(page).map(|n| Value::py_str(&n.text(&t)))),
         other => panic!("no method {other}"),
     };
     let value = match value {
@@ -763,7 +767,7 @@ fn body(input: &StageInput<'_>, lines: &mut Lines) -> PyResult<()> {
                 // zip(pdf.pages, value["pages"])
                 for (p, d) in pages.iter().zip(dicts) {
                     let PyValue::Dict(d) = d else { panic!("a page dict") };
-                    out.push(page_dict(d, &page_names(p))?);
+                    out.push(page_dict(d, &page_names(p)?)?);
                 }
                 items.push((Value::py_str(k), Value::List(out)));
             } else {

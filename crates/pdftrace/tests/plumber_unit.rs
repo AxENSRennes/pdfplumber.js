@@ -119,7 +119,13 @@ fn stage_traces() {
             depth_cases += 1;
         }
         if got != expected {
-            failures.push(format!("{name} [{what}]: {}", first_difference(expected, &got)));
+            let at = if matches!(entry, Value::None) { String::new() } else { format!(" from {}", pdftrace::canon::canon(entry)) };
+            if let Some(dir) = std::env::var_os("PLUMBER_DUMP") {
+                let base = std::path::Path::new(&dir).join(format!("{name}-{what}{}", at.replace(' ', "_")));
+                fs::write(base.with_extension("py.txt"), expected).expect("PLUMBER_DUMP is a writable directory");
+                fs::write(base.with_extension("rs.txt"), &got).expect("PLUMBER_DUMP is a writable directory");
+            }
+            failures.push(format!("{name} [{what}]{at}: {}", first_difference(expected, &got)));
         }
     }
     if only.is_none() {

@@ -271,6 +271,23 @@ impl PDFDocument {
         result
     }
 
+    /// `fp.close()` of the file the document reads (pdfplumber's
+    /// `PDF.close` closes the file it opened): every later read of the
+    /// document raises the `ValueError` of a closed file
+    /// (`pycompat::io::Closed`).
+    pub fn close_file(&self) -> PyResult<()> {
+        self.with_parser(|p| {
+            let class = match p.ext.file {
+                FileKind::BufferedReader => pycompat::io::Closed::BufferedReader,
+                FileKind::BytesIO => pycompat::io::Closed::BytesIO,
+            };
+            if let Some(fp) = &p.fp {
+                fp.close(class);
+            }
+            Ok(())
+        })
+    }
+
     // ---- attributes
 
     /// The class of the file object the document reads (`self._parser.fp`):

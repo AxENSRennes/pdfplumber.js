@@ -9,6 +9,7 @@
 //! `seek()` (`OSError` instead of `ValueError`); the parser that seeks to
 //! computed offsets (`pdfparser.py`) must take this into account.
 
+use std::cell::Cell;
 use std::ops::Range;
 use std::rc::Rc;
 
@@ -23,11 +24,39 @@ pub struct BytesIO {
     data: Rc<[u8]>,
     /// `self->pos`; never negative, may be past the end.
     pos: Pos,
+    /// Whether the file is closed, shared by the copies of this object
+    /// (the parsers of a document read one file): `None` while open, else
+    /// the class of the file it stands for (see [`Closed`]).
+    closed: Rc<Cell<Option<Closed>>>,
+}
+
+/// The class of a closed file, whose errors differ: `close()` on the
+/// `io.BufferedReader` of `open(path, "rb")` (`seek of closed file`) or on
+/// an `io.BytesIO` (`I/O operation on closed file.`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Closed {
+    BufferedReader,
+    BytesIO,
 }
 
 impl BytesIO {
     pub fn new(data: Rc<[u8]>) -> BytesIO {
-        BytesIO { data, pos: 0 }
+        BytesIO { data, pos: 0, closed: Rc::new(Cell::new(None)) }
+    }
+
+    /// `close()`: every copy of this file object is closed (a file object
+    /// of class `as_class`).
+    pub fn close(&self, as_class: Closed) {
+        self.closed.set(Some(as_class));
+    }
+
+    /// The `ValueError` `seek()` raises on a closed file (checked before
+    /// the position is converted), `None` while the file is open.
+    pub fn seek_closed_error(&self) -> Option<crate::err::PyErr> {
+        self.closed.get().map(|c| match c {
+            Closed::BufferedReader => exc::ValueError("seek of closed file"),
+            Closed::BytesIO => exc::ValueError("I/O operation on closed file."),
+        })
     }
 
     /// The whole underlying buffer (`getvalue()`, without copying).
@@ -51,8 +80,12 @@ impl BytesIO {
         self.seek_whence(pos, 0)
     }
 
-    /// `seek(pos, whence)` (`_io_BytesIO_seek_impl`).
+    /// `seek(pos, whence)` (`_io_BytesIO_seek_impl`), or the error of a
+    /// closed file.
     pub fn seek_whence(&mut self, pos: Pos, whence: i32) -> PyResult<Pos> {
+        if let Some(e) = self.seek_closed_error() {
+            return Err(e);
+        }
         let too_large = || exc::OverflowError("new position too large");
         let pos = match whence {
             0 if pos < 0 => return Err(exc::ValueError(format!("negative seek value {pos}"))),

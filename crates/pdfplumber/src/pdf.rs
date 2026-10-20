@@ -368,6 +368,10 @@ impl PDF {
         for page in self.pages()? {
             page.close()?;
         }
+        if !self.stream_is_external {
+            // self.stream.close()
+            self.core.doc.close_file()?;
+        }
         Ok(())
     }
 
