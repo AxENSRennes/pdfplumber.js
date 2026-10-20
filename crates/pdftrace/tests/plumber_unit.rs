@@ -8,7 +8,8 @@
 //!
 //! A difference prints the case and the first differing line of the trace.
 //! `PLUMBER_ONLY=<substring>[,<substring>...]` restricts the cases to the
-//! file names containing one of them.
+//! file names containing one of them. `PLUMBER_FAIL_FAST=1` stops the
+//! replay at the first difference (for mutation testing).
 //!
 //! The generator computes each trace in a process forked for it, whose
 //! state (`py_process.jsonl`) each replayed trace starts from, and names the
@@ -16,6 +17,7 @@
 //! replay's provider reads.
 
 use std::fs;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use pdfminer::cmapdb::{CMapDB, DirCMapProvider};
@@ -77,7 +79,10 @@ struct Outcome {
 
 /// Replays one case of `stages.jsonl` (`None` when `PLUMBER_ONLY` leaves
 /// it out).
-fn replay(args: &[Value], expected: &Value, only: Option<&str>) -> Option<Outcome> {
+fn replay(args: &[Value], expected: &Value, only: Option<&str>, stop: &AtomicBool) -> Option<Outcome> {
+    if stop.load(Ordering::Relaxed) {
+        return None;
+    }
     let [Value::Str(name), Value::Bytes(pdf), password, Value::Str(what), Value::Int(max_pages), entry] = args else {
         panic!("bad case {args:?}");
     };
@@ -120,6 +125,9 @@ fn replay(args: &[Value], expected: &Value, only: Option<&str>) -> Option<Outcom
             fs::write(base.with_extension("rs.txt"), &got).expect("PLUMBER_DUMP is a writable directory");
         }
         failure = Some(format!("{name} [{what}]{at}: {}", first_difference(expected, &got)));
+        if std::env::var_os("PLUMBER_FAIL_FAST").is_some() {
+            stop.store(true, Ordering::Relaxed);
+        }
     }
     Some(Outcome { what: what.to_owned(), deeper, limited: expected.contains("RecursionError"), failure })
 }
@@ -139,14 +147,15 @@ fn stage_traces() {
     let threads: usize =
         std::env::var("PLUMBER_THREADS").ok().and_then(|t| t.parse().ok()).unwrap_or(default_threads).max(1);
     let all = data.cases("stages");
+    let stop = AtomicBool::new(false);
     let outcomes: Vec<Outcome> = if threads == 1 {
         py_process::set(process);
-        all.iter().filter_map(|(args, expected)| replay(args, expected, only.as_deref())).collect()
+        all.iter().filter_map(|(args, expected)| replay(args, expected, only.as_deref(), &stop)).collect()
     } else {
         std::thread::scope(|scope| {
             let handles: Vec<_> = (0..threads)
                 .map(|k| {
-                    let (all, only, process) = (&all, only.as_deref(), process.clone());
+                    let (all, only, process, stop) = (&all, only.as_deref(), process.clone(), &stop);
                     std::thread::Builder::new()
                         .stack_size(64 << 20)
                         .spawn_scoped(scope, move || {
@@ -154,7 +163,7 @@ fn stage_traces() {
                             all.iter()
                                 .enumerate()
                                 .filter(|(i, _)| i % threads == k)
-                                .filter_map(|(_, (args, expected))| replay(args, expected, only))
+                                .filter_map(|(_, (args, expected))| replay(args, expected, only, stop))
                                 .collect::<Vec<_>>()
                         })
                         .expect("a thread")
@@ -171,7 +180,7 @@ fn stage_traces() {
         *per_stage.entry(o.what.clone()).or_insert(0) += 1;
     }
     let failures: Vec<&String> = outcomes.iter().filter_map(|o| o.failure.as_ref()).collect();
-    if only.is_none() {
+    if only.is_none() && failures.is_empty() {
         assert!(n > 300, "only {n} traces");
         for what in ["plumber_objects", "plumber_text", "plumber_tables", "plumber_doc"] {
             assert!(per_stage.get(what).is_some_and(|&k| k > 100), "{what}: {per_stage:?}");
