@@ -98,11 +98,57 @@ def cmaps() -> None:
         print(f"depth {depth} ({outcome}, {len(group)} names, e.g. {group[:3]}): {' -> '.join(path)}")
 
 
+def structure() -> None:
+    """The standard library under ``PDFStructElement.to_dict`` (the
+    ``copy.deepcopy`` of ``asdict``'s leaves, each kind twice: the first
+    deep copy of a class in a process fills ``copyreg``'s cache) and
+    ``Page.annots`` (``warnings.warn``, twice)."""
+    import copy
+    import dataclasses
+    import io
+    import warnings
+
+    from pdfminer.pdfdocument import PDFDocument
+    from pdfminer.pdfparser import PDFParser
+    from pdfminer.pdftypes import PDFObjRef
+    from pdfminer.psparser import KWD, LIT
+    from pdfplumber.structure import PDFStructElement
+
+    path = pathlib.Path(__file__).resolve().parent.parent / "corpus" / "micro"
+    sample = next(iter(sorted(path.glob("*.pdf"))), None)
+    if sample is None:
+        sample = pathlib.Path(sys.argv[2])
+    fp = open(sample, "rb")
+    doc = PDFDocument(PDFParser(fp))
+    bio_doc = PDFDocument(PDFParser(io.BytesIO(sample.read_bytes())))
+    el = PDFStructElement(type="P", revision=None, id=None, lang=None, alt_text=None, actual_text=None, title=None,
+                          page_number=None)
+    cases = [
+        ("deepcopy PSLiteral (first)", copy.deepcopy, LIT("probe-literal")),
+        ("deepcopy PSLiteral (again)", copy.deepcopy, LIT("probe-literal-2")),
+        ("deepcopy PSKeyword (first)", copy.deepcopy, KWD(b"probe-keyword")),
+        ("deepcopy PSKeyword (again)", copy.deepcopy, KWD(b"probe-keyword-2")),
+        ("deepcopy PDFObjRef BufferedReader (first)", copy.deepcopy, PDFObjRef(doc, 1)),
+        ("deepcopy PDFObjRef BufferedReader (again)", copy.deepcopy, PDFObjRef(doc, 2)),
+        ("deepcopy PDFObjRef BytesIO", copy.deepcopy, PDFObjRef(bio_doc, 1)),
+        ("deepcopy int", copy.deepcopy, 5),
+        ("fields", dataclasses.fields, el),
+        ("_is_dataclass_instance", dataclasses._is_dataclass_instance, el),
+        ("warnings.warn (first)", warnings.warn, "Could not decode uri of annotation. uri will be missing."),
+        ("warnings.warn (again)", warnings.warn, "Could not decode uri of annotation. uri will be missing."),
+        ("warnings.warn (other)", warnings.warn, "Could not decode title of annotation. title will be missing."),
+    ]
+    for label, f, arg in cases:
+        out, depth, path = _measure(True, f, arg)
+        outcome = type(out).__name__ if isinstance(out, Exception) else "ok"
+        print(f"{label}: depth {depth} ({outcome}): {' -> '.join(path or [])}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(prog="python -m oracle.depth_probe")
-    ap.add_argument("what", choices=["cmaps"])
+    ap.add_argument("what", choices=["cmaps", "structure"])
     args = ap.parse_args()
-    {"cmaps": cmaps}[args.what]()
+    {"cmaps": cmaps, "structure": structure}[args.what]()
 
 
 if __name__ == "__main__":

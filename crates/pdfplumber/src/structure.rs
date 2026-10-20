@@ -30,7 +30,7 @@
 //! `PDFObjRef` (or a `PDFStream` of an encrypted document, whose `decipher`
 //! is a method of the document) copies its document, whose file object
 //! refuses to be copied when it is an `io.BufferedReader` (`TypeError:
-//! cannot pickle '_io.BufferedReader' object`), and is copied whole for an
+//! cannot pickle 'BufferedReader' instances`), and is copied whole for an
 //! `io.BytesIO` (JavaScript): the result depends on
 //! `pdfminer::pdfparser::FileKind` ([`PDFStructElement::to_dict`]).
 //!
@@ -99,6 +99,18 @@ const WHILE_REPR: &str = " while getting the repr of an object";
 pub mod frames {
     /// `dataclasses._is_dataclass_instance(obj)`: a Python function.
     pub const IS_DATACLASS_INSTANCE: u32 = 1;
+    /// `copy.deepcopy` of a `PSLiteral` or a `PSKeyword`: `deepcopy`,
+    /// `_reconstruct`, `deepcopy` of the state, `_deepcopy_dict`,
+    /// `deepcopy` of the name, `_deepcopy_atomic` (the same the first time
+    /// a process copies the class).
+    pub const DEEPCOPY_NAME: u32 = 6;
+    /// `copy.deepcopy` of a `PDFObjRef`, down to the `TypeError` of the
+    /// file object: the deepest frame is in the document's cross-reference
+    /// sections (`xrefs` comes before `_parser` in the document's
+    /// `__dict__`), a reference of a trailer copied down to its object id:
+    /// 22. Not modeled: a document whose `xrefs`, `info` or `catalog` hold
+    /// direct objects nested deeper than that.
+    pub const DEEPCOPY_DOCUMENT: u32 = 22;
 }
 
 // ---------------------------------------------------------------------------
@@ -622,8 +634,13 @@ fn deepcopy(v: &PyValue, file: FileKind) -> PyResult<PyValue> {
         PyValue::Pdf(PDFObject::Stream(s)) => s.decipher.is_some(),
         _ => false,
     };
-    if copies_document && file == FileKind::BufferedReader {
-        return Err(exc::TypeError("cannot pickle '_io.BufferedReader' object"));
+    if copies_document {
+        leaf(frames::DEEPCOPY_DOCUMENT)?;
+        if file == FileKind::BufferedReader {
+            return Err(exc::TypeError("cannot pickle 'BufferedReader' instances"));
+        }
+    } else {
+        leaf(frames::DEEPCOPY_NAME)?;
     }
     Ok(v.clone())
 }
