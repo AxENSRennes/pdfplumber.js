@@ -45,11 +45,12 @@ tree, marked content on its pages):
 
 from __future__ import annotations
 
+import random
 import sys
 from typing import Any, Callable
 
 from ._common import write_corpus
-from ._pdf import Doc, Name, Raw, Ref, classic, flate
+from ._pdf import Doc, Name, Raw, Ref, classic, flate, standard_encryption
 
 Case = tuple[str, bytes, "str | None"]
 
@@ -72,6 +73,7 @@ CONTENT0 = 60
 ROOT = 10
 PARENT_TREE = 100
 INFO = 200
+ENCRYPT = 199
 
 MISSING = object()
 
@@ -90,6 +92,7 @@ def tagged(
     streams: dict[int, bytes] | None = None,
     struct_root: Any = MISSING,
     trailer_extra: dict | None = None,
+    encrypted: bool = False,
 ) -> bytes:
     """A tagged document. Defaults: one page, the tree ``Document`` (11)
     -> ``P`` (12, MCID 0) and ``Span`` (13, MCIDs 1, 2), a parent tree
@@ -157,7 +160,15 @@ def tagged(
             doc.add(INFO, info)
             trailer["Info"] = Ref(INFO)
     trailer.update(trailer_extra or {})
-    return classic(doc, trailer)
+    enc = None
+    if encrypted:
+        # RC4, empty user password (the stages open it without one)
+        docid = b"0123456789abcdef"
+        enc = standard_encryption(random.Random(1), r=3, user="", owner="o", docid=docid)
+        doc.add(ENCRYPT, dict(enc.param), encrypt=False)
+        trailer["Encrypt"] = Ref(ENCRYPT)
+        trailer["ID"] = [docid, docid]
+    return classic(doc, trailer, enc)
 
 
 def elem(s: Any, parent: int, k: Any = MISSING, **attrs: Any) -> dict:
@@ -348,6 +359,16 @@ def cases_attributes() -> list[Case]:
     a_case("value-ref-nested", A={"Widths": [1, [Ref(40)]]}, extra={40: 7})
     a_case("value-literal", A={"Placement": Name("Block"), "L": [Name("a"), {"b": Name("c")}]})
     a_case("value-string", A={"T": b"\xfe\xff\x00h\x00i"})
+    # a stream among the attribute values: the metadata decoding resolved
+    # the reference in place (/Info refers to the attribute dict); the deep
+    # copy of to_dict copies the stream, its attributes (a reference there:
+    # the document's file, TypeError) and the security handler of an
+    # encrypted document (its decipher method)
+    for label, encrypted, length in (("plain", False, 1), ("encrypted", True, 1), ("ref-length", False, Ref(73))):
+        out.append((f"attr-stream-via-info-{label}", tagged(
+            elems={12: elem("P", 11, 0, A=Ref(70))}, info={"X": Ref(70)},
+            extra={70: {"O": Name("Layout"), "S": Ref(71)}, 71: {"Length": length, "L": [Name("n"), [1]]}, 73: 1},
+            streams={71: b"x"}, encrypted=encrypted), None))
     a_case("not-dict-int", A=5)
     a_case("not-dict-string", A=b"x")
     a_case("not-dict-stream", A=Ref(42), extra={42: {"Length": 1}})
@@ -465,6 +486,13 @@ def cases_parent_tree() -> list[Case]:
     pt("parent-root-type-other", root_extra={"Type": Name("Other")})
     pt("parent-direct", elems={12: elem("P", 11, 0, P={"Type": Name("StructTreeRoot")})})
     pt("parent-int", elems={12: elem("P", 11, 0, P=4)})
+    # a cycle among the elements the parent tree reaches, and an element
+    # whose /K is a stream: _resolve_children reaches the stream (its
+    # PDFKeyError) before it could loop for ever on the cycle
+    pt("cycle-then-error", {"Nums": [0, [Ref(12), Ref(15)]]},
+       elems={11: elem("Document", ROOT, [Ref(12), Ref(15)]), 12: elem("P", 11, [0, Ref(11)]),
+              13: None, 15: elem("Span", 11, Ref(16))},
+       extra={16: {"Length": 1}}, streams={16: b"x"})
     pt("parent-dag", {"Nums": [0, [Ref(14), Ref(14)]]},
        elems={11: elem("Document", ROOT, [Ref(12), Ref(13)]), 12: elem("P", 11, [Ref(14)]),
               13: elem("Div", 11, [Ref(14)]), 14: elem("Span", 12, [0, 1])})

@@ -1442,17 +1442,22 @@ et sans `raise_unicode_errors`), sur pages tournées.
   unités C par niveau d'éléments, deux cadres par niveau d'un attribut
   imbriqué), puis l'élagage (itératif chez Python, récursif ici sur une
   profondeur qu'`asdict` a déjà bornée). Les feuilles passent par
-  `copy.deepcopy` : un nom (`PSLiteral`, `PSKeyword`) six cadres, une
-  référence (ou un flux d'un document chiffré, dont `decipher` est une
-  méthode du document) copie le document jusqu'à l'objet fichier,
+  `copy.deepcopy`, dont le port suit le parcours et les cadres
+  (`copy_frames`) : un nom (`PSLiteral`, `PSKeyword`) six cadres, une
+  référence copie le document jusqu'à l'objet fichier,
   `TypeError("cannot pickle 'BufferedReader' instances")` pour un
   fichier ouvert par un chemin, après 22 cadres (le plus profond est dans
-  les sections xref du document, avant `_parser` dans son `__dict__` ;
-  mesuré par `python -m oracle.depth_probe structure`). Non modélisé : un
+  les sections xref du document, avant `_parser` dans son `__dict__`), un
+  flux (qu'y laisse le décodage des métadonnées en place) ses attributs,
+  avec leurs références, et, pour un document chiffré, le gestionnaire de
+  sécurité dont `decipher` est une méthode (14 cadres pour RC4 ; mesuré
+  par `python -m oracle.depth_probe structure`). Non modélisés : un
   document dont `xrefs`, `info` ou `catalog` tiennent des objets directs
-  imbriqués plus profond (la copie y descend plus bas avant l'erreur), et
-  la copie complète du document lu depuis des octets (JavaScript : le
-  port garde la référence, une valeur égale, sans compter ses cadres).
+  imbriqués plus profond (la copie y descend plus bas avant l'erreur), les
+  `/CF` des gestionnaires AES, la mémoire de `copy` (un objet revu n'est
+  pas reparcouru), et la copie complète du document lu depuis des octets
+  (JavaScript : le port garde la référence, une valeur égale, sans
+  compter ses cadres).
 - **`repr`** : le `__repr__` généré de la dataclass derrière
   `dataclasses._recursive_repr` (le wrapper appelé depuis le C, deux
   cadres et quatre unités C par niveau), les champs par `repr_counted`.
@@ -1509,7 +1514,7 @@ et sans `raise_unicode_errors`), sur pages tournées.
   `password_given` : l'étape Python reçoit `None` sans mot de passe, et
   ses lignes `password` diffèrent pour un mot de passe vide donné (cinq
   fichiers du corpus).
-- **Corpus `adv-structure`** (`oracle/adversarial/structure.py`, 426
+- **Corpus `adv-structure`** (`oracle/adversarial/structure.py`, 430
   PDF) : les cas de la liste ci-dessus, et 15 fenêtres de profondeur
   autour du premier niveau qui échoue en Python, cherché par dichotomie
   sur l'étape (`--probe`) : `to_dict` d'une chaîne d'éléments (330 ;
@@ -1534,7 +1539,7 @@ et sans `raise_unicode_errors`), sur pages tournées.
   (`stream_is_external`) : `close()` ne le ferme pas.
 - **Résultats** : `plumber_doc` sur `all` (20 premières pages), 1 853
   fichiers identiques (le dernier après la fermeture du fichier) ;
-  `plumber_doc` et `plumber_objects` sur `adv-structure`, 426 identiques
+  `plumber_doc` et `plumber_objects` sur `adv-structure`, 430 identiques
   chacune ; `structure_unit` (648 traces, 3 300 cas de `codecs`).
 
 ### Plan de comptage des cadres

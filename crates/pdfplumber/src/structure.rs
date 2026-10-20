@@ -111,6 +111,12 @@ pub mod frames {
     /// 22. Not modeled: a document whose `xrefs`, `info` or `catalog` hold
     /// direct objects nested deeper than that.
     pub const DEEPCOPY_DOCUMENT: u32 = 22;
+    /// The decipher method of a stream of an encrypted document, from its
+    /// `deepcopy` down: `_deepcopy_method`, the security handler (its
+    /// `_reconstruct`, its state, its `/Encrypt` dict and the names in it):
+    /// 14 for an RC4 handler (`/V 2`). Not modeled: the deeper dicts of
+    /// crypt filters (`/CF`).
+    pub const DEEPCOPY_DECIPHER: u32 = 14;
 }
 
 // ---------------------------------------------------------------------------
@@ -621,25 +627,77 @@ fn asdict_dict(items: Vec<(PyStr, PyValue)>, file: FileKind) -> PyResult<PyValue
     Ok(PyValue::Dict(out))
 }
 
-/// `copy.deepcopy(obj)` of a value that is not a list, a dict or an
-/// atomic type: a literal or a keyword is copied (an equal value), a
-/// reference, or a stream whose `decipher` is the document's, copies its
-/// document, which an `io.BufferedReader` refuses.
+/// `copy.deepcopy(obj)` of a value that `_asdict_inner` does not rebuild
+/// (a name, a keyword, a reference, a stream): the copy is an equal value,
+/// but the walk is Python's (the frames of `copy`, [`copy_frames`]), and a
+/// reference copies its document, whose file object an
+/// `io.BufferedReader` refuses to copy (`TypeError`).
 fn deepcopy(v: &PyValue, file: FileKind) -> PyResult<PyValue> {
-    let copies_document = match v {
-        PyValue::Pdf(PDFObject::Ref(_)) => true,
-        PyValue::Pdf(PDFObject::Stream(s)) => s.decipher.is_some(),
-        _ => false,
-    };
-    if copies_document {
-        leaf(frames::DEEPCOPY_DOCUMENT)?;
-        if file == FileKind::BufferedReader {
-            return Err(exc::TypeError("cannot pickle 'BufferedReader' instances"));
-        }
-    } else {
-        leaf(frames::DEEPCOPY_NAME)?;
+    if let PyValue::Pdf(o) = v {
+        copy_frames(o, file)?;
     }
     Ok(v.clone())
+}
+
+/// The frames of `copy.deepcopy(o)`, in the order `copy` walks `o`, and
+/// the `TypeError` of the first reference reached when the document's file
+/// is an `io.BufferedReader` (measured: `python -m oracle.depth_probe
+/// structure`). `deepcopy` (a frame), then: an atomic value
+/// `_deepcopy_atomic`; a list `_deepcopy_list` and its items; a dict
+/// `_deepcopy_dict` and, for each item, its key (atomic) and its value; a
+/// name or a keyword `_reconstruct` and its state, five frames in all; a
+/// reference [`frames::DEEPCOPY_DOCUMENT`]; a stream `_reconstruct`, its
+/// state dict (`attrs`, `rawdata`, `decipher`, `data`, `objid`, `genno`, in
+/// `__init__`'s order): the attributes walked, the security handler's
+/// method of an encrypted document [`frames::DEEPCOPY_DECIPHER`]. Not
+/// modeled: `copy`'s memo, by which an object met again is not walked again.
+fn copy_frames(o: &PDFObject, file: FileKind) -> PyResult<()> {
+    let _deepcopy = py_frame()?;
+    match o {
+        PDFObject::List(l) => {
+            let _list = py_frame()?;
+            for x in l.to_vec() {
+                copy_frames(&x, file)?;
+            }
+        }
+        PDFObject::Dict(d) => copy_dict_frames(d, file)?,
+        PDFObject::Literal(_) | PDFObject::Keyword(_) => leaf(frames::DEEPCOPY_NAME - 1)?,
+        PDFObject::Ref(_) => {
+            leaf(frames::DEEPCOPY_DOCUMENT - 1)?;
+            if file == FileKind::BufferedReader {
+                return Err(exc::TypeError("cannot pickle 'BufferedReader' instances"));
+            }
+        }
+        PDFObject::Stream(s) => {
+            // _reconstruct, deepcopy(state), _deepcopy_dict
+            let _reconstruct = py_frame()?;
+            let _state = py_frame()?;
+            let _dict = py_frame()?;
+            // "attrs": its key, then the dict
+            leaf(2)?;
+            copy_frames(&PDFObject::Dict(s.attrs.clone()), file)?;
+            // "rawdata", "decipher", "data", "objid", "genno": keys and
+            // atomic values, but the decipher method of an encrypted
+            // document
+            leaf(2)?;
+            if s.decipher.is_some() {
+                leaf(frames::DEEPCOPY_DECIPHER)?;
+            }
+        }
+        _ => leaf(1)?,
+    }
+    Ok(())
+}
+
+/// `_deepcopy_dict` of a PDF dict: its frame, each key (atomic: two frames)
+/// and each value.
+fn copy_dict_frames(d: &PDFDict, file: FileKind) -> PyResult<()> {
+    let _dict = py_frame()?;
+    for (_, v) in d.items() {
+        leaf(2)?;
+        copy_frames(&v, file)?;
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
