@@ -411,17 +411,18 @@ CP936 = [b"\xcb\xce\xcc\xe5", b"\xba\xda\xcc\xe5", b"\xbf\xac\xcc\xe5_GB2312", b
 def named_font(b: Builder, fontname: Any) -> Ref:
     desc = b.obj({"Type": Name("FontDescriptor"), "FontName": fontname, "Flags": 32, "FontBBox": [0, -200, 1000, 800],
                   "Ascent": 800, "Descent": -200, "ItalicAngle": 0, "StemV": 80, "CapHeight": 700})
-    return b.obj({"Type": Name("Font"), "Subtype": Name("TrueType"), "BaseFont": Name("Arial"), "FirstChar": 32,
+    return b.obj({"Type": Name("Font"), "Subtype": Name("TrueType"), "BaseFont": Name("CustomSans"), "FirstChar": 32,
                   "LastChar": 126, "Widths": [500] * 95, "FontDescriptor": desc})
 
 
 def cases_fonts() -> list[Case]:
     out: list[Case] = []
-    names = CP936 + [b"ABCDEF+" + n for n in CP936] + [b"plain", b"\xff\xfe", b"A+B+C", b"+", b"x'y\"z\\", b""]
+    names = CP936 + [b"ABCDEF+" + n for n in CP936] + [b"plain", b"\xff\xfe", b"A+B+C", b"+", b"x'y\"z\\", b"",
+                                                       b"it's", b"\t\n\r\x7f\x80 ", b"\xcb\xce\xcc\xe5+x"]
 
     def res(b: Builder) -> dict:
         fonts = {f"N{i}": named_font(b, n) for i, n in enumerate(names)}
-        fonts["T3"] = type3(b)
+        fonts["T3"] = type3(b, [0.001, 0, 0, 0.001, 0, 0])
         fonts["V"] = type0(b, Name("Identity-V"), W2=[1, [-1000, 500, 880]])
         fonts["H"] = type0(b, Name("Identity-H"), W=[1, [500, 600]])
         fonts["P"] = type0(b, Name("UniJIS-UCS2-H"))
