@@ -1201,6 +1201,12 @@ et ne modifient pas le contrat ci-dessous sans accord : un changement d'une
   éléments de même empreinte sont interchangeables (mêmes caractères, même
   géométrie). La bibliothèque reçoit l'ordre par `OpenOptions::ids`
   (`IdsFactory`) ; la bibliothèque et l'API JS gardent `CreationOrder`.
+  Sonde de la base (40 fichiers de `quick` riches en images, annotations,
+  structure et tables, chaque étape tracée deux fois avec
+  `PYTHONHASHSEED` = 1 et 98765) : `plumber_text`, `plumber_tables` et
+  `plumber_doc` identiques ; `plumber_objects` ne diffère que par ses
+  lignes `ids` sur 12 fichiers (les objets écrits avant elles identiques :
+  les adresses changent, pas forcément l'analyse), comme l'étape `layout`.
 - **Recherche** : `plumber_text` écrit, avant chaque résultat de `search`,
   les correspondances du `re` de Python (`spans`, `ORACLE_INPUT`) ; le Rust
   les donne à `Page::search` et recopie la ligne (« Frontière
