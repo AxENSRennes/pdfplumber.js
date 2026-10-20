@@ -108,12 +108,18 @@ mod tests {
     #[test]
     fn utf8_errors() {
         assert_eq!(decode_utf8(b"caf\xc3\xa9").unwrap().as_str(), Some("caf\u{e9}"));
-        assert_eq!(msg(decode_utf8(b"a\xff")), "'utf-8' codec can't decode byte 0xff in position 1: invalid start byte");
+        assert_eq!(
+            msg(decode_utf8(b"a\xff")),
+            "'utf-8' codec can't decode byte 0xff in position 1: invalid start byte"
+        );
         assert_eq!(
             msg(decode_utf8(b"\xe1\x80A")),
             "'utf-8' codec can't decode bytes in position 0-1: invalid continuation byte"
         );
-        assert_eq!(msg(decode_utf8(b"\xe1\x80")), "'utf-8' codec can't decode bytes in position 0-1: unexpected end of data");
+        assert_eq!(
+            msg(decode_utf8(b"\xe1\x80")),
+            "'utf-8' codec can't decode bytes in position 0-1: unexpected end of data"
+        );
     }
 
     #[test]
@@ -121,12 +127,21 @@ mod tests {
         assert_eq!(decode_utf16(b"\xff\xfeA\x00").unwrap().as_str(), Some("A"));
         assert_eq!(decode_utf16(b"\xfe\xff\x00A").unwrap().as_str(), Some("A"));
         assert_eq!(decode_utf16(b"\x3d\xd8\x00\xde").unwrap().as_str(), Some("\u{1f600}"));
-        assert_eq!(msg(decode_utf16(b"A\x00B")), "'utf-16-le' codec can't decode byte 0x42 in position 2: truncated data");
-        assert_eq!(msg(decode_utf16(b"\xfe\xff\xdc\x00")), "'utf-16-be' codec can't decode bytes in position 2-3: illegal encoding");
+        assert_eq!(
+            msg(decode_utf16(b"A\x00B")),
+            "'utf-16-le' codec can't decode byte 0x42 in position 2: truncated data"
+        );
+        assert_eq!(
+            msg(decode_utf16(b"\xfe\xff\xdc\x00")),
+            "'utf-16-be' codec can't decode bytes in position 2-3: illegal encoding"
+        );
         assert_eq!(
             msg(decode_utf16(b"\x00\xd8A\x00")),
             "'utf-16-le' codec can't decode bytes in position 0-1: illegal UTF-16 surrogate"
         );
-        assert_eq!(msg(decode_utf16(b"\x00\xd8")), "'utf-16-le' codec can't decode bytes in position 0-1: unexpected end of data");
+        assert_eq!(
+            msg(decode_utf16(b"\x00\xd8")),
+            "'utf-16-le' codec can't decode bytes in position 0-1: unexpected end of data"
+        );
     }
 }

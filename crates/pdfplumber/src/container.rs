@@ -1,8 +1,7 @@
 //! Port of `pdfplumber/container.py`: `Container`, the base of `PDF` and
 //! `Page` (object lists by kind, edges, JSON and CSV output).
 //!
-//! Wave 4 (base): the interface, bodies `todo!()` (workstream PAGE,
-//! `docs/architecture.md`, "Vague 4"). [`Objects`] is complete.
+//! Wave 4, workstream PAGE (`docs/architecture.md`, "Vague 4").
 //!
 //! # Python classes in Rust
 //!
@@ -43,10 +42,14 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use pycompat::{PyResult, PyStr};
+use pycompat::json::JsonIndent;
+use pycompat::recursion::{eval_entry, leaf, py_frame};
+use pycompat::{ExcKind, PyErr, PyResult, PyStr};
 
+use crate::convert::{Serializer, CSV_COLS_REQUIRED, CSV_COLS_TO_PREPEND};
 use crate::obj::{Obj, PyValue};
 use crate::page::Page;
+use crate::utils::geometry::{curve_to_edges, line_to_edge, rect_to_edges};
 
 /// `Dict[str, T_obj_list]`: the objects of a container by kind
 /// (`"char"`, `"rect"`...), kinds in the order they were first added (a
@@ -64,6 +67,11 @@ impl Objects {
     /// `objects.get(kind)`
     pub fn get(&self, kind: &str) -> Option<&[Obj]> {
         self.kinds.iter().find(|(k, _)| k.as_str() == Some(kind)).map(|(_, v)| v.as_slice())
+    }
+
+    /// `objects.get(kind)` for a `str` key.
+    pub fn get_key(&self, kind: &PyStr) -> Option<&[Obj]> {
+        self.kinds.iter().find(|(k, _)| k == kind).map(|(_, v)| v.as_slice())
     }
 
     /// `objects.get(kind, [])`
@@ -160,96 +168,445 @@ pub trait Container {
     /// class's `cached_properties`) that are set.
     fn flush_cache(&self, properties: Option<&[&str]>);
 
+    /// `self.objects.get(kind, [])`, in the frame of the property.
+    fn kind_list(&self, kind: &str) -> PyResult<Vec<Obj>> {
+        let _frame = py_frame()?;
+        Ok(self.objects()?.get_or_empty(kind))
+    }
+
     // pdfplumber/container.py:35 Container.rects
     fn rects(&self) -> PyResult<Vec<Obj>> {
-        todo!("pdfplumber/container.py:35 Container.rects")
+        self.kind_list("rect")
     }
 
     // pdfplumber/container.py:39 Container.lines
     fn lines(&self) -> PyResult<Vec<Obj>> {
-        todo!("pdfplumber/container.py:39 Container.lines")
+        self.kind_list("line")
     }
 
     // pdfplumber/container.py:43 Container.curves
     fn curves(&self) -> PyResult<Vec<Obj>> {
-        todo!("pdfplumber/container.py:43 Container.curves")
+        self.kind_list("curve")
     }
 
     // pdfplumber/container.py:47 Container.images
     fn images(&self) -> PyResult<Vec<Obj>> {
-        todo!("pdfplumber/container.py:47 Container.images")
+        self.kind_list("image")
     }
 
     // pdfplumber/container.py:51 Container.chars
     fn chars(&self) -> PyResult<Vec<Obj>> {
-        todo!("pdfplumber/container.py:51 Container.chars")
+        self.kind_list("char")
     }
 
     // pdfplumber/container.py:55 Container.textboxverticals
     fn textboxverticals(&self) -> PyResult<Vec<Obj>> {
-        todo!("pdfplumber/container.py:55 Container.textboxverticals")
+        self.kind_list("textboxvertical")
     }
 
     // pdfplumber/container.py:59 Container.textboxhorizontals
     fn textboxhorizontals(&self) -> PyResult<Vec<Obj>> {
-        todo!("pdfplumber/container.py:59 Container.textboxhorizontals")
+        self.kind_list("textboxhorizontal")
     }
 
     // pdfplumber/container.py:63 Container.textlineverticals
     fn textlineverticals(&self) -> PyResult<Vec<Obj>> {
-        todo!("pdfplumber/container.py:63 Container.textlineverticals")
+        self.kind_list("textlinevertical")
     }
 
     // pdfplumber/container.py:67 Container.textlinehorizontals
     fn textlinehorizontals(&self) -> PyResult<Vec<Obj>> {
-        todo!("pdfplumber/container.py:67 Container.textlinehorizontals")
+        self.kind_list("textlinehorizontal")
     }
 
     // pdfplumber/container.py:71 Container.rect_edges
     /// `list(chain(*(utils.rect_to_edges(r) for r in self.rects)))`, cached.
     fn rect_edges(&self) -> PyResult<Rc<Vec<Obj>>> {
-        todo!("pdfplumber/container.py:71 Container.rect_edges")
+        let _frame = py_frame()?;
+        if let Some(edges) = &self.container_cache().borrow().rect_edges {
+            return Ok(edges.clone());
+        }
+        let edges = Rc::new(chain_edges(&self.rects()?, rect_to_edges)?);
+        self.container_cache().borrow_mut().rect_edges = Some(edges.clone());
+        Ok(edges)
     }
 
     // pdfplumber/container.py:79 Container.curve_edges
+    /// `list(chain(*(utils.curve_to_edges(r) for r in self.curves)))`,
+    /// cached.
     fn curve_edges(&self) -> PyResult<Rc<Vec<Obj>>> {
-        todo!("pdfplumber/container.py:79 Container.curve_edges")
+        let _frame = py_frame()?;
+        if let Some(edges) = &self.container_cache().borrow().curve_edges {
+            return Ok(edges.clone());
+        }
+        let edges = Rc::new(chain_edges(&self.curves()?, curve_to_edges)?);
+        self.container_cache().borrow_mut().curve_edges = Some(edges.clone());
+        Ok(edges)
     }
 
     // pdfplumber/container.py:87 Container.edges
-    /// The edges of the lines, then `rect_edges`, then `curve_edges`,
-    /// cached.
+    /// The edges of the lines (`list(map(utils.line_to_edge, self.lines))`),
+    /// then `rect_edges`, then `curve_edges`, cached.
     fn edges(&self) -> PyResult<Rc<Vec<Obj>>> {
-        todo!("pdfplumber/container.py:87 Container.edges")
+        let _frame = py_frame()?;
+        if let Some(edges) = &self.container_cache().borrow().edges {
+            return Ok(edges.clone());
+        }
+        let lines = self.lines()?;
+        let mut edges = Vec::with_capacity(lines.len());
+        for line in &lines {
+            // utils.line_to_edge, called by map() from C
+            let _entry = eval_entry()?;
+            leaf(1)?;
+            edges.push(line_to_edge(line)?);
+        }
+        edges.extend(self.rect_edges()?.iter().cloned());
+        edges.extend(self.curve_edges()?.iter().cloned());
+        let edges = Rc::new(edges);
+        self.container_cache().borrow_mut().edges = Some(edges.clone());
+        Ok(edges)
     }
 
     // pdfplumber/container.py:95 Container.horizontal_edges
     fn horizontal_edges(&self) -> PyResult<Vec<Obj>> {
-        todo!("pdfplumber/container.py:95 Container.horizontal_edges")
+        let _frame = py_frame()?;
+        oriented_edges(&self.edges()?, "h")
     }
 
     // pdfplumber/container.py:102 Container.vertical_edges
     fn vertical_edges(&self) -> PyResult<Vec<Obj>> {
-        todo!("pdfplumber/container.py:102 Container.vertical_edges")
+        let _frame = py_frame()?;
+        oriented_edges(&self.edges()?, "v")
     }
 
     // pdfplumber/container.py:108 Container.to_json
     /// `json.dumps(Serializer(...).serialize(self.to_dict(object_types)),
-    /// indent=indent)`: CPython's encoder (`pycompat::json`, to write:
-    /// `ensure_ascii`, `float.__repr__`, `NaN`/`Infinity`, the separators
-    /// of `indent`, the `TypeError` of a key or value it cannot encode).
+    /// indent=indent)`: CPython's encoder (`pycompat::json`: the C encoder
+    /// without an indent, the Python one with).
     fn to_json(&self, options: &SerializeOptions) -> PyResult<PyStr> {
-        let _ = options;
-        todo!("pdfplumber/container.py:108 Container.to_json")
+        let _frame = py_frame()?;
+        let data = self.to_dict(options.object_types.as_deref())?;
+        let serialized = Serializer::new(
+            options.precision.clone(),
+            options.include_attrs.as_deref(),
+            options.exclude_attrs.as_deref(),
+        )?
+        .serialize(&PyValue::Dict(data))?;
+        let indent = match &options.indent {
+            None => JsonIndent::None,
+            Some(v) if v.is_none() => JsonIndent::None,
+            // ' ' * indent (a bool is an int)
+            Some(PyValue::Str(s)) => JsonIndent::Str(s.to_string_lossy()),
+            Some(v @ (PyValue::Int(_) | PyValue::Bool(_))) => {
+                let n = match v.as_num() {
+                    Some(pycompat::Num::Int(i)) => i.as_i64(),
+                    _ => None,
+                };
+                match n {
+                    Some(n) if n <= MAX_INDENT => JsonIndent::Str(" ".repeat(n.max(0) as usize)),
+                    Some(_) => {
+                        return Err(PyErr::new(ExcKind::NotPorted, "not modelled: a JSON indent of more than 2**20"))
+                    }
+                    None => return Err(pycompat::exc::OverflowError("cannot fit 'int' into an index-sized integer")),
+                }
+            }
+            Some(v) => return pycompat::json::dumps_indent_error(v.type_name()).map(PyStr::from),
+        };
+        Ok(PyStr::from(pycompat::json::dumps(&serialized, &indent)?))
     }
 
     // pdfplumber/container.py:132 Container.to_csv
     /// `csv.DictWriter(stream, fieldnames=cols, extrasaction="ignore",
     /// quoting=csv.QUOTE_MINIMAL, escapechar="\\")`, header then rows:
-    /// CPython's `csv` writer (`pycompat::csv`, to write: `str()` of each
-    /// value, quoting, `\r\n` line ends).
+    /// CPython's `csv` writer (`pycompat::csv`), `str()` of each value that
+    /// is not a `str` (`PyValue::str_counted`), `\r\n` line ends.
     fn to_csv(&self, options: &SerializeOptions) -> PyResult<PyStr> {
-        let _ = options;
-        todo!("pdfplumber/container.py:132 Container.to_csv")
+        let _frame = py_frame()?;
+        let object_types: Vec<PyStr> = match &options.object_types {
+            Some(t) => t.clone(),
+            None => {
+                let mut t: Vec<PyStr> = self.objects()?.keys().cloned().collect();
+                t.push(PyStr::new("annot"));
+                t
+            }
+        };
+        let mut serialized: Vec<PyValue> = Vec::new();
+        let mut fields: Vec<PyStr> = Vec::new();
+        let pages: Vec<Option<Rc<Page>>> = match self.pages()? {
+            None => vec![None],
+            Some(pages) => pages.into_iter().map(Some).collect(),
+        };
+        let serializer = Serializer::new(
+            options.precision.clone(),
+            options.include_attrs.as_deref(),
+            options.exclude_attrs.as_deref(),
+        )?;
+        for page in &pages {
+            for t in &object_types {
+                let name = t.concat(&PyStr::new("s"));
+                let objs = match page {
+                    None => self.attribute(&name)?,
+                    Some(p) => p.attribute(&name)?,
+                };
+                if py_len(&objs)? > 0 {
+                    // serialized += serializer.serialize(objs)
+                    let s = serializer.serialize(&objs)?;
+                    match crate::obj::py_iter(&s) {
+                        Some(items) => serialized.extend(items?),
+                        None => {
+                            return Err(pycompat::exc::TypeError(format!("'{}' object is not iterable", s.type_name())))
+                        }
+                    }
+                    // [k for k, v in objs[0].items() if type(v) is not dict]
+                    let first = crate::obj::py_getitem_index(&objs, 0)?;
+                    let Some(first) = dict_items(&first) else {
+                        return Err(pycompat::exc::AttributeError(format!(
+                            "'{}' object has no attribute 'items'",
+                            first.type_name()
+                        )));
+                    };
+                    for (k, v) in first {
+                        if v.type_name() != "dict" && !fields.contains(&k) {
+                            fields.push(k);
+                        }
+                    }
+                }
+            }
+        }
+        let required: Vec<PyStr> = CSV_COLS_REQUIRED.iter().map(|c| PyStr::new(c)).collect();
+        let prepend: Vec<PyStr> = CSV_COLS_TO_PREPEND.iter().map(|c| PyStr::new(c)).collect();
+        let mut rest: Vec<PyStr> =
+            fields.into_iter().filter(|f| !required.contains(f) && !prepend.contains(f)).collect();
+        rest.sort();
+        let mut cols = required;
+        for c in prepend.into_iter().chain(rest) {
+            // filter(serializer.attr_filter, non_req_cols): the lambda from C
+            let _entry = eval_entry()?;
+            leaf(1)?;
+            if serializer.attr_filter.accepts(&c) {
+                cols.push(c);
+            }
+        }
+        // csv.DictWriter(...): the class call, __init__
+        pycompat::recursion::class_call_leaf()?;
+        let mut out: Vec<u32> = Vec::new();
+        {
+            // w.writeheader() -> writerow -> _dict_to_list, whose generator
+            // expression the C writer resumes
+            let _writeheader = py_frame()?;
+            let _writerow = py_frame()?;
+            leaf(1)?;
+            let _entry = eval_entry()?;
+            leaf(1)?;
+            let header: Vec<Option<PyStr>> = cols.iter().map(|c| Some(c.clone())).collect();
+            pycompat::csv::write_row(&mut out, &header);
+        }
+        {
+            // w.writerows(serialized): map(self._dict_to_list, rowdicts)
+            // from C, each generator expression resumed from C
+            let _writerows = py_frame()?;
+            for row in &serialized {
+                let _entry = eval_entry()?;
+                leaf(1)?;
+                let mut fields = Vec::with_capacity(cols.len());
+                {
+                    let _entry = eval_entry()?;
+                    let _genexpr = py_frame()?;
+                    let Some(items) = dict_items(row) else {
+                        return Err(pycompat::exc::AttributeError(format!(
+                            "'{}' object has no attribute 'get'",
+                            row.type_name()
+                        )));
+                    };
+                    for c in &cols {
+                        // rowdict.get(key, self.restval): restval is ""
+                        let value = items.iter().find(|(k, _)| k == c).map(|(_, v)| v.clone());
+                        fields.push(match value {
+                            None => Some(PyStr::empty()),
+                            Some(v) if v.is_none() => None,
+                            Some(v) => Some(v.str_counted()?),
+                        });
+                    }
+                }
+                pycompat::csv::write_row(&mut out, &fields);
+            }
+        }
+        Ok(PyStr::from_code_points(out).expect("code points"))
+    }
+}
+
+/// The largest indent `' ' * indent` builds here (beyond, `NotPorted`:
+/// Python builds it, a case no caller of the port makes).
+const MAX_INDENT: i64 = 1 << 20;
+
+/// `list(chain(*(f(r) for r in objs)))`: the generator expression is
+/// created, then unpacked from C (an evaluation loop entry and its frame
+/// per item, `f`'s frame inside, and once more at the end).
+fn chain_edges(objs: &[Obj], f: fn(&Obj) -> PyResult<Vec<Obj>>) -> PyResult<Vec<Obj>> {
+    leaf(1)?;
+    let mut out = Vec::new();
+    for obj in objs {
+        let _entry = eval_entry()?;
+        let _genexpr = py_frame()?;
+        leaf(1)?;
+        out.extend(f(obj)?);
+    }
+    let _entry = eval_entry()?;
+    leaf(1)?;
+    Ok(out)
+}
+
+/// `list(filter(test, edges))` with `test(x) = bool(x["orientation"] ==
+/// orientation)`, called from C.
+fn oriented_edges(edges: &[Obj], orientation: &str) -> PyResult<Vec<Obj>> {
+    let wanted = PyValue::str(orientation);
+    let mut out = Vec::new();
+    for e in edges {
+        let _entry = eval_entry()?;
+        leaf(1)?;
+        if e.item("orientation")?.py_eq(&wanted) {
+            out.push(e.clone());
+        }
+    }
+    Ok(out)
+}
+
+/// `len(v)`, with the `TypeError` of a value that has none.
+pub fn py_len(v: &PyValue) -> PyResult<usize> {
+    let no_len = || pycompat::exc::TypeError(format!("object of type '{}' has no len()", v.type_name()));
+    // PDFStream has __getitem__ (iterable) but no __len__
+    if let PyValue::Pdf(pdfminer::pdftypes::PDFObject::Stream(_)) = v {
+        return Err(no_len());
+    }
+    match crate::obj::py_iter(v) {
+        Some(items) => Ok(items?.len()),
+        None => Err(no_len()),
+    }
+}
+
+/// The `(key, value)` items of a `dict` value (a PDF dict's values as
+/// values), `None` for any other value.
+fn dict_items(v: &PyValue) -> Option<Vec<(PyStr, PyValue)>> {
+    match v {
+        PyValue::Dict(d) => Some(d.items().to_vec()),
+        PyValue::Pdf(pdfminer::pdftypes::PDFObject::Dict(d)) => {
+            Some(d.items().into_iter().map(|(k, v)| (PyStr::new(&k), PyValue::from_pdf(v))).collect())
+        }
+        _ => None,
+    }
+}
+
+/// A list of object dicts as a value.
+pub fn obj_list(objs: Vec<Obj>) -> PyValue {
+    PyValue::List(objs.into_iter().map(PyValue::Dict).collect())
+}
+
+/// Every name an instance of `PDF` or `Page` (and its subclasses) has as a
+/// method: `getattr` gives a bound method, which is not a value of the
+/// object model (`NotPorted`).
+const METHODS: [&str; 30] = [
+    "flush_cache",
+    "to_json",
+    "to_csv",
+    "to_dict",
+    "close",
+    "point2coord",
+    "process_object",
+    "iter_layout_objects",
+    "parse_objects",
+    "debug_tablefinder",
+    "find_tables",
+    "find_table",
+    "extract_tables",
+    "extract_table",
+    "get_textmap",
+    "_get_textmap",
+    "search",
+    "extract_text",
+    "extract_text_simple",
+    "extract_words",
+    "extract_text_lines",
+    "crop",
+    "within_bbox",
+    "outside_bbox",
+    "filter",
+    "dedupe_chars",
+    "to_image",
+    "open",
+    "__enter__",
+    "__exit__",
+];
+
+/// `getattr(container, name)` for what `PDF` and `Page` share: the lists
+/// by kind, the edges, `objects`, the cached properties when they are set,
+/// `cached_properties`; `class` names the class in the `AttributeError`.
+pub fn container_attribute<C: Container + ?Sized>(c: &C, class: &str, name: &PyStr) -> PyResult<PyValue> {
+    let edges = |e: Rc<Vec<Obj>>| obj_list(e.to_vec());
+    Ok(match name.as_str() {
+        Some("rects") => obj_list(c.rects()?),
+        Some("lines") => obj_list(c.lines()?),
+        Some("curves") => obj_list(c.curves()?),
+        Some("images") => obj_list(c.images()?),
+        Some("chars") => obj_list(c.chars()?),
+        Some("textboxverticals") => obj_list(c.textboxverticals()?),
+        Some("textboxhorizontals") => obj_list(c.textboxhorizontals()?),
+        Some("textlineverticals") => obj_list(c.textlineverticals()?),
+        Some("textlinehorizontals") => obj_list(c.textlinehorizontals()?),
+        Some("rect_edges") => edges(c.rect_edges()?),
+        Some("curve_edges") => edges(c.curve_edges()?),
+        Some("edges") => edges(c.edges()?),
+        Some("horizontal_edges") => obj_list(c.horizontal_edges()?),
+        Some("vertical_edges") => obj_list(c.vertical_edges()?),
+        Some("objects") => objects_value(&*c.objects()?),
+        Some(cached @ ("_rect_edges" | "_curve_edges" | "_edges")) => {
+            let cache = c.container_cache().borrow();
+            let set = match cached {
+                "_rect_edges" => cache.rect_edges.clone(),
+                "_curve_edges" => cache.curve_edges.clone(),
+                _ => cache.edges.clone(),
+            };
+            match set {
+                Some(e) => edges(e),
+                None => return Err(no_attribute(class, name)),
+            }
+        }
+        Some(m) if METHODS.contains(&m) => {
+            return Err(PyErr::new(
+                ExcKind::NotPorted,
+                format!("not modelled: the method {class}.{m} as a value (getattr in to_dict/to_csv)"),
+            ))
+        }
+        _ => return Err(no_attribute(class, name)),
+    })
+}
+
+/// `self.objects` as a value: a dict of lists.
+pub fn objects_value(objects: &Objects) -> PyValue {
+    let mut d = Obj::new();
+    for (k, v) in objects.iter() {
+        d.set(k, obj_list(v.to_vec()));
+    }
+    PyValue::Dict(d)
+}
+
+/// `AttributeError: 'Page' object has no attribute 'xs'`
+pub fn no_attribute(class: &str, name: &PyStr) -> PyErr {
+    PyErr::with_message(
+        ExcKind::AttributeError,
+        &PyStr::new(&format!("'{class}' object has no attribute '")).concat(name).concat(&PyStr::new("'")),
+    )
+}
+
+/// `flush_cache` of the properties of [`ContainerCache`] named in
+/// `props`.
+pub fn flush_container_cache(cache: &RefCell<ContainerCache>, props: &[&str]) {
+    let mut cache = cache.borrow_mut();
+    for p in props {
+        match *p {
+            "_rect_edges" => cache.rect_edges = None,
+            "_curve_edges" => cache.curve_edges = None,
+            "_edges" => cache.edges = None,
+            _ => {}
+        }
     }
 }

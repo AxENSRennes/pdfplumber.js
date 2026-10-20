@@ -28,28 +28,34 @@ use pdfminer::converter::{
     layout_analyzer, page_aggregator, InterpPayload, LayoutAnalyzer, PDFLayoutAnalyzer, PDFPageAggregator,
     PageAggregator,
 };
-use pdfminer::layout::{LAParams, LTItem, LTPage, LTPayload};
+use pdfminer::layout::{LAParams, LTAnno, LTComponent, LTItem, LTPage, LTPayload, TextLineElement};
 use pdfminer::pdfcolor::PDFColorSpace;
 use pdfminer::pdfdevice::{text_device, ObjSeq, PDFDevice, PDFDeviceAttrs, PDFTextDevice, PDFTextSeq};
 use pdfminer::pdffont::{FontName, PDFFont};
-use pdfminer::pdfinterp::{Color, PDFGraphicState, PDFPageInterpreter, PDFResourceManager, PDFStackT, PDFTextState};
+use pdfminer::pdfinterp::{
+    Color, PDFGraphicState, PDFPageInterpreter, PDFResourceManager, PDFStackT, PDFTextState, StandardColor,
+};
 use pdfminer::pdfpage::PDFPage;
 use pdfminer::pdftypes::{PDFDict, PDFList, PDFObject, PDFStream};
 use pdfminer::psparser::{LiteralName, PSLiteral};
-use pdfminer::utils::{Matrix, PathSegment};
+use pdfminer::utils::{Matrix, PathSegment, Point};
 use pycompat::bytes_format::bytes_mod_int;
-use pycompat::recursion::{c_called_leaf, eval_entry, py_frame};
+use pycompat::recursion::{c_call, c_called_leaf, class_call, eval_entry, leaf, py_frame, py_frames};
 use pycompat::{codecs, diagnostics};
+use pycompat::repr::bytes_repr;
 use pycompat::{exc, ExcKind, Num, PyErr, PyInt, PyResult, PyStr};
 
 use crate::container::{Container, ContainerCache, Objects};
-use crate::obj::{bbox_from_value, Bbox, HashKey, Obj, PageRef, PyValue};
+use crate::obj::{bbox_from_value, bbox_value, Bbox, HashKey, Obj, PageRef, PyValue};
 use crate::pdf::PdfCore;
-use crate::table::{Table, TableFinder, TablePage};
 use crate::structure::{self, PDFStructTree, Scope};
-use crate::utils::geometry;
-use crate::utils::pdfinternals::{decode_text, resolve_all, TextArg};
-use crate::utils::text::{Kwargs, RegexMatch, TextMap};
+use crate::table::{Table, TableFinder, TablePage, TableSettings};
+use crate::utils::exceptions::pdfminer_exception;
+use crate::utils::geometry::{calculate_area, crop_to_bbox, get_bbox_overlap, outside_bbox, within_bbox};
+use crate::utils::pdfinternals::{decode_text, resolve_all, resolve_and_decode, TextArg};
+use crate::utils::text::{
+    chars_to_textmap, dedupe_chars, extract_text_simple, extract_words_kwargs, Kwargs, RegexMatch, TextMap,
+};
 
 /// `T_bbox`: four numbers.
 pub type BBox = [PDFObject; 4];
@@ -743,24 +749,73 @@ pub const CP936_FONTNAMES: [(&[u8], &str); 5] = [
 ];
 
 // pdfplumber/page.py:92 fix_fontname_bytes
+/// The name of a font given as `bytes` (a `/FontName` that is a string):
+/// the subset prefix up to `+`, and the suffix through `CP936_FONTNAMES`,
+/// both written as `str(b)[2:-1]` (the `repr` of the bytes without `b'`
+/// and `'`: `\xcb`, `\\`...).
 pub fn fix_fontname_bytes(fontname: &[u8]) -> PyResult<PyStr> {
-    let _ = fontname;
-    todo!("pdfplumber/page.py:92 fix_fontname_bytes")
+    let _frame = py_frame()?;
+    let (prefix, suffix) = match fontname.iter().position(|&b| b == b'+') {
+        Some(i) => (&fontname[..=i], &fontname[i + 1..]),
+        None => (&b""[..], fontname),
+    };
+    // str(b)[2:-1]: PyObject_Str of the bytes (a C unit)
+    let inner = |b: &[u8]| -> PyResult<String> {
+        drop(c_call(WHILE_STR)?);
+        let r = bytes_repr(b);
+        Ok(r[2..r.len() - 1].to_owned())
+    };
+    // CP936_FONTNAMES.get(suffix, str(suffix)[2:-1]): the default is
+    // computed first
+    let default = inner(suffix)?;
+    let suffix_new = match CP936_FONTNAMES.iter().find(|(k, _)| *k == suffix) {
+        Some((_, name)) => (*name).to_owned(),
+        None => default,
+    };
+    Ok(PyStr::from(inner(prefix)? + &suffix_new))
 }
 
 // pdfplumber/page.py:103 tuplify_list_kwargs
 /// A `list` value becomes a `tuple` (top level only).
 pub fn tuplify_list_kwargs(kwargs: &Kwargs) -> PyResult<Kwargs> {
-    let _ = kwargs;
-    todo!("pdfplumber/page.py:103 tuplify_list_kwargs")
+    let _frame = py_frame()?;
+    let mut out = Kwargs::new();
+    for (k, v) in kwargs.items() {
+        let v = match v {
+            PyValue::List(items) => PyValue::Tuple(items.clone()),
+            PyValue::Pdf(PDFObject::List(l)) => PyValue::tuple(l.to_vec().into_iter().map(PyValue::from_pdf)),
+            other => other.clone(),
+        };
+        out.set(k, v);
+    }
+    Ok(out)
 }
 
 // pdfplumber/page.py:657 test_proposed_bbox
 /// `ValueError` for a box of zero area, outside the parent's box, or not
 /// fully within it (each message prints both boxes as given).
 pub fn test_proposed_bbox(bbox: &PyValue, parent_bbox: &PyValue) -> PyResult<()> {
-    let _ = (bbox, parent_bbox);
-    todo!("pdfplumber/page.py:657 test_proposed_bbox")
+    let _frame = py_frame()?;
+    let message = |text: &str, with_parent: bool| -> PyErr {
+        let mut m = PyStr::new("Bounding box ").concat(&bbox.py_str()).concat(&PyStr::new(text));
+        if with_parent {
+            m = m.concat(&parent_bbox.py_str());
+        }
+        PyErr::with_message(ExcKind::ValueError, &m)
+    };
+    let bbox_area = calculate_area(bbox)?;
+    if bbox_area.py_eq(&PyValue::from(0i64)) {
+        return Err(message(" has an area of zero.", false));
+    }
+    let overlap = get_bbox_overlap(&bbox_from_value(bbox)?, &bbox_from_value(parent_bbox)?)?;
+    let Some(overlap) = overlap else {
+        return Err(message(" is entirely outside parent page bounding box ", true));
+    };
+    let overlap_area = calculate_area(&bbox_value(&overlap))?;
+    if overlap_area.lt(&bbox_area)? {
+        return Err(message(" is not fully within parent page bounding box ", true));
+    }
+    Ok(())
 }
 
 // pdfplumber/page.py:161 _normalize_box
@@ -791,17 +846,6 @@ fn invert_box_values(b: [PyValue; 4], mb_height: &PyValue) -> PyResult<[PyValue;
     Ok([x0, mb_height.sub(&y1)?, x1, mb_height.sub(&y0)?])
 }
 
-/// `crop_fn(objs, crop_bbox)`: the `_crop_fn` of a `CroppedPage`
-/// (`utils.crop_to_bbox`, `utils.within_bbox`, `utils.outside_bbox`).
-pub fn apply_crop_fn(crop_fn: CropFn, crop_bbox: &PyValue, objs: &[Obj]) -> PyResult<Vec<Obj>> {
-    let bbox = bbox_from_value(crop_bbox)?;
-    match crop_fn {
-        CropFn::CropToBbox => geometry::crop_to_bbox(objs, &bbox),
-        CropFn::WithinBbox => geometry::within_bbox(objs, &bbox),
-        CropFn::OutsideBbox => geometry::outside_bbox(objs, &bbox),
-    }
-}
-
 /// The keyword arguments of `Page.search` besides the text map's.
 #[derive(Clone, Copy, Debug)]
 pub struct SearchArgs {
@@ -810,13 +854,314 @@ pub struct SearchArgs {
     pub return_groups: bool,
 }
 
+const WHILE_STR: &str = " while getting the str of an object";
+const WHILE_CALLING: &str = " while calling a Python object";
+
+/// `maxsize` of `lru_cache()`.
+const LRU_MAXSIZE: usize = 128;
+
+/// An object `iter_layout_objects` walks: an item of a page, a figure, a
+/// text box or a text line (an `LTAnno` only in a line).
+#[derive(Clone)]
+pub enum LayoutObj {
+    Item(LTItem<PlumberPayload>),
+    Anno(LTAnno),
+}
+
+impl LayoutObj {
+    /// `isinstance(obj, LTContainer)`: its children, `None` for a leaf.
+    fn children(&self) -> Option<Vec<LayoutObj>> {
+        match self {
+            LayoutObj::Item(LTItem::Figure(f)) => {
+                Some(f.borrow().layout._objs.iter().cloned().map(LayoutObj::Item).collect())
+            }
+            LayoutObj::Item(LTItem::TextBox(b)) => {
+                Some(b.borrow()._objs.iter().map(|l| LayoutObj::Item(LTItem::TextLine(l.clone()))).collect())
+            }
+            LayoutObj::Item(LTItem::TextLine(l)) => Some(
+                l.borrow()
+                    ._objs
+                    .iter()
+                    .map(|e| match e {
+                        TextLineElement::Char(c) => LayoutObj::Item(LTItem::Char(c.clone())),
+                        TextLineElement::Anno(a) => LayoutObj::Anno(a.clone()),
+                    })
+                    .collect(),
+            ),
+            _ => None,
+        }
+    }
+
+    /// The Python class name.
+    fn class_name(&self) -> &'static str {
+        match self {
+            LayoutObj::Item(item) => item.class_name(),
+            LayoutObj::Anno(_) => "LTAnno",
+        }
+    }
+}
+
+/// A value of an object's `__dict__` as `process_attr` sees it: `None`
+/// for an attribute that is not in `ALL_ATTRS` (it is only looked at).
+type DictItem = (&'static str, Option<PyValue>);
+
+fn numv(n: &Num) -> PyValue {
+    PyValue::from(n.clone())
+}
+
+fn point_value(p: &Point) -> PyValue {
+    PyValue::tuple(p.iter().map(numv))
+}
+
+fn standard_color(c: &StandardColor) -> PyValue {
+    match c {
+        StandardColor::Gray(g) => numv(g),
+        StandardColor::Rgb(rgb) => PyValue::tuple(rgb.iter().map(|f| PyValue::float(*f))),
+        StandardColor::Cmyk(cmyk) => PyValue::tuple(cmyk.iter().map(|f| PyValue::float(*f))),
+    }
+}
+
+/// A color of the interpreter as Python holds it (a number, a tuple, a
+/// pattern name, or `(base_color, pattern_name)`).
+pub fn color_value(c: &Color) -> PyValue {
+    match c {
+        Color::Standard(c) => standard_color(c),
+        Color::Pattern(name) => PyValue::str(name),
+        Color::UncoloredPattern(c, name) => PyValue::tuple([standard_color(c), PyValue::str(name)]),
+    }
+}
+
+/// `gs.scolor if isinstance(gs.scolor, tuple) else (gs.scolor,)`
+fn color_tuple(c: &Color) -> PyValue {
+    match color_value(c) {
+        t @ PyValue::Tuple(_) => t,
+        other => PyValue::tuple([other]),
+    }
+}
+
+fn marked(v: &MarkedContentAttr) -> PyValue {
+    match v {
+        MarkedContentAttr::Mcid(o) => PyValue::from_pdf(o.clone()),
+        MarkedContentAttr::Tag(t) => t.as_ref().map_or(PyValue::None, |t| PyValue::str(t)),
+    }
+}
+
+fn comp_items(c: &LTComponent) -> [DictItem; 7] {
+    [
+        ("x0", Some(numv(&c.x0))),
+        ("y0", Some(numv(&c.y0))),
+        ("x1", Some(numv(&c.x1))),
+        ("y1", Some(numv(&c.y1))),
+        ("width", Some(numv(&c.width))),
+        ("height", Some(numv(&c.height))),
+        ("bbox", None),
+    ]
+}
+
+/// `obj.__dict__.items()`, the values of `ALL_ATTRS` made (see
+/// [`DictItem`]): the class's attributes in `__init__` order, then those
+/// pdfplumber set later (`mcid`, `tag`).
+fn dict_items(obj: &LayoutObj) -> Vec<DictItem> {
+    let mut out: Vec<DictItem> = Vec::new();
+    let extra = match obj {
+        LayoutObj::Anno(_) => {
+            out.push(("_text", None));
+            Vec::new()
+        }
+        LayoutObj::Item(LTItem::Char(c)) => {
+            out.push(("_text", None));
+            out.push(("matrix", Some(PyValue::tuple(c.matrix.iter().map(numv)))));
+            out.push((
+                "fontname",
+                Some(match &c.fontname {
+                    FontName::Str(s) => PyValue::str(s),
+                    FontName::Obj(o) => PyValue::from_pdf(o.clone()),
+                }),
+            ));
+            out.push(("ncs", None));
+            out.push(("graphicstate", None));
+            out.push(("adv", Some(numv(&c.adv))));
+            out.push(("upright", Some(PyValue::Bool(c.upright))));
+            out.extend(comp_items(&c.comp));
+            out.push(("size", Some(numv(&c.size))));
+            c.attrs.items()
+        }
+        LayoutObj::Item(LTItem::Curve(c)) => {
+            out.extend(comp_items(&c.comp));
+            out.push(("pts", Some(PyValue::list(c.pts.iter().map(point_value)))));
+            out.push(("linewidth", Some(numv(&c.linewidth))));
+            out.push(("stroke", Some(PyValue::Bool(c.stroke))));
+            out.push(("fill", Some(PyValue::Bool(c.fill))));
+            out.push(("evenodd", Some(PyValue::Bool(c.evenodd))));
+            out.push(("stroking_color", Some(c.stroking_color.as_ref().map_or(PyValue::None, color_value))));
+            out.push(("non_stroking_color", Some(c.non_stroking_color.as_ref().map_or(PyValue::None, color_value))));
+            out.push(("original_path", None));
+            out.push(("dashing_style", None));
+            c.attrs.items()
+        }
+        LayoutObj::Item(LTItem::Image(i)) => {
+            out.extend(comp_items(&i.comp));
+            out.push(("name", Some(PyValue::str(&i.name))));
+            out.push(("stream", Some(PyValue::Pdf(PDFObject::Stream(i.stream.clone())))));
+            out.push((
+                "srcsize",
+                Some(PyValue::tuple([PyValue::from_pdf(i.srcsize.0.clone()), PyValue::from_pdf(i.srcsize.1.clone())])),
+            ));
+            out.push(("imagemask", Some(PyValue::from_pdf(i.imagemask.clone()))));
+            out.push(("bits", Some(PyValue::from_pdf(i.bits.clone()))));
+            out.push(("colorspace", Some(PyValue::from_pdf(i.colorspace.clone()))));
+            i.attrs.items()
+        }
+        LayoutObj::Item(LTItem::Figure(f)) => {
+            let f = f.borrow();
+            out.push(("name", Some(PyValue::str(&f.name))));
+            out.push(("matrix", Some(PyValue::tuple(f.matrix.iter().map(numv)))));
+            out.extend(comp_items(&f.layout.comp));
+            out.push(("_objs", None));
+            out.push(("groups", None));
+            f.attrs.items()
+        }
+        LayoutObj::Item(LTItem::TextLine(l)) => {
+            let l = l.borrow();
+            out.extend(comp_items(&l.comp));
+            out.push(("_objs", None));
+            out.push(("word_margin", None));
+            out.push((if l.is_horizontal() { "_x1" } else { "_y0" }, None));
+            Vec::new()
+        }
+        LayoutObj::Item(LTItem::TextBox(b)) => {
+            out.extend(comp_items(&b.borrow().comp));
+            out.push(("_objs", None));
+            out.push(("index", None));
+            Vec::new()
+        }
+    };
+    for (k, v) in &extra {
+        out.push((k, Some(marked(v))));
+    }
+    out
+}
+
+// pdfplumber/utils/pdfinternals.py:66 resolve_all
+/// `resolve_all(x)` of a value of the object model: a PDF object through
+/// `pdfinternals::resolve_all` (its frame), a Python `tuple` or `list`
+/// item by item (`type(x)(resolve_all(v) for v in x)`: the generator
+/// expression resumed from C), a `dict` value by value, anything else as
+/// it is.
+pub fn resolve_all_value(x: &PyValue) -> PyResult<PyValue> {
+    if let PyValue::Pdf(o) = x {
+        return Ok(PyValue::from_pdf(resolve_all(o)?));
+    }
+    let _frame = py_frame()?;
+    match x {
+        PyValue::Tuple(items) | PyValue::List(items) => {
+            let _entry = eval_entry()?;
+            let _genexpr = py_frame()?;
+            let mut out = Vec::with_capacity(items.len());
+            for v in items.iter() {
+                out.push(resolve_all_value(v)?);
+            }
+            Ok(if matches!(x, PyValue::Tuple(_)) { PyValue::Tuple(out.into()) } else { PyValue::List(out.into()) })
+        }
+        PyValue::Dict(d) => {
+            // get_dict_type(x) == "Annot": the decoded name of a literal /Type
+            let annot = {
+                let _frame = py_frame()?;
+                match d.get("Type") {
+                    Some(PyValue::Pdf(PDFObject::Literal(lit))) => {
+                        let name = match lit.name() {
+                            LiteralName::Str(s) => decode_text(TextArg::Str(s))?,
+                            LiteralName::Bytes(b) => decode_text(TextArg::Bytes(b))?,
+                        };
+                        name == "Annot"
+                    }
+                    Some(t) => t.py_eq(&PyValue::str("Annot")),
+                    None => false,
+                }
+            };
+            let mut out = Obj::new();
+            for (k, v) in d.items() {
+                let value = if annot && *k == "Parent" { v.clone() } else { resolve_all_value(v)? };
+                out.set(k, value);
+            }
+            Ok(PyValue::Dict(out))
+        }
+        other => Ok(other.clone()),
+    }
+}
+
+/// `x[i]`, `IndexError`... as Python's subscription of a sequence raises.
+fn index(v: &PyValue, i: usize) -> PyResult<PyValue> {
+    crate::obj::py_getitem_index(v, i)
+}
+
 impl Page {
     // pdfplumber/page.py:191 Page.__init__
     /// `Page(pdf, page_obj, page_number=page_number,
     /// initial_doctop=initial_doctop)`: the class call, `__init__`.
     pub fn new(pdf: Rc<PdfCore>, page_obj: Rc<PDFPage>, page_number: PyInt, initial_doctop: PyValue) -> PyResult<Page> {
-        let _ = (pdf, page_obj, page_number, initial_doctop);
-        todo!("pdfplumber/page.py:191 Page.__init__ (PageBoxes::new)")
+        let _call = class_call()?;
+        let doctop = initial_doctop.as_num().expect("PDF.pages accumulates numbers");
+        // the boxes, in __init__'s frame (PageBoxes::new takes it)
+        let boxes = PageBoxes::new(&page_obj, doctop)?;
+        {
+            // self.get_textmap = lru_cache()(self._get_textmap): lru_cache,
+            // then decorating_function -> update_wrapper, in __init__'s frame
+            let _init = py_frame()?;
+            leaf(1)?;
+            leaf(2)?;
+        }
+        let tuple = |b: &BBox| PyValue::tuple(b.iter().cloned().map(PyValue::from_pdf));
+        let mediabox = tuple(&boxes.mediabox);
+        let cropbox = if page_obj.attrs.contains_key("CropBox") { tuple(&boxes.cropbox) } else { mediabox.clone() };
+        Ok(Page {
+            pdf,
+            root_page: None,
+            page_number: page_number.clone(),
+            initial_doctop: PyValue::from(boxes.initial_doctop.clone()),
+            rotation: PyValue::from_pdf(boxes.rotation.clone()),
+            bbox: mediabox.clone(),
+            mediabox,
+            cropbox,
+            trimbox: boxes.trimbox.as_ref().map(tuple),
+            bleedbox: boxes.bleedbox.as_ref().map(tuple),
+            artbox: boxes.artbox.as_ref().map(tuple),
+            page_obj,
+            kind: PageKind::Original,
+            value: PageRef::new(page_number),
+            cache: RefCell::new(PageCache::default()),
+            container: RefCell::new(ContainerCache::default()),
+        })
+    }
+
+    // pdfplumber/page.py:643 DerivedPage.__init__
+    /// A derived page of `parent`: `DerivedPage.__init__` (a frame) copies
+    /// what the parent's `__init__` set but the optional boxes, flushes
+    /// `Container.cached_properties` (none is set yet) and makes its
+    /// `get_textmap` cache (`lru_cache`).
+    fn derived(parent: &Rc<Page>, kind: PageKind, bbox: PyValue) -> PyResult<Page> {
+        let _frame = py_frame()?;
+        leaf(1)?; // self.flush_cache(Container.cached_properties)
+        leaf(1)?; // lru_cache()
+        leaf(2)?; // decorating_function -> update_wrapper
+        Ok(Page {
+            pdf: parent.pdf.clone(),
+            root_page: Some(parent.root_page.clone().unwrap_or_else(|| parent.clone())),
+            page_obj: parent.page_obj.clone(),
+            page_number: parent.page_number.clone(),
+            initial_doctop: parent.initial_doctop.clone(),
+            rotation: parent.rotation.clone(),
+            mediabox: parent.mediabox.clone(),
+            cropbox: parent.cropbox.clone(),
+            trimbox: None,
+            bleedbox: None,
+            artbox: None,
+            bbox,
+            kind,
+            value: PageRef::new(parent.page_number.clone()),
+            cache: RefCell::new(PageCache::default()),
+            container: RefCell::new(ContainerCache::default()),
+        })
     }
 
     /// This page as a value (the same object each time).
@@ -824,19 +1169,51 @@ impl Page {
         self.value.clone()
     }
 
+    /// `self.root_page`: the original page this one derives from (itself
+    /// for an original page).
+    pub fn root_page<'a>(&'a self, this: &'a Rc<Page>) -> &'a Rc<Page> {
+        self.root_page.as_ref().unwrap_or(this)
+    }
+
+    /// `is_original`
+    pub fn is_original(&self) -> bool {
+        matches!(self.kind, PageKind::Original)
+    }
+
+    /// The Python class name (`Page`, `CroppedPage`, `FilteredPage`).
+    pub fn class_name(&self) -> &'static str {
+        match self.kind {
+            PageKind::Original => "Page",
+            PageKind::Cropped { .. } => "CroppedPage",
+            PageKind::Filtered { .. } => "FilteredPage",
+        }
+    }
+
     // pdfplumber/page.py:235 Page.close
-    pub fn close(&self) {
-        todo!("pdfplumber/page.py:235 Page.close")
+    /// `self.flush_cache()`, then `self.get_textmap.cache_clear()`.
+    pub fn close(&self) -> PyResult<()> {
+        let _frame = py_frame()?;
+        leaf(1)?; // flush_cache
+        Container::flush_cache(self, None);
+        self.cache.borrow_mut().textmaps.entries.clear();
+        Ok(())
+    }
+
+    /// `self.bbox[i]`
+    fn bbox_item(&self, i: usize) -> PyResult<PyValue> {
+        index(&self.bbox, i)
     }
 
     // pdfplumber/page.py:240 Page.width
     pub fn width(&self) -> PyResult<PyValue> {
-        todo!("pdfplumber/page.py:240 Page.width")
+        let _frame = py_frame()?;
+        self.bbox_item(2)?.sub(&self.bbox_item(0)?)
     }
 
     // pdfplumber/page.py:244 Page.height
     pub fn height(&self) -> PyResult<PyValue> {
-        todo!("pdfplumber/page.py:244 Page.height")
+        let _frame = py_frame()?;
+        self.bbox_item(3)?.sub(&self.bbox_item(1)?)
     }
 
     // pdfplumber/page.py:248 Page.structure_tree
@@ -860,7 +1237,35 @@ impl Page {
     /// the `IdSource` of [`PdfCore::ids`]), cached; `PdfminerException(e)`
     /// when the interpretation raises (nothing cached). See [`page_layout`].
     pub fn layout(&self) -> PyResult<Rc<LTPage<PlumberPayload>>> {
-        todo!("pdfplumber/page.py:256 Page.layout")
+        if let Some(layout) = &self.cache.borrow().layout {
+            leaf(1)?;
+            return Ok(layout.clone());
+        }
+        let rsrcmgr = &self.pdf.rsrcmgr;
+        let (device, _interpreter, error) = page_layout(rsrcmgr, &self.page_obj, || {
+            let mut device = PDFPageAggregatorWithMarkedContent::create(
+                rsrcmgr.clone(),
+                self.page_number.clone(),
+                self.pdf.laparams.clone(),
+            )?;
+            if let Some(ids) = &self.pdf.ids {
+                device.aggregator.analyzer.ids = ids(&self.page_number);
+            }
+            Ok(device)
+        })?;
+        if let Some(e) = error {
+            // raise PdfminerException(e), in the property's frame
+            let _frame = py_frame()?;
+            drop(c_call(WHILE_CALLING)?);
+            return Err(pdfminer_exception(e));
+        }
+        // self._layout = device.get_result(), in the property's frame
+        leaf(2)?;
+        let result = device.borrow_mut().aggregator.result.take();
+        let Some(ltpage) = result else { return Err(exc::AssertionError("")) };
+        let ltpage = Rc::new(ltpage);
+        self.cache.borrow_mut().layout = Some(ltpage.clone());
+        Ok(ltpage)
     }
 
     // pdfplumber/page.py:273 Page.annots
@@ -882,11 +1287,7 @@ impl Page {
             parsed.push(self.parse_annot(annot)?);
         }
         match &self.kind {
-            PageKind::Cropped { crop_bbox, crop_fn, .. } => {
-                // self._crop_fn(parsed), a nested function
-                let _crop = py_frame()?;
-                apply_crop_fn(*crop_fn, crop_bbox, &parsed)
-            }
+            PageKind::Cropped { crop_bbox, crop_fn, .. } => apply_crop_fn(*crop_fn, crop_bbox, &parsed),
             _ => Ok(parsed),
         }
     }
@@ -1025,13 +1426,59 @@ impl Page {
     /// The objects by kind, cached: `parse_objects` for an original page,
     /// the parent's through `_crop_fn` or `filter_fn` for a derived one.
     pub fn objects(&self) -> PyResult<Rc<Objects>> {
-        todo!("pdfplumber/page.py:343 Page.objects")
+        let _frame = py_frame()?;
+        if let Some(objects) = &self.cache.borrow().objects {
+            return Ok(objects.clone());
+        }
+        let objects = match &self.kind {
+            PageKind::Original => self.parse_objects()?,
+            PageKind::Cropped { parent, crop_bbox, crop_fn } => {
+                let mut out = Objects::new();
+                // a dict comprehension: no frame of its own
+                for (k, v) in parent.objects()?.iter() {
+                    out.insert(k.clone(), apply_crop_fn(*crop_fn, crop_bbox, v)?);
+                }
+                out
+            }
+            PageKind::Filtered { parent, filter_fn } => {
+                let mut out = Objects::new();
+                for (k, v) in parent.objects()?.iter() {
+                    // list(filter(self.filter_fn, v)): each call from C
+                    let mut kept = Vec::new();
+                    for obj in v {
+                        let _entry = eval_entry()?;
+                        let _frame = py_frame()?;
+                        if filter_fn(obj)?.truthy() {
+                            kept.push(obj.clone());
+                        }
+                    }
+                    out.insert(k.clone(), kept);
+                }
+                out
+            }
+        };
+        let objects = Rc::new(objects);
+        self.cache.borrow_mut().objects = Some(objects.clone());
+        Ok(objects)
     }
 
     // pdfplumber/page.py:349 Page.point2coord
     pub fn point2coord(&self, pt: &PyValue) -> PyResult<PyValue> {
-        let _ = pt;
-        todo!("pdfplumber/page.py:349 Page.point2coord")
+        let _frame = py_frame()?;
+        // See note below re. #1181 and mediabox-adjustment reversions
+        let x = index(&self.mediabox, 0)?.add(&index(pt, 0)?)?;
+        let y = index(&self.mediabox, 1)?.add(&self.height()?)?.sub(&index(pt, 1)?)?;
+        Ok(PyValue::tuple([x, y]))
+    }
+
+    /// `map(self.point2coord, pts)` consumed from C.
+    fn points2coords(&self, pts: &[PyValue]) -> PyResult<Vec<PyValue>> {
+        let mut out = Vec::with_capacity(pts.len());
+        for pt in pts {
+            let _entry = eval_entry()?;
+            out.push(self.point2coord(pt)?);
+        }
+        Ok(out)
     }
 
     // pdfplumber/page.py:353 Page.process_object
@@ -1044,69 +1491,340 @@ impl Page {
     /// not start at 0. Inline image names are `inline-<k>`
     /// (`docs/architecture.md`, "Vague 3").
     pub fn process_object(&self, obj: &LTItem<PlumberPayload>) -> PyResult<Obj> {
-        let _ = obj;
-        todo!("pdfplumber/page.py:353 Page.process_object")
+        self.process_layout_obj(&LayoutObj::Item(obj.clone()))
+    }
+
+    // pdfplumber/page.py:353 Page.process_object
+    fn process_layout_obj(&self, obj: &LayoutObj) -> PyResult<Obj> {
+        let _frame = py_frame()?;
+        // re.sub(lt_pat, "", obj.__class__.__name__).lower(): re.sub ->
+        // re._compile (a compiled pattern: returned as it is)
+        leaf(2)?;
+        let class_name = obj.class_name();
+        let kind = class_name.strip_prefix("LT").unwrap_or(class_name).to_lowercase();
+
+        // dict(filter(None, map(process_attr, obj.__dict__.items()))): each
+        // process_attr called from C
+        let mut attr = Obj::new();
+        for (k, v) in dict_items(obj) {
+            let _entry = eval_entry()?;
+            let _process_attr = py_frame()?;
+            if let Some(v) = v {
+                // k in ALL_ATTRS
+                let res = resolve_all_value(&v)?;
+                attr.set(k, res);
+            }
+        }
+
+        attr.set("object_type", PyValue::str(&kind));
+        attr.set("page_number", PyValue::Int(self.page_number.clone()));
+
+        // Note: As of pdfminer.six v20221105, that library only exposes ncs
+        // for LTChars, and neither attribute for other objects.
+        if let LayoutObj::Item(LTItem::Char(c)) = obj {
+            let name = PyValue::str(&c.ncs.name);
+            attr.set("ncs", resolve_and_decode(&name)?);
+        }
+
+        let text = match obj {
+            LayoutObj::Item(LTItem::Char(c)) => {
+                leaf(1)?; // LTChar.get_text
+                Some(c.get_text().clone())
+            }
+            LayoutObj::Item(LTItem::TextLine(l)) => Some(l.borrow().get_text()?),
+            LayoutObj::Item(LTItem::TextBox(b)) => Some(b.borrow().get_text()?),
+            _ => None,
+        };
+        if let Some(text) = text {
+            let text = match &self.pdf.unicode_norm {
+                Some(form) => normalize_unicode(form, &text)?,
+                None => text,
+            };
+            attr.set("text", PyValue::Str(text));
+        }
+
+        match obj {
+            LayoutObj::Item(LTItem::Char(c)) => {
+                // pdfminer.six (at least as of v20221105) does not directly
+                // expose .stroking_color and .non_stroking_color for LTChar
+                // objects (unlike, e.g., LTRect objects).
+                let gs = &c.graphicstate;
+                attr.set("stroking_color", color_tuple(&gs.scolor));
+                attr.set("non_stroking_color", color_tuple(&gs.ncolor));
+                // Handle (rare) byte-encoded fontnames
+                let fontname = attr.item("fontname")?.clone();
+                if let PyValue::Bytes(b) = &fontname {
+                    attr.set("fontname", PyValue::Str(fix_fontname_bytes(b)?));
+                }
+            }
+            LayoutObj::Item(LTItem::Curve(c)) => {
+                // list(map(self.point2coord, attr["pts"]))
+                let pts = attr.item("pts")?.clone();
+                let pts = match crate::obj::py_iter(&pts) {
+                    Some(items) => items?,
+                    None => return Err(exc::TypeError(format!("'{}' object is not iterable", pts.type_name()))),
+                };
+                attr.set("pts", PyValue::List(self.points2coords(&pts)?.into()));
+                // [(cmd, *map(self.point2coord, pts)) for cmd, *pts in obj.original_path]
+                let Some(original_path) = &c.original_path else {
+                    return Err(exc::TypeError("'NoneType' object is not iterable"));
+                };
+                let mut path = Vec::with_capacity(original_path.len());
+                for (cmd, pts) in original_path {
+                    let mut items = vec![PyValue::str(&cmd.to_string())];
+                    let pts: Vec<PyValue> = pts.iter().map(point_value).collect();
+                    items.extend(self.points2coords(&pts)?);
+                    path.push(PyValue::Tuple(items.into()));
+                }
+                attr.set("path", PyValue::List(path.into()));
+                attr.set(
+                    "dash",
+                    match &c.dashing_style {
+                        None => PyValue::None,
+                        Some((d, p)) => PyValue::tuple([PyValue::from_pdf(d.clone()), PyValue::from_pdf(p.clone())]),
+                    },
+                );
+            }
+            _ => {}
+        }
+
+        // As noted in #1181, `pdfminer.six` adjusts objects' coordinates
+        // relative to the MediaBox.
+        let mb_x0 = index(&self.mediabox, 0)?;
+        let mb_top = index(&self.mediabox, 1)?;
+
+        if attr.contains("y0") {
+            let top = self.height()?.sub(attr.item("y1")?)?.add(&mb_top)?;
+            attr.set("top", top);
+            let bottom = self.height()?.sub(attr.item("y0")?)?.add(&mb_top)?;
+            attr.set("bottom", bottom);
+            let doctop = self.initial_doctop.add(attr.item("top")?)?;
+            attr.set("doctop", doctop);
+        }
+
+        if attr.contains("x0") && !mb_x0.py_eq(&PyValue::from(0i64)) {
+            let x0 = attr.item("x0")?.add(&mb_x0)?;
+            attr.set("x0", x0);
+            let x1 = attr.item("x1")?.add(&mb_x0)?;
+            attr.set("x1", x1);
+        }
+
+        Ok(attr)
     }
 
     // pdfplumber/page.py:427 Page.iter_layout_objects
     /// The objects of `layout_objects` and, recursively, of their
     /// children (a container itself only with `laparams`), each through
     /// `process_object`, in the generator's order; `visit` gets each one
-    /// (the generator's consumer, `parse_objects`).
+    /// (the generator's consumer, `parse_objects`, whose frame is the
+    /// current one).
     pub fn iter_layout_objects(
         &self,
         layout_objects: &[LTItem<PlumberPayload>],
         visit: &mut dyn FnMut(Obj) -> PyResult<()>,
     ) -> PyResult<()> {
-        let _ = (layout_objects, visit);
-        todo!("pdfplumber/page.py:427 Page.iter_layout_objects")
+        leaf(1)?; // the generator is created
+        let objs: Vec<LayoutObj> = layout_objects.iter().cloned().map(LayoutObj::Item).collect();
+        self.iter_level(&objs, 0, visit)
+    }
+
+    /// The generator of level `level` (0: the one `parse_objects` made),
+    /// resumed through the chain of `yield from` above it: `level + 1`
+    /// generator frames on top of the consumer's while it runs.
+    fn iter_level(&self, objs: &[LayoutObj], level: u32, visit: &mut dyn FnMut(Obj) -> PyResult<()>) -> PyResult<()> {
+        for obj in objs {
+            match obj.children() {
+                // If object is, like LTFigure, a higher-level object ...
+                Some(children) => {
+                    // and LAParams is passed, process the object itself.
+                    if self.pdf.laparams.is_some() {
+                        let o = {
+                            let _chain = py_frames(level + 1)?;
+                            self.process_layout_obj(obj)?
+                        };
+                        visit(o)?;
+                    }
+                    // Regardless, iterate through its children: the
+                    // generator `yield from` creates, one level down
+                    leaf(level + 2)?;
+                    self.iter_level(&children, level + 1, visit)?;
+                }
+                None => {
+                    let o = {
+                        let _chain = py_frames(level + 1)?;
+                        self.process_layout_obj(obj)?
+                    };
+                    visit(o)?;
+                }
+            }
+        }
+        // the last resumption, which ends the generator
+        leaf(level + 1)
     }
 
     // pdfplumber/page.py:441 Page.parse_objects
     /// The objects of the layout by kind (`anno` left out).
     pub fn parse_objects(&self) -> PyResult<Objects> {
-        todo!("pdfplumber/page.py:441 Page.parse_objects")
+        let _frame = py_frame()?;
+        let layout = self.layout()?;
+        let mut objects = Objects::new();
+        self.iter_layout_objects(&layout.layout._objs, &mut |obj| {
+            let kind = obj.item("object_type")?.clone();
+            let PyValue::Str(kind) = &kind else { unreachable!("process_object sets a str") };
+            if kind != "anno" {
+                objects.push(kind.clone(), obj);
+            }
+            Ok(())
+        })?;
+        Ok(objects)
     }
 
     // pdfplumber/page.py:452 Page.debug_tablefinder
     pub fn debug_tablefinder(&self, table_settings: Option<&Kwargs>) -> PyResult<TableFinder> {
-        let _ = table_settings;
-        todo!("pdfplumber/page.py:452 Page.debug_tablefinder")
+        let _frame = py_frame()?;
+        let tset = TableSettings::resolve(table_settings)?;
+        // TableFinder(self, tset): the class call, __init__
+        let _call = class_call()?;
+        let _init = py_frame()?;
+        TableFinder::new(self, tset)
     }
 
     // pdfplumber/page.py:458 Page.find_tables
     pub fn find_tables(&self, table_settings: Option<&Kwargs>) -> PyResult<Vec<Table>> {
-        let _ = table_settings;
-        todo!("pdfplumber/page.py:458 Page.find_tables")
+        let _frame = py_frame()?;
+        let tset = TableSettings::resolve(table_settings)?;
+        self.tables_of(tset)
+    }
+
+    /// `TableFinder(self, tset).tables`
+    fn tables_of(&self, tset: TableSettings) -> PyResult<Vec<Table>> {
+        let _call = class_call()?;
+        let _init = py_frame()?;
+        Ok(TableFinder::new(self, tset)?.tables)
+    }
+
+    /// `self.find_tables(tset)` for an already resolved `tset`
+    /// (`TableSettings.resolve` returns it as it is).
+    fn find_tables_resolved(&self, tset: TableSettings) -> PyResult<Vec<Table>> {
+        let _frame = py_frame()?;
+        leaf(1)?; // TableSettings.resolve(tset)
+        self.tables_of(tset)
     }
 
     // pdfplumber/page.py:464 Page.find_table
     /// The largest table (most cells, then top, then left: `sorter`,
     /// nested), or `None`.
     pub fn find_table(&self, table_settings: Option<&Kwargs>) -> PyResult<Option<Table>> {
-        let _ = table_settings;
-        todo!("pdfplumber/page.py:464 Page.find_table")
+        let _frame = py_frame()?;
+        let tset = TableSettings::resolve(table_settings)?;
+        self.find_table_resolved(tset)
+    }
+
+    fn find_table_resolved(&self, tset: TableSettings) -> PyResult<Option<Table>> {
+        let mut tables = self.find_tables_resolved(tset)?;
+        if tables.is_empty() {
+            return Ok(None);
+        }
+        // Return the largest table, as measured by number of cells.
+        let mut keys = Vec::with_capacity(tables.len());
+        for t in &tables {
+            // sorter(x) = (-len(x.cells), x.bbox[1], x.bbox[0]), called from C
+            let _entry = eval_entry()?;
+            let _sorter = py_frame()?;
+            leaf(1)?; // x.bbox
+            let bbox = t.bbox()?;
+            leaf(1)?; // x.bbox
+            keys.push(PyValue::tuple([PyValue::from(-(t.cells.len() as i64)), bbox[1].clone(), bbox[0].clone()]));
+        }
+        let mut indexed: Vec<usize> = (0..tables.len()).collect();
+        pycompat::listsort::sort_by_key(&mut indexed, |&i| Ok(keys[i].clone()), |a, b| a.lt(b))?;
+        Ok(Some(tables.swap_remove(indexed[0])))
     }
 
     // pdfplumber/page.py:481 Page.extract_tables
     pub fn extract_tables(&self, table_settings: Option<&Kwargs>) -> PyResult<Vec<Vec<Vec<Option<PyStr>>>>> {
-        let _ = table_settings;
-        todo!("pdfplumber/page.py:481 Page.extract_tables")
+        let _frame = py_frame()?;
+        let tset = TableSettings::resolve(table_settings)?;
+        let kwargs = tset.text_settings_kwargs("pdfplumber.table.Table.extract");
+        let tables = self.find_tables_resolved(tset)?;
+        let mut out = Vec::with_capacity(tables.len());
+        for table in &tables {
+            out.push(table.extract(self, &kwargs.clone()?)?);
+        }
+        Ok(out)
     }
 
     // pdfplumber/page.py:488 Page.extract_table
     pub fn extract_table(&self, table_settings: Option<&Kwargs>) -> PyResult<Option<Vec<Vec<Option<PyStr>>>>> {
-        let _ = table_settings;
-        todo!("pdfplumber/page.py:488 Page.extract_table")
+        let _frame = py_frame()?;
+        let tset = TableSettings::resolve(table_settings)?;
+        let kwargs = tset.text_settings_kwargs("pdfplumber.table.Table.extract");
+        let table = {
+            let _frame = py_frame()?;
+            leaf(1)?; // TableSettings.resolve(tset)
+            self.find_table_resolved(tset)?
+        };
+        match table {
+            None => Ok(None),
+            Some(table) => Ok(Some(table.extract(self, &kwargs?)?)),
+        }
     }
 
     // pdfplumber/page.py:498 Page._get_textmap
-    /// `get_textmap(**kwargs)`: the cached text map of the chars
-    /// (`TextMapCache`), `layout_bbox`, `layout_width`, `layout_height`
-    /// defaulting to the page's.
+    /// `get_textmap(**kwargs)`: the cached text map of the chars (the
+    /// `lru_cache` of `__init__`: by the keyword arguments in the order
+    /// given, `TypeError` for one that is not hashable, at most 128 maps,
+    /// the least recently used dropped first), `layout_bbox`,
+    /// `layout_width`, `layout_height` defaulting to the page's.
     pub fn get_textmap(&self, kwargs: &Kwargs) -> PyResult<Rc<TextMap>> {
-        let _ = kwargs;
-        todo!("pdfplumber/page.py:498 Page._get_textmap (and its lru_cache)")
+        // the lru_cache wrapper, a C object called by Python code
+        let _call = c_call(WHILE_CALLING)?;
+        let mut key: TextMapKey = Vec::with_capacity(kwargs.len());
+        for (k, v) in kwargs.items() {
+            key.push((k.clone(), HashKey::new(v.clone())?));
+        }
+        {
+            let mut cache = self.cache.borrow_mut();
+            let entries = &mut cache.textmaps.entries;
+            if let Some(i) = entries.iter().position(|(k, _)| *k == key) {
+                let hit = entries.remove(i);
+                let textmap = hit.1.clone();
+                entries.push(hit);
+                return Ok(textmap);
+            }
+        }
+        // a miss: self._get_textmap(**kwargs), called from C
+        let textmap = {
+            let _entry = eval_entry()?;
+            Rc::new(self._get_textmap(kwargs)?)
+        };
+        let mut cache = self.cache.borrow_mut();
+        let entries = &mut cache.textmaps.entries;
+        if entries.len() >= LRU_MAXSIZE {
+            entries.remove(0);
+        }
+        entries.push((key, textmap.clone()));
+        Ok(textmap)
+    }
+
+    // pdfplumber/page.py:498 Page._get_textmap
+    fn _get_textmap(&self, kwargs: &Kwargs) -> PyResult<TextMap> {
+        let _frame = py_frame()?;
+        let mut full_kwargs = Kwargs::new();
+        full_kwargs.set("layout_bbox", self.bbox.clone());
+        if !kwargs.contains("layout_width_chars") {
+            full_kwargs.set("layout_width", self.width()?);
+        }
+        if !kwargs.contains("layout_height_chars") {
+            full_kwargs.set("layout_height", self.height()?);
+        }
+        // {**defaults, **kwargs}
+        for (k, v) in kwargs.items() {
+            full_kwargs.set(k, v.clone());
+        }
+        let chars = Container::chars(self)?;
+        leaf(1)?; // utils.chars_to_textmap
+        chars_to_textmap(&chars, &full_kwargs)
     }
 
     // pdfplumber/page.py:509 Page.search
@@ -1123,32 +1841,46 @@ impl Page {
         args: SearchArgs,
         kwargs: &Kwargs,
     ) -> PyResult<Vec<Obj>> {
-        let _ = (matches, args, kwargs);
-        todo!("pdfplumber/page.py:509 Page.search")
+        let _frame = py_frame()?;
+        let textmap = self.get_textmap(&tuplify_list_kwargs(kwargs)?)?;
+        // TextMap.search
+        let _search = py_frame()?;
+        let found = matches(&textmap.as_string)?;
+        textmap.search(&found, args.return_groups, args.return_chars, args.main_group)
     }
 
     // pdfplumber/page.py:529 Page.extract_text
     pub fn extract_text(&self, kwargs: &Kwargs) -> PyResult<PyStr> {
-        let _ = kwargs;
-        todo!("pdfplumber/page.py:529 Page.extract_text")
+        let _frame = py_frame()?;
+        Ok(self.get_textmap(&tuplify_list_kwargs(kwargs)?)?.as_string.clone())
     }
 
     // pdfplumber/page.py:532 Page.extract_text_simple
+    /// `utils.extract_text_simple(self.chars, **kwargs)`: its keyword
+    /// arguments are `x_tolerance` and `y_tolerance` (3 by default).
     pub fn extract_text_simple(&self, kwargs: &Kwargs) -> PyResult<PyStr> {
-        let _ = kwargs;
-        todo!("pdfplumber/page.py:532 Page.extract_text_simple")
+        let _frame = py_frame()?;
+        let chars = Container::chars(self)?;
+        let values = bind_kwargs("extract_text_simple", kwargs, &["x_tolerance", "y_tolerance"])?;
+        let three = PyValue::from(3i64);
+        leaf(1)?;
+        extract_text_simple(&chars, values[0].as_ref().unwrap_or(&three), values[1].as_ref().unwrap_or(&three))
     }
 
     // pdfplumber/page.py:535 Page.extract_words
     pub fn extract_words(&self, kwargs: &Kwargs) -> PyResult<Vec<Obj>> {
-        let _ = kwargs;
-        todo!("pdfplumber/page.py:535 Page.extract_words")
+        let _frame = py_frame()?;
+        let chars = Container::chars(self)?;
+        leaf(1)?;
+        extract_words_kwargs(&chars, kwargs)
     }
 
     // pdfplumber/page.py:538 Page.extract_text_lines
     pub fn extract_text_lines(&self, strip: bool, return_chars: bool, kwargs: &Kwargs) -> PyResult<Vec<Obj>> {
-        let _ = (strip, return_chars, kwargs);
-        todo!("pdfplumber/page.py:538 Page.extract_text_lines")
+        let _frame = py_frame()?;
+        let textmap = self.get_textmap(&tuplify_list_kwargs(kwargs)?)?;
+        leaf(1)?; // TextMap.extract_text_lines
+        textmap.extract_text_lines(strip, return_chars)
     }
 
     // pdfplumber/page.py:545 Page.crop
@@ -1160,29 +1892,121 @@ impl Page {
     /// :643 `DerivedPage.__init__`). `bbox` as given (any value: it is
     /// unpacked, tested, printed).
     pub fn crop(self: &Rc<Self>, bbox: PyValue, crop_fn: CropFn, relative: bool, strict: bool) -> PyResult<Rc<Page>> {
-        let _ = (bbox, crop_fn, relative, strict);
-        todo!("pdfplumber/page.py:545 Page.crop, :678 CroppedPage.__init__")
+        let _frame = py_frame()?;
+        // CroppedPage(self, bbox, ...): the class call, __init__
+        let _call = class_call()?;
+        let _init = py_frame()?;
+        let mut crop_bbox = bbox;
+        if relative {
+            let [o_x0, o_top, _, _] = bbox_from_value(&self.bbox)?;
+            let [x0, top, x1, bottom] = bbox_from_value(&crop_bbox)?;
+            crop_bbox = PyValue::tuple([x0.add(&o_x0)?, top.add(&o_top)?, x1.add(&o_x0)?, bottom.add(&o_top)?]);
+        }
+        if strict {
+            test_proposed_bbox(&crop_bbox, &self.bbox)?;
+        }
+        // Note: testing for original function passed, not _crop_fn
+        let bbox = if crop_fn == CropFn::OutsideBbox { self.bbox.clone() } else { crop_bbox.clone() };
+        let kind = PageKind::Cropped { parent: self.clone(), crop_bbox, crop_fn };
+        Ok(Rc::new(Page::derived(self, kind, bbox)?))
     }
 
     // pdfplumber/page.py:570 Page.filter
     /// A `FilteredPage` (pdfplumber/page.py:718 `FilteredPage.__init__`).
     pub fn filter(self: &Rc<Self>, test_function: FilterFn) -> PyResult<Rc<Page>> {
-        let _ = test_function;
-        todo!("pdfplumber/page.py:570 Page.filter, :718 FilteredPage.__init__")
+        let _frame = py_frame()?;
+        self.filtered(test_function)
+    }
+
+    // pdfplumber/page.py:718 FilteredPage.__init__
+    fn filtered(self: &Rc<Self>, filter_fn: FilterFn) -> PyResult<Rc<Page>> {
+        let _call = class_call()?;
+        let _init = py_frame()?;
+        let kind = PageKind::Filtered { parent: self.clone(), filter_fn };
+        Ok(Rc::new(Page::derived(self, kind, self.bbox.clone())?))
     }
 
     // pdfplumber/page.py:573 Page.dedupe_chars
     /// A `FilteredPage` whose objects are this page's with the chars of
     /// `utils.dedupe_chars(self.chars, **kwargs)`, computed now.
     pub fn dedupe_chars(self: &Rc<Self>, kwargs: &Kwargs) -> PyResult<Rc<Page>> {
-        let _ = kwargs;
-        todo!("pdfplumber/page.py:573 Page.dedupe_chars")
+        let _frame = py_frame()?;
+        // FilteredPage(self, lambda x: True)
+        let p = self.filtered(Rc::new(|_: &Obj| Ok(PyValue::Bool(true))))?;
+        let mut objects = Objects::new();
+        for (kind, objs) in self.objects()?.iter() {
+            objects.insert(kind.clone(), objs.to_vec());
+        }
+        let chars = Container::chars(&**self)?;
+        let values = bind_kwargs("dedupe_chars", kwargs, &["tolerance", "extra_attrs"])?;
+        let tolerance = values[0].clone().unwrap_or(PyValue::from(1i64));
+        let extra_attrs =
+            values[1].clone().unwrap_or_else(|| PyValue::tuple([PyValue::str("fontname"), PyValue::str("size")]));
+        leaf(1)?; // utils.dedupe_chars
+        objects.insert(PyStr::new("char"), dedupe_chars(&chars, &tolerance, &extra_attrs)?);
+        p.cache.borrow_mut().objects = Some(Rc::new(objects));
+        Ok(p)
     }
 
     // pdfplumber/page.py:636 Page.__repr__
     /// `<Page:n>` (every kind of page).
     pub fn repr(&self) -> String {
         self.value.repr()
+    }
+}
+
+/// `self._crop_fn(objs)`: `crop_fn(objs, crop_bbox)` (`_crop_fn`, nested
+/// in `CroppedPage.__init__`, and the function of `utils`: a frame each).
+/// The box is unpacked by the function for the first object (an empty list
+/// never looks at it).
+pub(crate) fn apply_crop_fn(crop_fn: CropFn, crop_bbox: &PyValue, objs: &[Obj]) -> PyResult<Vec<Obj>> {
+    let _crop_fn = py_frame()?;
+    let _utils = py_frame()?;
+    if objs.is_empty() {
+        return Ok(Vec::new());
+    }
+    let bbox = bbox_from_value(crop_bbox)?;
+    match crop_fn {
+        CropFn::CropToBbox => crop_to_bbox(objs, &bbox),
+        CropFn::WithinBbox => within_bbox(objs, &bbox),
+        CropFn::OutsideBbox => outside_bbox(objs, &bbox),
+    }
+}
+
+/// The values of the keyword parameters `names` of `func(chars, **kwargs)`
+/// (`None` when not given), with the `TypeError`s of a keyword that is
+/// `chars` or none of `names`, for the first such key in order.
+fn bind_kwargs(func: &str, kwargs: &Kwargs, names: &[&str]) -> PyResult<Vec<Option<PyValue>>> {
+    let mut values = vec![None; names.len()];
+    for (k, v) in kwargs.items() {
+        if *k == "chars" {
+            return Err(exc::TypeError(format!("{func}() got multiple values for argument 'chars'")));
+        }
+        match names.iter().position(|n| *k == **n) {
+            Some(i) => values[i] = Some(v.clone()),
+            None => {
+                return Err(PyErr::with_message(
+                    ExcKind::TypeError,
+                    &PyStr::new(&format!("{func}() got an unexpected keyword argument "))
+                        .concat(&PyStr::from(k.repr())),
+                ))
+            }
+        }
+    }
+    Ok(values)
+}
+
+/// `normalize_unicode(form, text)` (`unicodedata.normalize`): `TypeError`
+/// for a form that is not a `str`, `ValueError` for a `str` that is not a
+/// form (not even checked for an empty text).
+fn normalize_unicode(form: &PyValue, text: &PyStr) -> PyResult<PyStr> {
+    let PyValue::Str(form) = form else {
+        return Err(exc::TypeError(format!("normalize() argument 1 must be str, not {}", form.type_name())));
+    };
+    match form.as_str() {
+        Some(f) => pycompat::unicodedata::normalize_named(f, text),
+        None if text.is_empty() => Ok(text.clone()),
+        None => Err(exc::ValueError("invalid normalization form")),
     }
 }
 
@@ -1197,22 +2021,69 @@ impl Container for Page {
 
     // pdfplumber/page.py:617 Page.to_dict
     fn to_dict(&self, object_types: Option<&[PyStr]>) -> PyResult<Obj> {
-        let _ = object_types;
-        todo!("pdfplumber/page.py:617 Page.to_dict")
+        let _frame = py_frame()?;
+        let types: Vec<PyStr> = match object_types {
+            Some(t) => t.to_vec(),
+            None => {
+                let mut t: Vec<PyStr> = Page::objects(self)?.keys().cloned().collect();
+                t.push(PyStr::new("annot"));
+                t
+            }
+        };
+        let mut d = Obj::from_pairs([
+            ("page_number", PyValue::Int(self.page_number.clone())),
+            ("initial_doctop", self.initial_doctop.clone()),
+            ("rotation", self.rotation.clone()),
+            ("cropbox", self.cropbox.clone()),
+            ("mediabox", self.mediabox.clone()),
+            ("bbox", self.bbox.clone()),
+        ]);
+        d.set("width", self.width()?);
+        d.set("height", self.height()?);
+        for t in &types {
+            let name = t.concat(&PyStr::new("s"));
+            let value = self.attribute(&name)?;
+            d.set(&name, value);
+        }
+        Ok(d)
     }
 
     fn container_cache(&self) -> &RefCell<ContainerCache> {
         &self.container
     }
 
+    /// `getattr(page, name)`: the lists and edges of `Container`,
+    /// `annots`, `hyperlinks`, `pages` (`None`), `objects`, the cached
+    /// properties when set (`_objects`...), `cached_properties`; methods
+    /// are `NotPorted`, any other name `AttributeError`.
     fn attribute(&self, name: &PyStr) -> PyResult<PyValue> {
-        let _ = name;
-        todo!("getattr(page, name) for pdfplumber/page.py:617 Page.to_dict")
+        match name.as_str() {
+            Some("annots") => Ok(crate::container::obj_list(self.annots()?)),
+            Some("hyperlinks") => Ok(crate::container::obj_list(self.hyperlinks()?)),
+            Some("pages") => Ok(PyValue::None),
+            Some("_objects") => match &self.cache.borrow().objects {
+                Some(objects) => Ok(crate::container::objects_value(objects)),
+                None => Err(crate::container::no_attribute(self.class_name(), name)),
+            },
+            Some("cached_properties") => Ok(PyValue::list(
+                ["_rect_edges", "_curve_edges", "_edges", "_objects", "_layout"].iter().map(|p| PyValue::str(p)),
+            )),
+            _ => crate::container::container_attribute(self, self.class_name(), name),
+        }
     }
 
     fn flush_cache(&self, properties: Option<&[&str]>) {
-        let _ = (properties, &self.cache);
-        todo!("pdfplumber/container.py:28 Container.flush_cache (Page: + _layout)")
+        // cached_properties = Container.cached_properties + ["_layout"]
+        let props = properties.unwrap_or(&["_rect_edges", "_curve_edges", "_edges", "_objects", "_layout"]);
+        crate::container::flush_container_cache(&self.container, props);
+        let mut cache = self.cache.borrow_mut();
+        for p in props {
+            match *p {
+                "_objects" => cache.objects = None,
+                "_layout" => cache.layout = None,
+                _ => {}
+            }
+        }
     }
 }
 

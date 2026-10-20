@@ -82,8 +82,8 @@ use pycompat::recursion::{c_call, c_called_leaf, class_call, class_call_leaf, ev
 use pycompat::repr::str_repr;
 use pycompat::{exc, PyInt, PyResult, PyStr};
 
-use crate::obj::{bbox_from_value, Bbox, Obj, PyValue};
-use crate::page::{CropFn, Page, PageKind, _invert_box, _normalize_box};
+use crate::obj::{Bbox, Obj, PyValue};
+use crate::page::{apply_crop_fn, Page, PageKind, _invert_box, _normalize_box};
 use crate::pdf::PDF;
 use crate::utils::geometry;
 use crate::utils::pdfinternals::{decode_text, decode_text_value, TextArg};
@@ -1195,7 +1195,7 @@ impl PDFStructTree {
             // Use more secret knowledge of CroppedPage
             if let PageKind::Cropped { crop_bbox, crop_fn, .. } = &page.kind {
                 let rect = geometry::bbox_to_rect(&bbox);
-                let rects = crop_objects(*crop_fn, crop_bbox, &[rect])?;
+                let rects = apply_crop_fn(*crop_fn, crop_bbox, &[rect])?;
                 let Some(first) = rects.first() else {
                     return Err(exc::IndexError("Element no longer on page"));
                 };
@@ -1248,16 +1248,6 @@ impl PDFStructTree {
     /// Find the first matching element in subtree.
     pub fn find(&self, matcher: Matcher<'_>) -> PyResult<Option<Rc<PDFStructElement>>> {
         find(&self.children, matcher)
-    }
-}
-
-/// `page._crop_fn(objs)` of a `CroppedPage`: `crop_fn(objs, crop_bbox)`.
-fn crop_objects(crop_fn: CropFn, crop_bbox: &PyValue, objs: &[Obj]) -> PyResult<Vec<Obj>> {
-    let bbox = bbox_from_value(crop_bbox)?;
-    match crop_fn {
-        CropFn::CropToBbox => geometry::crop_to_bbox(objs, &bbox),
-        CropFn::WithinBbox => geometry::within_bbox(objs, &bbox),
-        CropFn::OutsideBbox => geometry::outside_bbox(objs, &bbox),
     }
 }
 

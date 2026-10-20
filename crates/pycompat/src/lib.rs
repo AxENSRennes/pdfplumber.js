@@ -33,6 +33,8 @@
 //!   2.39), which `float ** float` and `math.atan2` call.
 //! - [`zlib`]: `zlib.decompress` and `zlib.decompressobj`, on a port of
 //!   zlib 1.3's inflate (exact output before an error, exact messages).
+//! - [`json`], [`csv`]: `json.dumps` (both encoders) and the `csv` writer
+//!   of pdfplumber's `to_json` and `to_csv`.
 //! - [`base64`], [`binascii`]: `a85decode` and `unhexlify`, which the
 //!   ASCII85 and ASCIIHex filters call.
 
@@ -43,11 +45,13 @@ pub mod binascii;
 pub mod builtins;
 pub mod bytes_format;
 pub mod codecs;
+pub mod csv;
 pub mod diagnostics;
 pub mod err;
 pub mod float;
 pub mod int;
 pub mod io;
+pub mod json;
 pub mod libm;
 pub mod listsort;
 pub mod logging;
