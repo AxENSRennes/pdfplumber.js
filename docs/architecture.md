@@ -1322,6 +1322,117 @@ UTF-16 et PDFDocEncoding, `/Info` multiples ou partagés ; annotations aux
 `/Rect` atypiques, `/A` et `/URI`, `/T`, `/Contents` non décodables (avec
 et sans `raise_unicode_errors`), sur pages tournées.
 
+#### Réalisation (branche `wave4/doc`)
+
+- **`structure.rs`** : `structure.py` fonction par fonction.
+  `PDFStructTree::new(doc, Scope)` (l'appel de classe, `__init__`, la
+  portée page par l'arbre des parents ou, sans `/ParentTree`, par l'arbre
+  entier), `_make_element`, `_make_attributes`, `_parse_parent_tree`,
+  `_parse_struct_tree` et son `prune` récursif, `_resolve_children`,
+  `on_parsed_page`, `element_bbox` ; `PDFStructElement` (`all_mcids`,
+  `to_dict`, `repr`). Les objets du document sont lus avec les opérateurs
+  de Python quel que soit leur type (`py_in`, `py_getitem`, `py_get`,
+  `py_iter`, les attributs `.name`, `.objid`, `.items()`) : un arbre de
+  structure est un graphe d'objets quelconque, et chaque accès lève là où
+  Python lève (`TypeError`, `AttributeError`, `KeyError`, `PDFKeyError`
+  d'un flux, `AssertionError` des `assert`, `StopIteration` du `next()`
+  de l'arbre des parents). Les tables `seen` sont indexées par
+  `repr(ref)` (le `repr` intégré : une unité C, plus celles de l'objet).
+- **Écarts d'interface** (contrat de la base amendé) : `find_all` rend un
+  itérateur paresseux (`FindAll`, le générateur de Python : `find`
+  s'arrête au premier élément, une exception du filtre arrive quand le
+  parcours l'atteint, un DAG profond n'est pas parcouru en entier pour
+  rien) au lieu d'un `Vec` ; `PDFStructElement::to_dict(file)` prend la
+  classe du fichier du document (`pdfparser::FileKind`,
+  `PDFDocument::file_kind`), dont dépend la copie profonde d'`asdict` ;
+  `PDFStructTree::page_dict` est une table de hachage `ObjId -> int`.
+- **`to_dict`** : `dataclasses.asdict` (les cadres de `_asdict_inner`, de
+  `_is_dataclass_instance`, de `fields` et des expressions génératrices
+  que `list()`/`dict()` reprennent depuis le C : trois cadres et deux
+  unités C par niveau d'éléments, deux cadres par niveau d'un attribut
+  imbriqué), puis l'élagage (itératif chez Python, récursif ici sur une
+  profondeur qu'`asdict` a déjà bornée). Les feuilles passent par
+  `copy.deepcopy` : un nom (`PSLiteral`, `PSKeyword`) six cadres, une
+  référence (ou un flux d'un document chiffré, dont `decipher` est une
+  méthode du document) copie le document jusqu'à l'objet fichier,
+  `TypeError("cannot pickle 'BufferedReader' instances")` pour un
+  fichier ouvert par un chemin, après 22 cadres (le plus profond est dans
+  les sections xref du document, avant `_parser` dans son `__dict__` ;
+  mesuré par `python -m oracle.depth_probe structure`). Non modélisé : un
+  document dont `xrefs`, `info` ou `catalog` tiennent des objets directs
+  imbriqués plus profond (la copie y descend plus bas avant l'erreur), et
+  la copie complète du document lu depuis des octets (JavaScript : le
+  port garde la référence, une valeur égale, sans compter ses cadres).
+- **`repr`** : le `__repr__` généré de la dataclass derrière
+  `dataclasses._recursive_repr` (le wrapper appelé depuis le C, deux
+  cadres et quatre unités C par niveau), les champs par `repr_counted`.
+- **Boucle infinie de Python** : un cycle parmi les éléments qu'atteint
+  l'arbre des parents d'une page fait boucler `_resolve_children` sans
+  fin (chaque tour allonge les listes : Python finit à court de mémoire).
+  Le port relève, à la première visite de chaque élément, les éléments
+  qu'il met en file ; quand tout élément atteint a été traité une fois
+  (son traitement ne dépend de rien qui change, il ne lèverait plus rien)
+  et qu'un cycle est atteignable, il lève `MemoryError`. Sans oracle
+  possible (Python ne rend pas la main), écarté du corpus adverse ; les
+  cycles de la portée document, eux, finissent en `RecursionError` dans
+  `prune`, comme en Python (`cycle-*` d'`adv-structure`).
+- **Métadonnées en place** : `resolve_and_decode` décode un `dict` **dans
+  le dict du document** (`obj[k] = ...`) et la suite le voit : le corpus
+  a des `/Info` qui désignent le catalogue (un fichier oss-fuzz de
+  pdfplumber), un dict d'annotation (`bug1978317.pdf`), des listes et
+  dicts imbriqués. `PDFObject` gagne la variante `Str(PyStr)` (une `str`
+  Python, que seul ce décodage produit) ; `repr`, `str`, `==`, le hachage
+  des `ObjId`, la vérité, `in`, `x[0]`, `canon`, les valeurs typées et la
+  frontière Wasm la traitent comme Python traite une `str`.
+  `read_metadata` (`pdf.rs`) : les `/Info` fusionnés dans un nouveau
+  dict, chaque valeur décodée (`resolve_and_decode_obj`), l'exception
+  levée avec `strict_metadata`, sinon journalisée (logger
+  `pdfplumber.pdf`, canal des diagnostics) et la valeur laissée telle
+  quelle (après ce qu'elle a déjà modifié en place).
+- **Annotations** (`page.rs`) : `Page.annots` (`resolve_all` des
+  `/Annots`, `list(map(parse, ...))`, n'importe quel itérable, chaque
+  `parse` depuis le C), `rotate_point` (`r // 90` : `TypeError` pour une
+  rotation flottante ou `bytes`), `parse` (`/Rect` dépaqueté comme Python,
+  `_normalize_box`/`_invert_box` d'un 4-uplet de valeurs, `/URI`, `/T`,
+  `/Contents` décodés par `bytes.decode("utf-8")` puis `("utf-16")` :
+  `pycompat::codecs`, les décodeurs stricts de CPython et leur
+  `UnicodeDecodeError` exact ; `raise_unicode_errors=False` garde les
+  octets et émet l'avertissement sur le canal des diagnostics ; `/P`
+  remplacé par la page, un flux qui a `/P` lève le `TypeError`
+  d'affectation), `CroppedPage` par `apply_crop_fn` de PAGE ;
+  `Page.hyperlinks`, `Page.structure_tree`, `PDF.structure_tree`.
+  Non modélisés : les cadres de `warnings.warn` (10 au premier message,
+  6 à un autre, aucun quand le registre l'a déjà vu ; `Page.annots`
+  n'est jamais appelé près de la limite).
+- **`decode_text`** : le `"".join` des générateurs tient ses unités C
+  jusqu'à son retour ou son exception, avant le `str(s)` du `except
+  IndexError` (la base les gardait pendant `str(s)` : deux unités de
+  trop, vues par les fenêtres `actualtext-str-*`).
+- **Étape `plumber_doc`** (`pdftrace`) : le parcours de
+  `oracle/stages/plumber_doc.py`, les cadres des générateurs délégués
+  (`yield from` : `SEND` exécute un générateur en ligne, sans unité C)
+  et des lambdas ; le premier `LOAD_ATTR` d'une propriété à un site
+  (`pdf.structure_tree`, `page.structure_tree` dans les lambdas de
+  l'étape) appelle le getter depuis le C, deux unités C
+  (`pycompat::specialize::CallSite::property_load`, l'instruction se
+  spécialise ensuite en `LOAD_ATTR_PROPERTY`). `StageInput` gagne
+  `password_given` : l'étape Python reçoit `None` sans mot de passe, et
+  ses lignes `password` diffèrent pour un mot de passe vide donné (cinq
+  fichiers du corpus).
+- **Corpus `adv-structure`** (`oracle/adversarial/structure.py`, 425
+  PDF) : les cas de la liste ci-dessus, et 15 fenêtres de profondeur
+  autour du premier niveau qui échoue en Python, cherché par dichotomie
+  sur l'étape (`--probe`) : `to_dict` d'une chaîne d'éléments (330 ;
+  329 avec une révision littérale à la feuille, 323 avec une référence
+  dans ses attributs, 327 avec un attribut imbriqué ; 330 sans arbre des
+  parents), `prune` (986), `repr` (497), un attribut imbriqué (492), les
+  unités C du `repr(ref)` d'une liste imbriquée dans `/K` (9 990), du
+  `str(s)` de `decode_text` à sa première exécution (9 989) et aux
+  suivantes (9 990), du `repr` d'un attribut (9 991), `resolve_and_decode`
+  de dicts et de listes imbriqués (987), l'arbre des nombres des parents
+  (978). Rejoué par `oracle/unit/structure.py` (`structure_unit.rs`),
+  les fenêtres aussi depuis un et deux cadres plus bas.
+
 ### Plan de comptage des cadres
 
 Chaque fonction ou propriété portée prend son cadre ; les appels faits

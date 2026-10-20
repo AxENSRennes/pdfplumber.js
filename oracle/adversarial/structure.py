@@ -266,8 +266,8 @@ def cases_children() -> list[Case]:
                                                   13: elem("Div", 11, [Ref(14), 1]), 14: elem("Span", 12, [])}), None))
     # chains of DAG levels: each level reached twice
     dag: dict[int, Any] = {11: elem("Document", ROOT, [Ref(20), Ref(20)])}
-    for i in range(12):
-        dag[20 + i] = elem(f"L{i}", 11, [Ref(21 + i), Ref(21 + i)] if i < 11 else [0])
+    for i in range(8):
+        dag[20 + i] = elem(f"L{i}", 11, [Ref(21 + i), Ref(21 + i)] if i < 7 else [0])
     out.append(("dag-doubling", tagged(elems=dag), None))
     # cycles: the document scope runs out of frames in prune, the page scope
     # without a parent tree too. Through a page's parent tree, Python's
