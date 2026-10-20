@@ -383,11 +383,9 @@ impl PDFStructElement {
         }
     }
 
-    // pdfplumber/structure.py:115 PDFStructElement.__iter__
-    /// `iter(element)`: its children.
-    pub fn iter(&self) -> Vec<Rc<PDFStructElement>> {
-        self.children.borrow().clone()
-    }
+    // pdfplumber/structure.py:115 PDFStructElement.__iter__ is
+    // `iter(self.children)`: a caller reads the `children` field (nothing
+    // in pdfplumber iterates over an element).
 
     // pdfplumber/structure.py:118 PDFStructElement.all_mcids
     /// Collect all MCIDs (with their page numbers, if there are multiple
