@@ -273,6 +273,13 @@ impl PDFDocument {
 
     // ---- attributes
 
+    /// The class of the file object the document reads (`self._parser.fp`):
+    /// what `copy.deepcopy` of an object holding the document does
+    /// (pdfplumber/structure.py:132 `PDFStructElement.to_dict`).
+    pub fn file_kind(&self) -> PyResult<FileKind> {
+        self.with_parser(|p| Ok(p.ext.file))
+    }
+
     /// `self.xrefs`
     pub fn xrefs(&self) -> Vec<Rc<PDFBaseXRef>> {
         self.xrefs.borrow().clone()

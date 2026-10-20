@@ -40,6 +40,21 @@
 //!   file`, `read of closed file`), a state `pdfparser` does not model
 //!   yet (to add with `close`).
 //!
+//! # Metadata
+//!
+//! `PDF.__init__` merges the document's `/Info` dicts into a new dict and
+//! runs `resolve_and_decode` on each value ([`read_metadata`]). That
+//! function decodes a `dict` **in place**: the dicts of the document that
+//! a metadata value reaches (an `/Info` entry that is a dict, or refers to
+//! the catalog, a page, an annotation...) hold, from then on, Python `str`s
+//! ([`pdfminer::pdftypes::PDFObject::Str`]), new lists and resolved
+//! references, and everything that reads the document afterwards (the
+//! pages, the structure tree, `Page.annots`) sees them, as in Python; a
+//! dict reached twice is decoded twice, and a dict that refers to itself
+//! until `RecursionError`, keeping what the levels already did (the
+//! corpus has both: `cupertino_usd_4-6-16.pdf`, an oss-fuzz file whose
+//! `/Info` refers to its catalog).
+//!
 //! # Recursion
 //!
 //! `pdfplumber.open(...)` is `PDF.open` (a frame), the class call
@@ -64,7 +79,14 @@ use pdfminer::pdfinterp::PDFResourceManager;
 use pdfminer::pdfparser::FileKind;
 use pycompat::{PyInt, PyResult, PyStr};
 
+use pdfminer::pdftypes::PDFDict;
+use pycompat::logging::Logger;
+use pycompat::recursion::{c_called_leaf, py_frame};
+use pycompat::{diagnostics, ExcKind};
+
 use crate::container::{Container, ContainerCache, Objects};
+use crate::structure::{PDFStructTree, Scope};
+use crate::utils::pdfinternals::resolve_and_decode_obj;
 use crate::obj::{Obj, PyValue};
 use crate::page::{Page, PlumberPayload};
 
@@ -190,13 +212,33 @@ impl PDF {
     // pdfplumber/pdf.py:184 PDF.annots
     /// Workstream DOC.
     pub fn annots(&self) -> PyResult<Vec<Obj>> {
-        todo!("pdfplumber/pdf.py:184 PDF.annots")
+        let _frame = py_frame()?;
+        // list(itertools.chain(*(p.annots for p in self.pages))): the
+        // generator is run to the end first
+        let pages = self.pages()?;
+        let mut gen = Vec::with_capacity(pages.len());
+        {
+            let _genexpr = py_frame()?;
+            for p in &pages {
+                gen.push(p.annots()?);
+            }
+        }
+        Ok(gen.into_iter().flatten().collect())
     }
 
     // pdfplumber/pdf.py:189 PDF.hyperlinks
     /// Workstream DOC.
     pub fn hyperlinks(&self) -> PyResult<Vec<Obj>> {
-        todo!("pdfplumber/pdf.py:189 PDF.hyperlinks")
+        let _frame = py_frame()?;
+        let pages = self.pages()?;
+        let mut gen = Vec::with_capacity(pages.len());
+        {
+            let _genexpr = py_frame()?;
+            for p in &pages {
+                gen.push(p.hyperlinks()?);
+            }
+        }
+        Ok(gen.into_iter().flatten().collect())
     }
 
     // pdfplumber/pdf.py:194 PDF.structure_tree
@@ -204,9 +246,56 @@ impl PDF {
     /// document has no structure. Workstream DOC
     /// (`crate::structure`).
     pub fn structure_tree(&self) -> PyResult<Vec<PyValue>> {
-        todo!("pdfplumber/pdf.py:194 PDF.structure_tree")
+        let _frame = py_frame()?;
+        let tree = match PDFStructTree::new(&self.core.doc, Scope::Document(self)) {
+            Ok(tree) => tree,
+            Err(e) if e.is_instance(ExcKind::StructTreeMissing) => return Ok(Vec::new()),
+            Err(e) => return Err(e),
+        };
+        // [elem.to_dict() for elem in tree]: PDFStructTree.__iter__, run by C
+        c_called_leaf()?;
+        let file = self.core.doc.file_kind()?;
+        tree.iter().iter().map(|elem| elem.to_dict(file)).collect()
     }
 }
+
+// pdfplumber/pdf.py:28 PDF.__init__
+/// The metadata part of `PDF.__init__`: `self.metadata = {}`, updated with
+/// each of the document's `/Info` dicts, then each value through
+/// `resolve_and_decode` (in place: see "Metadata" in the module
+/// documentation). An exception there (any `Exception`) is raised with
+/// `strict_metadata`, otherwise logged (`logger.warning`, logger
+/// `pdfplumber.pdf`, its message formatted first) and the value kept.
+pub fn read_metadata(doc: &PDFDocument, strict_metadata: bool) -> PyResult<Obj> {
+    let metadata = PDFDict::new();
+    for info in doc.info() {
+        // self.metadata.update(info)
+        for (k, v) in info.items() {
+            metadata.insert(k, v);
+        }
+    }
+    let mut i = 0;
+    while let Some((k, v)) = metadata.get_index(i) {
+        match resolve_and_decode_obj(&v) {
+            Ok(decoded) => metadata.insert(k, decoded),
+            Err(e) if strict_metadata || !e.is_instance(ExcKind::Exception) => return Err(e),
+            Err(e) => {
+                // This metadata value could not be parsed. Instead of failing
+                // the PDF read, treat it as a warning only if
+                // `strict_metadata=False`.
+                diagnostics::emit("pdfplumber.pdf", diagnostics::Level::Warning, || {
+                    format!("[WARNING] Metadata key \"{k}\" could not be parsed due to exception: {}", e.py_message().to_string_lossy())
+                });
+                LOG.warning()?;
+            }
+        }
+        i += 1;
+    }
+    Ok(Obj::from_pairs(metadata.items().into_iter().map(|(k, v)| (k, PyValue::from_pdf(v)))))
+}
+
+// pdfplumber/pdf.py:22 logger
+static LOG: Logger = Logger::new("pdfplumber.pdf");
 
 impl Container for PDF {
     fn pages(&self) -> PyResult<Option<Vec<Rc<Page>>>> {
