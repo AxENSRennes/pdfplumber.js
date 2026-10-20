@@ -503,7 +503,7 @@ d'écrire ses cas) :
   arbre de noms par `api_trace`), une fenêtre de longueurs autour du
   premier niveau qui échoue en Python (`docs/architecture.md`,
   « Profondeur de récursion »).
-- `oracle/adversarial/structure.py` → `adv-structure` (425 PDF ; vérifié
+- `oracle/adversarial/structure.py` → `adv-structure` (426 PDF ; vérifié
   par `plumber_doc` et `plumber_objects`, rejoué par
   `oracle/unit/structure.py`) : arbres de structure (`/StructTreeRoot`
   absent ou de tout type, `/K` de toute sorte et imbrication, MCR et OBJR

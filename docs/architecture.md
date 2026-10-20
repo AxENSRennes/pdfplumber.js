@@ -1509,7 +1509,7 @@ et sans `raise_unicode_errors`), sur pages tournées.
   `password_given` : l'étape Python reçoit `None` sans mot de passe, et
   ses lignes `password` diffèrent pour un mot de passe vide donné (cinq
   fichiers du corpus).
-- **Corpus `adv-structure`** (`oracle/adversarial/structure.py`, 425
+- **Corpus `adv-structure`** (`oracle/adversarial/structure.py`, 426
   PDF) : les cas de la liste ci-dessus, et 15 fenêtres de profondeur
   autour du premier niveau qui échoue en Python, cherché par dichotomie
   sur l'étape (`--probe`) : `to_dict` d'une chaîne d'éléments (330 ;
@@ -1522,6 +1522,20 @@ et sans `raise_unicode_errors`), sur pages tournées.
   de dicts et de listes imbriqués (987), l'arbre des nombres des parents
   (978). Rejoué par `oracle/unit/structure.py` (`structure_unit.rs`),
   les fenêtres aussi depuis un et deux cadres plus bas.
+- **Fichier fermé** (laissé ouvert par la base) : `PDF.close` ferme le
+  fichier ouvert par un chemin (`PDFDocument::close_file`,
+  `pycompat::io::BytesIO::close`), et la lecture suivante d'un objet
+  qui n'est pas en cache lève le `ValueError` d'un `BufferedReader` fermé
+  (`seek of closed file`, `read of closed file`), que `PDF.pages` enveloppe
+  dans `PdfminerException` : la seule différence de `plumber_doc` sur
+  `all` (`issue11549_reduced.pdf`, un objet illisible relu après
+  `close()`), et le cas `closed-file-reread` d'`adv-structure`. Un
+  document lu depuis des octets est le flux de l'appelant
+  (`stream_is_external`) : `close()` ne le ferme pas.
+- **Résultats** : `plumber_doc` sur `all` (20 premières pages), 1 853
+  fichiers identiques (le dernier après la fermeture du fichier) ;
+  `plumber_doc` et `plumber_objects` sur `adv-structure`, 426 identiques
+  chacune ; `structure_unit` (648 traces, 3 300 cas de `codecs`).
 
 ### Plan de comptage des cadres
 
