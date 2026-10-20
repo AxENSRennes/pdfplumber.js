@@ -345,7 +345,7 @@ impl PyStr {
     /// match only at code point boundaries).
     pub fn replace(&self, old: &PyStr, new: &PyStr) -> PyStr {
         let (h, n) = (&self.0[..], &old.0[..]);
-        if n.is_empty() || h.len() < n.len() {
+        if n.is_empty() {
             return self.clone();
         }
         let mut out = Vec::with_capacity(h.len());

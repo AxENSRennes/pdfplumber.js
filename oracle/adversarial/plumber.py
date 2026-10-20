@@ -75,6 +75,7 @@ from typing import Any
 from ._common import write_corpus
 from ._pdf import Name, Raw, Ref
 from .interp import HELVETICA, Builder, first_failing, form_chain, type0, type3
+from .structure import elem, tagged
 
 Case = tuple[str, bytes, "str | None"]
 
@@ -339,6 +340,8 @@ def cases_images() -> list[Case]:
                             ColorSpace=[Name("Indexed"), Name("DeviceRGB"), 1, b"\x00" * 6]),
             "Im6": b.stream(b"\x00", Subtype=Name("Image"), W=2, H=3, CS=Name("G"), BPC=1, IM=False),
             "Im#ff": b.stream(b"\x00", Subtype=Name("Image"), Width=1, Height=1, ColorSpace=Name("DeviceGray")),
+            # an empty stream: Serializer.do_PDFStream writes rawdata None
+            "Im7": b.stream(b"", Subtype=Name("Image"), Width=1, Height=1, ColorSpace=Name("DeviceGray")),
             "Form": b.stream(b"BI /W 1 /H 1 /CS /G /BPC 8 ID x EI\n 0 0 m 5 5 l S BT /F1 5 Tf (in form) Tj ET",
                              Type=Name("XObject"), Subtype=Name("Form"), BBox=[0, 0, 10, 10],
                              Resources={"Font": {"F1": b.obj(HELVETICA)}}),
@@ -346,7 +349,7 @@ def cases_images() -> list[Case]:
         return {"Font": {"F1": b.obj(HELVETICA)}, "XObject": xs}
 
     draw = b""
-    for i, n in enumerate((b"Im1", b"Im2", b"Im3", b"Im4", b"Im5", b"Im6", b"Im#ff", b"Form")):
+    for i, n in enumerate((b"Im1", b"Im2", b"Im3", b"Im4", b"Im5", b"Im6", b"Im#ff", b"Form", b"Im7")):
         draw += b"q 20 0 0 20 %d %d cm /%s Do Q\n" % (10 + (i % 4) * 45, 10 + (i // 4) * 45, n)
     inline = (b"q 10 0 0 10 150 150 cm BI /W 1 /H 1 /CS /RGB /BPC 8 ID abc EI Q\n"
               b"q 10 0 0 10 170 150 cm BI /W 2 /H 1 /CS /G /BPC 8 ID xy EI Q\n"
@@ -719,9 +722,17 @@ def cases_depth() -> list[Case]:
     return out
 
 
+def cases_struct() -> list[Case]:
+    """Structure element IDs given as arrays of numbers: ``decode_text``
+    maps each through ``PDFDocEncoding`` (a negative index counts from the
+    end), or returns ``str(s)`` past it."""
+    return [("struct-id-ints", tagged(elems={12: elem("P", 11, 0, ID=[0, -1, 104, -256]),
+                                             13: elem("Span", 11, [1, 2], ID=[256, 65])}), None)]
+
+
 def generate(depth: bool = True) -> None:
     cases = (cases_boxes() + cases_geometry() + cases_paint() + cases_images() + cases_marked() + cases_fonts()
-             + cases_text() + cases_tables() + cases_annots() + cases_layout())
+             + cases_text() + cases_tables() + cases_annots() + cases_layout() + cases_struct())
     if depth:
         cases += cases_depth()
     write_corpus("plumber", cases)

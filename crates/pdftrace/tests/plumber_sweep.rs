@@ -130,17 +130,62 @@ fn deep_apply(case: &Case<'_>, pdf: &PDF, page: Option<&Rc<Page>>) -> PyResult<D
             _ => page().vertical_edges()?,
         }),
         "edges_identity" => {
-            let a = page().edges()?;
-            let b = page().edges()?;
+            let p = page();
+            let a = p.edges()?;
+            let b = p.edges()?;
+            let r1 = p.rect_edges()?;
+            let c1 = p.curve_edges()?;
+            let o1 = p.objects()?;
+            let l1 = p.layout()?;
             // page.flush_cache(): its frame, then hasattr/delattr from C
             leaf(1)?;
-            Container::flush_cache(&**page(), None);
-            let c = page().edges()?;
+            Container::flush_cache(&**p, None);
+            let c = p.edges()?;
+            let r2 = p.rect_edges()?;
+            let c2 = p.curve_edges()?;
+            let o2 = p.objects()?;
+            let l2 = p.layout()?;
             Deep::Value(Value::List(vec![
                 Value::Bool(Rc::ptr_eq(&a, &b)),
                 Value::Bool(Rc::ptr_eq(&a, &c)),
                 int(c.len()),
+                Value::Bool(Rc::ptr_eq(&r1, &r2)),
+                Value::Bool(Rc::ptr_eq(&c1, &c2)),
+                Value::Bool(Rc::ptr_eq(&o1, &o2)),
+                Value::Bool(Rc::ptr_eq(&l1, &l2)),
             ]))
+        }
+        "pdf_edges_identity" => {
+            let a = pdf.edges()?;
+            let b = pdf.edges()?;
+            let o1 = pdf.objects()?;
+            let p1 = pdf.pages()?;
+            // pdf.flush_cache(): its frame, then hasattr/delattr from C
+            leaf(1)?;
+            Container::flush_cache(pdf, None);
+            let c = pdf.edges()?;
+            let o2 = pdf.objects()?;
+            let p2 = pdf.pages()?;
+            // `p1 is p2`: the same list object (the pages, in the same order)
+            let same_pages = p1.len() == p2.len() && p1.iter().zip(&p2).all(|(x, y)| Rc::ptr_eq(x, y));
+            Deep::Value(Value::List(vec![
+                Value::Bool(Rc::ptr_eq(&a, &b)),
+                Value::Bool(Rc::ptr_eq(&a, &c)),
+                int(c.len()),
+                Value::Bool(Rc::ptr_eq(&o1, &o2)),
+                Value::Bool(same_pages),
+            ]))
+        }
+        "pdf_to_csv" => {
+            let k = kwargs(&op[1]);
+            let options = SerializeOptions {
+                object_types: k.get("object_types").map(str_list),
+                include_attrs: k.get("include_attrs").map(str_list),
+                exclude_attrs: k.get("exclude_attrs").map(str_list),
+                precision: k.get("precision").cloned(),
+                indent: k.get("indent").cloned(),
+            };
+            Deep::Value(Value::py_str(&pdf.to_csv(&options)?))
         }
         "find_tables" => {
             let Value::List(s) = &op[1] else { panic!("settings") };

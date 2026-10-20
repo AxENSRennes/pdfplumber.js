@@ -72,6 +72,8 @@ mod tests {
     static LOG: Logger = Logger::new("process_state.test");
     static SITE: CallSite = CallSite::new("process_state.test str(x)");
     const PATTERN: &str = "process_state test";
+    static SUBSCRIPTION: pycompat::typing_cache::Subscription =
+        pycompat::typing_cache::Subscription::new("process_state[test]", 6, 1);
 
     /// Serves a compact horizontal CMap with an empty `CODE2CID` for every
     /// name.
@@ -85,7 +87,7 @@ mod tests {
     /// Whether each part of the state holds what `done_once` did, read from
     /// how deep the same calls go (one frame or unit more the first time)
     /// and from `CMapDB`'s cache.
-    fn parts_done(symbol: Symbol) -> [bool; 5] {
+    fn parts_done(symbol: Symbol) -> [bool; 6] {
         let at = |py: u32, c: u32, f: &mut dyn FnMut() -> bool| with_depth(Depth { py, c }, f);
         [
             at(PY_RECURSION_LIMIT - 1, 0, &mut || py_intern(symbol).is_ok()),
@@ -93,6 +95,7 @@ mod tests {
             at(PY_RECURSION_LIMIT - 3, 0, &mut || pycompat::re_cache::compile_frames(PATTERN, 5).is_ok()),
             at(0, C_RECURSION_LIMIT, &mut || SITE.str_call().is_ok()),
             CMapDB::caches_snapshot().names().0 == ["process_state test"],
+            at(PY_RECURSION_LIMIT - 5, 0, &mut || SUBSCRIPTION.eval().is_ok()),
         ]
     }
 
@@ -108,16 +111,17 @@ mod tests {
             pycompat::re_cache::compile_frames(PATTERN, 5).unwrap();
             drop(SITE.str_call().unwrap());
             CMapDB::get_cmap("process_state test").unwrap();
+            SUBSCRIPTION.eval().unwrap();
         };
         done_once();
         let done = ProcessState::capture();
         fresh.clone().restore();
-        assert_eq!(parts_done(symbol), [false; 5], "the fresh state, every part");
+        assert_eq!(parts_done(symbol), [false; 6], "the fresh state, every part");
         // (parts_done did them, at depth, failing: still not done but for
         // the call site, executed even when its call raises)
         fresh.restore();
         done.restore();
-        assert_eq!(parts_done(symbol), [true; 5], "the state after them, every part");
+        assert_eq!(parts_done(symbol), [true; 6], "the state after them, every part");
         CMapDB::clear_provider();
     }
 }

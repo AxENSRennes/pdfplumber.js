@@ -89,14 +89,6 @@ impl Objects {
         self.kinds.iter().map(|(k, v)| (k, v.as_slice()))
     }
 
-    pub fn len(&self) -> usize {
-        self.kinds.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.kinds.is_empty()
-    }
-
     /// `objects[kind] = objs` (a new kind goes last, an existing one keeps
     /// its place).
     pub fn insert(&mut self, kind: PyStr, objs: Vec<Obj>) {

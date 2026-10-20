@@ -84,6 +84,9 @@ OPS: list[tuple[list[Any], str, dict[str, Any]]] = [
     (["objects"], "none", {}),
     (["layout"], "none", {}),
     (["objects"], "none", {"laparams": {}}),
+    (["objects"], "layout", {}),
+    (["objects"], "layout", {"laparams": {}}),
+    (["objects"], "layout", {"laparams": {"all_texts": True, "detect_vertical": True}}),
     (["objects"], "none", {"laparams": {"all_texts": True, "detect_vertical": True}}),
     (["text", ["extract_words", {}]], "none", {"laparams": {}}),
     (["text", ["extract_text", {}]], "none", {}),
@@ -121,7 +124,11 @@ OPS: list[tuple[list[Any], str, dict[str, Any]]] = [
     (["debug_tablefinder", ["settings", {}]], "none", {}),
     (["to_json", {}], "none", {}),
     (["to_json", {"object_types": ["char", "rect"], "precision": 2, "indent": 1}], "none", {}),
-    (["to_json", {"object_types": ["hyperlink", "page", "_object", "cached_propertie", "annot"]}], "none", {}),
+    (["to_json", {"object_types": ["cached_propertie", "hyperlink", "page", "annot", "_object", "object"]}], "edges", {}),
+    (["to_json", {"object_types": ["rect_edge", "curve_edge", "edge", "horizontal_edge", "vertical_edge"]}], "none", {}),
+    (["to_json", {"indent": None, "object_types": ["line"]}], "none", {}),
+    (["to_csv", {"object_types": ["textboxhorizontal", "textlinehorizontal", "textboxvertical", "textlinevertical"]}],
+     "none", {"laparams": {"detect_vertical": True}}),
     (["to_json", {"object_types": ["_rect_edge", "_edge", "_curve_edge"]}], "edges", {}),
     (["to_json", {"object_types": ["_rect_edge"]}], "none", {}),
     (["to_csv", {}], "none", {}),
@@ -132,6 +139,9 @@ OPS: list[tuple[list[Any], str, dict[str, Any]]] = [
     (["pdf_objects"], "pdf", {}),
     (["pdf_annots"], "pdf", {}),
     (["pdf_hyperlinks"], "pdf", {}),
+    (["pdf_to_csv", {"object_types": ["annot", "hyperlink"]}], "pdf", {}),
+    (["pdf_to_csv", {"object_types": ["page"]}], "pdf", {}),
+    (["pdf_edges_identity"], "pdf", {}),
     (["open", {}], "pdf", {}),
     (["open", {"laparams": {"char_margin": 2}, "unicode_norm": "NFC"}], "pdf", {}),
 ]
@@ -165,9 +175,29 @@ def deep_apply(path: str, pdf: Any, page: Any, op: list[Any]) -> tuple[str, Any]
         if name == "edges_identity":
             a = page.edges
             b = page.edges
+            r1 = page.rect_edges
+            c1 = page.curve_edges
+            o1 = page.objects
+            l1 = page.layout
             page.flush_cache()
             c = page.edges
-            return "ok", [a is b, a is c, len(c)]
+            r2 = page.rect_edges
+            c2 = page.curve_edges
+            o2 = page.objects
+            l2 = page.layout
+            return "ok", [a is b, a is c, len(c), r1 is r2, c1 is c2, o1 is o2, l1 is l2]
+        if name == "pdf_edges_identity":
+            a = pdf.edges
+            b = pdf.edges
+            o1 = pdf.objects
+            p1 = pdf.pages
+            pdf.flush_cache()
+            c = pdf.edges
+            o2 = pdf.objects
+            p2 = pdf.pages
+            return "ok", [a is b, a is c, len(c), o1 is o2, p1 is p2]
+        if name == "pdf_to_csv":
+            return "ok", pdf.to_csv(**op[1])
         if name == "find_tables":
             return "ok", [(t.bbox, t.extract()) for t in page.find_tables(settings_of(page, op[1]))]
         if name == "extract_tables":
@@ -206,7 +236,8 @@ def _annot(a: dict[str, Any]) -> list[Any]:
 def summarize(op: list[Any], value: Any) -> Any:
     """What a trace writes of an operation's value (in the stage body)."""
     name = op[0]
-    if name in ("text", "derived", "extract_tables", "extract_table", "to_json", "to_csv", "edges_identity"):
+    if name in ("text", "derived", "extract_tables", "extract_table", "to_json", "to_csv", "edges_identity",
+                "pdf_edges_identity", "pdf_to_csv"):
         return value
     if name in ("objects", "derive", "pdf_objects"):
         return [[k, len(v)] for k, v in value.items()]
