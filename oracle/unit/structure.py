@@ -53,7 +53,7 @@ MAX_PAGES = 20
 DEPTH_OFFSETS = (1, 2)
 #: Files of the quick set at most this large are included when they have
 #: a structure tree, an /Info dict holding containers, or annotations.
-QUICK_MAX_BYTES = 400_000
+QUICK_MAX_BYTES = 150_000
 SEED = 20261020
 
 
