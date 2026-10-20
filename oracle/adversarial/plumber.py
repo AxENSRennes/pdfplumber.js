@@ -60,8 +60,9 @@ convert.py, utils/pdfinternals.py and what they call):
 - ``depth-*`` (``cases_depth``): around the first level at which Python
   raises ``RecursionError``: chains of Form XObjects (the interpreter, then
   ``iter_layout_objects`` over the nested figures), an image ``/ColorSpace``
-  and an ``/MCID`` nested in arrays or through chains of references
-  (``resolve_all``), a dash pattern nested in arrays (``Serializer`` of
+  nested in arrays or through chains of references and an ``/MCID`` nested
+  in arrays (``resolve_all``; a content stream holds no reference, and
+  pdfminer hands ``begin_tag`` a property list given by name as the name), a dash pattern nested in arrays (``Serializer`` of
   ``to_json``/``to_csv``, ``plumber_doc``).
 """
 
@@ -689,11 +690,6 @@ def depth_kinds() -> dict[str, tuple[Any, tuple[str, ...]]]:
     def mcid_list(n: int) -> bytes:
         return doc([(b"/P << /MCID " + nested_array(n) + b" >> BDC " + show + b"EMC", {})])
 
-    def mcid_refs(n: int) -> bytes:
-        def res(b: Builder) -> dict:
-            return {"Font": {"F1": b.obj(HELVETICA)}, "Properties": {"M": {"MCID": ref_chain(b, n, 1)}}}
-        return doc([(b"/P /M BDC " + show + b"EMC", {})], res)
-
     def dash_list(n: int) -> bytes:
         return doc([(nested_array(n) + b" 0 d 10 10 50 50 re S " + show, {})] * 20)
 
@@ -703,7 +699,6 @@ def depth_kinds() -> dict[str, tuple[Any, tuple[str, ...]]]:
         "colorspace-list": (colorspace_list, objs),
         "colorspace-refs": (colorspace_refs, objs),
         "mcid-list": (mcid_list, objs + ("plumber_text",)),
-        "mcid-refs": (mcid_refs, objs),
         "dash-list": (dash_list, ("plumber_doc",)),
     }
 
