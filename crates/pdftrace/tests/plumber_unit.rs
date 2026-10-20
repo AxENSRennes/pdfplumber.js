@@ -137,3 +137,45 @@ fn stage_traces() {
         failures[..failures.len().min(20)].join("\n")
     );
 }
+
+/// `open.jsonl`: `pdfplumber.open(path, **options)` with options of every
+/// type (`laparams`, `pages`, `password`, ...), the pages' objects and the
+/// ranking of their analysis (`plumber_objects::open_trace`).
+#[test]
+fn open_options() {
+    let data = open();
+    let cases = data.cases("py_process");
+    let [(_, state)] = &cases[..] else { panic!("one process state") };
+    py_process::set(PyProcess::from_value(state));
+    let mut failures = Vec::new();
+    let mut n = 0;
+    for (args, expected) in data.cases("open") {
+        let [Value::Str(name), Value::Bytes(pdf), options] = &args[..] else { panic!("bad case {args:?}") };
+        let options = match pdftrace::plumber::from_value(options) {
+            Ok(pdfplumber::obj::PyValue::Dict(ref d)) => d.clone(),
+            other => panic!("options: {other:?}"),
+        };
+        let Value::Str(expected) = &expected else { panic!("bad output") };
+        let expected = expected.as_str().expect("ASCII");
+        let input = StageInput { pdf, password: "", password_given: false, max_pages: None, oracle: Some(expected) };
+        let mut out = Vec::new();
+        pdftrace::stages::plumber_objects::open_trace(&input, &options, &mut out).expect("write to memory");
+        let got = String::from_utf8(out).expect("ASCII");
+        n += 1;
+        if got != expected {
+            failures.push(format!(
+                "{} {}: {}",
+                name.as_str().unwrap_or("?"),
+                pdftrace::canon::canon(&args[2]),
+                first_difference(expected, &got)
+            ));
+        }
+    }
+    assert!(n > 80, "only {n} openings");
+    assert!(
+        failures.is_empty(),
+        "{} of {n} openings differ:\n{}",
+        failures.len(),
+        failures[..failures.len().min(20)].join("\n")
+    );
+}
