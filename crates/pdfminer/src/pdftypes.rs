@@ -364,7 +364,9 @@ impl PDFObject {
             PDFObject::Stream(s) => Ok(s.contains(key)),
             // only a str element equals a str (one that pdfplumber's metadata
             // decoding wrote)
-            PDFObject::List(l) => Ok(l.to_vec().iter().any(|x| matches!(x, PDFObject::Str(s) if s.as_str() == Some(key)))),
+            PDFObject::List(l) => {
+                Ok(l.to_vec().iter().any(|x| matches!(x, PDFObject::Str(s) if s.as_str() == Some(key))))
+            }
             // a substring
             PDFObject::Str(s) => Ok(s.contains(&PyStr::new(key))),
             PDFObject::Bytes(_) => Err(exc::TypeError("a bytes-like object is required, not 'str'")),

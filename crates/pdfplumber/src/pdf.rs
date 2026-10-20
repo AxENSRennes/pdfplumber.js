@@ -497,7 +497,7 @@ impl PDF {
     /// `[elem.to_dict() for elem in PDFStructTree(self)]`, `[]` when the
     /// document has no structure. Workstream DOC (`crate::structure`).
     pub fn structure_tree(&self) -> PyResult<Vec<PyValue>> {
-        todo!("pdfplumber/pdf.py:194 PDF.structure_tree (workstream DOC)")
+        Err(PyErr::not_ported("pdfplumber/pdf.py:194 PDF.structure_tree (workstream DOC)"))
     }
 
     /// `pdf.metadata` as a value.

@@ -1190,7 +1190,7 @@ impl Page {
     /// Workstream DOC (`crate::structure`): the `to_dict()` of each element
     /// of `PDFStructTree(self.pdf, self)`, `[]` without a structure tree.
     pub fn structure_tree(self: &Rc<Self>) -> PyResult<Vec<PyValue>> {
-        todo!("pdfplumber/page.py:248 Page.structure_tree (workstream DOC)")
+        Err(PyErr::not_ported("pdfplumber/page.py:248 Page.structure_tree (workstream DOC)"))
     }
 
     // pdfplumber/page.py:256 Page.layout
@@ -1238,14 +1238,14 @@ impl Page {
     /// when present, is this page ([`Page::as_value`]); a `CroppedPage`
     /// crops them with its `_crop_fn`.
     pub fn annots(&self) -> PyResult<Vec<Obj>> {
-        todo!("pdfplumber/page.py:273 Page.annots (workstream DOC)")
+        Err(PyErr::not_ported("pdfplumber/page.py:273 Page.annots (workstream DOC)"))
     }
 
     // pdfplumber/page.py:339 Page.hyperlinks
     /// Workstream DOC: the annotations whose `uri` is not `None`
     /// (`self.annots` computed again).
     pub fn hyperlinks(&self) -> PyResult<Vec<Obj>> {
-        todo!("pdfplumber/page.py:339 Page.hyperlinks (workstream DOC)")
+        Err(PyErr::not_ported("pdfplumber/page.py:339 Page.hyperlinks (workstream DOC)"))
     }
 
     // pdfplumber/page.py:343 Page.objects
