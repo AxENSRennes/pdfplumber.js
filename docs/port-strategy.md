@@ -294,6 +294,12 @@ Lecture :
   - Temps (étape `layout`, 20 premières pages de `all`) : `pdftrace` 54 ms
     par page contre 288 ms pour Python hors démarrage (5,3 fois), dont
     l'essentiel à écrire la trace.
+- **Vague 4** (en cours) : base `wave4/base` (`architecture.md`,
+  « Vague 4 ») : spécification Python des étapes `plumber_objects`,
+  `plumber_text`, `plumber_tables`, `plumber_doc` (mesurée sur `quick`),
+  interfaces Rust de `pdf`, `page`, `container`, `convert`, `structure`,
+  `utils/exceptions` (squelettes qui compilent), contrat des chantiers
+  PAGE et DOC, `oracle.verify` qui passe le fournisseur de CMaps.
 - **Vagues suivantes**, dans l'ordre des dépendances :
   1. **Vague 4** : pdfplumber `page`, `pdf`, `container`, `structure`,
      `convert` : étapes `plumber_objects`, `plumber_text`,

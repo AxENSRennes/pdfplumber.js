@@ -55,6 +55,7 @@ step "generated tables are up to date"
 "$PY" oracle/codegen/pdffont_tables.py --check
 "$PY" oracle/codegen/ccitt_tables.py --check
 "$PY" oracle/codegen/py_symbols.py --check
+"$PY" oracle/codegen/plumber_ops.py --check
 
 step "unit oracle data (python -m oracle.unit)"
 capped "$PY" -m oracle.unit

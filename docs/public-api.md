@@ -216,6 +216,26 @@ and `text_*` options forwarded to cell text extraction.
 where a row or column has no cell), and `extract()`. `extractTable()` and
 `extractTables()` return arrays of cell strings or `null` values.
 
+## Not Ported
+
+These parts of pdfplumber 0.11.9 are out of scope (`docs/architecture.md`,
+"Règles de port"):
+
+- `Page.to_image` and `pdfplumber/display.py` (rendering through pypdfium2
+  and PIL).
+- `pdfplumber.open(..., repair=True)`, `gs_path`, `repair_setting` and
+  `pdfplumber/repair.py` (Ghostscript run in a subprocess): the core raises
+  `NotPorted`.
+- The command line (`pdfplumber/cli.py`).
+
+Every other `pdfplumber.open` option is ported (`pages`, `laparams`,
+`password`, `strict_metadata`, `unicode_norm`, `raise_unicode_errors`).
+
+Inline images: pdfminer names an inline image `str(id(stream))`, a memory
+address; the port names it `inline-<k>` (`k`: its rank among the page's
+inline images). This name is the `name` of the image in `page.images` and,
+with `laparams`, of its figure.
+
 ## Runtime Contract
 
 The package is ESM. Node loads `dist/src/index.js`, browsers

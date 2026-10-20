@@ -96,10 +96,10 @@ Chaque étape a un nom stable, une implémentation Python
 | `interp` | chaque appel de l'interpréteur au périphérique de pdfplumber (`set_ctm`, pages, figures, `paint_path`, `render_image`, `render_string`/`render_char` et l'avance rendue, balises), avec les états graphique et texte, et où remontent les exceptions |
 | `fonts_text`, `interp_text` | `fonts` et `interp` sur le `PDFTextDevice` de pdfminer (`render_char` rend `0`) au lieu du périphérique de pdfplumber : l'interpréteur vérifié sans convertisseur (`oracle/stages/interp_text.py`) |
 | `layout` | le `LTPage` brut (`laparams=None`, le défaut de pdfplumber) puis analysé (`LAParams()`), tous attributs (`mcid`, `tag` compris), et le rang des `id()` de l'analyse (`ids`) ; non reproductible d'une construction du cache à l'autre sur les pages où des boîtes sont à égale distance (les `id()` sont des adresses : un tirage), la parité suivant le tirage du cache (`pdftrace --oracle-dir`) |
-| `plumber_objects` (vague 4) | `page.objects` de pdfplumber, tous attributs, plus boîtes et `doctop` |
-| `plumber_text` (vague 4) | `extract_text` (simple, `layout=True`, options), `extract_words`, `extract_text_lines`, `search`, `dedupe_chars` |
-| `plumber_tables` (vague 4) | `find_tables`/`extract_tables` pour les stratégies `lines`, `lines_strict`, `text`, `explicit` |
-| `plumber_doc` (vague 4) | métadonnées, annotations, liens, arbre de structure, `crop`/`within_bbox`/`outside_bbox` |
+| `plumber_objects` (vague 4) | `pdfplumber.open(path, pages=[1..N], …)` : boîtes et `doctop` de chaque `Page`, `page.objects` de toute sorte, tous attributs, annotations, liens, `pdf.objects`/`annots`/`hyperlinks` ; puis la même chose avec `laparams={}` (boîtes et lignes de texte, caractères par référence à la première ouverture, `ids` : rang des `id()` de l'analyse, clé de contenu ; `ORACLE_INPUT`) |
+| `plumber_text` (vague 4) | `extract_text` (simple, `layout=True`, jeux d'options), `extract_text_simple`, `extract_words`, `extract_text_lines`, `search` (correspondances du `re` de Python, `spans`, `ORACLE_INPUT`), `dedupe_chars`, sur la page et sur des pages rognées, filtrées, dédoublonnées |
+| `plumber_tables` (vague 4) | `debug_tablefinder` (arêtes, intersections, cellules, tables, lignes, colonnes, texte), `find_table`, `extract_tables`, `extract_table` pour `lines`, `lines_strict`, `text`, `explicit` (lignes tirées de la page) et des variantes de réglages, sur la page et des pages dérivées |
+| `plumber_doc` (vague 4) | métadonnées (`strict_metadata` des deux façons), arbre de structure (document et pages, `find_all`, `find`, `all_mcids`, `element_bbox`, `repr`), `crop`/`within_bbox`/`outside_bbox` (strict ou non, relatif ou non), `filter`, `dedupe_chars`, `to_dict`/`to_json`/`to_csv`, `close`, options `unicode_norm`, `raise_unicode_errors`, `pages`, mots de passe |
 
 En tête de chaque `oracle/stages/<nom>.py` : les modules upstream exercés, le
 parcours exact (ordre des appels à `getobj`/`get_data`, qui a des effets de
@@ -172,6 +172,17 @@ bord par le cache) et le format de chaque ligne. Règles communes :
   `inline{"n": k}`, et l'étape `layout` écrit le rang des `id()` de son
   analyse (lignes `ids`), que `pdftrace` relit (`ORACLE_INPUT`, ci-dessous).
 
+Les quatre étapes `plumber_*` mènent pdfplumber comme un utilisateur
+(`pdfplumber.open`, `oracle/stages/plumber_objects.py` `open_pdf`) ;
+`--max-pages` y devient l'option `pages` (`PDF.pages` parcourt tout l'arbre
+des pages et ne construit que les pages choisies). Leurs jeux d'options sont
+des tables (`oracle/codegen/plumber_ops.py` les écrit pour le Rust) dont
+chaque page prend une tranche déterministe (`select`, tirée du SHA-256 du
+fichier et du rang de la page) ; un résultat de plus de 65 536 caractères
+s'écrit par sa longueur et son empreinte (`outd`). Une exception de
+pdfplumber qui en enveloppe une autre s'écrit suivie de ` cause ` et de
+celle-ci.
+
 Les modules sans PDF en entrée (filtres, inflate, chiffrement, parseur de
 CMap, analyse de mise en page, tables à partir de bords) ont aussi des **tests
 différentiels unitaires** : `oracle/unit/<module>.py` génère des cas (graine
@@ -228,7 +239,9 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   Les tables générées (`oracle/codegen/`) sont vérifiées par `--check` dans
   `scripts/check.sh` : `libm_tables.py`, `atan2_tables.py`, `unicodedata_tables.py`, `saslprep_tables.py`,
   `pdfminer_tables.py` (`glyphlist`, `latin_enc`, `fontmetrics`), `pdffont_tables.py` (`NIBBLES`, `CFFFont.STANDARD_STRINGS`),
-  `ccitt_tables.py`. Les CMaps prédéfinies converties par
+  `ccitt_tables.py`, et les tables d'options des étapes `plumber_*`
+  (`plumber_ops.py` → `crates/pdftrace/src/stages/plumber_ops.rs`). Les
+  CMaps prédéfinies converties par
   `oracle/codegen/cmaps.py` ne sont pas versionnées : elles vivent dans
   `<cache>/cmap/<empreinte>/`, que le générateur `cmaps.py` remplit et
   désigne au rejeu (`cmap_dir` de `meta.json`).
@@ -304,18 +317,21 @@ Mode d'emploi détaillé : [`oracle/README.md`](../oracle/README.md).
   vérifie la pile, pas la parité.
 - `pdftrace --cmap-dir DIR` (par défaut `$PDFPLUMBER_CMAP_DIR`) : le
   fournisseur des CMaps prédéfinies (`<cache>/cmap/<empreinte>/`, le
-  `cmap_dir` des données unitaires `cmaps` ou `interp`). Les étapes
-  `fonts`, `interp`, `layout`, `fonts_text`, `interp_text` en ont besoin :
-  sans lui, une police à CMap prédéfinie donne `RuntimeError("no CMap
-  provider installed …")` et `verify` compte un écart (8 fichiers
-  d'`adv-interp`, `*-font-cmap-*` et `*-depth-font-predefined-cmap-*`) ;
-  exporter `PDFPLUMBER_CMAP_DIR` avant `oracle.verify`.
+  `cmap_dir` des données unitaires `cmaps` ou `interp`). Les étapes qui
+  interprètent des pages (`fonts`, `interp`, `layout`, `fonts_text`,
+  `interp_text`, `plumber_*`) en ont besoin : sans lui, une police à CMap
+  prédéfinie donne `RuntimeError("no CMap provider installed …")` (8
+  fichiers d'`adv-interp`, `*-font-cmap-*` et
+  `*-depth-font-predefined-cmap-*`). `oracle.verify` le passe donc
+  toujours (`--cmap-dir`, par défaut le répertoire de
+  `oracle/codegen/cmaps.py` sous le cache, écrit au besoin ; un répertoire
+  sans `names.txt` arrête `verify` avant le cache de l'oracle, code 2).
 - Les deux outils acceptent aussi `--option=valeur` ; `verify` et le cache
   passent toujours le mot de passe sous la forme `--password=P` (un mot de
   passe peut commencer par `-`). Avec `--out`, `pdftrace` ajoute après
   chaque fichier la ligne `<sha256>\t<secondes>` à `DIR/_times.tsv`.
 - `python -m oracle.verify --stage S --set NOM [-j N] [--max-pages N]
-  [--pdftrace CHEMIN] [--limit K] [--files …] [--json]` : construit au besoin
+  [--pdftrace CHEMIN] [--cmap-dir DIR] [--limit K] [--files …] [--json]` : construit au besoin
   le cache de l'oracle (`-j` processus, 3 par défaut), lance `pdftrace` par lots
   de fichiers de même mot de passe, compare octet pour octet, puis affiche le
   décompte (identiques / différents / plantages Rust / délais Rust / délais
@@ -383,7 +399,7 @@ Les constantes mesurées sont aussi vérifiées par les cas de l'ensemble
 | `pdfjs` | `upstream/pdfjs/test/pdfs` (937 PDF, beaucoup de cas tordus) |
 | `quick` | tout `micro`, plus les fichiers de `all` dont le SHA-256 commence par un octet < 18 (~7 % ; 150 PDF en tout aujourd'hui) : l'appartenance ne dépend que du contenu du fichier, en ajouter n'en retire aucun |
 | `all` | tout ce qui précède (1 853 PDF distincts aujourd'hui) |
-| `adv-<étape>` | corpus adverse généré pour une étape (voir plus bas) ; plusieurs étapes peuvent vérifier le même ; aujourd'hui `adv-objects` (333 PDF), `adv-pages` (285) et `adv-interp` (353), sur lesquels chaque étape implémentée est vérifiée à l'intégration d'une vague (`interp_text` et `fonts_text` : `adv-interp`) |
+| `adv-<nom>` | corpus adverse généré pour une étape, ou par un générateur `oracle/adversarial/<nom>.py` que plusieurs étapes vérifient (`adv-plumber`, `adv-structure` de la vague 4 : à écrire, `architecture.md`, « Vague 4 ») ; plusieurs étapes peuvent vérifier le même ; aujourd'hui `adv-objects` (333 PDF), `adv-pages` (285) et `adv-interp` (353), sur lesquels chaque étape implémentée est vérifiée à l'intégration d'une vague (`interp_text` et `fonts_text` : `adv-interp`) |
 
 Un fichier est tout `*.pdf` (casse ignorée) des dossiers, récursivement, en
 ordre de chemin relatif. Les fichiers identiques sont dédoublonnés par SHA-256
