@@ -6,7 +6,9 @@
 //! [`PDFObject`] is the union of the Python types pdfminer's parsers
 //! produce: `None`, `bool`, `int` ([`PyInt`]), `float`, `bytes`,
 //! [`PSLiteral`], [`PSKeyword`], `list`, `dict` (keys are `str`),
-//! [`PDFStream`] and [`PDFObjRef`]. Python lists, dicts, streams and
+//! [`PDFStream`] and [`PDFObjRef`], and `str` ([`PDFObject::Str`]), which
+//! the parsers never make but pdfplumber's metadata decoding writes into
+//! the document's dicts. Python lists, dicts, streams and
 //! references are shared, mutable objects; so are [`PDFList`], [`PDFDict`]
 //! (`Rc<RefCell<..>>`), `Rc<PDFStream>` and [`PDFObjRef`]: cloning a
 //! `PDFObject` clones a reference, and an in-place change (`resolve_all` on a
