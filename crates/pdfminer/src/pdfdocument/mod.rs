@@ -271,6 +271,23 @@ impl PDFDocument {
         result
     }
 
+    /// `fp.close()` of the file the document reads (pdfplumber's
+    /// `PDF.close` closes the file it opened): every later read of the
+    /// document raises the `ValueError` of a closed file
+    /// (`pycompat::io::Closed`).
+    pub fn close_file(&self) -> PyResult<()> {
+        self.with_parser(|p| {
+            let class = match p.ext.file {
+                FileKind::BufferedReader => pycompat::io::Closed::BufferedReader,
+                FileKind::BytesIO => pycompat::io::Closed::BytesIO,
+            };
+            if let Some(fp) = &p.fp {
+                fp.close(class);
+            }
+            Ok(())
+        })
+    }
+
     // ---- attributes
 
     /// The class of the file object the document reads (`self._parser.fp`):
@@ -278,18 +295,6 @@ impl PDFDocument {
     /// (pdfplumber/structure.py:132 `PDFStructElement.to_dict`).
     pub fn file_kind(&self) -> PyResult<FileKind> {
         self.with_parser(|p| Ok(p.ext.file))
-    }
-
-    /// `self._parser.fp.close()`: what pdfplumber's `PDF.close` does to
-    /// the file it opened from a path (`stream.close()`); a later read of
-    /// an object not cached yet raises the file's `ValueError`.
-    pub fn close_file(&self) -> PyResult<()> {
-        self.with_parser(|p| {
-            if let Some(fp) = p.fp.as_mut() {
-                fp.close();
-            }
-            Ok(())
-        })
     }
 
     /// `self.xrefs`

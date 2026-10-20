@@ -67,61 +67,110 @@ fn first_difference(expected: &str, got: &str) -> String {
     format!("line counts {} (oracle) and {} (rust)", expected.lines().count(), got.lines().count())
 }
 
+/// The result of one replayed trace.
+struct Outcome {
+    what: String,
+    deeper: bool,
+    limited: bool,
+    failure: Option<String>,
+}
+
+/// Replays one case of `stages.jsonl` (`None` when `PLUMBER_ONLY` leaves
+/// it out).
+fn replay(args: &[Value], expected: &Value, only: Option<&str>) -> Option<Outcome> {
+    let [Value::Str(name), Value::Bytes(pdf), password, Value::Str(what), Value::Int(max_pages), entry] = args else {
+        panic!("bad case {args:?}");
+    };
+    let name = name.as_str().expect("a file name");
+    if only.is_some_and(|o| !o.split(',').any(|s| name.contains(s))) {
+        return None;
+    }
+    let password_given = matches!(password, Value::Str(_));
+    let password = match password {
+        Value::Str(p) => p.as_str().expect("a password").to_owned(),
+        _ => String::new(),
+    };
+    let max_pages = max_pages.as_i64().filter(|&m| m > 0).map(|m| m as usize);
+    let what = what.as_str().expect("a stage");
+    let Value::Str(expected) = expected else { panic!("bad output") };
+    let expected = expected.as_str().expect("ASCII");
+    let stage = stages::lookup(what).expect("a stage");
+    let input = StageInput {
+        pdf,
+        password: &password,
+        password_given,
+        max_pages,
+        oracle: stage.oracle_input.then_some(expected),
+    };
+    let run = stage.run.expect("an implemented stage");
+    let mut out = Vec::new();
+    let deeper = !matches!(entry, Value::None);
+    if deeper {
+        with_stage_entry(depth(entry), || run(&input, &mut out)).expect("write to memory");
+    } else {
+        run(&input, &mut out).expect("write to memory");
+    }
+    let got = String::from_utf8(out).expect("ASCII");
+    let mut failure = None;
+    if got != expected {
+        let at = if deeper { format!(" from {}", pdftrace::canon::canon(entry)) } else { String::new() };
+        if let Some(dir) = std::env::var_os("PLUMBER_DUMP") {
+            let base = std::path::Path::new(&dir).join(format!("{name}-{what}{}", at.replace(' ', "_")));
+            fs::write(base.with_extension("py.txt"), expected).expect("PLUMBER_DUMP is a writable directory");
+            fs::write(base.with_extension("rs.txt"), &got).expect("PLUMBER_DUMP is a writable directory");
+        }
+        failure = Some(format!("{name} [{what}]{at}: {}", first_difference(expected, &got)));
+    }
+    Some(Outcome { what: what.to_owned(), deeper, limited: expected.contains("RecursionError"), failure })
+}
+
+/// The replay runs on `PLUMBER_THREADS` threads (4 by default), each with
+/// the generator's process state and a stack large enough for the deepest
+/// traces (the recursion counters are per thread, as in the oracle).
 #[test]
 fn stage_traces() {
     let data = open();
     let cases = data.cases("py_process");
     let [(_, state)] = &cases[..] else { panic!("one process state") };
-    py_process::set(PyProcess::from_value(state));
+    let process = PyProcess::from_value(state);
     let only = std::env::var("PLUMBER_ONLY").ok();
-    let mut failures = Vec::new();
-    let (mut n, mut depth_cases, mut deeper_entries) = (0, 0, 0);
+    // WASI has no threads: one, the test's own (its stack is the module's)
+    let default_threads = if cfg!(target_family = "wasm") { 1 } else { 4 };
+    let threads: usize =
+        std::env::var("PLUMBER_THREADS").ok().and_then(|t| t.parse().ok()).unwrap_or(default_threads).max(1);
+    let all = data.cases("stages");
+    let outcomes: Vec<Outcome> = if threads == 1 {
+        py_process::set(process);
+        all.iter().filter_map(|(args, expected)| replay(args, expected, only.as_deref())).collect()
+    } else {
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..threads)
+                .map(|k| {
+                    let (all, only, process) = (&all, only.as_deref(), process.clone());
+                    std::thread::Builder::new()
+                        .stack_size(64 << 20)
+                        .spawn_scoped(scope, move || {
+                            py_process::set(process);
+                            all.iter()
+                                .enumerate()
+                                .filter(|(i, _)| i % threads == k)
+                                .filter_map(|(_, (args, expected))| replay(args, expected, only))
+                                .collect::<Vec<_>>()
+                        })
+                        .expect("a thread")
+                })
+                .collect();
+            handles.into_iter().flat_map(|h| h.join().expect("a replay thread")).collect()
+        })
+    };
+    let n = outcomes.len();
+    let depth_cases = outcomes.iter().filter(|o| o.limited).count();
+    let deeper_entries = outcomes.iter().filter(|o| o.deeper).count();
     let mut per_stage = std::collections::BTreeMap::new();
-    for (args, expected) in data.cases("stages") {
-        let [Value::Str(name), Value::Bytes(pdf), password, Value::Str(what), Value::Int(max_pages), entry] = &args[..]
-        else {
-            panic!("bad case {args:?}");
-        };
-        let name = name.as_str().expect("a file name");
-        if only.as_ref().is_some_and(|o| !o.split(',').any(|s| name.contains(s))) {
-            continue;
-        }
-        let password_given = matches!(password, Value::Str(_));
-        let password = match password {
-            Value::Str(p) => p.as_str().expect("a password").to_owned(),
-            _ => String::new(),
-        };
-        let max_pages = max_pages.as_i64().filter(|&m| m > 0).map(|m| m as usize);
-        let what = what.as_str().expect("a stage");
-        let Value::Str(expected) = &expected else { panic!("bad output") };
-        let expected = expected.as_str().expect("ASCII");
-        let stage = stages::lookup(what).expect("a stage");
-        let input = StageInput {
-            pdf,
-            password: &password,
-            password_given,
-            max_pages,
-            oracle: stage.oracle_input.then_some(expected),
-        };
-        let run = stage.run.expect("an implemented stage");
-        let mut out = Vec::new();
-        match entry {
-            Value::None => run(&input, &mut out).expect("write to memory"),
-            entry => {
-                deeper_entries += 1;
-                with_stage_entry(depth(entry), || run(&input, &mut out)).expect("write to memory")
-            }
-        }
-        let got = String::from_utf8(out).expect("ASCII");
-        n += 1;
-        *per_stage.entry(what.to_owned()).or_insert(0) += 1;
-        if expected.contains("RecursionError") {
-            depth_cases += 1;
-        }
-        if got != expected {
-            failures.push(format!("{name} [{what}]: {}", first_difference(expected, &got)));
-        }
+    for o in &outcomes {
+        *per_stage.entry(o.what.clone()).or_insert(0) += 1;
     }
+    let failures: Vec<&String> = outcomes.iter().filter_map(|o| o.failure.as_ref()).collect();
     if only.is_none() {
         assert!(n > 300, "only {n} traces");
         for what in ["plumber_objects", "plumber_text", "plumber_tables", "plumber_doc"] {
@@ -134,7 +183,7 @@ fn stage_traces() {
         failures.is_empty(),
         "{} of {n} traces differ:\n{}",
         failures.len(),
-        failures[..failures.len().min(20)].join("\n")
+        failures[..failures.len().min(20)].iter().map(|f| f.as_str()).collect::<Vec<_>>().join("\n")
     );
 }
 

@@ -9,6 +9,7 @@
 //! `seek()` (`OSError` instead of `ValueError`); the parser that seeks to
 //! computed offsets (`pdfparser.py`) must take this into account.
 
+use std::cell::Cell;
 use std::ops::Range;
 use std::rc::Rc;
 
@@ -23,33 +24,48 @@ pub struct BytesIO {
     data: Rc<[u8]>,
     /// `self->pos`; never negative, may be past the end.
     pos: Pos,
-    /// Whether `close()` was called.
-    closed: bool,
+    /// Whether the file is closed, shared by the copies of this object
+    /// (the parsers of a document read one file): `None` while open, else
+    /// the class of the file it stands for (see [`Closed`]).
+    closed: Rc<Cell<Option<Closed>>>,
+}
+
+/// The class of a closed file, whose errors differ: `close()` on the
+/// `io.BufferedReader` of `open(path, "rb")` (`seek of closed file`) or on
+/// an `io.BytesIO` (`I/O operation on closed file.`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Closed {
+    BufferedReader,
+    BytesIO,
 }
 
 impl BytesIO {
     pub fn new(data: Rc<[u8]>) -> BytesIO {
-        BytesIO { data, pos: 0, closed: false }
+        BytesIO { data, pos: 0, closed: Rc::new(Cell::new(None)) }
     }
 
-    /// `close()`: every later operation that the reader checks with
-    /// [`Self::check_open`] raises.
-    pub fn close(&mut self) {
-        self.closed = true;
+    /// `close()`: every copy of this file object is closed (a file object
+    /// of class `as_class`).
+    pub fn close(&self, as_class: Closed) {
+        self.closed.set(Some(as_class));
+    }
+
+    /// The `ValueError` `seek()` raises on a closed file (checked before
+    /// the position is converted), `None` while the file is open.
+    pub fn seek_closed_error(&self) -> Option<crate::err::PyErr> {
+        self.check_open("seek").err()
     }
 
     /// `ValueError` for operation `op` (`"seek"`, `"read"`, `"tell"`) on a
-    /// closed file, as an `io.BufferedReader` words it (the only file a
-    /// pdfplumber `PDF` closes is one it opened from a path:
-    /// `"seek of closed file"`, `"read of closed file"`, `"I/O operation
-    /// on closed file"` for the others).
+    /// closed file, as its class words it: `"seek of closed file"`, `"read
+    /// of closed file"`, `"I/O operation on closed file"` for a
+    /// `BufferedReader`, `"I/O operation on closed file."` for a `BytesIO`.
     pub fn check_open(&self, op: &str) -> PyResult<()> {
-        if !self.closed {
-            return Ok(());
-        }
-        Err(match op {
-            "seek" | "read" => exc::ValueError(format!("{op} of closed file")),
-            _ => exc::ValueError("I/O operation on closed file"),
+        let Some(class) = self.closed.get() else { return Ok(()) };
+        Err(match (class, op) {
+            (Closed::BufferedReader, "seek" | "read") => exc::ValueError(format!("{op} of closed file")),
+            (Closed::BufferedReader, _) => exc::ValueError("I/O operation on closed file"),
+            (Closed::BytesIO, _) => exc::ValueError("I/O operation on closed file."),
         })
     }
 
@@ -74,8 +90,12 @@ impl BytesIO {
         self.seek_whence(pos, 0)
     }
 
-    /// `seek(pos, whence)` (`_io_BytesIO_seek_impl`).
+    /// `seek(pos, whence)` (`_io_BytesIO_seek_impl`), or the error of a
+    /// closed file.
     pub fn seek_whence(&mut self, pos: Pos, whence: i32) -> PyResult<Pos> {
+        if let Some(e) = self.seek_closed_error() {
+            return Err(e);
+        }
         let too_large = || exc::OverflowError("new position too large");
         let pos = match whence {
             0 if pos < 0 => return Err(exc::ValueError(format!("negative seek value {pos}"))),

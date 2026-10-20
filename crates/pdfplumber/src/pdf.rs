@@ -11,9 +11,9 @@
 //! deviations): a `laparams` margin that is not a number (Python stores
 //! any object and fails at its first use in the analysis; the port refuses
 //! it at `open` with `NotPorted`), a `password` that is neither `None` nor
-//! a `str` (`NotPorted`), and the closed file of a `PDF` opened from a path
-//! after `close()` (Python raises `ValueError: seek of closed file` at the
-//! next read of the document; the port reads on).
+//! a `str` (`NotPorted`). After `close()`, the file of a `PDF` opened from
+//! a path is closed (`PDFDocument::close_file`): a read of the document
+//! raises `ValueError: seek of closed file`, as in Python.
 //!
 //! # State
 //!
@@ -357,8 +357,7 @@ impl PDF {
     // pdfplumber/pdf.py:124 PDF.close
     /// `flush_cache()`, then `page.close()` for each page of `self.pages`
     /// (built again: the cache was just flushed), then the file closed
-    /// when the `PDF` opened it (not modelled, see the module
-    /// documentation).
+    /// when the `PDF` opened it (`PDFDocument::close_file`).
     pub fn close(&self) -> PyResult<()> {
         let _frame = py_frame()?;
         {
