@@ -538,7 +538,7 @@ mod tests {
 
     #[test]
     fn a_key_takes_its_ranks_in_order() {
-        let mut ids = ContentIds::new(&[("k".into(), 3), ("k".into(), 1)]);
+        let ids = ContentIds::new(&[("k".into(), 3), ("k".into(), 1)]);
         assert_eq!(ids.ranks["k"], [1, 3]);
         assert_eq!(ids.next, 4);
         assert_eq!(key_of("box", vec!["b".into(), "a".into()]), key_of("box", vec!["a".into(), "b".into()]));

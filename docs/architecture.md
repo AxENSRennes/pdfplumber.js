@@ -1303,6 +1303,96 @@ dégénérés, `cases_depth` pour chaque chemin récursif
 (`iter_layout_objects` sur des figures imbriquées, `resolve_all`,
 `get_text` des conteneurs, `Serializer` et l'encodeur JSON).
 
+#### Réalisation (branche `wave4/page`)
+
+- **Bibliothèque** (`crates/pdfplumber`) : `pdf.rs` (`PDF.open` et
+  `__init__` : `LAParams(**laparams)` avec les `TypeError` de `**` et des
+  mots-clés inconnus, `_validate`, le mot de passe, `PdfminerException`
+  de `PDFDocument(...)` ; `pages` avec `iter_pages` repris par
+  `enumerate` et `next(gen)` repris du C, `CreatePages::resumed_from_c`
+  ajouté à `pdfpage.rs` ; `doctop` cumulé sur les pages choisies, `page_number
+  not in pp` par `py_contains` ; `objects`, `close`, `to_dict`,
+  `getattr`) ; `page.rs` (`Page.__init__`, `DerivedPage`, `CroppedPage`,
+  `FilteredPage` dans un `Page` à `PageKind` ; `layout` mène
+  `page_layout` avec l'`IdSource` de `OpenOptions::ids` ; `objects`,
+  `parse_objects`, `iter_layout_objects` et sa chaîne de générateurs,
+  `process_object` pour chaque objet du layout, `LTAnno` compris, dans
+  l'ordre de `__dict__` ; `point2coord` ; texte, recherche, tables ;
+  `get_textmap` et son `lru_cache` (128 entrées, clés hachées comme
+  Python : `x_tolerance=1` et `1.0` partagent un `TextMap`) ; `crop`,
+  `within_bbox`, `outside_bbox`, `filter`, `dedupe_chars` ; `to_dict`,
+  `getattr`, `flush_cache`, `close`) ; `container.rs` (listes, arêtes en
+  cache, `to_json`, `to_csv`) ; `convert.rs` (`Serializer`,
+  `get_attr_filter`, `to_b64`) ; le reste de `pdfinternals.rs`
+  (`decode_text` de toute valeur avec le site `DECODE_TEXT_STR`,
+  `resolve_and_decode`, `decode_psl_list`) ; `obj.rs` :
+  `PyValue::repr_counted`/`str_counted` (une unité C par valeur, les
+  objets PDF par `PDFObject::repr`). `pycompat` : `json` (les deux
+  encodeurs de `json.dumps` : celui en C sans `indent`, une unité par
+  conteneur et une pour l'appel de l'encodeur ; celui en Python avec
+  `indent`, un cadre par conteneur et un par flottant, `floatstr`),
+  `csv` (le `writerow` de `_csv.c` : guillemet doublé, `\` échappé par
+  lui-même sans guillemets, `,`, `\r`, `\n` entre guillemets, un seul
+  champ vide écrit `""`), `base64::b64encode`, `PyStr::replace`.
+- **Cadres mesurés** (`oracle/depth_probe.py`, sous limites) :
+  `lru_cache()(f)` de `Page.__init__` et `DerivedPage.__init__` (`lru_cache`
+  un cadre, puis `decorating_function` → `update_wrapper`, deux),
+  l'appel du `lru_cache` (une unité C, `_PyObject_MakeTpCall`, puis
+  `_get_textmap` appelé depuis le C en cas d'échec), `re.sub(lt_pat, ...)`
+  de `process_object` (`re.sub` → `re._compile`, deux cadres, le motif
+  déjà compilé), `json.dumps` (`dumps` → `encode` → `iterencode`, puis
+  `_iterencode` repris par `list()` depuis le C et un cadre par
+  conteneur), `csv.DictWriter` (`writeheader` → `writerow` →
+  `_dict_to_list`, dont l'expression génératrice est reprise par le
+  `writerow` en C ; `writerows` appelle `_dict_to_list` depuis le C).
+- **Unités C des comparaisons** (`obj.rs`) : non comptées, à dessein.
+  Une valeur d'objet de page ne dépasse pas quelques centaines de niveaux
+  d'imbrication : ce qui vient du document passe par `resolve_all` (deux
+  cadres par niveau de liste, un par niveau de dict : `RecursionError`
+  vers 490 et 990 niveaux), et le seul attribut qui n'y passe pas, `dash`,
+  n'est jamais comparé (les arêtes de tables qui le copient ne sont
+  comparées qu'à leurs coordonnées) ; sa sérialisation (`to_json`,
+  `to_csv`) lève `RecursionError` aux cadres de `Serializer` (trois par
+  niveau) bien avant 10 000 unités. Le cas `mc-mcid-deep` d'`adv-plumber`
+  (un `MCID` imbriqué 10^4 niveaux, en tableaux et en dicts) le vérifie.
+- **Écarts documentés** (`docs/public-api.md`, « Not Ported ») : une
+  marge de `laparams` qui n'est pas un nombre (Python la garde et échoue à
+  son premier usage dans l'analyse : `NotPorted` à l'ouverture) ; un mot
+  de passe qui n'est ni `None` ni une `str` (`NotPorted`) ; le fichier
+  fermé d'un `PDF` ouvert par chemin après `close()` (Python lève
+  `ValueError: seek of closed file` à la lecture suivante du document ; le
+  port lit encore : seul un objet jamais lu avant la fermeture le
+  montrerait) ; `getattr` d'une méthode dans `to_dict`/`to_csv`
+  (`object_types=["extract_word"]` : une méthode liée, `NotPorted`) ; un
+  XObject nommé comme le port nomme les images en ligne (`inline-<k>` :
+  les deux noms se confondent) ; l'ordre d'un NaN dans un `set` de
+  `cluster_objects` (son adresse en CPython, `utils/clustering.rs`).
+- **Étapes** : `plumber_objects` (avec `ContentIds` : le rang des `id()`
+  de la trace Python par clé de contenu, donné à l'analyse par
+  `OpenOptions::ids`), `plumber_text` (les `spans` de la trace Python
+  donnés à `Page::search`, le `TextMap` calculé où `search_spans` le
+  calcule), `plumber_tables` ; `plumber_common` : `open_pdf`, `Names`
+  (un nom d'image n'est en ligne que si son flux n'a pas d'identifiant
+  d'objet ; les noms les plus longs remplacés d'abord dans un texte),
+  `ObjectsWriter`, `box_lines`. Chaque générateur et fonction des étapes
+  Python prend son cadre, pour que pdfplumber s'exécute à la profondeur
+  où Python l'exécute.
+- **Corpus et données unitaires** : `oracle/adversarial/plumber.py` →
+  `adv-plumber` (boîtes et rotations, géométrie aux bords des pages
+  dérivées, chemins dégénérés et infinis, tirets et couleurs, images,
+  contenu marqué de toute sorte, polices dont les noms `CP936`,
+  doublons, ligatures, surrogates isolés, tolérances des mots et des
+  tables, texte tourné et vertical, milliers de petits objets, annotations
+  malformées, égalités de distance du layout, figures imbriquées ;
+  `cases_depth` : chaînes de Form XObjects, `/ColorSpace` et `/MCID`
+  imbriqués en tableaux ou par chaînes de références, tirets imbriqués pour
+  `Serializer`) ; `oracle/unit/plumber.py` (les traces des quatre étapes
+  `plumber_*` sur `adv-plumber`, `micro` et les petits fichiers de
+  `quick`, les fenêtres de profondeur aussi depuis un et deux cadres plus
+  bas ; `open.jsonl` : `pdfplumber.open` avec des `laparams`, `pages`,
+  `password`, `unicode_norm` de tout type), rejoué par
+  `crates/pdftrace/tests/plumber_unit.rs`.
+
 ### Chantier DOC
 
 `structure.py`, les métadonnées (`PDF.__init__`, `strict_metadata`),
