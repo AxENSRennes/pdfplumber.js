@@ -83,7 +83,10 @@ Lines::
     dobjects <[[kind, n, digest], ...]> | dobjects <exc>
     dannots <n> <digest> | dannots <exc>
     serialize <op> <value | exc>         (outd-style ``serialized <op> <length> <digest>``
-                                         beyond OUT_LIMIT)
+                                         beyond OUT_LIMIT); in the text of ``to_json`` and
+                                         ``to_csv``, each inline image name of the page
+                                         (``Names``) is replaced by ``<inline k>``, in a
+                                         ``to_dict`` written as in ``plumber_objects``
     pdf_to_dict <digest> | pdf_to_dict <exc>
     close <exc> | close ok
     closed_objects <[[kind, n, digest], ...]> | closed_objects <exc>
@@ -109,7 +112,7 @@ from pdfplumber.structure import PDFStructTree
 
 from ..canon import canon
 from ._common import terminated
-from .plumber_objects import Names, annot_value, digest, exc, file_sha256, open_pdf, select
+from .plumber_objects import Names, annot_value, digest, exc, file_sha256, open_pdf, page_names, select
 from .plumber_text import OUT_LIMIT, PREDICATES, derive
 
 PAGED = True
@@ -300,6 +303,12 @@ def derived_lines(page: Page, steps: list[list[Any]]) -> Iterator[str]:
         yield f"dannots {len(annots)} " + digest([annot_value(a, names) for a in annots])
 
 
+def page_dict(value: dict[str, Any], names: Names) -> dict[str, Any]:
+    """A ``Page.to_dict`` value as written: its object lists through
+    ``names`` (the values are those of ``page.objects`` and ``page.annots``)."""
+    return {k: ([annot_value(a, names) if k == "annots" else names.obj(a) for a in v] if isinstance(v, list) else v) for k, v in value.items()}
+
+
 def serialize_lines(page: Page, op: list[Any]) -> Iterator[str]:
     method, kwargs = op
     label = "serialize " + canon(op)
@@ -308,11 +317,11 @@ def serialize_lines(page: Page, op: list[Any]) -> Iterator[str]:
     except Exception as e:
         yield label + " " + exc(e)
         return
+    names = page_names(page)
     if method == "to_dict":
-        # the values are those of page.objects and page.annots
-        names = Names()
-        names.learn(page.objects)
-        value = {k: ([annot_value(a, names) if k == "annots" else names.obj(a) for a in v] if isinstance(v, list) else v) for k, v in value.items()}
+        value = page_dict(value, names)
+    else:
+        value = names.text(value)
     text = canon(value)
     if len(text) > OUT_LIMIT:
         yield f"serialized {canon(op)} {len(text)} " + hashlib.sha256(text.encode("ascii")).hexdigest()[:16]
@@ -406,7 +415,9 @@ def run(path: str, password: str | None, max_pages: int) -> Iterator[str]:
     for index, page in enumerate(pages):
         yield from page_lines(pdf, page, sha, index)
     try:
-        yield "pdf_to_dict " + digest(pdf.to_dict(["char", "rect", "line", "curve", "image"]))
+        value = pdf.to_dict(["char", "rect", "line", "curve", "image"])
+        value["pages"] = [page_dict(d, page_names(p)) for p, d in zip(pdf.pages, value["pages"])]
+        yield "pdf_to_dict " + digest(value)
     except Exception as e:
         yield "pdf_to_dict " + exc(e)
     try:

@@ -40,10 +40,11 @@ directions that ``validate_directions`` prints, whose order depends on
 
 Inline images: their ``name`` (an image's, and with ``laparams`` its
 figure's) is ``str(id(stream))``
-(pdfminer/pdfinterp.py:1309 ``PDFPageInterpreter.do_EI``), an address; ``Names`` writes such a name
-``inline{"n": k}``, ``k`` numbering the distinct inline names of the page
-in the order the lines first write them (the port names them
-``inline-<j>``, ``docs/architecture.md``, "Vague 3"). A value that is a
+(pdfminer/pdfinterp.py:1309 ``PDFPageInterpreter.do_EI``), an address;
+``Names`` writes such a name ``inline{"n": k}``, ``k`` numbering the
+distinct inline names of the page's images in the order of
+``page.objects["image"]`` (the port names them ``inline-<j>``,
+``docs/architecture.md``, "Vague 3"). A value that is a
 pdfplumber ``Page`` (``annot["P"]``, which ``Page.annots`` replaces by the
 page itself) is written ``Page{"page_number": n}``.
 
@@ -227,6 +228,24 @@ class Names:
         """An object dict with its ``name`` and top-level ``Page`` values
         written as above (``Page`` only appears as ``annot["P"]``)."""
         return {k: (self.value(v) if k in ("name", "P") else v) for k, v in o.items()}
+
+    def text(self, s: str) -> str:
+        """A text that may hold inline names (``to_json``, ``to_csv``): each
+        one replaced by ``<inline k>``."""
+        for name, k in self.inline.items():
+            s = s.replace(name, f"<inline {k}>")
+        return s
+
+
+def page_names(page: Page) -> Names:
+    """The ``Names`` of a page's objects (none when ``page.objects``
+    raises)."""
+    names = Names()
+    try:
+        names.learn(page.objects)
+    except Exception:
+        pass
+    return names
 
 
 class Objects:
@@ -438,5 +457,6 @@ __all__ = [
     "objects_lines",
     "open_pdf",
     "page_lines",
+    "page_names",
     "select",
 ]
