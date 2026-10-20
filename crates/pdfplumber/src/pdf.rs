@@ -587,18 +587,11 @@ impl Container for PDF {
     }
 
     /// `getattr(pdf, name)` for the attribute names of the container's
-    /// lists (`chars`, `rects`...), `pages`, `objects`, `metadata`,
-    /// `annots`, `hyperlinks` and the edges; `AttributeError` for a name
-    /// that is not an attribute; `NotPorted` for a method or another
-    /// attribute that is not a value of the object model.
+    /// lists and edges. pdfplumber never takes one of a `PDF`:
+    /// `Container.to_csv` takes those of each page, `PDF.to_dict` has its
+    /// own keys (`metadata`, `pages`).
     fn attribute(&self, name: &PyStr) -> PyResult<PyValue> {
-        match name.as_str() {
-            Some("pages") => Ok(PyValue::List(PDF::pages(self)?.iter().map(|p| PyValue::Page(p.as_value())).collect())),
-            Some("metadata") => Ok(self.metadata_value()),
-            Some("annots") => Ok(crate::container::obj_list(self.annots()?)),
-            Some("hyperlinks") => Ok(crate::container::obj_list(self.hyperlinks()?)),
-            _ => crate::container::container_attribute(self, "PDF", name),
-        }
+        crate::container::container_attribute(self, "PDF", name)
     }
 
     fn flush_cache(&self, properties: Option<&[&str]>) {
