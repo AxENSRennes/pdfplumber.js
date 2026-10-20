@@ -193,7 +193,18 @@ fn page_tree(pdf: Vec<u8>) -> PyResult<Vec<pdfplumber::obj::PyValue>> {
 /// every element was processed (`pdfplumber::structure`, "Not modeled").
 #[test]
 fn page_scope_cycles_raise_memory_error() {
-    let cases: [(&str, Elems<'_>, &str); 3] = [
+    let cases: [(&str, Elems<'_>, &str); 4] = [
+        // the cycle through an element's second child, after a branch
+        // without one
+        (
+            "second-child",
+            &[
+                (11, "<< /S /Document /P 10 0 R /K [12 0 R 13 0 R] >>"),
+                (12, "<< /S /P /P 11 0 R /K [0] >>"),
+                (13, "<< /S /Div /P 11 0 R /K [0 11 0 R] >>"),
+            ],
+            "12 0 R 13 0 R",
+        ),
         // the element's parent among its children
         (
             "parent",
