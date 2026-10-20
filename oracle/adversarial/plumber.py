@@ -390,6 +390,13 @@ def cases_marked() -> list[Case]:
 
     content = b"/P << /MCID 5 >> BDC q 10 0 0 10 50 50 cm /X Do Q 0 0 m S EMC " + text(20, 20, b"t")
     out.append(("mc-figure", doc([(content, {})] * 2, fres), None))
+    # an MCID nested 10^4 levels (resolve_all raises RecursionError long
+    # before the C units of a comparison could run out: page values are
+    # nested at most a few hundred levels), in arrays and in dicts
+    deep = (b"/P << /MCID " + b"[" * 10000 + b"1" + b"]" * 10000 + b" >> BDC " + text(10, 100, b"deep list") + b"EMC "
+            + b"/P << /MCID " + b"<< /a " * 10000 + b"1" + b" >>" * 10000 + b" >> BDC " + text(10, 50, b"deep dict")
+            + b"EMC")
+    out.append(("mc-mcid-deep", doc([(deep, {}), (text(10, 10, b"next page"), {})]), None))
     return out
 
 
