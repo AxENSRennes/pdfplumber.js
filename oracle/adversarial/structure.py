@@ -308,6 +308,9 @@ def cases_children() -> list[Case]:
     out.append(("mcid-unmarked-content", tagged(contents={0: b"BT /F1 12 Tf 10 150 Td (Hello) Tj ET"}), None))
     out.append(("element-not-dict", tagged(elems={13: Raw(b"[1 2 3]")}), None))
     out.append(("element-int", tagged(elems={13: 7}), None))
+    # an object that fails to parse is read again after pdf.close(): the
+    # closed file raises (closed_objects)
+    out.append(("closed-file-reread", tagged(extra={9: Raw(b"<< /Type /Font /Subtype /Type1 /BaseFont >>")}), None))
     out.append(("element-stream", tagged(elems={13: {"S": Name("Span"), "K": [1, 2], "P": Ref(11), "Pg": Ref(PAGE0)}},
                                          streams={13: b"stream"}), None))
     out.append(("element-mcr-direct", tagged(elems={13: {"Type": Name("MCR"), "MCID": 1, "Pg": Ref(PAGE0)}}), None))
