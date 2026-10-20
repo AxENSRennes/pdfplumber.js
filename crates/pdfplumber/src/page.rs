@@ -1300,7 +1300,7 @@ impl Page {
         }
     }
 
-    // pdfplumber/page.py:274 Page.annots.rotate_point
+    // `rotate_point`, nested in pdfplumber/page.py:273 Page.annots
     /// The nested `rotate_point(pt, r)`: `r // 90` quarter turns, each
     /// `(x, y) -> (y, comp - x)`, `comp` this page's width or height.
     fn rotate_point(&self, pt: (PyValue, PyValue), r: &PyValue) -> PyResult<(PyValue, PyValue)> {
@@ -1331,7 +1331,7 @@ impl Page {
         Ok(pt)
     }
 
-    // pdfplumber/page.py:283 Page.annots.parse
+    // `parse`, nested in pdfplumber/page.py:273 Page.annots
     /// The nested `parse(annot)`: an annotation's geometry (its `/Rect`
     /// turned with the page and flipped), `uri` (`/A`'s `/URI`), `title`
     /// (`/T`) and `contents` (`/Contents`) decoded as UTF-8 then UTF-16, and

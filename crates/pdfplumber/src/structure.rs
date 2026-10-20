@@ -229,11 +229,10 @@ fn value(x: PDFObject) -> PyValue {
 
 /// What `find_all` and `find` match
 /// (pdfplumber/structure.py:39 `_find_all`): an element type (`x.type ==
-/// matcher`, pdfplumber/structure.py:47 `match_tag`), or a function of the
-/// element (`matcher(x)`, its result taken for its truth; `matcher.match(x.type)`
-/// of an `re.Pattern`, pdfplumber/structure.py:51 `match_regex`: the
-/// JavaScript API gives a `RegExp` as a function). The function takes its
-/// own frames.
+/// matcher`, its nested `match_tag`), or a function of the element
+/// (`matcher(x)`, its result taken for its truth; `matcher.match(x.type)`
+/// of an `re.Pattern`, its nested `match_regex`: the JavaScript API gives a
+/// `RegExp` as a function). The function takes its own frames.
 pub enum Matcher<'a> {
     Tag(&'a PyStr),
     Func(&'a dyn Fn(&PDFStructElement) -> PyResult<bool>),
@@ -1036,7 +1035,7 @@ impl PDFStructTree {
         self._resolve_children(&s)
     }
 
-    // pdfplumber/structure.py:391 PDFStructTree._parse_struct_tree.prune
+    // `prune`, nested in pdfplumber/structure.py:351 PDFStructTree._parse_struct_tree
     /// The nested `prune(elements)`: the elements with children (MCIDs, or
     /// elements that have some), recursively; `s` keeps their pruned
     /// children and loses the others.

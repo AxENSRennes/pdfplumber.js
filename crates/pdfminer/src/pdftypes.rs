@@ -103,8 +103,8 @@ pub enum PDFObject {
     Stream(Rc<PDFStream>),
     Ref(PDFObjRef),
     /// A Python `str`. pdfminer's parsers never make one: pdfplumber's
-    /// metadata decoding (pdfplumber/utils/pdfinternals.py:24
-    /// `resolve_and_decode`) writes its decoded values into the
+    /// metadata decoding (pdfplumber/utils/pdfinternals.py:24 resolve_and_decode)
+    /// writes its decoded values into the
     /// document's own dicts, in place, where everything that reads the
     /// document afterwards finds them (see `pdfplumber::pdf`, "Metadata").
     Str(PyStr),
