@@ -27,6 +27,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use pdfminer::pdftypes::PDFObject;
 use pdfplumber::container::Objects;
 use pdfplumber::obj::{Obj, PyValue};
 use pdfplumber::page::Page;
@@ -128,8 +129,12 @@ impl Names {
                 if o.get("object_type").and_then(PyValue::as_str) != Some("image") || !o.contains("stream") {
                     continue;
                 }
+                // Python: `name == str(id(stream))`; the port's inline image
+                // streams are the content parser's, without an object id
+                let inline_stream =
+                    matches!(o.get("stream"), Some(PyValue::Pdf(PDFObject::Stream(s))) if s.objid().is_none());
                 if let Some(PyValue::Str(name)) = o.get("name") {
-                    if is_inline_name(name) && !self.inline.contains(name) {
+                    if inline_stream && is_inline_name(name) && !self.inline.contains(name) {
                         self.inline.push(name.clone());
                     }
                 }
