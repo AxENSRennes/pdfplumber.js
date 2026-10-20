@@ -270,9 +270,15 @@ def cases_children() -> list[Case]:
         dag[20 + i] = elem(f"L{i}", 11, [Ref(21 + i), Ref(21 + i)] if i < 11 else [0])
     out.append(("dag-doubling", tagged(elems=dag), None))
     # cycles: the document scope runs out of frames in prune, the page scope
-    # without a parent tree too
-    out.append(("cycle-self", tagged(elems={13: elem("Span", 11, [1, Ref(13)])}), None))
-    out.append(("cycle-parent", tagged(elems={13: elem("Span", 11, [1, Ref(11)])}), None))
+    # without a parent tree too. Through a page's parent tree, Python's
+    # _resolve_children loops for ever (the port raises MemoryError once
+    # the walk only repeats itself): the pages here have no
+    # /StructParents, so their trees stop before.
+    no_parents = {0: {"StructParents": None}}
+    out.append(("cycle-self", tagged(elems={13: elem("Span", 11, [1, Ref(13)])}, page_extra=no_parents), None))
+    out.append(("cycle-parent", tagged(elems={13: elem("Span", 11, [1, Ref(11)])}, page_extra=no_parents), None))
+    out.append(("cycle-objr", tagged(elems={13: elem("Span", 11, [1, {"Type": Name("OBJR"), "Obj": Ref(11)}])},
+                                     page_extra=no_parents), None))
     out.append(("cycle-self-no-parent-tree", tagged(elems={13: elem("Span", 11, [1, Ref(13)])}, root_extra={"ParentTree": None}), None))
     # elements without content are pruned; elements on unparsed pages
     out.append(("empty-element", tagged(elems={11: elem("Document", ROOT, [Ref(12), Ref(13), Ref(14)]), 14: elem("Empty", 11, [])}), None))
