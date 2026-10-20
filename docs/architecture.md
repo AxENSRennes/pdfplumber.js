@@ -1557,7 +1557,7 @@ et sans `raise_unicode_errors`), sur pages tournées.
 - **Résultats** : `plumber_doc` sur `all` (20 premières pages), 1 853
   fichiers identiques (le dernier après la fermeture du fichier) ;
   `plumber_doc` et `plumber_objects` sur `adv-structure`, 441 identiques
-  chacune ; `structure_unit` (661 traces, 5 148 cas de `codecs`, et les tests Rust du garde des cycles).
+  chacune ; `structure_unit` (676 traces, 5 148 cas de `codecs`, et les tests Rust du garde des cycles).
 - **Mutations** (`--profile mutants -j 1 --timeout 60 -- --package=pdftrace
   --test=structure_unit`, puis `scripts/mutants-ok.sh` et des mutants à
   la main pour les corps sans `Default`) : `structure.rs` (261 mutants,
