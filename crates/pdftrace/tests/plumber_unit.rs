@@ -196,6 +196,40 @@ fn stage_traces() {
     );
 }
 
+/// `utils.jsonl`: the public functions of `utils/pdfinternals.py` that
+/// pdfplumber never calls itself (`decode_psl_list`), each from a new
+/// process state.
+#[test]
+fn utils() {
+    let data = open();
+    let cases = data.cases("py_process");
+    let [(_, state)] = &cases[..] else { panic!("one process state") };
+    py_process::set(PyProcess::from_value(state));
+    let mut failures = Vec::new();
+    let mut n = 0;
+    for (args, expected) in data.cases("utils") {
+        let [Value::Str(function), Value::Str(arg)] = &args[..] else { panic!("bad case {args:?}") };
+        assert_eq!(function.as_str(), Some("decode_psl_list"));
+        py_process::start();
+        let arg = typed_json::parse(arg.as_str().expect("ASCII")).expect("typed JSON");
+        let Ok(pdfplumber::obj::PyValue::List(ref items)) = pdftrace::plumber::from_value(&arg) else {
+            panic!("a list: {arg:?}")
+        };
+        let got = match pdfplumber::utils::pdfinternals::decode_psl_list(items) {
+            Ok(out) => pdftrace::canon::canon(&Value::List(out.iter().map(pdftrace::plumber::to_value).collect())),
+            Err(e) => pdftrace::stages::plumber_common::exc(&e),
+        };
+        let Value::Str(expected) = &expected else { panic!("bad output") };
+        let expected = expected.as_str().expect("ASCII");
+        n += 1;
+        if got != expected {
+            failures.push(format!("decode_psl_list({}): oracle {expected}, rust {got}", pdftrace::canon::canon(&arg)));
+        }
+    }
+    assert!(n > 5, "only {n} cases");
+    assert!(failures.is_empty(), "{} of {n} cases differ:\n{}", failures.len(), failures.join("\n"));
+}
+
 /// `open.jsonl`: `pdfplumber.open(path, **options)` with options of every
 /// type (`laparams`, `pages`, `password`, ...), the pages' objects and the
 /// ranking of their analysis (`plumber_objects::open_trace`).

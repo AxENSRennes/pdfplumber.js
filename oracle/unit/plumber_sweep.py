@@ -71,8 +71,10 @@ MAX_PAGES = 20
 #: Python's recursion limit (``sys.getrecursionlimit()``, never changed).
 LIMIT = 1000
 #: Files of ``adv-plumber`` (by the name after the number): text, a ruled
-#: table, figures, duplicated chars, annotations and links.
-FILES = ("table-grid-lines.pdf", "layout-figures.pdf", "text-dedupe.pdf", "annot-malformed.pdf", "font-kinds.pdf")
+#: table, figures, duplicated chars, annotations and links, fonts, vertical
+#: text.
+FILES = ("table-grid-lines.pdf", "layout-figures.pdf", "text-dedupe.pdf", "annot-malformed.pdf", "font-kinds.pdf",
+         "text-rotated.pdf")
 
 _GRID = {"vertical_strategy": "lines", "horizontal_strategy": "lines"}
 _TEXT = {"vertical_strategy": "text", "horizontal_strategy": "text"}
@@ -127,6 +129,10 @@ OPS: list[tuple[list[Any], str, dict[str, Any]]] = [
     (["to_json", {"object_types": ["cached_propertie", "hyperlink", "page", "annot", "_object", "object"]}], "edges", {}),
     (["to_json", {"object_types": ["rect_edge", "curve_edge", "edge", "horizontal_edge", "vertical_edge"]}], "none", {}),
     (["to_json", {"indent": None, "object_types": ["line"]}], "none", {}),
+    (["to_json", {"indent": 1.5, "object_types": ["line"]}], "none", {}),
+    (["to_json", {"indent": "\t", "object_types": ["line"]}], "none", {}),
+    (["to_json", {"indent": True, "object_types": ["line"]}], "none", {}),
+    (["close_identity"], "none", {}),
     (["to_csv", {"object_types": ["textboxhorizontal", "textlinehorizontal", "textboxvertical", "textlinevertical"]}],
      "none", {"laparams": {"detect_vertical": True}}),
     (["to_json", {"object_types": ["_rect_edge", "_edge", "_curve_edge"]}], "edges", {}),
@@ -196,6 +202,11 @@ def deep_apply(path: str, pdf: Any, page: Any, op: list[Any]) -> tuple[str, Any]
             o2 = pdf.objects
             p2 = pdf.pages
             return "ok", [a is b, a is c, len(c), o1 is o2, p1 is p2]
+        if name == "close_identity":
+            o1 = page.objects
+            pdf.close()
+            o2 = page.objects
+            return "ok", [o1 is o2, len(o2["char"]) if "char" in o2 else 0]
         if name == "pdf_to_csv":
             return "ok", pdf.to_csv(**op[1])
         if name == "find_tables":
@@ -237,7 +248,7 @@ def summarize(op: list[Any], value: Any) -> Any:
     """What a trace writes of an operation's value (in the stage body)."""
     name = op[0]
     if name in ("text", "derived", "extract_tables", "extract_table", "to_json", "to_csv", "edges_identity",
-                "pdf_edges_identity", "pdf_to_csv"):
+                "pdf_edges_identity", "pdf_to_csv", "close_identity"):
         return value
     if name in ("objects", "derive", "pdf_objects"):
         return [[k, len(v)] for k, v in value.items()]

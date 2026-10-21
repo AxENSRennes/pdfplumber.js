@@ -1523,11 +1523,6 @@ impl Page {
     /// `bottom`, `doctop`, and `x0`/`x1` shifted by a mediabox that does
     /// not start at 0. Inline image names are `inline-<k>`
     /// (`docs/architecture.md`, "Vague 3").
-    pub fn process_object(&self, obj: &LTItem<PlumberPayload>) -> PyResult<Obj> {
-        self.process_layout_obj(&LayoutObj::Item(obj.clone()))
-    }
-
-    // pdfplumber/page.py:353 Page.process_object
     fn process_layout_obj(&self, obj: &LayoutObj) -> PyResult<Obj> {
         let _frame = py_frame()?;
         // re.sub(lt_pat, "", obj.__class__.__name__).lower(): re.sub ->

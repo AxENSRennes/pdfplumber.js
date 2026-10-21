@@ -208,6 +208,36 @@ def open_cases() -> Iterator[tuple[list, str]]:
             os.unlink(path)
 
 
+def utils_cases() -> list[tuple[list, str]]:
+    """``utils.jsonl``: ``{"in": [function, args], "out": result}`` (``args``
+    the typed JSON text of the argument), the
+    public functions of ``utils/pdfinternals.py`` that pdfplumber itself
+    never calls (``decode_psl_list``), on values of every kind: the
+    canonical text of the result or of the exception. Computed in a child
+    (``LIT`` interns its names)."""
+    def compute() -> list[list]:
+        from pdfminer.psparser import LIT
+        from pdfplumber.utils import decode_psl_list
+
+        from ..stages.plumber_objects import exc
+        from ..typed_json import dumps
+
+        inputs = [[], [LIT("abc")], [LIT("a"), "b", 3, None, 2.5], [LIT(b"\xfe\xff\x00h\x00i")], [LIT(b"\x80\x81")],
+                  ["x", [LIT("n")]], [LIT("\u00e9t\u00e9")], [b"bytes", LIT("")], [True, LIT("True")]]
+        out = []
+        for xs in inputs:
+            try:
+                result = canon(decode_psl_list(xs))
+            except Exception as e:
+                result = exc(e)
+            # the arguments as typed JSON text: their literals are made in
+            # the child only
+            out.append([["decode_psl_list", dumps(xs)], result])
+        return out
+
+    return [(args, result) for args, result in in_child(compute)]
+
+
 def main() -> None:
     require_oracle_python()
     cmap_dir = codegen_cmaps.ensure()
@@ -218,6 +248,7 @@ def main() -> None:
     write_cases(MODULE, "py_process", [([], state)])
     n = write_cases(MODULE, "stages", stage_cases())
     n_open = write_cases(MODULE, "open", open_cases())
+    write_cases(MODULE, "utils", utils_cases())
     if process_state() != state:
         raise RuntimeError("the process state changed while the traces ran in children")
     print(f"{MODULE}: {n} stage traces, {n_open} openings", file=sys.stderr)

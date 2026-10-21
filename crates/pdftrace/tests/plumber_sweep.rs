@@ -176,6 +176,13 @@ fn deep_apply(case: &Case<'_>, pdf: &PDF, page: Option<&Rc<Page>>) -> PyResult<D
                 Value::Bool(same_pages),
             ]))
         }
+        "close_identity" => {
+            let o1 = page().objects()?;
+            pdf.close()?;
+            let o2 = page().objects()?;
+            let chars = o2.get("char").map_or(0, |c| c.len());
+            Deep::Value(Value::List(vec![Value::Bool(Rc::ptr_eq(&o1, &o2)), int(chars)]))
+        }
         "pdf_to_csv" => {
             let k = kwargs(&op[1]);
             let options = SerializeOptions {
