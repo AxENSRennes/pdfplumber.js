@@ -770,13 +770,8 @@ export const tests = [
       for (const input of inputs) {
         const pdf = await lib.open(input);
         try {
-          let thrown;
-          try {
-            void pdf.pages;
-          } catch (e) {
-            thrown = e;
-          }
-          assert(thrown instanceof lib.NotImplemented && thrown.name === "NotImplemented", "pages");
+          // lazy, as pdfplumber's: open() resolves, the pages are a promise
+          await rejects(pdf.pages, (e) => assert(e instanceof lib.NotImplemented, e.name), "pages");
           await rejects(pdf.annots, (e) => assert(e instanceof lib.NotImplemented, e.name), "annots");
         } finally {
           await pdf.close();

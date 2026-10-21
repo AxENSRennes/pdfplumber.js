@@ -137,7 +137,13 @@ observable, et seulement là.
   (`logging.disable`, ou `setLevel(ERROR)` sur le logger `pdfminer`, mêmes
   cadres) : dans la configuration par défaut de Python, un `log.warning`
   est émis par `logging.lastResort`, plus profond, et formate ses `%r`
-  (écart non modélisé, `verification.md`, « Étapes »).
+  (écart non modélisé, `verification.md`, « Étapes »). Texte transmis
+  aujourd'hui : le `logger.warning` de `PDF.__init__` (métadonnées), celui
+  de `PDFStructTree` (« Unknown attribute class »), le `warnings.warn` de
+  `Page.annots`, ce dernier une fois par texte (`pycompat::warnings` : les
+  filtres par défaut de Python et leur registre, état du processus remis
+  par un appel nul). Les appels `log.*` de pdfminer ne comptent que leurs
+  cadres : leur texte n'est pas transmis (`public-api.md`).
 - **Réglages** : `pdfminer.settings.STRICT = False`, comme l'oracle.
 
 ## Profondeur de récursion
@@ -387,7 +393,11 @@ invalide son cache et celui des étapes qui en dépendent).
   `LTFigure.name`, `LTImage.name` et le `name` des images de pdfplumber.
   Python repère ces noms par le site d'appel (`do_EI`), Rust par les noms
   qu'il a donnés ; les deux ne divergent que si un PDF nomme une XObject
-  `inline-<k>`.
+  `inline-<k>`. Les noms ne sont uniques que dans l'interprétation d'une
+  page : deux pages (ou une page interprétée de nouveau après
+  `flush_cache`) redonnent `inline-0`, `inline-1`… et `pdf.images`,
+  `pdf.objects["image"]` ont des noms répétés, là où les adresses de
+  Python diffèrent pour des images vivantes en même temps.
 - **Hors périmètre** : `PDFConverter`, `TextConverter`, `HTMLConverter`,
   `XMLConverter`, `HOCRConverter` et `pdfdevice.TagExtractor`
   (en-têtes de `converter.rs` et `pdfdevice.rs`).
@@ -1191,7 +1201,9 @@ et ne modifient pas le contrat ci-dessous sans accord : un changement d'une
   (« Étapes » de `verification.md`), y compris le `logger.warning` de
   `PDF.__init__` (logger `pdfplumber.pdf`). Le `warnings.warn` de
   `Page.annots` (`raise_unicode_errors=False`) garde les filtres par défaut
-  de Python ; ses cadres sont à mesurer.
+  de Python : montré une fois par texte, catégorie et ligne
+  (`pycompat::warnings`, registre comparé à Python par `diagnostics.jsonl`
+  de `oracle/unit/js_runtime.py`) ; ses cadres sont à mesurer.
 - **`id()` du layout** : toute étape `plumber_*` qui analyse (`laparams`)
   prend le rang des `id()` dans la trace Python (`ORACLE_INPUT`,
   `--oracle-dir`), comme `layout`. Seule `plumber_objects` analyse (sa
@@ -1213,7 +1225,9 @@ et ne modifient pas le contrat ci-dessous sans accord : un changement d'une
   JavaScript » : `re` n'est pas porté).
 - **Images en ligne** : `"inline-<k>"` dans le port, `inline{"n": k}` dans
   les traces ; atteint `page.images[].name` et, avec `laparams`, le `name`
-  des figures (écart documenté, `public-api.md`).
+  des figures (écart documenté, `public-api.md`) ; unique dans
+  l'interprétation d'une page seulement : répété d'une page à l'autre dans
+  `pdf.images` et `pdf.objects`.
 - **Hors périmètre** (en-têtes des modules, `public-api.md`) :
   `display.py` (`to_image`, pypdfium2 et PIL), `repair.py` (Ghostscript
   dans un sous-processus : `repair=True` lève `NotPorted`), `cli.py`. Les

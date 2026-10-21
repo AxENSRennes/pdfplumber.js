@@ -143,14 +143,16 @@ export class PDFPlumberDocument {
     registry?.register(this, { core, handle }, this.#token);
   }
 
-  /** The loaded pages (`pdf.pages`). */
-  get pages(): PDFPlumberPage[] {
-    throw new NotImplemented("PDFPlumberDocument.pages");
+  /** The loaded pages (`pdf.pages`): computed at the first read, as
+   * pdfplumber computes them lazily (an error of the page tree or of a
+   * page's boxes rejects this promise, not `open()`). */
+  get pages(): Promise<PDFPlumberPage[]> {
+    return notImplemented("PDFPlumberDocument.pages");
   }
 
   /** The Info dictionary (`pdf.metadata`). */
-  get metadata(): Record<string, unknown> {
-    throw new NotImplemented("PDFPlumberDocument.metadata");
+  get metadata(): Promise<Record<string, unknown>> {
+    return notImplemented("PDFPlumberDocument.metadata");
   }
 
   /** `pdf.objects`: the objects of every loaded page, by `object_type`. */
@@ -192,7 +194,12 @@ export class PDFPlumberDocument {
 }
 
 /** A page (`pdfplumber.page.Page`), or a page derived from one (`crop`,
- * `filter`...). Coordinates follow pdfplumber (top-left origin). */
+ * `filter`...). Coordinates follow pdfplumber (top-left origin).
+ *
+ * Its geometry is read when the page is made (`pdf.pages`, or the call
+ * that derives it), in the same core statement; a geometry Python cannot
+ * compute (a crop box kept as given with `strict: false`) throws when
+ * `width` or `height` is read, as `page.width` raises in Python. */
 export class PDFPlumberPage {
   /** @internal */
   protected constructor(
@@ -255,28 +262,28 @@ export class PDFPlumberPage {
   search(_pattern: string | RegExp, _options?: SearchOptions): Promise<SearchResult[]> {
     return notImplemented("PDFPlumberPage.search");
   }
-  crop(_bbox: Bbox, _options?: CropOptions): PDFPlumberPage {
-    throw new NotImplemented("PDFPlumberPage.crop");
+  crop(_bbox: Bbox, _options?: CropOptions): Promise<PDFPlumberPage> {
+    return notImplemented("PDFPlumberPage.crop");
   }
-  withinBbox(_bbox: Bbox, _options?: CropOptions): PDFPlumberPage {
-    throw new NotImplemented("PDFPlumberPage.withinBbox");
+  withinBbox(_bbox: Bbox, _options?: CropOptions): Promise<PDFPlumberPage> {
+    return notImplemented("PDFPlumberPage.withinBbox");
   }
-  within_bbox(bbox: Bbox, options?: CropOptions): PDFPlumberPage {
+  within_bbox(bbox: Bbox, options?: CropOptions): Promise<PDFPlumberPage> {
     return this.withinBbox(bbox, options);
   }
-  outsideBbox(_bbox: Bbox, _options?: CropOptions): PDFPlumberPage {
-    throw new NotImplemented("PDFPlumberPage.outsideBbox");
+  outsideBbox(_bbox: Bbox, _options?: CropOptions): Promise<PDFPlumberPage> {
+    return notImplemented("PDFPlumberPage.outsideBbox");
   }
-  outside_bbox(bbox: Bbox, options?: CropOptions): PDFPlumberPage {
+  outside_bbox(bbox: Bbox, options?: CropOptions): Promise<PDFPlumberPage> {
     return this.outsideBbox(bbox, options);
   }
   filter(_test: (obj: PDFObject) => boolean): Promise<PDFPlumberPage> {
     return notImplemented("PDFPlumberPage.filter");
   }
-  dedupeChars(_options?: DedupeOptions): PDFPlumberPage {
-    throw new NotImplemented("PDFPlumberPage.dedupeChars");
+  dedupeChars(_options?: DedupeOptions): Promise<PDFPlumberPage> {
+    return notImplemented("PDFPlumberPage.dedupeChars");
   }
-  dedupe_chars(options?: DedupeOptions): PDFPlumberPage {
+  dedupe_chars(options?: DedupeOptions): Promise<PDFPlumberPage> {
     return this.dedupeChars(options);
   }
   findTable(_options?: TableOptions): Promise<Table | null> {
