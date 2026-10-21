@@ -1074,6 +1074,33 @@ fn page_and_table_handles_are_freed_as_tombstones() {
 /// `NotPorted`, not wrapped in `PdfminerException`: `repair=True`
 /// (Ghostscript), a password that is not a `str` for an encrypted document
 /// (an unencrypted one never reads it: `js_runtime.py` `open.jsonl`).
+/// `doc_attr`/`page_attr` are the `getattr` of `to_dict` and `to_csv`:
+/// a name they cannot build (not ending with `s`) is not modelled, though
+/// Python has the attribute.
+#[test]
+fn attributes_outside_to_dict_and_to_csv_are_not_ported() {
+    let mut core = Core::new();
+    let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(tiny_pdf(b"0 0 m 10 10 l S")))) else {
+        panic!()
+    };
+    let Js::Arr(pages) = ok(call(&mut core, "doc_pages", doc as u32, list(vec![]), None)) else { panic!() };
+    let page = match &pages[0] {
+        Js::Obj(items) => match &items[0].1 {
+            Js::Num(h) => *h as u32,
+            x => panic!("a handle: {x:?}"),
+        },
+        x => panic!("a dict: {x:?}"),
+    };
+    for name in ["width", "height", "layout", "bbox", "structure_tree"] {
+        let r = call(&mut core, "page_attr", page, list(vec![PyValue::str(name)]), None);
+        assert_eq!(error_name(&r).0, "NotPorted", "page {name}");
+        let r = call(&mut core, "doc_attr", doc as u32, list(vec![PyValue::str(name)]), None);
+        assert_eq!(error_name(&r).0, "NotPorted", "doc {name}");
+    }
+    let r = call(&mut core, "page_attr", page, list(vec![PyValue::str("lines")]), None);
+    assert_eq!(r.status, 0);
+}
+
 #[test]
 fn open_reports_what_is_not_modelled_as_not_ported() {
     let root = std::path::PathBuf::from(std::env::var("PDFPLUMBER_ROOT").expect("PDFPLUMBER_ROOT"));

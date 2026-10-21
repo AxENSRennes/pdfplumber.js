@@ -281,12 +281,14 @@ et ses pages derrière des handles.
   `doc_pages` (un handle par page de `pdf.pages`, avec sa géométrie :
   `page_number`, `initial_doctop`, `rotation`, les boîtes, `bbox`,
   `width`, `height`), `doc_objects`, `doc_attr` (`getattr(pdf, nom)` :
-  listes par sorte, arêtes, `pages`), `doc_annots`, `doc_hyperlinks`,
+  listes par sorte, arêtes, `pages` ; les noms que construisent `to_dict`
+  et `to_csv`, `t + "s"` : un nom qui ne finit pas par `s` lève
+  `NotPorted`), `doc_annots`, `doc_hyperlinks`,
   `doc_structure_tree`, `doc_to_dict`/`to_json`/`to_csv`, `doc_close`
   (`PDF.close()`, sans libérer le handle : `free` le fait).
 - **Pages** : `page_info`, `page_objects`, `page_attr` (`getattr(page,
   nom)` : `chars`, `rects`..., les arêtes, `annots`, `hyperlinks`,
-  `objects`), `page_structure_tree`, `page_extract_text`,
+  `objects`, les mêmes noms que `doc_attr`), `page_structure_tree`, `page_extract_text`,
   `page_extract_text_simple`, `page_extract_words`,
   `page_extract_text_lines`, la recherche en deux appels
   (`page_search_text` : le texte que parcourt le motif, celui de la carte
@@ -344,13 +346,13 @@ et ses pages derrière des handles.
   `extract_text_simple`, `extract_words`, `extract_text_lines`, `search`,
   `dedupe_chars`, `find_tables`, `find_table`, `extract_tables`,
   `extract_table`, `Table.extract` d'une table trouvée par lignes
-  explicites, `to_dict`, `to_json`, `to_csv`, et ceux du document
+  explicites, `to_dict`, `to_json`, `to_csv` (avec et sans `object_types`), et ceux du document
   (`objects`, `edges`, `to_dict`, `to_json`, `to_csv`) ; `repr` d'un `/K`
   imbriqué et `str(s)` de `decode_text` sous `pdf.structure_tree` ; un
   chargement de propriété spécialisé pour une classe puis exécuté pour une
   autre : `extract_text` d'une `Page` puis d'une `CroppedPage`,
   `Table.extract` d'une table de chacune, `chars` d'une `Page` puis d'un
-  `PDF`), cherchée par dichotomie sur le script : 42 fenêtres de quatre
+  `PDF`), cherchée par dichotomie sur le script : 44 fenêtres de quatre
   profondeurs. Les fenêtres de classe dichotomisent leur dernière
   opération, sur un second document : sur le premier, la seconde
   exécution (spécialisée, deux unités de moins) réussit à la profondeur où

@@ -395,7 +395,7 @@ def documents_session() -> list[list[Any]]:
     s.add("page_info", p)
     s.add("page_objects", p)
     for name in ("chars", "rects", "lines", "curves", "images", "edges", "horizontal_edges", "vertical_edges",
-                 "annots", "hyperlinks", "objects", "nope"):
+                 "annots", "hyperlinks", "objects", "nopes", "pages", "cached_properties", "_objects"):
         s.add("page_attr", p, name)
     _text_ops(s, p)
     crop = s.add("page_crop", p, [10, 10, 150, 150], {}, makes=1)
@@ -619,6 +619,10 @@ def depth_windows() -> Iterator[tuple[str, list[list[Any]]]]:
         ("climit-tf-list-dict", climit["tf-list"], [("page_to_dict", ({"object_types": ["line", "char"]},))], 9000, 10100),
         ("climit-tf-list-doc-objects", climit["tf-list"], [("doc:doc_objects", ())], 9000, 10100),
         ("climit-tf-list-doc-csv", climit["tf-list"], [("doc:doc_to_csv", ({},))], 9000, 10100),
+        # object types given: getattr(page, t + "s") computes the objects
+        ("climit-tf-list-csv-types", climit["tf-list"], [("page_to_csv", ({"object_types": ["char"]},))], 9000, 10100),
+        ("climit-tf-list-doc-csv-types", climit["tf-list"], [("doc:doc_to_csv", ({"object_types": ["char"]},))],
+         9000, 10100),
         ("climit-tf-list-doc-dict", climit["tf-list"], [("doc:doc_to_dict", ({"object_types": ["char"]},))], 9000, 10100),
         ("climit-tf-list-doc-json", climit["tf-list"], [("doc:doc_to_json", ({"object_types": ["char"]},))], 9000, 10100),
         ("climit-tf-list-doc-edges", climit["tf-list"], [("doc:doc_attr", ("edges",))], 9000, 10100),

@@ -1794,7 +1794,7 @@ l'oracle) : une étape qui interprète des pages ne peut plus compter des
     1 852/1 853 (`pdfjs-issue19624-text.pdf`, la limite connue de la clé
     de contenu des `id()`, ci-dessus), `plumber_text`, `plumber_tables`,
     `plumber_doc` 1 853/1 853 ;
-  - `adv-plumber` (131), `adv-structure` (441), `adv-pages` (285),
+  - `adv-plumber` (182, dont 51 fenêtres `climit-*` ajoutées par la jonction), `adv-structure` (441), `adv-pages` (285),
     `adv-objects` (333) : les quatre étapes identiques ;
   - `adv-interp` (353) : `plumber_objects` et `plumber_doc` 353/353,
     `plumber_text` 336/353 et `plumber_tables` 341/353 : les fichiers
@@ -1824,6 +1824,78 @@ l'oracle) : une étape qui interprète des pages ne peut plus compter des
   la vague 1 (texte, mots, tables), trois fois plus rapide que Python
   seulement. Fichier lent relativement : `issue12841_reduced.pdf` (0,2 s
   contre 0,07 s pour `plumber_objects`).
+- **Fenêtres `climit-*` d'`adv-plumber`** : les fenêtres des unités C
+  d'`adv-interp` sont dichotomisées sur les étapes de l'interpréteur ; les
+  étapes `plumber_*` y échouent toutes au même endroit. `adv-plumber` a les
+  siennes (un opérande de `Tf` imbriqué avant la scène, sur une page, deux,
+  et une page balisée pour `element_bbox`), de la première profondeur qui
+  lève dans une étape `plumber_*` moins deux jusqu'à la limite des unités
+  C (9 984 à 10 000) : chaque opération qui interprète la page y rencontre
+  la limite à sa profondeur propre. `adv-plumber` : 182 fichiers, les
+  quatre étapes identiques ; `wasm-depth-gate.sh` les passe aux quatre
+  étapes.
+- **Mutations** (code changé par la jonction depuis `83ff2d3`) :
+  - `cargo mutants`, frontière (`crates/wasm`, `ops.rs`, `pages.rs`,
+    `handles.rs`) : 112 mutants, 86 détectés, 5 non viables, 21 manqués ;
+    après les tests ajoutés, la passe ciblée : 44 mutants, 33 détectés,
+    4 non viables, 7 manqués, dont `run_op` (`&&` → `||`, la condition
+    retirée depuis : `run_op` enregistre toute opération qui atteint un
+    document). Restent, équivalents : `|` → `^` dans `Handles::iter`/
+    `iter_mut` (bits disjoints de l'étiquette et de l'index), `Object::reset`
+    → `()` (le rejeu remplit chaque objet de nouveau), les gardes
+    `p.freed`/`t.freed` de `Core::void` → `false` (une pierre tombale
+    gardée au lieu d'être nettoyée : mémoire seulement, le handle reste
+    libéré), `calls +=` → `-=` (identifiants distincts aussi en
+    décroissant, arithmétique enveloppante) ;
+  - `cargo mutants`, bibliothèque (`page.rs`, `pdf.rs`, `obj.rs`,
+    `table.rs`, `container.rs`) : 48 mutants, 29 détectés, 2 non viables,
+    17 manqués ; passe ciblée : 22 mutants, 8 détectés, 14 manqués ; les
+    fenêtres `class-*` refaites (dernière opération sur un second
+    document) tuent les quatre constantes de `Page` (`class_name`,
+    `property_class`). `is_property` réduit aux noms que `to_dict` et
+    `to_csv` construisent (`doc_attr`/`page_attr` : `NotPorted` pour un
+    nom qui ne finit pas par `s`, `width`, `bbox`, `layout`..., où Python
+    rend l'attribut) : 6 mutants, 2 détectés, 4 manqués. Restent,
+    équivalents : `is_property` → `true` (deux unités de plus pendant un
+    getter qui ne descend pas : un attribut absent, `_objects`,
+    `cached_properties`, `pages` d'une page), le bras `pages` supprimé ou
+    sa comparaison inversée (`PDF.pages` ne contient aucune récursion C),
+    `==` → `!=` dans `to_csv` (la branche de l'autre classe calcule les
+    mêmes pages, ses unités tenues pendant `pages`),
+    `<impl Container for PDF>::class_name` (`""`, `"xyzzy"` : un `PDF` ne
+    partage de site qu'avec des pages, dont la classe diffère dans les
+    deux cas ; la seule autre lecture, `is_property(_, "pages")`, tient
+    deux unités pendant `PDF.pages`, qui ne contient aucune récursion C),
+    `TablePage::property_class` par défaut (`Some("")`, `Some("xyzzy")` :
+    la page d'objets de la frontière et des rejeux a `chars` et `edges`
+    en attributs simples, dont le « getter » ne descend pas) ;
+  - passe `Ok(..)` (`scripts/mutants-ok.sh`) : 135 mutants, 115 détectés,
+    13 non viables, 7 manqués, tous dans du code de `ops.rs`/`pages.rs`
+    réécrit depuis et repassé par la passe ciblée ; étapes (`pdftrace`) :
+    10 mutants, 10 détectés ;
+  - sites d'unités C (`scripts/unit-site-mutants.py`, que cargo-mutants
+    ne mute pas, 138 sites) : 63 détectés, 75 survivants, chacun
+    justifié : getters bon marché sous le site (`width`, `height`, `bbox`
+    de `rotate_point`, `point2coord`, `process_object`, `_get_textmap`,
+    `to_dict`, la géométrie des pages de `doc_pages`, le tri de `sorter`, `Table.rows`) ; getters
+    en cache sous le site (`parse_objects` avant la racine, `layout` après
+    `objects_lines`, `hyperlinks` après `annots`, `TableFinder` après
+    `find_tables`, `dedupe_chars` après les objets) ; sites dominés, dont
+    un voisin du même chemin a déjà calculé ou levé (`edges` lit `lines`
+    avant `rect_edges`/`curve_edges`, `PDF.objects` lit `p.objects.keys()`
+    avant `p.objects[kind]`, `TableFinder.get_edges` lit les arêtes
+    verticales avant les horizontales) ; `PDF.pages`, `annots`,
+    `hyperlinks`, `close`, `structure_tree`, qui n'interprètent aucune
+    page et ne contiennent aucune récursion C (les pages, `to_csv`,
+    `to_dict`, l'arbre de structure, les annotations du pilote des
+    étapes) ; opérations des étapes après la première qui a interprété la
+    page (`plumber_text`, `plumber_tables` s'arrêtent à la première qui
+    lève ; sinon les objets sont en cache) ; la seconde moitié de la
+    recherche (carte de texte en cache), `crop` (ne lit que `bbox`),
+    `close`, l'entrée de `pdfplumber.open` (aucune récursion C à
+    l'ouverture avant la limite des cadres Python) ;
+    `ELEMENT_BBOX_PAGE_OBJECTS` (`element_bbox` d'un arbre de page :
+    aucune étape ni opération de la frontière ne l'appelle).
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 

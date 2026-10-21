@@ -281,6 +281,21 @@ fn method_call() -> PyResult<Guard> {
 }
 
 /// A `str` argument.
+/// The name of a `doc_attr`/`page_attr`: the operations are the `getattr`
+/// of `to_dict` and `to_csv`, whose names end with `s` (`t + "s"`); any
+/// other attribute (`width`, `bbox`, `layout`...) is not modelled.
+fn attr_name(v: &PyValue) -> PyResult<PyStr> {
+    let name = str_arg(v)?;
+    if name.as_str().is_some_and(|n| n.ends_with('s')) {
+        Ok(name)
+    } else {
+        Err(PyErr::new(
+            ExcKind::NotPorted,
+            format!("not modelled: getattr of {} (the names to_dict and to_csv build end with 's')", name.repr()),
+        ))
+    }
+}
+
 fn str_arg(v: &PyValue) -> PyResult<PyStr> {
     match v {
         PyValue::Str(s) => Ok(s.clone()),
@@ -352,8 +367,8 @@ impl Core {
                 objects_value(&*DOC_OBJECTS.get("PDF", || pdf.objects())?)
             }
             "doc_attr" => {
-                // getattr(pdf, name): the lists by kind, the edges
-                let name = str_arg(arg(a()?, 0)?)?;
+                // getattr(pdf, name): the lists by kind, the edges, pages
+                let name = attr_name(arg(a()?, 0)?)?;
                 pdfplumber::container::getattr(&*self.pdf(h)?, &name, &DOC_ATTR)?
             }
             "doc_annots" => {
@@ -399,7 +414,7 @@ impl Core {
             "page_attr" => {
                 // getattr(page, name): chars, rects, ..., edges, annots,
                 // hyperlinks, objects
-                let name = str_arg(arg(a()?, 0)?)?;
+                let name = attr_name(arg(a()?, 0)?)?;
                 pdfplumber::container::getattr(&*self.page(h)?, &name, &PAGE_ATTR)?
             }
             "page_structure_tree" => {

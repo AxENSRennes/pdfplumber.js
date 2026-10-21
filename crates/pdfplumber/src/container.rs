@@ -472,10 +472,10 @@ static TO_CSV_PAGES_2: AttrSite = AttrSite::new("Container.to_csv else self.page
 static TO_CSV_GETATTR: CallSite = CallSite::new("Container.to_csv getattr(page, t + 's')");
 
 /// Whether the attribute `name` of an object of class `class` is a
-/// property (its getter a Python function), as `getattr` finds it: the
-/// lists and edges of `Container`, `objects`, `annots`, `hyperlinks`,
-/// `structure_tree` of both classes, `pages` of a `PDF` (a class attribute
-/// of a `Page`), `width`, `height`, `layout` of a page.
+/// property (its getter a Python function), as `getattr` finds it, for
+/// the names `to_dict` and `to_csv` build (`t + "s"`): the lists and edges
+/// of `Container`, `objects`, `annots`, `hyperlinks` of both classes,
+/// `pages` of a `PDF` (a class attribute of a `Page`).
 pub fn is_property(class: &str, name: &PyStr) -> bool {
     match name.as_str() {
         Some(
@@ -495,11 +495,9 @@ pub fn is_property(class: &str, name: &PyStr) -> bool {
             | "vertical_edges"
             | "objects"
             | "annots"
-            | "hyperlinks"
-            | "structure_tree",
+            | "hyperlinks",
         ) => true,
         Some("pages") => class == "PDF",
-        Some("width" | "height" | "layout") => class != "PDF",
         _ => false,
     }
 }
