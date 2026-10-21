@@ -1458,10 +1458,12 @@ dégénérés, `cases_depth` pour chaque chemin récursif
   `PyStr::replace`). Après les passes `--iterate` : `page.rs` 5
   survivants, le reste de la bibliothèque 9, `pycompat` 3, étapes 25 ;
   les mutants de `decode_text_value` et `resolve_and_decode_obj` (code de
-  DOC) et d'`io.rs` sont tués par `structure_unit` (passe croisée : 32
-  mutants, 15 tués, 2 délais, 14 non compilables, 1 survivant) ; passe
+  DOC) sont tués par `structure_unit` (passe croisée sur eux et le fichier
+  fermé d'`io.rs` : 32 mutants, 15 tués, 2 délais, 14 non compilables, 1
+  survivant, `seek_closed_error`, ci-dessous) ; passe
   `Ok(..)` (`scripts/mutants-ok.sh`) 170 mutants, 132 tués, puis 53 sur
-  les 70 repassés après les cas, 3 survivants ; mutants à la main des
+  les 70 repassés après les cas, puis `Page::close` (un balayage qui
+  appelle `page.close()`) : 2 survivants ; mutants à la main des
   cadres (`py_frame`, `leaf`, `eval_entry`, `class_call`, `c_call`, les
   `Subscription::eval` retirés, 198) : 55 tués.
 
