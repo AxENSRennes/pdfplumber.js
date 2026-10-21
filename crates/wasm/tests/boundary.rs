@@ -1012,3 +1012,59 @@ fn the_response_envelope_aligns_its_parts() {
         assert_eq!(&r[4..8], &[0, 0, 0, 0]);
     }
 }
+
+/// Handles of pages and tables: a freed one is refused (it stays a
+/// tombstone for the replays of the calls that used it), freeing a
+/// document frees its pages and tables, `free` cannot run in a `sequence`
+/// (a void call would not undo it), and an operation reaches one document.
+#[test]
+fn page_and_table_handles_are_freed_as_tombstones() {
+    let mut core = Core::new();
+    // a ruled 2 x 2 grid: one table
+    let grid: &[u8] = b"10 10 m 110 10 l 10 60 m 110 60 l 10 110 m 110 110 l \
+        10 10 m 10 110 l 60 10 m 60 110 l 110 10 m 110 110 l S";
+    let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(tiny_pdf(grid)))) else { panic!() };
+    let Js::Num(other) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(tiny_pdf(b"")))) else { panic!() };
+    let handle_of = |v: &Js| match v {
+        Js::Obj(items) => match &items[0].1 {
+            Js::Num(h) => *h as u32,
+            x => panic!("a handle: {x:?}"),
+        },
+        x => panic!("a dict: {x:?}"),
+    };
+    let Js::Arr(pages) = ok(call(&mut core, "doc_pages", doc as u32, list(vec![]), None)) else { panic!() };
+    let Js::Arr(others) = ok(call(&mut core, "doc_pages", other as u32, list(vec![]), None)) else { panic!() };
+    let (page, other_page) = (handle_of(&pages[0]), handle_of(&others[0]));
+    let Js::Arr(tables) = ok(call(&mut core, "page_find_tables", page, list(vec![]), None)) else { panic!() };
+    assert_eq!(tables.len(), 1);
+    let table = handle_of(&tables[0]);
+    let rows = ok(call(&mut core, "table_extract", table, list(vec![PyValue::Dict(Obj::new())]), None));
+    assert!(matches!(rows, Js::Arr(ref r) if r.len() == 2), "{rows:?}");
+    // one operation, one document: a sequence may reach two
+    let info = |h: u32| list(vec![PyValue::str("page_info"), PyValue::from(i64::from(h)), list(vec![])]);
+    let Js::Arr(both) = ok(call(&mut core, "sequence", 0, list(vec![info(page), info(other_page)]), None)) else {
+        panic!()
+    };
+    assert_eq!(both.len(), 2);
+    let free_table = list(vec![PyValue::str("free"), PyValue::from(i64::from(table)), PyValue::None]);
+    let pair = |a: &str, b: &str| (a.to_owned(), b.to_owned());
+    assert_eq!(
+        err(&mut core, "sequence", 0, list(vec![free_table])),
+        pair("ValueError", "free cannot run in a sequence")
+    );
+    for h in [table, page] {
+        assert_eq!(ok(call(&mut core, "free", h, PyValue::None, None)), Js::Null);
+        assert_eq!(err(&mut core, "free", h, PyValue::None).1, "invalid handle");
+    }
+    assert_eq!(err(&mut core, "table_extract", table, list(vec![PyValue::Dict(Obj::new())])).1, "invalid handle");
+    assert_eq!(err(&mut core, "page_info", page, list(vec![])).1, "invalid handle");
+    let count = |core: &mut Core| {
+        let Js::Obj(info) = ok(call(core, "info", 0, PyValue::None, None)) else { panic!() };
+        info[3].1.clone()
+    };
+    // two documents, two pages, the table (tombstones included)
+    assert_eq!(count(&mut core), Js::Num(5.0));
+    assert_eq!(ok(call(&mut core, "free", doc as u32, PyValue::None, None)), Js::Null);
+    assert_eq!(count(&mut core), Js::Num(2.0));
+    assert!(matches!(ok(call(&mut core, "page_info", other_page, list(vec![]), None)), Js::Obj(_)));
+}

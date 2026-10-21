@@ -64,7 +64,11 @@ pub struct PageObj {
 /// on (`Table.page`).
 pub struct TableObj {
     pub doc: u32,
+    /// `None` between a reset and the replay that refills it, and for a
+    /// table JavaScript freed (outside replays).
     pub table: Option<(Rc<Page>, Rc<Table>)>,
+    /// Freed by JavaScript: refused to its calls, kept for the replays.
+    pub freed: bool,
 }
 
 /// `pdfplumber.open(io.BytesIO(data), **options)`: the keyword arguments
@@ -519,8 +523,8 @@ impl Core {
                 let mut out = Vec::with_capacity(tables.len());
                 for t in tables {
                     let t = Rc::new(t);
-                    let handle =
-                        self.insert(Object::Table(TableObj { doc, table: Some((page.clone(), t.clone())) }))?;
+                    let table = TableObj { doc, table: Some((page.clone(), t.clone())), freed: false };
+                    let handle = self.insert(Object::Table(table))?;
                     out.push(table_value(handle, &t)?);
                 }
                 PyValue::list(out)
@@ -536,7 +540,8 @@ impl Core {
                     Some(t) => {
                         let t = Rc::new(t);
                         let doc = self.page_doc(h);
-                        let handle = self.insert(Object::Table(TableObj { doc, table: Some((page, t.clone())) }))?;
+                        let table = TableObj { doc, table: Some((page, t.clone())), freed: false };
+                        let handle = self.insert(Object::Table(table))?;
                         table_value(handle, &t)?
                     }
                 }
@@ -581,7 +586,7 @@ impl Core {
             "table_extract" => {
                 // table.extract(**kwargs)
                 let (doc, table) = match self.handles.get(h) {
-                    Some(Object::Table(t)) => (t.doc, t.table.clone()),
+                    Some(Object::Table(t)) if !t.freed || self.replay.is_some() => (t.doc, t.table.clone()),
                     _ => return Err(exc::ValueError("invalid handle")),
                 };
                 self.reach(doc)?;

@@ -193,6 +193,8 @@ pub struct Entry {
     /// The handles it created, in order: the replay refills them.
     pub created: Vec<u32>,
     pub doc: u32,
+    /// The call it belongs to ([`Core::calls`]).
+    pub call: u64,
 }
 
 /// A value written by hand.
@@ -224,6 +226,8 @@ pub struct Core {
     /// While replaying: the handles the replayed operation created, which
     /// it refills instead of creating new ones.
     pub(crate) replay: Option<VecDeque<u32>>,
+    /// The number of calls so far (the running one included).
+    pub(crate) calls: u64,
 }
 
 impl Default for Core {
@@ -406,6 +410,7 @@ impl Core {
             op_doc: None,
             touched: Vec::new(),
             replay: None,
+            calls: 0,
         }
     }
 
@@ -417,10 +422,15 @@ impl Core {
                 .pop_front()
                 .ok_or_else(|| PyErr::new(ExcKind::RuntimeError, "replay: more handles than the call made"))?;
             if let Some(slot) = self.handles.get_mut(h) {
-                let freed = matches!(slot, Object::Page(p) if p.freed);
+                let freed = matches!(
+                    slot,
+                    Object::Page(PageObj { freed: true, .. }) | Object::Table(TableObj { freed: true, .. })
+                );
                 *slot = o;
-                if let Object::Page(p) = slot {
-                    p.freed = freed;
+                match slot {
+                    Object::Page(p) => p.freed = freed,
+                    Object::Table(t) => t.freed = freed,
+                    _ => {}
                 }
             }
             return Ok(PyValue::Int(PyInt::from(h)));
@@ -608,6 +618,10 @@ impl Core {
                     if op == "sequence" {
                         return Err(exc::ValueError("nested sequence"));
                     }
+                    // (a void call does not undo what `free` did)
+                    if op == "free" {
+                        return Err(exc::ValueError("free cannot run in a sequence"));
+                    }
                     match self.run_op(op, handle(arg(r, 1)?)?, arg(r, 2)?, None)? {
                         Out::Value(v) => out.push(v),
                         _ => return Err(exc::ValueError(format!("{op} cannot run in a sequence"))),
@@ -758,7 +772,16 @@ impl Core {
         if let Some(doc) = self.op_doc.take() {
             if self.replay.is_none() && self.handles.get(doc).is_some() {
                 let created = self.created[start..].to_vec();
-                self.history.push(Entry { op: name.to_owned(), handle: h, args: args.clone(), data, created, doc });
+                let call = self.calls;
+                self.history.push(Entry {
+                    op: name.to_owned(),
+                    handle: h,
+                    args: args.clone(),
+                    data,
+                    created,
+                    doc,
+                    call,
+                });
             }
         }
         self.op_doc = outer;
@@ -766,16 +789,23 @@ impl Core {
     }
 
     /// `free`: a document goes with its pages, tables and history; a page
-    /// becomes a tombstone (refused to JavaScript, its page dropped, but
-    /// kept for the replays of the calls that used it before); any other
-    /// object goes.
+    /// or a table becomes a tombstone (refused to JavaScript, its page or
+    /// table dropped, but kept for the replays of the calls that used it
+    /// before); any other object goes.
     fn free(&mut self, h: u32) -> PyResult<()> {
         match self.handles.get_mut(h) {
             None => return Err(exc::ValueError("invalid handle")),
-            Some(Object::Page(p)) if p.freed => return Err(exc::ValueError("invalid handle")),
+            Some(Object::Page(PageObj { freed: true, .. }) | Object::Table(TableObj { freed: true, .. })) => {
+                return Err(exc::ValueError("invalid handle"))
+            }
             Some(Object::Page(p)) => {
                 p.freed = true;
                 p.page = None;
+                return Ok(());
+            }
+            Some(Object::Table(t)) => {
+                t.freed = true;
+                t.table = None;
                 return Ok(());
             }
             Some(Object::Document(_)) => {
@@ -796,11 +826,12 @@ impl Core {
     /// the handles it created and its calls from the history, puts the
     /// process state back, and rebuilds the documents it reached by
     /// replaying their history.
-    fn void(&mut self, history_len: usize, process: ProcessState) {
+    fn void(&mut self, process: ProcessState) {
         for h in std::mem::take(&mut self.created) {
             self.handles.remove(h);
         }
-        self.history.truncate(history_len);
+        let call = self.calls;
+        self.history.retain(|e| e.call != call);
         process.restore();
         let docs: Vec<u32> = std::mem::take(&mut self.touched)
             .into_iter()
@@ -824,10 +855,10 @@ impl Core {
             self.op_doc = None;
         }
         for (_, o) in self.handles.iter_mut() {
-            if let Object::Page(p) = o {
-                if p.freed {
-                    p.page = None;
-                }
+            match o {
+                Object::Page(p) if p.freed => p.page = None,
+                Object::Table(t) if t.freed => t.table = None,
+                _ => {}
             }
         }
         self.touched.clear();
@@ -845,7 +876,7 @@ impl Core {
         self.created.clear();
         self.touched.clear();
         self.op_doc = None;
-        let history_len = self.history.len();
+        self.calls += 1;
         let process = ProcessState::capture();
         let (result, collected) = {
             let parsed = binary::decode(request).and_then(|req| {
@@ -874,7 +905,7 @@ impl Core {
         if !missing.is_empty() {
             // the re-run emits its own diagnostics: Python's, once
             drop((result, collected));
-            self.void(history_len, process);
+            self.void(process);
             let none = diagnostics::Collected::default();
             return response(STATUS_NEED_CMAPS, FORMAT_BINARY, false, &encode_names(&missing), &none);
         }
