@@ -33,6 +33,7 @@ use pdfplumber::obj::{Obj, PyValue};
 use pdfplumber::page::Page;
 use pdfplumber::pdf::{OpenOptions, Source, PDF};
 use pycompat::recursion::py_frame;
+use pycompat::specialize::AttrSite;
 use pycompat::{ExcKind, PyErr, PyInt, PyResult, PyStr};
 
 use super::common::Lines;
@@ -41,6 +42,12 @@ use crate::canon::{canon, canon_exc, sha256_hex};
 use crate::plumber::to_value;
 use crate::typed_json;
 use crate::value::Value;
+
+/// `names.learn(page.objects)` of `page_names` (`plumber_objects.py`,
+/// imported by the other stages): the property load of its site
+/// (`pycompat::specialize::AttrSite`; the stages' loads of properties whose
+/// getter can run the interpretation are sites, as the library's).
+pub static PAGE_NAMES_OBJECTS: AttrSite = AttrSite::new("plumber_objects page_names page.objects");
 
 /// `exc(e)` of `plumber_objects.py`: `canon(e)`, then ` cause <canon>` for
 /// each exception a `PdfminerException` or `MalformedPDFException` wraps.

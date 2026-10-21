@@ -22,6 +22,7 @@ use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 
 use pycompat::listsort::sort_by_key;
 use pycompat::pystr::PyStrBuilder;
+use pycompat::specialize::AttrSite;
 use pycompat::{exc, ExcKind, PyErr, PyResult, PyStr};
 
 use crate::obj::{bbox_value, check_hashable, py_contains, py_iter, Bbox, HashKey, Hot, Obj, PyFloat, PyValue};
@@ -43,6 +44,13 @@ pub const DEFAULT_MIN_WORDS_HORIZONTAL: i64 = 1;
 
 /// What `TableFinder` and `Table.extract` read from a page.
 pub trait TablePage {
+    /// The class whose properties `chars` and `edges` are (a load
+    /// specializes for it: `pycompat::specialize::AttrSite`), `None` for a
+    /// page whose `chars` and `edges` are plain attributes (the pages the
+    /// unit generators make of a page's objects).
+    fn property_class(&self) -> Option<&'static str> {
+        None
+    }
     /// `page.chars`
     fn chars(&self) -> PyResult<Vec<Obj>>;
     /// `page.edges`
@@ -52,6 +60,26 @@ pub trait TablePage {
     /// `page.extract_words(**kwargs)` (pdfplumber/page.py:535 Page.extract_words)
     fn extract_words(&self, kwargs: &Kwargs) -> PyResult<Vec<Obj>> {
         extract_words_kwargs(&self.chars()?, kwargs)
+    }
+}
+
+// The property loads of pdfplumber/table.py (`pycompat::specialize`).
+static EXTRACT_CHARS: AttrSite = AttrSite::new("Table.extract self.page.chars");
+static EXTRACT_ROWS: AttrSite = AttrSite::new("Table.extract self.rows");
+static EDGES_V_LINES: AttrSite = AttrSite::new("TableFinder.get_edges self.page.edges (v, lines)");
+static EDGES_V_STRICT: AttrSite = AttrSite::new("TableFinder.get_edges self.page.edges (v, lines_strict)");
+static EDGES_H_LINES: AttrSite = AttrSite::new("TableFinder.get_edges self.page.edges (h, lines)");
+static EDGES_H_STRICT: AttrSite = AttrSite::new("TableFinder.get_edges self.page.edges (h, lines_strict)");
+
+/// `page.chars` or `page.edges` at a site: a property load of the page's
+/// class, or a plain attribute's.
+fn page_load<T>(page: &dyn TablePage, site: &AttrSite, get: impl FnOnce() -> PyResult<T>) -> PyResult<T> {
+    match page.property_class() {
+        Some(class) => site.get(class, get),
+        None => {
+            site.plain("page");
+            get()
+        }
     }
 }
 
@@ -723,7 +751,7 @@ impl Table {
     pub fn extract(&self, page: &dyn TablePage, kwargs: &Kwargs) -> PyResult<Vec<Vec<Option<PyStr>>>> {
         // its frame, above `self.page.chars`
         let _frame = pycompat::recursion::py_frame()?;
-        let chars = page.chars()?;
+        let chars = page_load(page, &EXTRACT_CHARS, || page.chars())?;
         let mut kwargs = kwargs.clone();
         let mut table_arr = Vec::new();
 
@@ -744,7 +772,7 @@ impl Table {
             Ok(h_mid.ge(x0)? && h_mid.lt(x1)? && v_mid.ge(top)? && v_mid.lt(bottom)?)
         }
 
-        let rows = self.rows()?;
+        let rows = EXTRACT_ROWS.get("Table", || self.rows())?;
         let mids =
             if rows.is_empty() { Vec::new() } else { chars.iter().map(midpoints).collect::<PyResult<Vec<_>>>()? };
         for row in rows {
@@ -1156,8 +1184,10 @@ impl TableFinder {
         let prefilter = &settings.edge_min_length_prefilter;
         let line = PyValue::str("line");
         let mut v = match v_strat {
-            "lines" => filter_edges(&page.edges()?, Some("v"), None, prefilter)?,
-            "lines_strict" => filter_edges(&page.edges()?, Some("v"), Some(&line), prefilter)?,
+            "lines" => filter_edges(&page_load(page, &EDGES_V_LINES, || page.edges())?, Some("v"), None, prefilter)?,
+            "lines_strict" => {
+                filter_edges(&page_load(page, &EDGES_V_STRICT, || page.edges())?, Some("v"), Some(&line), prefilter)?
+            }
             "text" => words_to_edges_v(&words, &settings.min_words_vertical)?,
             _ => Vec::new(), // "explicit"
         };
@@ -1185,8 +1215,10 @@ impl TableFinder {
         }
 
         let mut h = match h_strat {
-            "lines" => filter_edges(&page.edges()?, Some("h"), None, prefilter)?,
-            "lines_strict" => filter_edges(&page.edges()?, Some("h"), Some(&line), prefilter)?,
+            "lines" => filter_edges(&page_load(page, &EDGES_H_LINES, || page.edges())?, Some("h"), None, prefilter)?,
+            "lines_strict" => {
+                filter_edges(&page_load(page, &EDGES_H_STRICT, || page.edges())?, Some("h"), Some(&line), prefilter)?
+            }
             "text" => words_to_edges_h(&words, &settings.min_words_horizontal)?,
             _ => Vec::new(), // "explicit"
         };

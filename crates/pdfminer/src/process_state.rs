@@ -29,7 +29,7 @@ pub struct ProcessState {
     compiled: Vec<&'static str>,
     subscriptions: Vec<&'static str>,
     loggers: pycompat::logging::LoggerCaches,
-    call_sites: Vec<&'static str>,
+    call_sites: pycompat::specialize::Snapshot,
     cmaps: CMapDBCaches,
 }
 

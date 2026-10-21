@@ -44,6 +44,7 @@ use std::rc::Rc;
 
 use pycompat::json::JsonIndent;
 use pycompat::recursion::{eval_entry, leaf, py_frame};
+use pycompat::specialize::{AttrSite, CallSite};
 use pycompat::{ExcKind, PyErr, PyResult, PyStr};
 
 use crate::convert::{Serializer, CSV_COLS_REQUIRED, CSV_COLS_TO_PREPEND};
@@ -149,6 +150,10 @@ pub trait Container {
     /// The cached properties of [`ContainerCache`].
     fn container_cache(&self) -> &RefCell<ContainerCache>;
 
+    /// The Python class of the object (`type(self).__name__`): the class a
+    /// property load specializes for (`pycompat::specialize::AttrSite`).
+    fn class_name(&self) -> &'static str;
+
     /// `getattr(self, name)` for the attribute names `to_dict` and `to_csv`
     /// build (`t + "s"`, any `t` a user gives): every attribute of the
     /// implementor's class, `AttributeError("'Page' object has no attribute
@@ -160,55 +165,56 @@ pub trait Container {
     /// class's `cached_properties`) that are set.
     fn flush_cache(&self, properties: Option<&[&str]>);
 
-    /// `self.objects.get(kind, [])`, in the frame of the property.
-    fn kind_list(&self, kind: &str) -> PyResult<Vec<Obj>> {
+    /// `self.objects.get(kind, [])`, in the frame of the property (`site`:
+    /// its load of `self.objects`).
+    fn kind_list(&self, kind: &str, site: &AttrSite) -> PyResult<Vec<Obj>> {
         let _frame = py_frame()?;
-        Ok(self.objects()?.get_or_empty(kind))
+        Ok(site.get(self.class_name(), || self.objects())?.get_or_empty(kind))
     }
 
     // pdfplumber/container.py:35 Container.rects
     fn rects(&self) -> PyResult<Vec<Obj>> {
-        self.kind_list("rect")
+        self.kind_list("rect", &RECTS_OBJECTS)
     }
 
     // pdfplumber/container.py:39 Container.lines
     fn lines(&self) -> PyResult<Vec<Obj>> {
-        self.kind_list("line")
+        self.kind_list("line", &LINES_OBJECTS)
     }
 
     // pdfplumber/container.py:43 Container.curves
     fn curves(&self) -> PyResult<Vec<Obj>> {
-        self.kind_list("curve")
+        self.kind_list("curve", &CURVES_OBJECTS)
     }
 
     // pdfplumber/container.py:47 Container.images
     fn images(&self) -> PyResult<Vec<Obj>> {
-        self.kind_list("image")
+        self.kind_list("image", &IMAGES_OBJECTS)
     }
 
     // pdfplumber/container.py:51 Container.chars
     fn chars(&self) -> PyResult<Vec<Obj>> {
-        self.kind_list("char")
+        self.kind_list("char", &CHARS_OBJECTS)
     }
 
     // pdfplumber/container.py:55 Container.textboxverticals
     fn textboxverticals(&self) -> PyResult<Vec<Obj>> {
-        self.kind_list("textboxvertical")
+        self.kind_list("textboxvertical", &TEXTBOXVERTICALS_OBJECTS)
     }
 
     // pdfplumber/container.py:59 Container.textboxhorizontals
     fn textboxhorizontals(&self) -> PyResult<Vec<Obj>> {
-        self.kind_list("textboxhorizontal")
+        self.kind_list("textboxhorizontal", &TEXTBOXHORIZONTALS_OBJECTS)
     }
 
     // pdfplumber/container.py:63 Container.textlineverticals
     fn textlineverticals(&self) -> PyResult<Vec<Obj>> {
-        self.kind_list("textlinevertical")
+        self.kind_list("textlinevertical", &TEXTLINEVERTICALS_OBJECTS)
     }
 
     // pdfplumber/container.py:67 Container.textlinehorizontals
     fn textlinehorizontals(&self) -> PyResult<Vec<Obj>> {
-        self.kind_list("textlinehorizontal")
+        self.kind_list("textlinehorizontal", &TEXTLINEHORIZONTALS_OBJECTS)
     }
 
     // pdfplumber/container.py:71 Container.rect_edges
@@ -218,7 +224,8 @@ pub trait Container {
         if let Some(edges) = &self.container_cache().borrow().rect_edges {
             return Ok(edges.clone());
         }
-        let edges = Rc::new(chain_edges(&self.rects()?, rect_to_edges)?);
+        let rects = RECT_EDGES_RECTS.get(self.class_name(), || self.rects())?;
+        let edges = Rc::new(chain_edges(&rects, rect_to_edges)?);
         self.container_cache().borrow_mut().rect_edges = Some(edges.clone());
         Ok(edges)
     }
@@ -231,7 +238,8 @@ pub trait Container {
         if let Some(edges) = &self.container_cache().borrow().curve_edges {
             return Ok(edges.clone());
         }
-        let edges = Rc::new(chain_edges(&self.curves()?, curve_to_edges)?);
+        let curves = CURVE_EDGES_CURVES.get(self.class_name(), || self.curves())?;
+        let edges = Rc::new(chain_edges(&curves, curve_to_edges)?);
         self.container_cache().borrow_mut().curve_edges = Some(edges.clone());
         Ok(edges)
     }
@@ -244,7 +252,7 @@ pub trait Container {
         if let Some(edges) = &self.container_cache().borrow().edges {
             return Ok(edges.clone());
         }
-        let lines = self.lines()?;
+        let lines = EDGES_LINES.get(self.class_name(), || self.lines())?;
         let mut edges = Vec::with_capacity(lines.len());
         for line in &lines {
             // utils.line_to_edge, called by map() from C
@@ -252,8 +260,8 @@ pub trait Container {
             leaf(1)?;
             edges.push(line_to_edge(line)?);
         }
-        edges.extend(self.rect_edges()?.iter().cloned());
-        edges.extend(self.curve_edges()?.iter().cloned());
+        edges.extend(EDGES_RECT_EDGES.get(self.class_name(), || self.rect_edges())?.iter().cloned());
+        edges.extend(EDGES_CURVE_EDGES.get(self.class_name(), || self.curve_edges())?.iter().cloned());
         let edges = Rc::new(edges);
         self.container_cache().borrow_mut().edges = Some(edges.clone());
         Ok(edges)
@@ -262,13 +270,13 @@ pub trait Container {
     // pdfplumber/container.py:95 Container.horizontal_edges
     fn horizontal_edges(&self) -> PyResult<Vec<Obj>> {
         let _frame = py_frame()?;
-        oriented_edges(&self.edges()?, "h")
+        oriented_edges(&HORIZONTAL_EDGES_EDGES.get(self.class_name(), || self.edges())?, "h")
     }
 
     // pdfplumber/container.py:102 Container.vertical_edges
     fn vertical_edges(&self) -> PyResult<Vec<Obj>> {
         let _frame = py_frame()?;
-        oriented_edges(&self.edges()?, "v")
+        oriented_edges(&VERTICAL_EDGES_EDGES.get(self.class_name(), || self.edges())?, "v")
     }
 
     // pdfplumber/container.py:108 Container.to_json
@@ -317,16 +325,29 @@ pub trait Container {
         let object_types: Vec<PyStr> = match &options.object_types {
             Some(t) => t.clone(),
             None => {
-                let mut t: Vec<PyStr> = self.objects()?.keys().cloned().collect();
+                let mut t: Vec<PyStr> =
+                    TO_CSV_OBJECTS.get(self.class_name(), || self.objects())?.keys().cloned().collect();
                 t.push(PyStr::new("annot"));
                 t
             }
         };
         let mut serialized: Vec<PyValue> = Vec::new();
         let mut fields: Vec<PyStr> = Vec::new();
-        let pages: Vec<Option<Rc<Page>>> = match self.pages()? {
-            None => vec![None],
-            Some(pages) => pages.into_iter().map(Some).collect(),
+        // [self] if self.pages is None else self.pages: a property of a
+        // `PDF`, a class attribute (`None`) of a `Page`
+        let class = self.class_name();
+        let pages: Vec<Option<Rc<Page>>> = if class == "PDF" {
+            TO_CSV_PAGES.get(class, || self.pages())?;
+            match TO_CSV_PAGES_2.get(class, || self.pages())? {
+                None => vec![None],
+                Some(pages) => pages.into_iter().map(Some).collect(),
+            }
+        } else {
+            TO_CSV_PAGES.plain(class);
+            match self.pages()? {
+                None => vec![None],
+                Some(pages) => pages.into_iter().map(Some).collect(),
+            }
         };
         let serializer = Serializer::new(
             options.precision.clone(),
@@ -336,9 +357,10 @@ pub trait Container {
         for page in &pages {
             for t in &object_types {
                 let name = t.concat(&PyStr::new("s"));
+                // getattr(page, t + "s")
                 let objs = match page {
-                    None => self.attribute(&name)?,
-                    Some(p) => p.attribute(&name)?,
+                    None => getattr(self, &name, &TO_CSV_GETATTR)?,
+                    Some(p) => getattr(&**p, &name, &TO_CSV_GETATTR)?,
                 };
                 if py_len(&objs)? > 0 {
                     // serialized += serializer.serialize(objs)
@@ -425,6 +447,71 @@ pub trait Container {
         }
         Ok(PyStr::from_code_points(out).expect("code points"))
     }
+}
+
+// The property loads of pdfplumber/container.py (`pycompat::specialize`).
+static RECTS_OBJECTS: AttrSite = AttrSite::new("Container.rects self.objects");
+static LINES_OBJECTS: AttrSite = AttrSite::new("Container.lines self.objects");
+static CURVES_OBJECTS: AttrSite = AttrSite::new("Container.curves self.objects");
+static IMAGES_OBJECTS: AttrSite = AttrSite::new("Container.images self.objects");
+static CHARS_OBJECTS: AttrSite = AttrSite::new("Container.chars self.objects");
+static TEXTBOXVERTICALS_OBJECTS: AttrSite = AttrSite::new("Container.textboxverticals self.objects");
+static TEXTBOXHORIZONTALS_OBJECTS: AttrSite = AttrSite::new("Container.textboxhorizontals self.objects");
+static TEXTLINEVERTICALS_OBJECTS: AttrSite = AttrSite::new("Container.textlineverticals self.objects");
+static TEXTLINEHORIZONTALS_OBJECTS: AttrSite = AttrSite::new("Container.textlinehorizontals self.objects");
+static RECT_EDGES_RECTS: AttrSite = AttrSite::new("Container.rect_edges self.rects");
+static CURVE_EDGES_CURVES: AttrSite = AttrSite::new("Container.curve_edges self.curves");
+static EDGES_LINES: AttrSite = AttrSite::new("Container.edges self.lines");
+static EDGES_RECT_EDGES: AttrSite = AttrSite::new("Container.edges self.rect_edges");
+static EDGES_CURVE_EDGES: AttrSite = AttrSite::new("Container.edges self.curve_edges");
+static HORIZONTAL_EDGES_EDGES: AttrSite = AttrSite::new("Container.horizontal_edges self.edges");
+static VERTICAL_EDGES_EDGES: AttrSite = AttrSite::new("Container.vertical_edges self.edges");
+static TO_CSV_OBJECTS: AttrSite = AttrSite::new("Container.to_csv self.objects");
+static TO_CSV_PAGES: AttrSite = AttrSite::new("Container.to_csv self.pages is None");
+static TO_CSV_PAGES_2: AttrSite = AttrSite::new("Container.to_csv else self.pages");
+static TO_CSV_GETATTR: CallSite = CallSite::new("Container.to_csv getattr(page, t + 's')");
+
+/// Whether the attribute `name` of an object of class `class` is a
+/// property (its getter a Python function), as `getattr` finds it: the
+/// lists and edges of `Container`, `objects`, `annots`, `hyperlinks`,
+/// `structure_tree` of both classes, `pages` of a `PDF` (a class attribute
+/// of a `Page`), `width`, `height`, `layout` of a page.
+pub fn is_property(class: &str, name: &PyStr) -> bool {
+    match name.as_str() {
+        Some(
+            "rects"
+            | "lines"
+            | "curves"
+            | "images"
+            | "chars"
+            | "textboxverticals"
+            | "textboxhorizontals"
+            | "textlineverticals"
+            | "textlinehorizontals"
+            | "rect_edges"
+            | "curve_edges"
+            | "edges"
+            | "horizontal_edges"
+            | "vertical_edges"
+            | "objects"
+            | "annots"
+            | "hyperlinks"
+            | "structure_tree",
+        ) => true,
+        Some("pages") => class == "PDF",
+        Some("width" | "height" | "layout") => class != "PDF",
+        _ => false,
+    }
+}
+
+/// `getattr(c, name)` at a call site of the builtin: its generic call's C
+/// unit (`site`, the first execution), and, for a property, the getter
+/// called from C (`property.__get__`: an entry of the evaluation loop),
+/// whatever the state of the site (`getattr` is no `LOAD_ATTR`).
+pub fn getattr<C: Container + ?Sized>(c: &C, name: &PyStr, site: &CallSite) -> PyResult<PyValue> {
+    let _call = site.builtin_call()?;
+    let _entry = if is_property(c.class_name(), name) { Some(eval_entry()?) } else { None };
+    c.attribute(name)
 }
 
 /// The largest indent `' ' * indent` builds here (beyond, `NotPorted`:

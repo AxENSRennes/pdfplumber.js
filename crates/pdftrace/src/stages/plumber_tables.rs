@@ -23,7 +23,8 @@ use pdfplumber::obj::{bbox_from_value, Bbox, Obj, PyValue};
 use pdfplumber::page::Page;
 use pdfplumber::table::TableSettings;
 use pdfplumber::utils::geometry::obj_to_bbox;
-use pycompat::recursion::py_frame;
+use pycompat::recursion::{eval_entry, py_frame};
+use pycompat::specialize::AttrSite;
 use pycompat::{PyResult, PyStr};
 
 use super::common::{terminated, Lines};
@@ -68,9 +69,11 @@ pub fn settings_of(page: &Page, op: &[Value]) -> PyResult<pdfplumber::utils::tex
         }
     }
     let [x0, top, x1, bottom] = bbox_from_value(&page.bbox)?;
-    let objects = page.objects()?;
+    // page.objects.get("rect", []) + page.objects.get("line", []) +
+    // page.objects.get("curve", []): three loads
     let mut objs: Vec<PyValue> = Vec::new();
-    for kind in ["rect", "line", "curve"] {
+    for (kind, site) in [("rect", &SETTINGS_OF_RECTS), ("line", &SETTINGS_OF_LINES), ("curve", &SETTINGS_OF_CURVES)] {
+        let objects = site.get(page.class_name(), || page.objects())?;
         objs.extend(objects.get_or_empty(kind).into_iter().map(PyValue::Dict));
     }
     let lines_of = |fracs: &PyValue, n: &PyValue, origin: &PyValue, size: &PyValue| -> PyResult<PyValue> {
@@ -95,6 +98,19 @@ pub fn settings_of(page: &Page, op: &[Value]) -> PyResult<pdfplumber::utils::tex
     }
     Ok(out)
 }
+
+// The stage's loads of properties whose getter can run the interpretation
+// (`pycompat::specialize::AttrSite`). Not modelled: the loads of
+// `Table.bbox`, `rows`, `columns` (cheap getters) and the `CALL` of the
+// bound methods `getattr(page, name)(settings)` (a page whose edges raised
+// runs no op: the interpretation never runs under them).
+static RUN_PAGES: AttrSite = AttrSite::new("plumber_tables run pdf.pages");
+static RUN_EDGES: AttrSite = AttrSite::new("plumber_tables run page.edges");
+static RUN_HORIZONTAL_EDGES: AttrSite = AttrSite::new("plumber_tables run page.horizontal_edges");
+static RUN_VERTICAL_EDGES: AttrSite = AttrSite::new("plumber_tables run page.vertical_edges");
+static SETTINGS_OF_RECTS: AttrSite = AttrSite::new("plumber_tables settings_of page.objects (rect)");
+static SETTINGS_OF_LINES: AttrSite = AttrSite::new("plumber_tables settings_of page.objects (line)");
+static SETTINGS_OF_CURVES: AttrSite = AttrSite::new("plumber_tables settings_of page.objects (curve)");
 
 /// `_edge(e)`: `(x0, top, x1, bottom, orientation, object_type)`.
 fn edge_v(e: &Obj) -> PyResult<Value> {
@@ -150,7 +166,12 @@ fn finder_lines(lines: &mut Lines, page: &Page, i: usize, settings: &pdfplumber:
                 let it = format!("{i} {t}");
                 lines.push(bounded("rows", &it, &canon(&groups(table.rows()?))));
                 lines.push(bounded("columns", &it, &canon(&groups(table.columns()?))));
-                match text_settings.clone().and_then(|kw| table.extract(page, &kw)) {
+                // table.extract(**text_settings): the bound method from C
+                let extracted = text_settings.clone().and_then(|kw| {
+                    let _entry = eval_entry()?;
+                    table.extract(page, &kw)
+                });
+                match extracted {
                     Err(e) => lines.push(format!("extract {it} {}", exc(&e))),
                     Ok(rows) => lines.push(bounded("extract", &it, &canon(&rows_v(&rows)))),
                 }
@@ -210,7 +231,7 @@ fn run(input: &StageInput<'_>, out: &mut dyn Write) -> io::Result<()> {
                 return Ok(());
             }
         };
-        let pages = match pdf.pages() {
+        let pages = match RUN_PAGES.get("PDF", || pdf.pages()) {
             Ok(pages) => pages,
             Err(e) => {
                 lines.push(format!("pages {}", exc(&e)));
@@ -219,7 +240,7 @@ fn run(input: &StageInput<'_>, out: &mut dyn Write) -> io::Result<()> {
         };
         for (index, page) in pages.iter().enumerate() {
             lines.push(format!("page {}", page.page_number));
-            let edges = match Container::edges(&**page) {
+            let edges = match RUN_EDGES.get(page.class_name(), || Container::edges(&**page)) {
                 Ok(e) => e,
                 Err(e) => {
                     lines.push(format!("edges {}", exc(&e)));
@@ -227,8 +248,8 @@ fn run(input: &StageInput<'_>, out: &mut dyn Write) -> io::Result<()> {
                 }
             };
             lines.push(format!("edges {} {}", edges.len(), digest(&objs_v(&edges))));
-            let h = Container::horizontal_edges(&**page)?;
-            let v = Container::vertical_edges(&**page)?;
+            let h = RUN_HORIZONTAL_EDGES.get(page.class_name(), || Container::horizontal_edges(&**page))?;
+            let v = RUN_VERTICAL_EDGES.get(page.class_name(), || Container::vertical_edges(&**page))?;
             lines.push(format!("hedges {} {}", h.len(), digest(&objs_v(&h))));
             lines.push(format!("vedges {} {}", v.len(), digest(&objs_v(&v))));
             let mut counter = 0;

@@ -86,6 +86,7 @@ use pdfminer::pdfparser::FileKind;
 use pdfminer::pdftypes::PDFObject;
 use pycompat::logging::Logger;
 use pycompat::recursion::{c_call, class_call, eval_entry, leaf, py_frame};
+use pycompat::specialize::AttrSite;
 use pycompat::typing_cache::Subscription;
 use pycompat::{exc, ExcKind, Num, PyErr, PyInt, PyResult, PyStr};
 
@@ -105,6 +106,18 @@ use crate::utils::pdfinternals::resolve_and_decode_obj;
 // evaluated at each call of `PDF.pages` (depths below its frame, measured:
 // `python -m oracle.depth_probe typing`; `pycompat::typing_cache`)
 const ITER_PAGES_RETURN: Subscription = Subscription::new("Generator[PDFPage, None, None]", 7, 1);
+
+// The property loads of pdfplumber/pdf.py (`pycompat::specialize`).
+static CLOSE_PAGES: AttrSite = AttrSite::new("PDF.close self.pages");
+static PAGES_HEIGHT: AttrSite = AttrSite::new("PDF.pages p.height");
+static OBJECTS_PAGES: AttrSite = AttrSite::new("PDF.objects self.pages");
+static OBJECTS_KEYS: AttrSite = AttrSite::new("PDF.objects p.objects.keys()");
+static OBJECTS_KIND: AttrSite = AttrSite::new("PDF.objects p.objects[kind]");
+static ANNOTS_PAGES: AttrSite = AttrSite::new("PDF.annots self.pages");
+static ANNOTS_GEN: AttrSite = AttrSite::new("PDF.annots genexpr p.annots");
+static HYPERLINKS_PAGES: AttrSite = AttrSite::new("PDF.hyperlinks self.pages");
+static HYPERLINKS_GEN: AttrSite = AttrSite::new("PDF.hyperlinks genexpr p.hyperlinks");
+static TO_DICT_PAGES: AttrSite = AttrSite::new("PDF.to_dict self.pages");
 
 /// `logger = logging.getLogger(__name__)` of `pdfplumber/pdf.py`.
 static LOG: Logger = Logger::new("pdfplumber.pdf");
@@ -386,7 +399,7 @@ impl PDF {
             let _flush = py_frame()?;
             Container::flush_cache(self, None);
         }
-        for page in self.pages()? {
+        for page in CLOSE_PAGES.get("PDF", || self.pages())? {
             page.close()?;
         }
         if !self.stream_is_external {
@@ -441,7 +454,7 @@ impl PDF {
             }
             let p = Rc::new(Page::new(self.core.clone(), Rc::new(page), page_number, doctop.clone())?);
             self.cache.borrow_mut().pages.as_mut().expect("set above").push(p.clone());
-            doctop = doctop.add(&p.height()?)?;
+            doctop = doctop.add(&PAGES_HEIGHT.get("Page", || p.height())?)?;
         }
         Ok(self.cache.borrow().pages.clone().expect("set above"))
     }
@@ -453,12 +466,13 @@ impl PDF {
             return Ok(objects.clone());
         }
         let mut all_objects = Objects::new();
-        for p in self.pages()? {
-            let objects = p.objects()?;
+        for p in OBJECTS_PAGES.get("PDF", || self.pages())? {
+            let objects = OBJECTS_KEYS.get(p.class_name(), || p.objects())?;
             for kind in objects.keys() {
                 // all_objects[kind] = all_objects.get(kind, []) + p.objects[kind]
                 let mut list = all_objects.get_key(kind).map(<[Obj]>::to_vec).unwrap_or_default();
-                list.extend(p.objects()?.get_key(kind).unwrap_or(&[]).iter().cloned());
+                let objects = OBJECTS_KIND.get(p.class_name(), || p.objects())?;
+                list.extend(objects.get_key(kind).unwrap_or(&[]).iter().cloned());
                 all_objects.insert(kind.clone(), list);
             }
         }
@@ -472,7 +486,7 @@ impl PDF {
     /// DOC (`Page::annots`).
     pub fn annots(&self) -> PyResult<Vec<Obj>> {
         let _frame = py_frame()?;
-        let pages = self.pages()?;
+        let pages = ANNOTS_PAGES.get("PDF", || self.pages())?;
         // the generator expression is created, then unpacked (resumed from
         // C, once per page and once more) into chain()
         leaf(1)?;
@@ -480,7 +494,7 @@ impl PDF {
         for p in &pages {
             let _entry = eval_entry()?;
             let _gen = py_frame()?;
-            out.extend(p.annots()?);
+            out.extend(ANNOTS_GEN.get(p.class_name(), || p.annots())?);
         }
         let _entry = eval_entry()?;
         leaf(1)?;
@@ -492,13 +506,13 @@ impl PDF {
     /// Workstream DOC (`Page::hyperlinks`).
     pub fn hyperlinks(&self) -> PyResult<Vec<Obj>> {
         let _frame = py_frame()?;
-        let pages = self.pages()?;
+        let pages = HYPERLINKS_PAGES.get("PDF", || self.pages())?;
         leaf(1)?;
         let mut out = Vec::new();
         for p in &pages {
             let _entry = eval_entry()?;
             let _gen = py_frame()?;
-            out.extend(p.hyperlinks()?);
+            out.extend(HYPERLINKS_GEN.get(p.class_name(), || p.hyperlinks())?);
         }
         let _entry = eval_entry()?;
         leaf(1)?;
@@ -581,7 +595,7 @@ impl Container for PDF {
     fn to_dict(&self, object_types: Option<&[PyStr]>) -> PyResult<Obj> {
         let _frame = py_frame()?;
         let mut pages = Vec::new();
-        for page in PDF::pages(self)? {
+        for page in TO_DICT_PAGES.get("PDF", || PDF::pages(self))? {
             pages.push(PyValue::Dict(page.to_dict(object_types)?));
         }
         Ok(Obj::from_pairs([("metadata", self.metadata_value()), ("pages", PyValue::List(pages.into()))]))
@@ -589,6 +603,10 @@ impl Container for PDF {
 
     fn container_cache(&self) -> &RefCell<ContainerCache> {
         &self.container
+    }
+
+    fn class_name(&self) -> &'static str {
+        "PDF"
     }
 
     /// `getattr(pdf, name)` for the attribute names of the container's

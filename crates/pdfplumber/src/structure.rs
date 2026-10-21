@@ -68,6 +68,7 @@
 //! not run: the port keeps the reference, an equal value, and counts no
 //! frame for it.
 
+use pycompat::specialize::AttrSite;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
@@ -704,6 +705,11 @@ fn copy_dict_frames(d: &PDFDict, file: FileKind) -> PyResult<()> {
 // The tree
 
 /// pdfplumber/structure.py:147 `StructTreeMissing` (a `ValueError`).
+// The property loads of pdfplumber/structure.py (`pycompat::specialize`).
+static INIT_DOC_PAGES: AttrSite = AttrSite::new("PDFStructTree.__init__ doc.pages");
+static ELEMENT_BBOX_PAGE_OBJECTS: AttrSite = AttrSite::new("PDFStructTree.element_bbox page.objects");
+static ELEMENT_BBOX_PAGES_OBJECTS: AttrSite = AttrSite::new("PDFStructTree.element_bbox self.pages[n].objects");
+
 pub fn struct_tree_missing() -> pycompat::PyErr {
     pycompat::PyErr::new(pycompat::ExcKind::StructTreeMissing, "PDF has no structure")
 }
@@ -818,7 +824,7 @@ impl PDFStructTree {
             Scope::Document(pdf) => {
                 tree.page = None;
                 // Overhead of creating pages shouldn't be too bad we hope!
-                let pages = pdf.pages()?;
+                let pages = INIT_DOC_PAGES.get("PDF", || pdf.pages())?;
                 // {page.page_number: page for page in doc.pages}
                 for page in &pages {
                     match tree.pages.iter_mut().find(|(n, _)| *n == page.page_number) {
@@ -1281,10 +1287,13 @@ impl PDFStructTree {
         for (page_number, mcid) in el.all_mcids()? {
             let objects = match &page_number {
                 None => match &page {
-                    Some(p) => Some(p.objects()?),
+                    Some(p) => Some(ELEMENT_BBOX_PAGE_OBJECTS.get(p.class_name(), || p.objects())?),
                     None => None,
                 },
-                Some(n) => Some(self.page_of(n)?.objects()?),
+                Some(n) => {
+                    let p = self.page_of(n)?;
+                    Some(ELEMENT_BBOX_PAGES_OBJECTS.get(p.class_name(), || p.objects())?)
+                }
             };
             let Some(objects) = objects else { continue };
             // itertools.chain.from_iterable(objects.values())

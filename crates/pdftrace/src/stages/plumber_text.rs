@@ -30,7 +30,8 @@ use pdfplumber::container::Container;
 use pdfplumber::obj::{Obj, PyValue};
 use pdfplumber::page::{CropFn, FilterFn, Page, SearchArgs};
 use pdfplumber::utils::text::{Kwargs, RegexMatch};
-use pycompat::recursion::py_frame;
+use pycompat::recursion::{eval_entry, py_frame};
+use pycompat::specialize::{AttrSite, CallSite};
 use pycompat::{PyInt, PyResult, PyStr};
 
 use super::common::{terminated, Lines};
@@ -185,6 +186,19 @@ pub fn derive_bbox(page: &Page, fractions: &Value, relative: bool) -> PyResult<P
     ]))
 }
 
+// The stage's loads of properties whose getter can run the interpretation
+// (`pycompat::specialize::AttrSite`), its calls of builtins and the calls
+// of bound methods with `**kwargs` (`CALL_FUNCTION_EX` calls a bound
+// method through `PyObject_Call`: the method's frame entered from C, two
+// C units), under which the interpretation runs again when a page's
+// objects raised before.
+static RUN_PAGES: AttrSite = AttrSite::new("plumber_text run pdf.pages");
+static RUN_CHARS: AttrSite = AttrSite::new("plumber_text run page.chars");
+static RUN_OP_CHARS: AttrSite = AttrSite::new("plumber_text run_op page.chars");
+static RUN_OP_DEDUPED_CHARS: AttrSite = AttrSite::new("plumber_text run_op deduped.chars");
+static RUN_OP_GETATTR: CallSite = CallSite::new("plumber_text run_op getattr(page, name)");
+static DERIVE_GETATTR: CallSite = CallSite::new("plumber_text derive getattr(page, name)");
+
 /// `derive(page, steps)`: a frame.
 pub fn derive(page: &Rc<Page>, steps: &Value) -> PyResult<Rc<Page>> {
     let _frame = py_frame()?;
@@ -197,6 +211,8 @@ pub fn derive(page: &Rc<Page>, steps: &Value) -> PyResult<Rc<Page>> {
             "crop" | "within_bbox" | "outside_bbox" => {
                 let kwargs = kwargs_of(&step[2]);
                 let relative = kwargs.get("relative").is_some_and(PyValue::truthy);
+                // getattr(page, name)(derive_bbox(...), **kwargs)
+                drop(DERIVE_GETATTR.builtin_call()?);
                 let bbox = derive_bbox(&page, &step[1], relative)?;
                 let strict = kwargs.get("strict").is_none_or(PyValue::truthy);
                 let crop_fn = match name {
@@ -204,10 +220,15 @@ pub fn derive(page: &Rc<Page>, steps: &Value) -> PyResult<Rc<Page>> {
                     "within_bbox" => CropFn::WithinBbox,
                     _ => CropFn::OutsideBbox,
                 };
+                let _entry = eval_entry()?;
                 page.crop(bbox, crop_fn, relative, strict)?
             }
             "filter" => page.filter(predicate(str_of(&step[1])))?,
-            "dedupe_chars" => page.dedupe_chars(&kwargs_of(&step[1]))?,
+            "dedupe_chars" => {
+                // page.dedupe_chars(**step[1])
+                let _entry = eval_entry()?;
+                page.dedupe_chars(&kwargs_of(&step[1]))?
+            }
             other => panic!("unknown step {other}"),
         };
     }
@@ -254,12 +275,18 @@ pub fn run_op(page: &Rc<Page>, op: &[Value], spans: Option<Vec<RegexMatch>>) -> 
                 // here too, before this is called)
                 Ok(spans.clone().unwrap_or_default())
             };
+            // page.search(op[1], **op[2])
+            let _entry = eval_entry()?;
             objs(page.search(&mut matches, args, &textmap_kwargs(&kwargs))?)
         }
         "dedupe_chars" => {
-            let deduped = page.dedupe_chars(&kwargs_of(&op[1]))?;
-            let deduped_chars = Container::chars(&*deduped)?;
-            let chars = Container::chars(&**page)?;
+            let deduped = {
+                // page.dedupe_chars(**op[1])
+                let _entry = eval_entry()?;
+                page.dedupe_chars(&kwargs_of(&op[1]))?
+            };
+            let chars = RUN_OP_CHARS.get(page.class_name(), || Container::chars(&**page))?;
+            let deduped_chars = RUN_OP_DEDUPED_CHARS.get(deduped.class_name(), || Container::chars(&*deduped))?;
             Value::List(
                 deduped_chars
                     .iter()
@@ -270,17 +297,25 @@ pub fn run_op(page: &Rc<Page>, op: &[Value], spans: Option<Vec<RegexMatch>>) -> 
                     .collect(),
             )
         }
-        "extract_text" => Value::py_str(&page.extract_text(&kwargs_of(&op[1]))?),
-        "extract_text_simple" => Value::py_str(&page.extract_text_simple(&kwargs_of(&op[1]))?),
-        "extract_words" => objs(page.extract_words(&kwargs_of(&op[1]))?),
-        "extract_text_lines" => {
-            let mut kwargs = kwargs_of(&op[1]);
-            let strip = if kwargs.contains("strip") { kwargs.remove("strip")?.truthy() } else { true };
-            let return_chars =
-                if kwargs.contains("return_chars") { kwargs.remove("return_chars")?.truthy() } else { true };
-            objs(page.extract_text_lines(strip, return_chars, &kwargs)?)
+        // getattr(page, name)(**op[1]): the builtin's call, then the bound
+        // method's from C
+        name => {
+            drop(RUN_OP_GETATTR.builtin_call()?);
+            let _entry = eval_entry()?;
+            match name {
+                "extract_text" => Value::py_str(&page.extract_text(&kwargs_of(&op[1]))?),
+                "extract_text_simple" => Value::py_str(&page.extract_text_simple(&kwargs_of(&op[1]))?),
+                "extract_words" => objs(page.extract_words(&kwargs_of(&op[1]))?),
+                "extract_text_lines" => {
+                    let mut kwargs = kwargs_of(&op[1]);
+                    let strip = if kwargs.contains("strip") { kwargs.remove("strip")?.truthy() } else { true };
+                    let return_chars =
+                        if kwargs.contains("return_chars") { kwargs.remove("return_chars")?.truthy() } else { true };
+                    objs(page.extract_text_lines(strip, return_chars, &kwargs)?)
+                }
+                other => panic!("unknown op {other}"),
+            }
         }
-        other => panic!("unknown op {other}"),
     })
 }
 
@@ -343,7 +378,7 @@ fn run(input: &StageInput<'_>, out: &mut dyn Write) -> io::Result<()> {
                 return Ok(());
             }
         };
-        let pages = match pdf.pages() {
+        let pages = match RUN_PAGES.get("PDF", || pdf.pages()) {
             Ok(pages) => pages,
             Err(e) => {
                 lines.push(format!("pages {}", exc_line(&e)));
@@ -352,7 +387,7 @@ fn run(input: &StageInput<'_>, out: &mut dyn Write) -> io::Result<()> {
         };
         for (index, page) in pages.iter().enumerate() {
             lines.push(format!("page {}", page.page_number));
-            if let Err(e) = Container::chars(&**page) {
+            if let Err(e) = RUN_CHARS.get(page.class_name(), || Container::chars(&**page)) {
                 lines.push(format!("chars {}", exc_line(&e)));
                 continue;
             }

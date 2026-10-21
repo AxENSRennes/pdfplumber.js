@@ -42,6 +42,7 @@ use pdfminer::utils::{Matrix, PathSegment, Point};
 use pycompat::bytes_format::bytes_mod_int;
 use pycompat::recursion::{c_call, c_called_leaf, class_call, eval_entry, leaf, py_frame, py_frames};
 use pycompat::repr::bytes_repr;
+use pycompat::specialize::{AttrSite, CallSite};
 use pycompat::typing_cache::Subscription;
 use pycompat::{codecs, diagnostics};
 use pycompat::{exc, ExcKind, Num, PyErr, PyInt, PyResult, PyStr};
@@ -888,6 +889,32 @@ pub struct SearchArgs {
 const WHILE_STR: &str = " while getting the str of an object";
 const WHILE_CALLING: &str = " while calling a Python object";
 
+// The property loads of pdfplumber/page.py (`pycompat::specialize`):
+// each `LOAD_ATTR` of a property, by the function it is in.
+static ROTATE_POINT_WIDTH: AttrSite = AttrSite::new("Page.annots.rotate_point self.width");
+static ROTATE_POINT_HEIGHT: AttrSite = AttrSite::new("Page.annots.rotate_point self.height");
+static PARSE_ROOT_HEIGHT: AttrSite = AttrSite::new("Page.annots.parse self.root_page.height");
+static HYPERLINKS_ANNOTS: AttrSite = AttrSite::new("Page.hyperlinks self.annots");
+static POINT2COORD_HEIGHT: AttrSite = AttrSite::new("Page.point2coord self.height");
+static PROCESS_OBJECT_HEIGHT_TOP: AttrSite = AttrSite::new("Page.process_object self.height (top)");
+static PROCESS_OBJECT_HEIGHT_BOTTOM: AttrSite = AttrSite::new("Page.process_object self.height (bottom)");
+static PARSE_OBJECTS_LAYOUT: AttrSite = AttrSite::new("Page.parse_objects self.layout");
+static SORTER_BBOX_1: AttrSite = AttrSite::new("Page.find_table.sorter x.bbox[1]");
+static SORTER_BBOX_0: AttrSite = AttrSite::new("Page.find_table.sorter x.bbox[0]");
+static GET_TEXTMAP_WIDTH: AttrSite = AttrSite::new("Page._get_textmap self.width");
+static GET_TEXTMAP_HEIGHT: AttrSite = AttrSite::new("Page._get_textmap self.height");
+static GET_TEXTMAP_CHARS: AttrSite = AttrSite::new("Page._get_textmap self.chars");
+static EXTRACT_TEXT_SIMPLE_CHARS: AttrSite = AttrSite::new("Page.extract_text_simple self.chars");
+static EXTRACT_WORDS_CHARS: AttrSite = AttrSite::new("Page.extract_words self.chars");
+static DEDUPE_CHARS_OBJECTS: AttrSite = AttrSite::new("Page.dedupe_chars self.objects");
+static DEDUPE_CHARS_CHARS: AttrSite = AttrSite::new("Page.dedupe_chars self.chars");
+static TO_DICT_OBJECTS: AttrSite = AttrSite::new("Page.to_dict self.objects");
+static TO_DICT_WIDTH: AttrSite = AttrSite::new("Page.to_dict self.width");
+static TO_DICT_HEIGHT: AttrSite = AttrSite::new("Page.to_dict self.height");
+static TO_DICT_GETATTR: CallSite = CallSite::new("Page.to_dict getattr(self, t + 's')");
+static CROPPED_PARENT_OBJECTS: AttrSite = AttrSite::new("CroppedPage.objects self.parent_page.objects");
+static FILTERED_PARENT_OBJECTS: AttrSite = AttrSite::new("FilteredPage.objects self.parent_page.objects");
+
 /// `maxsize` of `lru_cache()`.
 const LRU_MAXSIZE: usize = 128;
 
@@ -1348,7 +1375,11 @@ impl Page {
         for i in 0..turns.max(0) {
             let (x, y) = pt;
             // `i == turns % 2`
-            let comp = if i == turns.rem_euclid(2) { self.width()? } else { self.height()? };
+            let comp = if i == turns.rem_euclid(2) {
+                ROTATE_POINT_WIDTH.get(self.class_name(), || self.width())?
+            } else {
+                ROTATE_POINT_HEIGHT.get(self.class_name(), || self.height())?
+            };
             pt = (y, comp.sub(&x)?);
         }
         Ok(pt)
@@ -1364,7 +1395,7 @@ impl Page {
         let [a, b, c, d] = bbox_from_value(&PyValue::from_pdf(structure::py_getitem(&annot, "Rect")?))?;
         let pt0 = self.rotate_point((a, b), &self.rotation)?;
         let pt1 = self.rotate_point((c, d), &self.rotation)?;
-        let rh = self.root().height()?;
+        let rh = PARSE_ROOT_HEIGHT.get(self.root().class_name(), || self.root().height())?;
         let [x0, top, x1, bottom] = invert_box_values(normalize_box_values([pt0.0, pt0.1, pt1.0, pt1.1])?, &rh)?;
 
         let a = structure::py_get(&annot, "A", PDFObject::Dict(PDFDict::new()))?;
@@ -1449,7 +1480,7 @@ impl Page {
     /// (`self.annots` computed again).
     pub fn hyperlinks(&self) -> PyResult<Vec<Obj>> {
         let _frame = py_frame()?;
-        let annots = self.annots()?;
+        let annots = HYPERLINKS_ANNOTS.get(self.class_name(), || self.annots())?;
         Ok(annots.into_iter().filter(|a| !a.get("uri").is_some_and(PyValue::is_none)).collect())
     }
 
@@ -1468,14 +1499,14 @@ impl Page {
             PageKind::Cropped { parent, crop_bbox, crop_fn } => {
                 let mut out = Objects::new();
                 // a dict comprehension: no frame of its own
-                for (k, v) in parent.objects()?.iter() {
+                for (k, v) in CROPPED_PARENT_OBJECTS.get(parent.class_name(), || parent.objects())?.iter() {
                     out.insert(k.clone(), apply_crop_fn(*crop_fn, crop_bbox, v)?);
                 }
                 out
             }
             PageKind::Filtered { parent, filter_fn } => {
                 let mut out = Objects::new();
-                for (k, v) in parent.objects()?.iter() {
+                for (k, v) in FILTERED_PARENT_OBJECTS.get(parent.class_name(), || parent.objects())?.iter() {
                     // list(filter(self.filter_fn, v)): each call from C
                     let mut kept = Vec::new();
                     for obj in v {
@@ -1500,7 +1531,8 @@ impl Page {
         let _frame = py_frame()?;
         // See note below re. #1181 and mediabox-adjustment reversions
         let x = index(&self.mediabox, 0)?.add(&index(pt, 0)?)?;
-        let y = index(&self.mediabox, 1)?.add(&self.height()?)?.sub(&index(pt, 1)?)?;
+        let height = POINT2COORD_HEIGHT.get(self.class_name(), || self.height())?;
+        let y = index(&self.mediabox, 1)?.add(&height)?.sub(&index(pt, 1)?)?;
         Ok(PyValue::tuple([x, y]))
     }
 
@@ -1626,9 +1658,11 @@ impl Page {
         let mb_top = index(&self.mediabox, 1)?;
 
         if attr.contains("y0") {
-            let top = self.height()?.sub(attr.item("y1")?)?.add(&mb_top)?;
+            let top = PROCESS_OBJECT_HEIGHT_TOP.get(self.class_name(), || self.height())?;
+            let top = top.sub(attr.item("y1")?)?.add(&mb_top)?;
             attr.set("top", top);
-            let bottom = self.height()?.sub(attr.item("y0")?)?.add(&mb_top)?;
+            let bottom = PROCESS_OBJECT_HEIGHT_BOTTOM.get(self.class_name(), || self.height())?;
+            let bottom = bottom.sub(attr.item("y0")?)?.add(&mb_top)?;
             attr.set("bottom", bottom);
             let doctop = self.initial_doctop.add(attr.item("top")?)?;
             attr.set("doctop", doctop);
@@ -1698,7 +1732,7 @@ impl Page {
     /// The objects of the layout by kind (`anno` left out).
     pub fn parse_objects(&self) -> PyResult<Objects> {
         let _frame = py_frame()?;
-        let layout = self.layout()?;
+        let layout = PARSE_OBJECTS_LAYOUT.get(self.class_name(), || self.layout())?;
         let mut objects = Objects::new();
         self.iter_layout_objects(&layout.layout._objs, &mut |obj| {
             let kind = obj.item("object_type")?.clone();
@@ -1765,9 +1799,10 @@ impl Page {
             // sorter(x) = (-len(x.cells), x.bbox[1], x.bbox[0]), called from C
             let _entry = eval_entry()?;
             let _sorter = py_frame()?;
-            leaf(1)?; // x.bbox
+            // x.bbox[1], x.bbox[0]: Table.bbox, two loads
+            SORTER_BBOX_1.get("Table", || leaf(1))?;
             let bbox = t.bbox()?;
-            leaf(1)?; // x.bbox
+            SORTER_BBOX_0.get("Table", || leaf(1))?;
             keys.push(PyValue::tuple([PyValue::from(-(t.cells.len() as i64)), bbox[1].clone(), bbox[0].clone()]));
         }
         let mut indexed: Vec<usize> = (0..tables.len()).collect();
@@ -1847,16 +1882,16 @@ impl Page {
         let mut full_kwargs = Kwargs::new();
         full_kwargs.set("layout_bbox", self.bbox.clone());
         if !kwargs.contains("layout_width_chars") {
-            full_kwargs.set("layout_width", self.width()?);
+            full_kwargs.set("layout_width", GET_TEXTMAP_WIDTH.get(self.class_name(), || self.width())?);
         }
         if !kwargs.contains("layout_height_chars") {
-            full_kwargs.set("layout_height", self.height()?);
+            full_kwargs.set("layout_height", GET_TEXTMAP_HEIGHT.get(self.class_name(), || self.height())?);
         }
         // {**defaults, **kwargs}
         for (k, v) in kwargs.items() {
             full_kwargs.set(k, v.clone());
         }
-        let chars = Container::chars(self)?;
+        let chars = GET_TEXTMAP_CHARS.get(self.class_name(), || Container::chars(self))?;
         leaf(1)?; // utils.chars_to_textmap
         chars_to_textmap(&chars, &full_kwargs)
     }
@@ -1924,7 +1959,7 @@ impl Page {
     /// arguments are `x_tolerance` and `y_tolerance` (3 by default).
     pub fn extract_text_simple(&self, kwargs: &Kwargs) -> PyResult<PyStr> {
         let _frame = py_frame()?;
-        let chars = Container::chars(self)?;
+        let chars = EXTRACT_TEXT_SIMPLE_CHARS.get(self.class_name(), || Container::chars(self))?;
         let values = bind_kwargs("extract_text_simple", kwargs, &["x_tolerance", "y_tolerance"])?;
         let three = PyValue::from(3i64);
         leaf(1)?;
@@ -1934,7 +1969,7 @@ impl Page {
     // pdfplumber/page.py:535 Page.extract_words
     pub fn extract_words(&self, kwargs: &Kwargs) -> PyResult<Vec<Obj>> {
         let _frame = py_frame()?;
-        let chars = Container::chars(self)?;
+        let chars = EXTRACT_WORDS_CHARS.get(self.class_name(), || Container::chars(self))?;
         leaf(1)?;
         extract_words_kwargs(&chars, kwargs)
     }
@@ -1998,10 +2033,10 @@ impl Page {
         // FilteredPage(self, lambda x: True)
         let p = self.filtered(Rc::new(|_: &Obj| Ok(PyValue::Bool(true))))?;
         let mut objects = Objects::new();
-        for (kind, objs) in self.objects()?.iter() {
+        for (kind, objs) in DEDUPE_CHARS_OBJECTS.get(self.class_name(), || self.objects())?.iter() {
             objects.insert(kind.clone(), objs.to_vec());
         }
-        let chars = Container::chars(&**self)?;
+        let chars = DEDUPE_CHARS_CHARS.get(self.class_name(), || Container::chars(&**self))?;
         let values = bind_kwargs("dedupe_chars", kwargs, &["tolerance", "extra_attrs"])?;
         let tolerance = values[0].clone().unwrap_or(PyValue::from(1i64));
         let extra_attrs =
@@ -2089,7 +2124,8 @@ impl Container for Page {
         let types: Vec<PyStr> = match object_types {
             Some(t) => t.to_vec(),
             None => {
-                let mut t: Vec<PyStr> = Page::objects(self)?.keys().cloned().collect();
+                let objects = TO_DICT_OBJECTS.get(self.class_name(), || Page::objects(self))?;
+                let mut t: Vec<PyStr> = objects.keys().cloned().collect();
                 t.push(PyStr::new("annot"));
                 t
             }
@@ -2102,11 +2138,12 @@ impl Container for Page {
             ("mediabox", self.mediabox.clone()),
             ("bbox", self.bbox.clone()),
         ]);
-        d.set("width", self.width()?);
-        d.set("height", self.height()?);
+        d.set("width", TO_DICT_WIDTH.get(self.class_name(), || self.width())?);
+        d.set("height", TO_DICT_HEIGHT.get(self.class_name(), || self.height())?);
         for t in &types {
+            // d[t + "s"] = getattr(self, t + "s")
             let name = t.concat(&PyStr::new("s"));
-            let value = self.attribute(&name)?;
+            let value = crate::container::getattr(self, &name, &TO_DICT_GETATTR)?;
             d.set(&name, value);
         }
         Ok(d)
@@ -2114,6 +2151,10 @@ impl Container for Page {
 
     fn container_cache(&self) -> &RefCell<ContainerCache> {
         &self.container
+    }
+
+    fn class_name(&self) -> &'static str {
+        Page::class_name(self)
     }
 
     /// `getattr(page, name)`: the lists and edges of `Container`,
@@ -2152,6 +2193,10 @@ impl Container for Page {
 }
 
 impl TablePage for Page {
+    fn property_class(&self) -> Option<&'static str> {
+        Some(Page::class_name(self))
+    }
+
     fn chars(&self) -> PyResult<Vec<Obj>> {
         Container::chars(self)
     }

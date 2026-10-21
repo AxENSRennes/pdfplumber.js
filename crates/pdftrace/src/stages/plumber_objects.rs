@@ -30,6 +30,7 @@ use pdfplumber::obj::{Obj, PyValue};
 use pdfplumber::page::{Page, PlumberPayload};
 use pdfplumber::pdf::{IdsFactory, OpenOptions, Source, PDF};
 use pycompat::recursion::{eval_entry, leaf, py_frame};
+use pycompat::specialize::{AttrSite, CallSite};
 use pycompat::{PyInt, PyResult};
 
 use super::common::{terminated, Lines};
@@ -301,6 +302,22 @@ fn annots_lines(
     Ok(())
 }
 
+// The stage's loads of properties whose getter can run the interpretation
+// (`pycompat::specialize::AttrSite`, as the library's: the first execution
+// of a site holds the two C units of the getter's call from C while it
+// runs). Loads of cheap getters (`getattr(page, name)` of `boxes`: `width`,
+// `height`) are left out: nothing deep runs under them.
+static RUN_PAGES: AttrSite = AttrSite::new("plumber_objects run pdf.pages");
+static OBJECTS_LINES_OBJECTS: AttrSite = AttrSite::new("plumber_objects objects_lines page.objects");
+static ANNOTS_LAMBDA: AttrSite = AttrSite::new("plumber_objects page_lines lambda: page.annots");
+static HYPERLINKS_LAMBDA: AttrSite = AttrSite::new("plumber_objects page_lines lambda: page.hyperlinks");
+static PDF_LINES_OBJECTS: AttrSite = AttrSite::new("plumber_objects _pdf_lines pdf.objects");
+static PDF_LINES_GETATTR: CallSite = CallSite::new("plumber_objects _pdf_lines getattr(pdf, what)");
+static LAPARAMS_PAGES: AttrSite = AttrSite::new("plumber_objects _laparams_lines pdf.pages");
+static LAPARAMS_LAYOUT: AttrSite = AttrSite::new("plumber_objects _laparams_lines page.layout");
+static OPEN_LINES_PAGES: AttrSite = AttrSite::new("unit.plumber open_lines pdf.pages");
+static OPEN_LINES_LAYOUT: AttrSite = AttrSite::new("unit.plumber open_lines page.layout");
+
 /// `objects_lines(page, writer, refer)`, a generator whose frame is taken
 /// by the caller.
 fn objects_lines(
@@ -309,7 +326,7 @@ fn objects_lines(
     writer: &mut ObjectsWriter,
     refer: Option<&HashMap<String, usize>>,
 ) -> bool {
-    match page.objects() {
+    match OBJECTS_LINES_OBJECTS.get(page.class_name(), || page.objects()) {
         Err(e) => {
             lines.push(format!("objects {}", exc(&e)));
             false
@@ -334,15 +351,21 @@ fn page_lines(lines: &mut Lines, page: &Rc<Page>, writer: &mut ObjectsWriter) ->
         objects_lines(lines, page, writer, None);
     }
     let names = Names::default();
-    annots_lines(lines, "annots", "annot", || page.annots(), &names)?;
-    annots_lines(lines, "hyperlinks", "hyperlink", || page.hyperlinks(), &names)?;
+    annots_lines(lines, "annots", "annot", || ANNOTS_LAMBDA.get(page.class_name(), || page.annots()), &names)?;
+    annots_lines(
+        lines,
+        "hyperlinks",
+        "hyperlink",
+        || HYPERLINKS_LAMBDA.get(page.class_name(), || page.hyperlinks()),
+        &names,
+    )?;
     Ok(())
 }
 
 /// `_pdf_lines(pdf)`
 fn pdf_lines(lines: &mut Lines, pdf: &PDF) -> PyResult<()> {
     let _gen = py_frame()?;
-    match pdf.objects() {
+    match PDF_LINES_OBJECTS.get("PDF", || pdf.objects()) {
         Err(e) => lines.push(format!("pdf objects {}", exc(&e))),
         Ok(objects) => {
             let counts = Value::List(
@@ -355,7 +378,17 @@ fn pdf_lines(lines: &mut Lines, pdf: &PDF) -> PyResult<()> {
         }
     }
     let names = Names::default();
-    for (what, values) in [("annots", pdf.annots()), ("hyperlinks", pdf.hyperlinks())] {
+    for what in ["annots", "hyperlinks"] {
+        // getattr(pdf, what): the builtin's call, the getter from C
+        let values = {
+            let _call = PDF_LINES_GETATTR.builtin_call()?;
+            let _entry = eval_entry()?;
+            if what == "annots" {
+                pdf.annots()
+            } else {
+                pdf.hyperlinks()
+            }
+        };
         match values {
             Err(e) => lines.push(format!("pdf {what} {}", exc(&e))),
             Ok(values) => {
@@ -420,7 +453,7 @@ pub fn open_trace(input: &StageInput<'_>, options: &Obj, out: &mut dyn Write) ->
                 return Ok(());
             }
         };
-        let pages = match pdf.pages() {
+        let pages = match OPEN_LINES_PAGES.get("PDF", || pdf.pages()) {
             Ok(pages) => pages,
             Err(e) => {
                 lines.push(format!("pages {}", exc(&e)));
@@ -437,7 +470,7 @@ pub fn open_trace(input: &StageInput<'_>, options: &Obj, out: &mut dyn Write) ->
                 objects_lines(lines, page, &mut ObjectsWriter::default(), None)
             };
             if pdf.core.laparams.is_some() && ok {
-                let layout = page.layout()?;
+                let layout = OPEN_LINES_LAYOUT.get(page.class_name(), || page.layout())?;
                 leaf(1)?;
                 let ids = registry.borrow().get(&n).cloned().unwrap_or_default();
                 let value = content_ids(&layout, &mut ids.borrow_mut());
@@ -468,7 +501,7 @@ fn laparams_lines(
             return Ok(());
         }
     };
-    let pages = match pdf.pages() {
+    let pages = match LAPARAMS_PAGES.get("PDF", || pdf.pages()) {
         Ok(pages) => pages,
         Err(e) => {
             lines.push(format!("pages {}", exc(&e)));
@@ -489,7 +522,7 @@ fn laparams_lines(
         if ok {
             // content_ids(page.layout): the property (cached), then the
             // harness's function
-            let layout = page.layout()?;
+            let layout = LAPARAMS_LAYOUT.get(page.class_name(), || page.layout())?;
             leaf(1)?;
             let ids = registry.borrow().get(&n).cloned().unwrap_or_default();
             let value = content_ids(&layout, &mut ids.borrow_mut());
@@ -512,7 +545,7 @@ fn run(input: &StageInput<'_>, out: &mut dyn Write) -> io::Result<()> {
                 return Ok(());
             }
         };
-        let pages = match pdf.pages() {
+        let pages = match RUN_PAGES.get("PDF", || pdf.pages()) {
             Ok(pages) => pages,
             Err(e) => {
                 lines.push(format!("pages {}", exc(&e)));
