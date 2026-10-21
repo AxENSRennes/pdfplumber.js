@@ -103,14 +103,17 @@ impl AttrSite {
         AttrSite { name }
     }
 
+    // The state is found by the address of the site's name (each site's
+    // name is its own literal): a load is on the hot path of
+    // `process_object`, once or twice per object of a page.
     fn state(&self) -> AttrState {
-        ATTRS.with(|a| a.borrow().iter().find(|(n, _)| *n == self.name).map_or(WARMUP, |(_, s)| *s))
+        ATTRS.with(|a| a.borrow().iter().find(|(n, _)| std::ptr::eq(*n, self.name)).map_or(WARMUP, |(_, s)| *s))
     }
 
     fn set_state(&self, state: AttrState) {
         ATTRS.with(|a| {
             let mut a = a.borrow_mut();
-            match a.iter_mut().find(|(n, _)| *n == self.name) {
+            match a.iter_mut().find(|(n, _)| std::ptr::eq(*n, self.name)) {
                 Some((_, s)) => *s = state,
                 None => a.push((self.name, state)),
             }
