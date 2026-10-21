@@ -345,6 +345,11 @@ impl PageRef {
         Rc::ptr_eq(&self.0, &other.0)
     }
 
+    /// `id(page)`: the identity of the page while it lives.
+    pub fn id(&self) -> usize {
+        Rc::as_ptr(&self.0) as usize
+    }
+
     /// `repr(page)`: `<Page:n>`
     pub fn repr(&self) -> String {
         format!("<Page:{}>", self.0.page_number)

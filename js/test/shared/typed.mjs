@@ -62,6 +62,12 @@ export function fromTyped(j, lib, input = false) {
     }
   }
   if (keys.length === 2 && "exc" in j) return { exception: j.exc, message: j.msg };
+  // a pdfplumber Page, as oracle/unit/js_pages_run.py writes it: its handle
+  // label ("#k") and page_number
+  if (keys.length === 2 && j.named === "Page") {
+    const fields = Object.fromEntries(j.d.map(([k, v]) => [go(k), go(v)]));
+    return new lib.PageRef(fields.handle, fields.page_number);
+  }
   throw new Error(`unknown typed JSON ${JSON.stringify(j).slice(0, 80)}`);
 }
 

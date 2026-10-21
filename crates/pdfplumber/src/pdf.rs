@@ -409,6 +409,13 @@ impl PDF {
     }
 
     // pdfplumber/pdf.py:145 PDF.pages
+    /// The pages `PDF.pages` made so far (`_pages`), without running
+    /// anything: for the JavaScript boundary, which names the pages a
+    /// result holds by their handles.
+    pub fn cached_pages(&self) -> Vec<Rc<Page>> {
+        self.cache.borrow().pages.clone().unwrap_or_default()
+    }
+
     /// The pages (see "Laziness and caching"); an exception of the page
     /// tree is `PdfminerException(e)`, one of `Page.__init__` is raised as
     /// it is (the cache keeps the pages built before it).

@@ -76,9 +76,24 @@ def _str(s):
     return {"s": [ord(c) for c in s]} if any(0xD800 <= ord(c) <= 0xDFFF for c in s) else s
 
 
+#: The objects the session made (handles ``#k``), and those it freed.
+OBJS = []
+FREED = set()
+
+
+def page_handle(page):
+    """The handle the boundary names a ``Page`` value by: the first object
+    of the session that is this page and was not freed, else a new one."""
+    for k, o in enumerate(OBJS):
+        if o is page and k not in FREED:
+            return f"#{k}"
+    return handle(OBJS, page)
+
+
 def encode(v):
     """A value as typed JSON (``oracle/typed_json.py``; a ``Page`` as the
-    boundary writes it, ``{"page_number": n}``)."""
+    boundary writes it, its handle and ``page_number``, as a named object
+    ``Page``)."""
     t = type(v)
     if v is None or t is bool:
         return v
@@ -97,7 +112,7 @@ def encode(v):
     if t is dict:
         return {"d": [[encode(k), encode(x)] for k, x in v.items()]}
     if isinstance(v, Page):
-        return {"d": [["page_number", encode(v.page_number)]]}
+        return {"named": "Page", "d": [["handle", page_handle(v)], ["page_number", encode(v.page_number)]]}
     if t is PSLiteral:
         name = v.name
         return {"lit": _str(name) if type(name) is str else {"b": name.hex()}}
@@ -189,7 +204,7 @@ if __name__ == "__main__":
     logging.disable(logging.CRITICAL)
     with open(sys.argv[1]) as f:
         cases = decode(json.load(f))
-    objs = []
+    objs = OBJS
     results = []
     top = depth()
     for case in cases:
@@ -307,6 +322,7 @@ if __name__ == "__main__":
             elif op == "page_close":
                 result = obj.close(*args)
             elif op == "free":
+                FREED.add(target)
                 result = None
             else:
                 raise AssertionError(op)

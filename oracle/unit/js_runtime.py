@@ -70,8 +70,10 @@ from pdfplumber.utils import text as utext
 
 from .. import typed_json
 from ..adversarial import interp as adv_interp
+from ..adversarial._pdf import Name, Ref
 from ..adversarial import plumber as adv_plumber
 from ..adversarial import structure as adv_structure
+from ..adversarial.pages import table_file
 from ..canon import ExcValue
 from ..corpus import corpus_root
 from . import js_pages_run
@@ -426,6 +428,42 @@ def documents_session() -> list[list[Any]]:
     s.add("page_to_dict", p, {"object_types": ["line", "annot"]})
     s.add("page_to_json", p, {"bogus": 1})
     s.add("page_to_dict", crop, {})
+    # the call binds its arguments (pycompat::call): a keyword naming a
+    # parameter bound already, a mapping that is not one, any value of the
+    # serialization options (the ported code fails where Python does)
+    for kw in ({"self": 1}, {"a'b": 1}):
+        s.add("page_extract_text", p, kw)
+        s.add("page_extract_words", p, kw)
+        s.add("page_extract_text_simple", p, kw)
+        s.add("page_dedupe_chars", p, kw)
+        s.add("page_crop", p, [0, 0, 10, 10], kw)
+    for kw in ({"strip": False}, {"return_chars": 1}, {"self": 1}):
+        s.add("page_extract_text_lines", p, True, True, kw)
+    s.add("search", p, "A", {"pattern": 1}, js="A")
+    s.add("page_crop", p, [0, 0, 10, 10], {"bbox": 1})
+    s.add("page_extract_text", p, [1, 2])
+    s.add("page_extract_text", p, None)
+    s.add("page_crop", p, [0, 0, 10, 10], "x")
+    s.add("page_find_tables", p, [1, 2])
+    s.add("page_find_tables", p, "lines")
+    s.add("page_find_table", p, 5)
+    s.add("page_extract_table", p, "x")
+    s.add("page_extract_tables", p, {"self": 1})
+    s.add("page_find_tables", p, None, None)
+    s.add("page_close", p, 1)
+    for options in ({"stream": None, "object_types": ["rect"]}, {"object_types": ["char"], "include_attrs": ["x0", 1]},
+                    {"object_types": "char"}, {"object_types": [1]}, {"object_types": ["char", 1]},
+                    {"object_types": {"rect": 1}}, {"object_types": 5}, {"self": 1},
+                    {"object_types": ["char"], "include_attrs": ["x0"], "exclude_attrs": ["x1"]}):
+        s.add("page_to_json", p, options)
+    for options in ({"stream": None, "object_types": ["char"], "exclude_attrs": "xy"}, {"include_attrs": "x0"},
+                    {"object_types": ["rect"], "exclude_attrs": ["object_type"]},
+                    {"object_types": ["rect"], "exclude_attrs": [[1]]},
+                    {"object_types": ["rect"], "include_attrs": [[1]]}, {"object_types": ("line", "rect")}):
+        s.add("page_to_csv", p, options)
+    s.add("page_to_dict", p, {"object_types": "char"})
+    s.add("page_to_dict", p, {"object_types": ["line"], "self": 1})
+    s.add("page_to_dict", p, [1])
     s.add("page_close", p)
     s.add("page_attr", p, "chars")
     s.add("doc_objects", doc)
@@ -437,6 +475,10 @@ def documents_session() -> list[list[Any]]:
     s.add("doc_to_json", doc, {"object_types": ["rect"]})
     s.add("doc_to_csv", doc, {"object_types": ["line"]})
     s.add("doc_to_dict", doc, {"object_types": ["image"]})
+    s.add("doc_to_dict", doc, {"object_types": "char"})
+    s.add("doc_to_csv", doc, {"stream": None, "object_types": ["rect"], "precision": 1})
+    s.add("doc_to_json", doc, {"cls": 1})
+    s.add("doc_close", doc, 1)
     s.add("doc_close", doc)
     s.add("page_extract_text", p, {})
     # lines and curves: edges, tables
@@ -453,6 +495,13 @@ def documents_session() -> list[list[Any]]:
     rel = "upstream/pdfplumber-python/tests/pdfs/nics-background-checks-2015-11.pdf"
     doc, pages = s.open(rel, {"pages": [1]}, pages=1)
     _table_ops(s, pages[0], tables=_tables(rel, 0), found=_found(rel, 0))
+    # text settings bound to Table.extract (self), to TableSettings (self)
+    s.add("page_extract_tables", pages[0], {"text_self": 1})
+    s.add("page_extract_table", pages[0], {"text_x_tolerance": 1, "text_self": 1})
+    s.add("page_find_tables", pages[0], {"self": 1})
+    first = s.add("page_find_tables", pages[0], makes=_tables(rel, 0))
+    s.add("table_extract", first, {"self": 1})
+    s.add("table_extract", first, [1])
     s.add("page_extract_text", pages[0], {"layout": True})
     for pattern, options, js in PAGE_SEARCHES[:2]:
         s.add("search", pages[0], pattern, options, js=js)
@@ -465,6 +514,18 @@ def documents_session() -> list[list[Any]]:
         s.add("doc_annots", doc)
         s.add("doc_hyperlinks", doc)
         s.add("page_extract_words", pages[0], {})
+    # page values (an annotation's /P): named by a page handle, the first
+    # live one, else a new one
+    doc = s.add("doc_open", None, {}, data=_annots_p_pdf(), makes=1)
+    s.add("doc_annots", doc, makes=2)
+    first = s.add("doc_pages", doc, makes=2)
+    s.add("page_attr", first, "annots")
+    s.add("free", first - 2)
+    s.add("page_attr", first, "annots")
+    s.add("doc_attr", doc, "pages")
+    crop = s.add("page_crop", first + 1, [0, 0, 200, 200], {}, makes=1)
+    s.add("page_attr", crop, "annots")
+    s.add("page_to_dict", crop, {"object_types": ["annot"]})
     # structure trees
     for rel in ("upstream/pdfplumber-python/tests/pdfs/hello_structure.pdf",
                 "upstream/pdfplumber-python/tests/pdfs/figure_structure.pdf"):
@@ -501,6 +562,8 @@ def documents_session() -> list[list[Any]]:
     s.add("doc_open", None, {"pages": "1"}, data="corpus/micro/text-operators.pdf", makes=1)
     s.add("doc_pages", s.count - 1)
     s.add("doc_open", None, {"nope": 1}, data="corpus/micro/text-operators.pdf")
+    for options in ({"cls": 1}, {"path_or_fp": 1}, {"pages": [1], "a'b": 1}, [1]):
+        s.add("doc_open", None, options, data="corpus/micro/text-operators.pdf")
     s.add("doc_open", None, {"laparams": {"bogus": 1}}, data="corpus/micro/text-operators.pdf")
     s.add("doc_open", None, {"gs_path": "gs", "repair_setting": "default"}, data="corpus/micro/text-operators.pdf",
           makes=1)
@@ -533,6 +596,122 @@ def cjk_session() -> list[list[Any]]:
         s.add("page_extract_text", crop, {})
         if len(pages) > 1:
             s.add("page_extract_text", pages[-1], {})
+    return s.cases
+
+
+def _annots_p_pdf() -> bytes:
+    """Two pages, each with a link whose /P is its page."""
+    b = adv_interp.Builder()
+    for i in range(2):
+        page = b.reserve()
+        uri = f"https://example.com/{i}".encode()
+        annot = b.obj({"Type": Name("Annot"), "Subtype": Name("Link"), "Rect": [10, 10, 50, 50], "P": page,
+                       "A": {"URI": uri}})
+        b.put(page, {"Type": Name("Page"), "Parent": Ref(2), "MediaBox": [0, 0, 200, 200], "Annots": [annot]})
+        b.pages.append(page.num)
+    return b.build()
+
+
+def _cjk_font(b: Any, ordering: str, encoding: str) -> Any:
+    """A Type0 font whose CMap (``encoding``) and unicode map are
+    predefined: the boundary loads them lazily (void calls)."""
+    cid = b.obj({"Type": Name("Font"), "Subtype": Name("CIDFontType0"), "BaseFont": Name("X-" + ordering),
+                 "CIDSystemInfo": {"Registry": b"Adobe", "Ordering": ordering.encode(), "Supplement": 2},
+                 "DW": 1000})
+    return b.obj({"Type": Name("Font"), "Subtype": Name("Type0"), "BaseFont": Name("X-" + ordering),
+                  "Encoding": Name(encoding), "DescendantFonts": [cid]})
+
+
+#: The page of ``climit["tf-list"]``: a ``Tf`` operand nested ``n`` levels.
+def _climit_content(n: int) -> bytes:
+    return b"BT " + adv_interp.nested_array(n) + b" 10 Tf (a) Tj ET 0 0 m 1 1 l S"
+
+
+def _replay_depth_pdf(n: int) -> bytes:
+    """Page 1 at the C limit, page 2 a Japanese font."""
+    b = adv_interp.Builder()
+    helv = b.obj(adv_interp.HELVETICA)
+    jp = _cjk_font(b, "Japan1", "UniJIS-UCS2-H")
+    b.page(_climit_content(n), {"Font": {"F1": helv}})
+    b.page(b"BT /C 12 Tf 10 10 Td <30423044> Tj ET", {"Font": {"C": jp}})
+    return b.build()
+
+
+def _replay_cmap_pdf(n: int) -> bytes:
+    """Page 1 at the C limit, then a form drawing with a Japanese font (not
+    reached when the nested operand raises); page 2 a Korean font; page 3
+    the Japanese font again."""
+    b = adv_interp.Builder()
+    helv = b.obj(adv_interp.HELVETICA)
+    jp = _cjk_font(b, "Japan1", "UniJIS-UCS2-H")
+    kr = _cjk_font(b, "Korea1", "UniKS-UCS2-H")
+    form = b.stream(b"BT /J 12 Tf 10 10 Td <30423044> Tj ET", Type=Name("XObject"), Subtype=Name("Form"),
+                    BBox=[0, 0, 200, 200], Resources={"Font": {"J": jp}})
+    b.page(_climit_content(n) + b" /X Do", {"Font": {"F1": helv}, "XObject": {"X": form}})
+    b.page(b"BT /K 12 Tf 10 10 Td <AC00> Tj ET", {"Font": {"K": kr}})
+    b.page(b"BT /J 12 Tf 10 10 Td <30423044> Tj ET", {"Font": {"J": jp}})
+    return b.build()
+
+
+#: A Japanese font of ``90ms-RKSJ-H`` (a predefined CMap), as objects.
+_RKSJ = {
+    11: b"<< /Type /Font /Subtype /Type0 /BaseFont /MSMincho /Encoding /90ms-RKSJ-H /DescendantFonts [12 0 R] >>",
+    12: b"<< /Type /Font /Subtype /CIDFontType0 /BaseFont /MSMincho "
+        b"/CIDSystemInfo << /Registry (Adobe) /Ordering (Japan1) /Supplement 2 >> /FontDescriptor 13 0 R >>",
+    13: b"<< /Type /FontDescriptor /FontName /MSMincho /Flags 4 /FontBBox [0 0 1000 1000] /ItalicAngle 0 "
+        b"/Ascent 880 /Descent -120 /CapHeight 700 /StemV 80 >>",
+}
+_RKSJ_CONTENT = b"BT /F1 12 Tf 10 10 Td <82a082a2> Tj ET"
+
+
+def _page_tree_pdf(n: int, third: bool) -> bytes:
+    """A page with the Japanese font, then a chain of ``n`` ``/Pages``
+    nodes ending in a truncated one whose kid is a name no other object
+    has (``/Zq7uniq``: interned for the first time at the deepest point),
+    then (``third``) a last page."""
+    kids = b"[10 0 R 20 0 R 15 0 R]" if third else b"[10 0 R 20 0 R]"
+    objs = {1: b"<< /Type /Catalog /Pages 2 0 R >>",
+            2: b"<< /Type /Pages /Kids " + kids + b" /Count %d >>" % (3 if third else 2),
+            10: b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /Font << /F1 11 0 R >> >> "
+                b"/Contents 14 0 R >>",
+            14: b"<< /Length %d >>\nstream\n" % len(_RKSJ_CONTENT) + _RKSJ_CONTENT + b"\nendstream",
+            15: b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] >>", **_RKSJ}
+    for i in range(n):
+        objs[20 + i] = b"<< /Type /Pages /Kids [%d 0 R] /Count 1 >>" % (21 + i)
+    return table_file(objs, tail=(20 + n, b"<< /Type /Pages /Kids [ /Zq7uniq"))
+
+
+def replay_session(kind: str, n: int) -> list[list[Any]]:
+    """Void calls (a CMap missing) after an operation that raised
+    ``RecursionError``: the replay of the history must run each call from
+    the process state of its first run, so that it raises again (a call
+    that succeeded on replay would cache objects, or pages, that Python's
+    run never has, or reach a font whose CMap it misses)."""
+    s = Session()
+    if kind == "depth":
+        doc, pages = s.open(_replay_depth_pdf(n), pages=2)
+        s.add("page_objects", pages[0])
+        s.add("page_extract_text", pages[1], {})
+        s.add("page_extract_text", pages[0], {})
+    elif kind == "cmap":
+        doc, pages = s.open(_replay_cmap_pdf(n), pages=3)
+        s.add("page_objects", pages[0])
+        s.add("page_extract_text", pages[1], {})
+        s.add("page_extract_text", pages[2], {})
+        s.add("page_extract_text", pages[0], {})
+    elif kind == "pages":
+        # PDF.pages raises, leaving the pages made so far in its cache;
+        # another document interns the deepest name; a void call replays
+        # the first document
+        a = s.add("doc_open", None, {}, data=_page_tree_pdf(n, True), makes=1)
+        s.add("doc_pages", a)
+        b = s.add("doc_open", None, {}, data=_page_tree_pdf(1, False), makes=1)
+        s.add("doc_pages", b, makes=1)
+        first = s.add("doc_pages", a, makes=1)
+        s.add("page_extract_text", first, {})
+        s.add("doc_pages", a, makes=1)
+    else:
+        raise ValueError(kind)
     return s.cases
 
 
@@ -630,6 +809,8 @@ def depth_windows() -> Iterator[tuple[str, list[list[Any]]]]:
         ("climit-tf-list-find-table", climit["tf-list"], [("page_find_table", ())], 9000, 10100),
         ("climit-tf-list-extract-table", climit["tf-list"], [("page_extract_table", ())], 9000, 10100),
         ("climit-tf-list-vedges", climit["tf-list"], [("page_attr", ("vertical_edges",))], 9000, 10100),
+        # the filter's mask_of computes the objects (a frame, a load)
+        ("climit-tf-list-filter", climit["tf-list"], [("page_filter", ("upright",))], 9000, 10100),
         *[(f"climit-tf-list-{name}", climit["tf-list"], [("page_attr", (name,))], 9000, 10100)
           for name in ("images", "textboxverticals", "textboxhorizontals", "textlineverticals", "textlinehorizontals")],
         # the structure trees (adv-structure's windows from this depth)
@@ -653,9 +834,17 @@ def depth_windows() -> Iterator[tuple[str, list[list[Any]]]]:
         ("class-doc", climit["tf-list"], [("page_attr", ("chars",)), ("page_attr", ("chars",)), ("reopen", ()),
                                           ("doc:doc_attr", ("chars",))], 9000, 10100),
     ]
+    sessions: list[tuple[str, Any, int, int, bool, int]] = []
     for label, make, ops, lo, hi in kinds:
-        last = label.startswith("class-")
-        fails = lambda n: _recursion(run_session(depth_session(make, ops, n)), last)  # noqa: E731
+        build = lambda n, make=make, ops=ops: depth_session(make, ops, n)  # noqa: E731
+        sessions.append((label, build, lo, hi, label.startswith("class-"), 4))
+    # a void call after a RecursionError: windows over the operations that
+    # raise (page_objects at the C limit until its specialized loads
+    # succeed, PDF.pages at the frame limit)
+    for kind, lo, hi in (("depth", 9000, 10100), ("cmap", 9000, 10100), ("pages", 2, 1200)):
+        sessions.append((f"replay-{kind}", lambda n, kind=kind: replay_session(kind, n), lo, hi, False, 8))
+    for label, build, lo, hi, last, span in sessions:
+        fails = lambda n: _recursion(run_session(build(n)), last)  # noqa: E731
         assert not fails(lo) and fails(hi), (label, lo, hi)
         while hi - lo > 1:
             mid = (lo + hi) // 2
@@ -664,8 +853,8 @@ def depth_windows() -> Iterator[tuple[str, list[list[Any]]]]:
             else:
                 lo = mid
         print(f"pages depth-{label}: first failing {hi}", file=sys.stderr)
-        for n in range(hi - 2, hi + 2):
-            yield f"depth-{label}-{n}", depth_session(make, ops, n)
+        for n in range(hi - 2, hi - 2 + span):
+            yield f"depth-{label}-{n}", build(n)
 
 
 def page_cases() -> Iterator[tuple[list[Any], Any]]:

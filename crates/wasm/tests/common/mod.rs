@@ -30,6 +30,8 @@ pub enum Js {
     Kw(Vec<u8>),
     Ref(Box<Js>),
     Stream(Vec<Js>),
+    /// A pdfplumber `Page`: its handle and `page_number` (`PageRef`).
+    Page(Box<Js>, Box<Js>),
 }
 
 impl PartialEq for Js {
@@ -47,6 +49,7 @@ impl PartialEq for Js {
             (Arr(a), Arr(b)) | (Stream(a), Stream(b)) => a == b,
             (Obj(a), Obj(b)) => a == b,
             (Lit(a), Lit(b)) | (Ref(a), Ref(b)) => a == b,
+            (Page(a, n), Page(b, m)) => a == b && n == m,
             _ => false,
         }
     }
@@ -79,7 +82,8 @@ pub fn js_view(v: &PyValue) -> Js {
         PyValue::List(items) | PyValue::Tuple(items) => Js::Arr(items.iter().map(js_view).collect()),
         PyValue::Dict(d) => Js::Obj(d.items().iter().map(|(k, v)| (k.to_utf16(), js_view(v))).collect()),
         PyValue::Pdf(o) => pdf_view(o),
-        PyValue::Page(p) => Js::Obj(vec![("page_number".encode_utf16().collect(), int_view(p.page_number()))]),
+        // (its handle is the core's: no handle here)
+        PyValue::Page(p) => Js::Page(Box::new(Js::Null), Box::new(int_view(p.page_number()))),
     }
 }
 
@@ -144,6 +148,16 @@ pub fn value_view(v: &Value) -> Js {
         ]),
         Value::Exception { class, message } => {
             obj(vec![("exception", s(class)), ("message", Js::Str(pystr_units(message)))])
+        }
+        // a `Page` as `oracle/unit/js_pages_run.py` writes it
+        Value::Named { name, fields } if name == "Page" => {
+            let field = |k: &str| {
+                fields.iter().find(|(f, _)| matches!(f, Value::Str(t) if t.as_str() == Some(k))).map(|(_, v)| v)
+            };
+            Js::Page(
+                Box::new(value_view(field("handle").expect("a handle"))),
+                Box::new(value_view(field("page_number").expect("a page_number"))),
+            )
         }
         other => panic!("no JavaScript view for {other:?}"),
     }
@@ -257,6 +271,10 @@ impl Dec<'_> {
             }
             TAG_REF => Js::Ref(Box::new(self.value())),
             TAG_STREAM => Js::Stream((0..5).map(|_| self.value()).collect()),
+            TAG_PAGE => {
+                let handle = self.value();
+                Js::Page(Box::new(handle), Box::new(self.value()))
+            }
             TAG_TABLE => self.table(),
             t => panic!("unknown tag {t}"),
         }
@@ -534,6 +552,7 @@ pub fn fixup(v: Js) -> Js {
                 "lit" => Js::Lit(Box::new(fixup(sp[1].clone()))),
                 "ref" => Js::Ref(Box::new(fixup(sp[1].clone()))),
                 "stream" => Js::Stream(sp[1..].iter().cloned().map(fixup).collect()),
+                "page" => Js::Page(Box::new(fixup(sp[1].clone())), Box::new(fixup(sp[2].clone()))),
                 t => panic!("unknown special {t}"),
             }
         }

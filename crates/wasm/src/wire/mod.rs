@@ -21,13 +21,14 @@
 pub mod binary;
 pub mod json;
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use pdfminer::pdftypes::PDFObject;
 use pdfminer::psparser::LiteralName;
 use pdfplumber::obj::{Obj, PyValue};
-use pycompat::{exc, PyInt, PyResult, PyStr};
-use rustc_hash::FxHashSet;
+use pycompat::{exc, ExcKind, PyErr, PyInt, PyResult, PyStr};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::strings::PyStrRef;
 
@@ -63,12 +64,34 @@ pub trait Writer {
     /// A `PDFStream`, followed by five values: `objid`, `genno`, `attrs`
     /// (a dict), `rawdata` and `data` (`bytes` or `None`).
     fn stream(&mut self);
+    /// A pdfplumber `Page` (`annot["data"]["P"]`, `getattr(pdf,
+    /// "pages")`), followed by two values: the handle of the page
+    /// ([`with_page_handles`]) and its `page_number`.
+    fn page(&mut self);
     /// Writes `rows` (dicts, grouped by key sequence in `shapes`) as one
     /// list value, if this writer has a form for it, and returns whether it
     /// did.
     fn table(&mut self, _rows: &[PyValue], _shapes: &Shapes<'_>) -> PyResult<bool> {
         Ok(false)
     }
+}
+
+thread_local! {
+    /// The handle of each page a result holds (by [`PageRef::id`]), while
+    /// the core writes it ([`with_page_handles`]).
+    ///
+    /// [`PageRef::id`]: pdfplumber::obj::PageRef::id
+    static PAGE_HANDLES: RefCell<FxHashMap<usize, u32>> = RefCell::new(FxHashMap::default());
+}
+
+/// Runs `f` (the writing of a result) with the handles of the pages the
+/// result holds: a page value is written as its handle
+/// (`crate::ops::Core::label_pages` made them).
+pub fn with_page_handles<T>(handles: FxHashMap<usize, u32>, f: impl FnOnce() -> T) -> T {
+    let previous = PAGE_HANDLES.with(|p| std::mem::replace(&mut *p.borrow_mut(), handles));
+    let out = f();
+    PAGE_HANDLES.with(|p| *p.borrow_mut() = previous);
+    out
 }
 
 /// Writes a Python `str` (a lone surrogate included: [`Writer::py_str`]).
@@ -186,12 +209,13 @@ pub fn write_value<W: Writer + ?Sized>(w: &mut W, v: &PyValue) -> PyResult<()> {
                 }
                 PyValue::Dict(d) => push_obj(w, &mut stack, d),
                 PyValue::Pdf(o) => stack.push(Work::Pdf(o.clone())),
-                // a `Page` (`annot["data"]["P"]`): `{"page_number": n}`
-                // until the JavaScript page API gives pages a value of
-                // their own (wave 4 join)
+                // a `Page` (`annot["data"]["P"]`): its handle
                 PyValue::Page(p) => {
-                    w.dict(1);
-                    w.str("page_number");
+                    let handle = PAGE_HANDLES.with(|h| h.borrow().get(&p.id()).copied()).ok_or_else(|| {
+                        PyErr::new(ExcKind::RuntimeError, "a page value without a handle (the core did not label it)")
+                    })?;
+                    w.page();
+                    w.int(&PyInt::from(handle));
                     w.int(p.page_number());
                 }
             },

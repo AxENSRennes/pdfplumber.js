@@ -189,6 +189,27 @@ fn json_view(v: &PyValue) -> Js {
     decode_json(&text, fixup)
 }
 
+/// A pdfplumber `Page` value crosses as its handle and `page_number`
+/// (`PageRef` in JavaScript), in a table's cells too; one the core did not
+/// label is an error, not a dict.
+#[test]
+fn page_values_cross_as_their_handles() {
+    let page = pdfplumber::obj::PageRef::new(PyInt::from(3));
+    let annot = |p: &pdfplumber::obj::PageRef| {
+        PyValue::Dict(Obj::from_pairs([("x", PyValue::from(1_i64)), ("P", PyValue::Page(p.clone()))]))
+    };
+    let v = PyValue::list([annot(&page), annot(&page), PyValue::Page(page.clone())]);
+    let mut handles = rustc_hash::FxHashMap::default();
+    handles.insert(page.id(), 7);
+    let want = Js::Page(Box::new(Js::Num(7.0)), Box::new(Js::Num(3.0)));
+    let cell = obj(vec![("x", Js::Num(1.0)), ("P", want.clone())]);
+    let expected = Js::Arr(vec![cell.clone(), cell, want]);
+    let (b, j) = pdfplumber_wasm::wire::with_page_handles(handles, || (binary_view(&v), json_view(&v)));
+    assert_eq!(b, expected);
+    assert_eq!(j, expected);
+    assert!(binary::encode(&v).is_err(), "a page without a handle");
+}
+
 #[test]
 fn random_values_decode_to_what_javascript_must_see() {
     let mut r = Rng(0x9e37_79b9_7f4a_7c15);

@@ -79,6 +79,24 @@ async function replaySession(lib, input, out, readFile) {
     if (v && typeof v === "object" && "handle" in v) return { ...v, handle: label(v.handle) };
     return v;
   };
+  // the pages a result holds (PageRef): their handles as labels, a handle
+  // labelled before keeping its label
+  const relabelPages = (v) => {
+    if (v instanceof lib.PageRef) {
+      let k = handles.indexOf(v.handle);
+      if (k < 0) k = handles.push(v.handle) - 1;
+      return new lib.PageRef(`#${k}`, v.page_number);
+    }
+    if (Array.isArray(v)) return v.map(relabelPages);
+    if (v && typeof v === "object" && Object.getPrototypeOf(v) === Object.prototype) {
+      const o = {};
+      for (const k of Object.keys(v)) {
+        Object.defineProperty(o, k, { value: relabelPages(v[k]), writable: true, enumerable: true, configurable: true });
+      }
+      return o;
+    }
+    return v;
+  };
   const makers = new Set([
     "doc_open", "doc_pages", "page_crop", "page_within_bbox", "page_outside_bbox", "page_filter",
     "page_dedupe_chars", "page_find_tables", "page_find_table",
@@ -121,6 +139,7 @@ async function replaySession(lib, input, out, readFile) {
         got = await t.call(op, args, handle);
       }
       if (makers.has(op)) got = relabel(got);
+      got = relabelPages(got);
     } catch (e) {
       if (!(e instanceof lib.PDFPlumberError)) throw e;
       got = { exception: e.name, message: e.message };

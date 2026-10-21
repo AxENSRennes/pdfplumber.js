@@ -269,6 +269,9 @@ pub struct Core {
     pub(crate) next_oid: u64,
     /// While replaying: the objects made again whose handles were freed.
     pub(crate) ghosts: FxHashMap<u64, Object>,
+    /// The handles of the pages the results of the running call hold
+    /// (`PageRef::id` -> handle: `crate::wire::with_page_handles`).
+    pub(crate) page_values: FxHashMap<usize, u32>,
 }
 
 impl Default for Core {
@@ -456,6 +459,7 @@ impl Core {
             live: FxHashMap::default(),
             next_oid: 1,
             ghosts: FxHashMap::default(),
+            page_values: FxHashMap::default(),
         }
     }
 
@@ -899,6 +903,8 @@ impl Core {
             },
         };
         self.replay = Some(e.created.iter().copied().collect());
+        // (the pages of the results it labels are its own)
+        self.page_values.clear();
         let outcome = with_depth(ENTRY_DEPTH, || self.op(&e.op, h, &e.args, e.data.clone())).map(|_| ());
         let left = self.replay.take().map_or(0, |q| q.len());
         self.op_doc = None;
@@ -946,6 +952,7 @@ impl Core {
         }
         self.ghosts.clear();
         self.touched.clear();
+        self.page_values.clear();
         // every CMap the replayed calls asked for was handed over before
         // their first run
         let missed = cmaps::take_missing();
@@ -972,6 +979,7 @@ impl Core {
         let mut h = 0;
         self.created.clear();
         self.touched.clear();
+        self.page_values.clear();
         self.op_doc = None;
         self.calls += 1;
         let process = ProcessState::capture();
@@ -1007,7 +1015,7 @@ impl Core {
             return response(STATUS_NEED_CMAPS, FORMAT_BINARY, false, &encode_names(&missing), &none);
         }
         match result {
-            Ok(out) => match self.encode(out) {
+            Ok(out) => match crate::wire::with_page_handles(std::mem::take(&mut self.page_values), || self.encode(out)) {
                 Ok((format, fixup, payload)) => response(STATUS_OK, format, fixup, &payload, &collected),
                 Err(e) => response(STATUS_ERROR, FORMAT_BINARY, false, &encode_error(&e), &collected),
             },

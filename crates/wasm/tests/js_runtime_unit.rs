@@ -552,6 +552,29 @@ impl Objs {
             other => other,
         }
     }
+
+    /// The handles of the pages a response holds (`annot["data"]["P"]`,
+    /// `getattr(pdf, "pages")`) as labels, in the order they are written: a
+    /// handle labelled before keeps its label, a new one is recorded.
+    fn relabel_pages(&mut self, v: Js) -> Js {
+        match v {
+            Js::Page(h, n) => {
+                let Js::Num(h) = *h else { panic!("a page handle: {h:?}") };
+                let h = h as u32;
+                let k = match self.0.iter().position(|&o| o == h) {
+                    Some(k) => k,
+                    None => {
+                        self.0.push(h);
+                        self.0.len() - 1
+                    }
+                };
+                Js::Page(Box::new(s(&format!("#{k}"))), n)
+            }
+            Js::Arr(items) => Js::Arr(items.into_iter().map(|x| self.relabel_pages(x)).collect()),
+            Js::Obj(items) => Js::Obj(items.into_iter().map(|(k, x)| (k, self.relabel_pages(x))).collect()),
+            other => other,
+        }
+    }
 }
 
 /// Runs a request, handing over the CMaps it misses (each once), as
@@ -668,6 +691,7 @@ fn replay_session(format: &str, name: &str, cases: &[Value], out: &Value) -> usi
                 }
             }
         };
+        let got = objs.relabel_pages(got);
         assert_eq!(got, want, "{where_}");
         checked += 1;
     }
