@@ -67,7 +67,9 @@ convert.py, utils/pdfinternals.py and what they call):
 - ``climit-*`` (``cases_climit``): a ``Tf`` operand nested in arrays before
   ``SCENE`` (``str()`` of it, ``literal_name``, one C unit per level), on
   one page, on two, and before a tagged page's content (``element_bbox``
-  of ``plumber_doc`` reads the page's objects), at every nesting from two below the first at which
+  of ``plumber_doc`` reads the page's objects: through ``self.pages`` in
+  the document's tree, through ``page`` in the page's tree when the
+  elements have no ``/Pg``), at every nesting from two below the first at which
   a ``plumber_*`` stage raises ``RecursionError`` up to the C limit: each
   operation of the stages that interprets the page (the first, or every
   one while the objects raise and nothing is cached: ``plumber_objects``,
@@ -742,6 +744,13 @@ def climit_kinds() -> dict[str, Any]:
         "tf-list-2pages": lambda n: doc([(page(n), {})] * 2),
         # a structure tree: element_bbox reads the objects of the page
         "tf-list-tagged": lambda n: tagged(contents={0: b"BT " + b"[" * n + b"]" * n + b" 10 Tf ET\n" + STRUCT_CONTENT}),
+        # elements without /Pg: the document's tree reads no page, the
+        # page's tree (PDFStructTree(pdf, page)) reads its page's objects
+        # first, from element_bbox
+        "tf-list-tagged-nopg": lambda n: tagged(
+            contents={0: b"BT " + b"[" * n + b"]" * n + b" 10 Tf ET\n" + STRUCT_CONTENT},
+            elems={12: elem("P", 11, 0, Pg=None), 13: elem("Span", 11, [1, 2], Pg=None)},
+        ),
     }
 
 

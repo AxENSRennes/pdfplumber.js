@@ -150,6 +150,7 @@ pub fn start() {
     });
     pycompat::re_cache::reset();
     pycompat::typing_cache::reset();
+    pycompat::warnings::reset();
 }
 
 #[cfg(test)]

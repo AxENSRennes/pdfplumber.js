@@ -39,6 +39,9 @@ typed JSON:
   ``d`` flag, which finds the same matches) as ``[spans, named]``, ``named``
   the spans of the named groups (``indices.groups``), ``None`` for a
   pattern without any;
+- ``diagnostics.jsonl``: the warnings Python shows (default filters: once
+  per text and line) and pdfplumber's log records for a few runs
+  (``diagnostic_cases``), which the core's diagnostics must be;
 - ``open.jsonl``: ``pdfplumber.open(path, **options)`` with options
   pdfplumber accepts at ``open()`` whatever their value (they fail later,
   or never): ``{"in": [path, options], "out": None or the exception}``.
@@ -715,6 +718,65 @@ def replay_session(kind: str, n: int) -> list[list[Any]]:
     return s.cases
 
 
+#: The diagnostics a run shows, in a new process with Python's default
+#: configuration of ``warnings`` (the filters, the registry) and a
+#: ``logging`` handler on pdfplumber's loggers: ``[source, level,
+#: message]`` each (the category's name for a warning).
+DIAGNOSTICS_SCRIPT = r'''
+import io, json, logging, sys, warnings
+import pdfplumber
+
+shown = []
+def showwarning(message, category, filename, lineno, file=None, line=None):
+    shown.append([category.__name__, 30, str(message)])
+warnings.showwarning = showwarning
+
+class Handler(logging.Handler):
+    def emit(self, record):
+        shown.append([record.name, record.levelno, record.getMessage()])
+logging.getLogger("pdfplumber").addHandler(Handler())
+
+with open(sys.argv[1]) as f:
+    data, options, ops = json.load(f)
+pdf = pdfplumber.open(io.BytesIO(bytes.fromhex(data)), **options)
+for op in ops:
+    if op == "page_annots":
+        for page in pdf.pages:
+            page.annots
+    elif op == "doc_annots":
+        pdf.annots
+    elif op == "doc_structure_tree":
+        pdf.structure_tree
+    else:
+        raise AssertionError(op)
+with open(sys.argv[2], "w") as f:
+    json.dump(shown, f)
+'''
+
+
+def diagnostic_cases() -> Iterator[tuple[list[Any], Any]]:
+    """``diagnostics.jsonl``: ``{"in": [name, pdf, options, ops], "out":
+    [[source, level, message], ...]}``: the warnings Python shows (once per
+    text and line: the default filters) and pdfplumber's log records, for
+    ``page_annots`` (every page's ``annots``), ``doc_annots`` and
+    ``doc_structure_tree``."""
+    root = corpus_root()
+    unicode_issues = (root / "upstream/pdfplumber-python/tests/pdfs/annotations-unicode-issues.pdf").read_bytes()
+    class_missing = adv_structure.tagged(elems={12: adv_structure.elem("P", 11, 0, C=Name("Nope"))},
+                                         root_extra={"ClassMap": {"Cl": {"Width": 5}}})
+    scenarios = [
+        ("annots-unicode", unicode_issues, {"raise_unicode_errors": False}, ["page_annots", "page_annots", "doc_annots"]),
+        ("structure-class-missing", class_missing, {}, ["doc_structure_tree", "doc_structure_tree"]),
+    ]
+    for name, data, options, ops in scenarios:
+        with tempfile.TemporaryDirectory() as d:
+            inp, out = Path(d) / "in.json", Path(d) / "out.json"
+            inp.write_text(json.dumps([data.hex(), options, ops]))
+            subprocess.run([sys.executable, "-I", "-c", DIAGNOSTICS_SCRIPT, str(inp), str(out)], check=True, timeout=600)
+            shown = json.loads(out.read_text())
+        yield [name, data, options, ops], shown
+
+
 def run_session(cases: list[list[Any]]) -> dict[str, Any]:
     """The results of the cases in a fresh process at the top level of
     ``js_pages_run.py`` (paths made absolute)."""
@@ -876,11 +938,12 @@ def main():
     n_text = write_cases(MODULE, "text", text_cases())
     n_groups = write_cases(MODULE, "search_groups", search_group_cases())
     n_open = write_cases(MODULE, "open", open_cases())
+    n_diag = write_cases(MODULE, "diagnostics", diagnostic_cases())
     n_pages = write_cases(MODULE, "pages", page_cases())
     write_meta(
         MODULE,
         cases={"exceptions": n_exc, "documents": n_doc, "cmaps": n_cmap, "text": n_text, "search_groups": n_groups,
-               "open": n_open, "pages": n_pages},
+               "open": n_open, "diagnostics": n_diag, "pages": n_pages},
     )
     print(f"{MODULE}: {n_exc} exception classes, {n_cmap} CMap cases, {n_text} pages")
 

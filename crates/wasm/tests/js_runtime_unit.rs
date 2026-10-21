@@ -722,6 +722,54 @@ fn page_operations_match_pdfplumber_through_the_boundary() {
     }
 }
 
+/// The diagnostics of a few runs are those Python shows (`diagnostics.jsonl`
+/// of `oracle/unit/js_runtime.py`): a `warnings.warn` once per text
+/// (Python's default filters and registry, `pycompat::warnings`), each of
+/// pdfplumber's log records, in order, across the calls of a new process.
+#[test]
+fn diagnostics_are_the_warnings_and_records_python_shows() {
+    for (input, out) in data().cases("diagnostics") {
+        let got = on_thread(1 << 28, move || {
+            pycompat::warnings::reset();
+            let name = input[0].as_str().unwrap().to_owned();
+            let Value::Bytes(pdf) = &input[1] else { panic!("the PDF") };
+            let Value::List(ops) = &input[3] else { panic!("ops") };
+            let mut core = Core::new();
+            let mut shown = Vec::new();
+            let mut run = |core: &mut Core, op: &str, h: u32, args: PyValue, data: Option<Vec<u8>>| {
+                let r = call_level(core, op, h, args, data, 30);
+                assert_eq!(r.status, 0, "{name} {op}: {:?}", r.value);
+                let Js::Obj(d) = r.diagnostics else { panic!("diagnostics") };
+                let Js::Arr(entries) = &d[0].1 else { panic!("entries") };
+                shown.extend(entries.iter().cloned());
+                r.value
+            };
+            let Js::Num(doc) = run(&mut core, "doc_open", 0, py(&input[2]), Some(pdf.clone())) else { panic!() };
+            let doc = doc as u32;
+            for op in ops {
+                match op.as_str().unwrap() {
+                    "page_annots" => {
+                        let Js::Arr(pages) = run(&mut core, "doc_pages", doc, list(vec![]), None) else { panic!() };
+                        for p in pages {
+                            let Js::Obj(items) = p else { panic!() };
+                            let Js::Num(h) = items[0].1 else { panic!() };
+                            run(&mut core, "page_attr", h as u32, list(vec![PyValue::str("annots")]), None);
+                        }
+                    }
+                    other => {
+                        run(&mut core, other, doc, list(vec![]), None);
+                    }
+                }
+            }
+            shown
+        });
+        assert_eq!(got, match value_view(&out) {
+            Js::Arr(entries) => entries,
+            other => panic!("{other:?}"),
+        });
+    }
+}
+
 /// The operations of a scenario on a CJK document, in a new core: handles
 /// relabeled, results in order.
 fn cjk_scenario(preload: &[String]) -> (Vec<Js>, Vec<String>, Js) {

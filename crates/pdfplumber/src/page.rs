@@ -45,7 +45,7 @@ use pycompat::recursion::{c_call, c_called_leaf, class_call, eval_entry, leaf, p
 use pycompat::repr::bytes_repr;
 use pycompat::specialize::{AttrSite, CallSite};
 use pycompat::typing_cache::Subscription;
-use pycompat::{codecs, diagnostics};
+use pycompat::codecs;
 use pycompat::{exc, ExcKind, Num, PyErr, PyInt, PyResult, PyStr};
 
 use crate::container::{Container, ContainerCache, Objects};
@@ -1451,9 +1451,13 @@ impl Page {
                         if self.pdf.raise_unicode_errors {
                             return Err(e);
                         }
-                        diagnostics::emit("UserWarning", diagnostics::Level::Warning, || {
-                            format!("Could not decode {k} of annotation. {k} will be missing.")
-                        });
+                        // warn(...): shown once per text (the default
+                        // filters' registry, pycompat::warnings)
+                        pycompat::warnings::warn(
+                            "UserWarning",
+                            "pdfplumber/page.py:305",
+                            format!("Could not decode {k} of annotation. {k} will be missing."),
+                        );
                     }
                 },
             }

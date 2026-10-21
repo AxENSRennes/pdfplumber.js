@@ -889,7 +889,11 @@ impl PDFStructTree {
             if let PDFObject::Literal(_) = obj {
                 let key = decode_name(&obj)?;
                 if !py_in(&self.class_map, &key)? {
+                    // logger.warning("Unknown attribute class %s", key)
                     LOG.warning()?;
+                    pycompat::diagnostics::emit(LOG.name, pycompat::diagnostics::Level::Warning, || {
+                        format!("Unknown attribute class {key}")
+                    });
                     continue;
                 }
                 obj = py_getitem(&self.class_map, &key)?;

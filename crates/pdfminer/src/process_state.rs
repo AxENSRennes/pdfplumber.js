@@ -45,6 +45,7 @@ struct Rest {
     loggers: pycompat::logging::LoggerCaches,
     call_sites: pycompat::specialize::Snapshot,
     cmaps: CMapDBCaches,
+    warnings: Vec<pycompat::warnings::Key>,
 }
 
 impl Rest {
@@ -54,6 +55,7 @@ impl Rest {
             && self.loggers == other.loggers
             && self.call_sites == other.call_sites
             && self.cmaps.same(&other.cmaps)
+            && self.warnings == other.warnings
     }
 }
 
@@ -72,6 +74,7 @@ impl ProcessState {
             loggers: pycompat::logging::snapshot(),
             call_sites: pycompat::specialize::snapshot(),
             cmaps: CMapDB::caches_snapshot(),
+            warnings: pycompat::warnings::snapshot(),
         };
         let rest = LAST.with(|last| {
             let mut last = last.borrow_mut();
@@ -96,6 +99,7 @@ impl ProcessState {
         pycompat::logging::restore(rest.loggers.clone());
         pycompat::specialize::restore(rest.call_sites.clone());
         CMapDB::restore_caches(rest.cmaps.clone());
+        pycompat::warnings::restore(rest.warnings.clone());
     }
 }
 
