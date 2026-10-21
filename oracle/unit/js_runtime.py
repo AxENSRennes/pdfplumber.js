@@ -896,16 +896,20 @@ def depth_windows() -> Iterator[tuple[str, list[list[Any]]]]:
         ("class-doc", climit["tf-list"], [("page_attr", ("chars",)), ("page_attr", ("chars",)), ("reopen", ()),
                                           ("doc:doc_attr", ("chars",))], 9000, 10100),
     ]
-    sessions: list[tuple[str, Any, int, int, bool, int]] = []
+    # (label, session of a nesting, bisection bounds, bisect the last
+    # operation, first window from the first failing nesting, windows)
+    sessions: list[tuple[str, Any, int, int, bool, int, int]] = []
     for label, make, ops, lo, hi in kinds:
         build = lambda n, make=make, ops=ops: depth_session(make, ops, n)  # noqa: E731
-        sessions.append((label, build, lo, hi, label.startswith("class-"), 4))
+        sessions.append((label, build, lo, hi, label.startswith("class-"), -2, 4))
     # a void call after a RecursionError: windows over the operations that
     # raise (page_objects at the C limit until its specialized loads
-    # succeed, PDF.pages at the frame limit)
-    for kind, lo, hi in (("depth", 9000, 10100), ("cmap", 9000, 10100), ("pages", 2, 1200)):
-        sessions.append((f"replay-{kind}", lambda n, kind=kind: replay_session(kind, n), lo, hi, False, 8))
-    for label, build, lo, hi, last, span in sessions:
+    # succeed, PDF.pages at the frame limit; below its limit, PDF.pages
+    # makes every page and the session's targets are other objects: its
+    # windows start at the limit)
+    for kind, lo, hi, start in (("depth", 9000, 10100, -2), ("cmap", 9000, 10100, -2), ("pages", 2, 1200, 0)):
+        sessions.append((f"replay-{kind}", lambda n, kind=kind: replay_session(kind, n), lo, hi, False, start, 8))
+    for label, build, lo, hi, last, start, span in sessions:
         fails = lambda n: _recursion(run_session(build(n)), last)  # noqa: E731
         assert not fails(lo) and fails(hi), (label, lo, hi)
         while hi - lo > 1:
@@ -915,7 +919,7 @@ def depth_windows() -> Iterator[tuple[str, list[list[Any]]]]:
             else:
                 lo = mid
         print(f"pages depth-{label}: first failing {hi}", file=sys.stderr)
-        for n in range(hi - 2, hi - 2 + span):
+        for n in range(hi + start, hi + start + span):
             yield f"depth-{label}-{n}", build(n)
 
 
