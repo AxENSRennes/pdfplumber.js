@@ -71,6 +71,7 @@ from pdfplumber.utils import text as utext
 from .. import typed_json
 from ..adversarial import interp as adv_interp
 from ..adversarial import plumber as adv_plumber
+from ..adversarial import structure as adv_structure
 from ..canon import ExcValue
 from ..corpus import corpus_root
 from . import js_pages_run
@@ -605,6 +606,18 @@ def depth_windows() -> Iterator[tuple[str, list[list[Any]]]]:
         ("climit-tf-list-doc-objects", climit["tf-list"], [("doc:doc_objects", ())], 9000, 10100),
         ("climit-tf-list-doc-csv", climit["tf-list"], [("doc:doc_to_csv", ({},))], 9000, 10100),
         ("climit-tf-list-doc-dict", climit["tf-list"], [("doc:doc_to_dict", ({"object_types": ["char"]},))], 9000, 10100),
+        ("climit-tf-list-doc-json", climit["tf-list"], [("doc:doc_to_json", ({"object_types": ["char"]},))], 9000, 10100),
+        ("climit-tf-list-doc-edges", climit["tf-list"], [("doc:doc_attr", ("edges",))], 9000, 10100),
+        ("climit-tf-list-json", climit["tf-list"], [("page_to_json", ({"object_types": ["char"]},))], 9000, 10100),
+        ("climit-tf-list-find-table", climit["tf-list"], [("page_find_table", ())], 9000, 10100),
+        ("climit-tf-list-extract-table", climit["tf-list"], [("page_extract_table", ())], 9000, 10100),
+        ("climit-tf-list-vedges", climit["tf-list"], [("page_attr", ("vertical_edges",))], 9000, 10100),
+        *[(f"climit-tf-list-{name}", climit["tf-list"], [("page_attr", (name,))], 9000, 10100)
+          for name in ("images", "textboxverticals", "textboxhorizontals", "textlineverticals", "textlinehorizontals")],
+        # the structure trees (adv-structure's windows from this depth)
+        ("struct-chain-doc", adv_structure.WINDOWS["chain-to-dict"][0], [("doc:doc_structure_tree", ())], 2, 1200),
+        ("struct-repr-doc", adv_structure.WINDOWS["k-nested-list-repr"][0], [("doc:doc_structure_tree", ())], 9000, 10100),
+        ("struct-str-doc", adv_structure.WINDOWS["actualtext-str-first"][0], [("doc:doc_structure_tree", ())], 9000, 10100),
     ]
     for label, make, ops, lo, hi in kinds:
         fails = lambda n: _recursion(run_session(depth_session(make, ops, n)))  # noqa: E731

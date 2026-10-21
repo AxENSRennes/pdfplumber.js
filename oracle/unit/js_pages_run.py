@@ -327,6 +327,11 @@ if __name__ == "__main__":
             spans = [[span_of(text, m, g) for g in range(compiled.groups + 1)] for m in found]
             named = [{k: span_of(text, m, k) for k in compiled.groupindex} for m in found] if compiled.groupindex else None
             extra = {"text": text, "spans": spans, "named": named}
+        # values as deep as the limit allows (a structure tree's to_dict):
+        # encoded with room, the limit put back before the next statement
+        sys.setrecursionlimit(20000)
         results.append([encode(result), encode(extra)])
+        sys.setrecursionlimit(1000)
+    sys.setrecursionlimit(20000)
     with open(sys.argv[2], "w") as f:
         json.dump({"depth": top, "results": results}, f)
