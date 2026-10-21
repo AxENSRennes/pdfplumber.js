@@ -565,6 +565,12 @@ def documents_session() -> list[list[Any]]:
     s.add("doc_open", None, {"pages": "1"}, data="corpus/micro/text-operators.pdf", makes=1)
     s.add("doc_pages", s.count - 1)
     s.add("doc_open", None, {"nope": 1}, data="corpus/micro/text-operators.pdf")
+    # metadata that cannot be decoded (a dict that holds itself): raised with
+    # strict_metadata, logged without
+    bomb = adv_structure.tagged(info={"A": Ref(59)}, extra={59: {"a": b"1", "b": Ref(59), "c": b"3"}})
+    s.add("doc_open", None, {"strict_metadata": True}, data=bomb)
+    doc = s.add("doc_open", None, {"strict_metadata": False}, data=bomb, makes=1)
+    s.add("doc_metadata", doc)
     for options in ({"cls": 1}, {"path_or_fp": 1}, {"pages": [1], "a'b": 1}, [1]):
         s.add("doc_open", None, options, data="corpus/micro/text-operators.pdf")
     s.add("doc_open", None, {"laparams": {"bogus": 1}}, data="corpus/micro/text-operators.pdf")
@@ -603,14 +609,17 @@ def cjk_session() -> list[list[Any]]:
 
 
 def _annots_p_pdf() -> bytes:
-    """Two pages, each with a link whose /P is its page."""
+    """Two pages with links whose /P is their page (two on the first: a
+    page met twice in a result keeps one handle)."""
     b = adv_interp.Builder()
     for i in range(2):
         page = b.reserve()
-        uri = f"https://example.com/{i}".encode()
-        annot = b.obj({"Type": Name("Annot"), "Subtype": Name("Link"), "Rect": [10, 10, 50, 50], "P": page,
-                       "A": {"URI": uri}})
-        b.put(page, {"Type": Name("Page"), "Parent": Ref(2), "MediaBox": [0, 0, 200, 200], "Annots": [annot]})
+        annots = []
+        for j in range(2 - i):
+            uri = f"https://example.com/{i}/{j}".encode()
+            annots.append(b.obj({"Type": Name("Annot"), "Subtype": Name("Link"), "Rect": [10, 10 + 50 * j, 50, 50 + 50 * j],
+                                 "P": page, "A": {"URI": uri}}))
+        b.put(page, {"Type": Name("Page"), "Parent": Ref(2), "MediaBox": [0, 0, 200, 200], "Annots": annots})
         b.pages.append(page.num)
     return b.build()
 
