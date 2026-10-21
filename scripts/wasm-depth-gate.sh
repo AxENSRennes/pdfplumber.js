@@ -93,12 +93,16 @@ gate objects adv-objects "$CACHE"/corpus/adv-objects/*depth*.pdf
 # metadata, the C-unit windows of decode_text and repr: plumber_doc and
 # plumber_objects). Without --oracle-dir both builds rank the analysis'
 # boxes in creation order and search no span: the same inputs, a check of
-# the stack (the Python parity of these windows is oracle.verify's).
+# the stack (the Python parity of these windows is oracle.verify's); the
+# C-limit windows of adv-plumber (a Tf operand nested ten thousand deep)
+# for the four stages.
 plumber=("$CACHE"/corpus/adv-plumber/*-depth-*.pdf)
+climit=("$CACHE"/corpus/adv-plumber/*-climit-*.pdf)
 for stage in plumber_objects plumber_text; do
-  gate "$stage" adv-plumber "${plumber[@]}"
+  gate "$stage" adv-plumber "${plumber[@]}" "${climit[@]}"
 done
-gate plumber_doc adv-plumber "$CACHE"/corpus/adv-plumber/*-depth-dash-*.pdf
+gate plumber_doc adv-plumber "$CACHE"/corpus/adv-plumber/*-depth-dash-*.pdf "${climit[@]}"
+gate plumber_tables adv-plumber "${climit[@]}"
 structure=("$CACHE"/corpus/adv-structure/*-depth-*.pdf)
 for stage in plumber_doc plumber_objects; do
   gate "$stage" adv-structure "${structure[@]}"

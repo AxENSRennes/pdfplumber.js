@@ -346,8 +346,16 @@ et ses pages derrière des handles.
   `extract_table`, `Table.extract` d'une table trouvée par lignes
   explicites, `to_dict`, `to_json`, `to_csv`, et ceux du document
   (`objects`, `edges`, `to_dict`, `to_json`, `to_csv`) ; `repr` d'un `/K`
-  imbriqué et `str(s)` de `decode_text` sous `pdf.structure_tree`), cherchée
-  par dichotomie sur le script : 38 fenêtres de quatre profondeurs. Rejouées par `js_runtime_unit.rs`
+  imbriqué et `str(s)` de `decode_text` sous `pdf.structure_tree` ; un
+  chargement de propriété spécialisé pour une classe puis exécuté pour une
+  autre : `extract_text` d'une `Page` puis d'une `CroppedPage`,
+  `Table.extract` d'une table de chacune, `chars` d'une `Page` puis d'un
+  `PDF`), cherchée par dichotomie sur le script : 42 fenêtres de quatre
+  profondeurs. Les fenêtres de classe dichotomisent leur dernière
+  opération, sur un second document : sur le premier, la seconde
+  exécution (spécialisée, deux unités de moins) réussit à la profondeur où
+  la dernière échoue, met les objets de la page en cache, et la dernière
+  ne descend plus. Rejouées par `js_runtime_unit.rs`
   (`page_operations_match_pdfplumber_through_the_boundary`, deux formats,
   un fil neuf par session) et par JS (Node, navigateurs, cœur direct et
   worker) avec la `RegExp` de JS pour `search`, dont les spans doivent être

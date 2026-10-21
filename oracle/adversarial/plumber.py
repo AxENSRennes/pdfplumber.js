@@ -63,7 +63,16 @@ convert.py, utils/pdfinternals.py and what they call):
   nested in arrays or through chains of references and an ``/MCID`` nested
   in arrays (``resolve_all``; a content stream holds no reference, and
   pdfminer hands ``begin_tag`` a property list given by name as the name), a dash pattern nested in arrays (``Serializer`` of
-  ``to_json``/``to_csv``, ``plumber_doc``).
+  ``to_json``/``to_csv``, ``plumber_doc``);
+- ``climit-*`` (``cases_climit``): a ``Tf`` operand nested in arrays before
+  ``SCENE`` (``str()`` of it, ``literal_name``, one C unit per level), on
+  one page and on two, at every nesting from two below the first at which
+  a ``plumber_*`` stage raises ``RecursionError`` up to the C limit: each
+  operation of the stages that interprets the page (the first, or every
+  one while the objects raise and nothing is cached: ``plumber_objects``,
+  ``plumber_doc``) fails at its own nesting, set by the C units of the
+  property loads and calls above it, from the stage's driver down to the
+  interpreter.
 """
 
 from __future__ import annotations
@@ -722,6 +731,34 @@ def cases_depth() -> list[Case]:
     return out
 
 
+def climit_kinds() -> dict[str, Any]:
+    """The documents of ``cases_climit`` from the nesting ``n``."""
+    page = lambda n: b"BT " + b"[" * n + b"]" * n + b" 10 Tf ET\n" + SCENE  # noqa: E731
+    return {
+        "tf-list": lambda n: doc([(page(n), {})]),
+        # the second page's loads and calls specialized
+        "tf-list-2pages": lambda n: doc([(page(n), {})] * 2),
+    }
+
+
+#: The stages of ``cases_climit``.
+CLIMIT_STAGES = ("plumber_objects", "plumber_text", "plumber_tables", "plumber_doc")
+
+#: The nesting past which every operation's ``str()`` fails, whatever
+#: holds C units above it (``Py_C_RECURSION_LIMIT``).
+C_LIMIT = 10000
+
+
+def cases_climit() -> list[Case]:
+    out: list[Case] = []
+    for label, make in climit_kinds().items():
+        firsts = {stage: first_failing(stage, make, lo=9000, hi=C_LIMIT + 100) for stage in CLIMIT_STAGES}
+        print(f"climit-{label}: first failing " + ", ".join(f"{s} {n}" for s, n in firsts.items()), file=sys.stderr)
+        for n in range(min(firsts.values()) - 2, C_LIMIT + 1):
+            out.append((f"climit-{label}-{n}", make(n), None))
+    return out
+
+
 def cases_struct() -> list[Case]:
     """Structure element IDs given as arrays of numbers: ``decode_text``
     maps each through ``PDFDocEncoding`` (a negative index counts from the
@@ -734,14 +771,14 @@ def generate(depth: bool = True) -> None:
     cases = (cases_boxes() + cases_geometry() + cases_paint() + cases_images() + cases_marked() + cases_fonts()
              + cases_text() + cases_tables() + cases_annots() + cases_layout() + cases_struct())
     if depth:
-        cases += cases_depth()
+        cases += cases_depth() + cases_climit()
     write_corpus("plumber", cases)
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--no-depth", action="store_true",
-                    help="skip cases_depth (minutes of bisection): a corpus for development, not the reference one")
+                    help="skip cases_depth and cases_climit (minutes of bisection): a corpus for development, not the reference one")
     generate(depth=not ap.parse_args().no_depth)
 
 
