@@ -146,6 +146,15 @@ node js/bench/browsers.mjs --passes 5   # Chromium, WebKit, Firefox de Playwrigh
 | `list`, `tuple` | `Array` |
 | `dict` | objet ordinaire, clés dans l'ordre Python (sauf les clés « entières », que JS met en tête) ; `__proto__` est une propriété propre |
 | `PSLiteral`, `PSKeyword`, `PDFObjRef`, `PDFStream` | classes `PSLiteral`, `PSKeyword`, `PDFObjRef`, `PDFStream` |
+| `Page` de pdfplumber (`annot["data"]["P"]`, `getattr(pdf, "pages")`) | `PageRef` (`handle`, `page_number`) |
+
+Une `Page` dans un résultat est écrite comme une sorte à elle (PJB1
+`0x12`, JSON `"page"`) : le handle de la page, puis son `page_number`.
+L'opération donne ce handle (`Core::label_pages`, avant l'écriture) : le
+premier handle vivant de cette page, sinon un nouveau, que l'opération
+crée (un rejeu le refait), dans l'ordre où la valeur s'écrit ;
+`oracle/unit/js_pages_run.py` nomme la page de même (le premier objet de
+la session qui est cette page et n'a pas été libéré).
 
 Arguments (JS → Rust, PJB1 sans tables) : entier sûr → `int`, autre nombre
 → `float`, `bigint` → `int`, `PyFloat(x)` force un `float`, `PyTuple([...])`
@@ -185,10 +194,18 @@ non porté) devient l'erreur JS `NotImplemented`.
 
 ## Diagnostics
 
-`pycompat::diagnostics` est le canal des `logging` de pdfminer et des
-`warnings.warn` de pdfplumber : un module porté appelle
-`diagnostics::emit(source, niveau, || message)` (le message n'est formaté
-que si quelqu'un écoute). La frontière exécute chaque requête dans un
+`pycompat::diagnostics` est le canal des `logging` et des `warnings.warn`
+: un module porté appelle `diagnostics::emit(source, niveau, || message)`
+(le message n'est formaté que si quelqu'un écoute). Transmis aujourd'hui :
+les deux `logger.warning` de pdfplumber (métadonnées, classe d'attributs
+inconnue) et son `warnings.warn` (`Page.annots`), celui-ci par
+`pycompat::warnings`, qui suit les filtres par défaut de Python : montré
+une fois par texte, catégorie et ligne dans le processus (le registre est
+de l'état du processus : un appel nul le remet). Les `log.*` de pdfminer
+ne comptent que leurs cadres (`public-api.md`). `diagnostics.jsonl` de
+`oracle/unit/js_runtime.py` (ce que Python montre, avertissements et
+enregistrements des loggers de pdfplumber, dans un processus neuf) est
+rejoué par `js_runtime_unit.rs`. La frontière exécute chaque requête dans un
 `diagnostics::collect` au niveau demandé par JS (0 : rien n'est collecté ni
 formaté), au plus 1 000 entrées par appel (les autres sont comptées), et les
 renvoie avec la réponse, y compris quand l'appel lève. Un appel nul (CMaps
@@ -310,7 +327,19 @@ et ses pages derrière des handles.
   (`CALL_FUNCTION_EX` : la méthode liée entrée depuis le C, deux unités),
   un attribut par son nom avec `getattr`. Ce script est
   `oracle/unit/js_pages_run.py` : une `RecursionError` arrive par la
-  frontière là où elle arrive dans ce script. Une instruction de Python
+  frontière là où elle arrive dans ce script. Les arguments sont liés
+  comme CPython lie ceux de l'appel (`pycompat::call`) : un mot-clé qui
+  nomme un paramètre déjà lié (`self`, `bbox` de `crop`, `strip` et
+  `return_chars` d'`extract_text_lines`, `pattern` de `search`) lève
+  « got multiple values for argument », un inconnu « got an unexpected
+  keyword argument », un `**` qui n'est pas un dict « argument after **
+  must be a mapping », avant l'appel ; `table_settings` est résolu comme
+  `TableSettings.resolve` le fait de n'importe quelle valeur, et les
+  options de `to_dict`/`to_json`/`to_csv` passent telles quelles au code
+  porté (`stream=None` rend le texte, un autre flux est `NotPorted`).
+  `page_filter` calcule les objets du parent comme `mask_of` du script
+  (un cadre, un site de chargement à lui) : JavaScript les a déjà calculés
+  par `page_objects` pour y évaluer sa fonction. Une instruction de Python
   écrite autrement (des mots-clés explicites plutôt que `**options`, une
   propriété lue à un site neuf) prend jusqu'à deux unités C de moins ou de
   plus : visible seulement à la limite des unités C.
@@ -319,19 +348,37 @@ et ses pages derrière des handles.
   `Object::reset`), puis le cœur **rejoue son historique** : chaque appel
   qui l'a atteint (de `doc_open` à l'appel précédent, ceux d'une
   `sequence` un par un ; `Entry`), résultats et diagnostics jetés, depuis
-  `ENTRY_DEPTH`, chacun remplissant les handles qu'il avait créés ; l'état
-  du processus est remis après le rejeu aussi. Le document est alors l'objet
-  qu'a l'exécution unique de Python à ce point (caches des pages, flux
-  décodés, décodages en place des métadonnées et de `Page.annots`), pas un
-  document rouvert. Un handle de page ou de table que JS libère reste une
-  pierre tombale (refusée à JS, sa page ou sa table jetée) pour les rejeux
-  des appels qui l'ont utilisé ; libérer le document libère ses pages, ses
-  tables et son historique ; `free` ne peut pas entrer dans une `sequence`
-  (un appel nul ne le déferait pas). Une opération n'atteint qu'un
-  document ; l'appel nul retire de l'historique les entrées de cet appel. Le rejeu refait le
-  travail des appels précédents, une fois par CMap manquante (le
-  préchargement des CMaps d'un document est une optimisation possible de
-  la vague 5).
+  `ENTRY_DEPTH`, chacun remplissant les handles qu'il avait créés. Chaque
+  entrée garde l'état du processus d'où partait sa première exécution
+  (`ProcessState` : les symboles internés en chaîne persistante, partagée
+  entre les états ; le reste, borné par les sites statiques du port,
+  partagé avec l'état précédent quand rien n'a changé) et la façon dont
+  elle a fini (l'exception ou rien) : son rejeu repart de cet état, sans
+  quoi un nom interné, un site spécialisé ou une CMap mise en cache par
+  un appel postérieur le laisserait descendre plus loin que la première
+  fois, réussir là où il avait levé `RecursionError`, et mettre en cache
+  des objets ou des pages que Python n'a jamais. Un rejeu qui finit
+  autrement que la première exécution (autre exception, autres objets
+  créés, une CMap manquée) laisse ses documents inutilisables : toute
+  opération qui les atteint lève `RuntimeError` (jamais un document
+  silencieusement différent). L'état du processus de l'appel nul est
+  remis après le rejeu. Le document est alors l'objet qu'a l'exécution
+  unique de Python à ce point (caches des pages, flux décodés, décodages
+  en place des métadonnées et de `Page.annots`), pas un document rouvert.
+  Une opération n'atteint qu'un document ; l'appel nul retire de
+  l'historique les entrées de cet appel. Le rejeu refait le travail des
+  appels précédents, une fois par CMap manquante (le préchargement des
+  CMaps d'un document est une optimisation possible de la vague 5).
+- **Handles libérés** : libérer une page ou une table libère son handle
+  (son emplacement resservira) ; l'historique nomme les objets par leur
+  identité (`Target::Object`), pas par leur handle : un rejeu refait un
+  objet libéré hors de la table, pour les appels qui l'ont utilisé, puis
+  le jette. Libérer le document libère ses pages, ses tables et son
+  historique ; `free` ne peut pas entrer dans une `sequence` (un appel nul
+  ne le déferait pas). L'historique d'un document ne raccourcit qu'à sa
+  libération : un document gardé longtemps garde chaque appel qui l'a
+  atteint (ses arguments et un état du processus partagé avec les appels
+  voisins), et un appel nul les rejoue tous.
 - **Tests** : `oracle/unit/js_runtime.py` exécute des sessions de cas
   dans un processus neuf chacune, au niveau du module de
   `js_pages_run.py` (`pages.jsonl`) : `documents` (toutes les opérations,
@@ -352,8 +399,12 @@ et ses pages derrière des handles.
   chargement de propriété spécialisé pour une classe puis exécuté pour une
   autre : `extract_text` d'une `Page` puis d'une `CroppedPage`,
   `Table.extract` d'une table de chacune, `chars` d'une `Page` puis d'un
-  `PDF`), cherchée par dichotomie sur le script : 44 fenêtres de quatre
-  profondeurs. Les fenêtres de classe dichotomisent leur dernière
+  `PDF` ; `filter` ; un appel nul après une `RecursionError` : `objects`
+  d'une page à la limite des unités C puis le texte d'une page CJK, la
+  même chose avec une police CJK sous la page profonde, `PDF.pages` qui
+  lève à la limite des cadres puis un appel nul sur sa première page),
+  cherchée par dichotomie sur le script : 45 fenêtres de quatre
+  profondeurs et 3 de huit. Les fenêtres de classe dichotomisent leur dernière
   opération, sur un second document : sur le premier, la seconde
   exécution (spécialisée, deux unités de moins) réussit à la profondeur où
   la dernière échoue, met les objets de la page en cache, et la dernière

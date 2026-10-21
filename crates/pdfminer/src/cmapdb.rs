@@ -1005,9 +1005,10 @@ impl CMapDBCaches {
         self.cmaps.len() == other.cmaps.len()
             && self.umaps.len() == other.umaps.len()
             && self.cmaps.iter().all(|(k, v)| other.cmaps.get(k).is_some_and(|w| Rc::ptr_eq(v, w)))
-            && self.umaps.iter().all(|(k, [a, b])| {
-                other.umaps.get(k).is_some_and(|[c, d]| Rc::ptr_eq(a, c) && Rc::ptr_eq(b, d))
-            })
+            && self
+                .umaps
+                .iter()
+                .all(|(k, [a, b])| other.umaps.get(k).is_some_and(|[c, d]| Rc::ptr_eq(a, c) && Rc::ptr_eq(b, d)))
     }
 
     /// The names in `_cmap_cache`, then those in `_umap_cache`, each sorted.

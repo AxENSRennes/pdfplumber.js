@@ -115,7 +115,9 @@ pub fn open(data: &Rc<[u8]>, options: &PyValue) -> PyResult<PDF> {
 fn star_kwargs(v: &PyValue, func: &str) -> PyResult<Obj> {
     match v {
         PyValue::Dict(d) => Ok(d.clone()),
-        other => Err(exc::TypeError(format!("{func}() argument after ** must be a mapping, not {}", other.type_name()))),
+        other => {
+            Err(exc::TypeError(format!("{func}() argument after ** must be a mapping, not {}", other.type_name())))
+        }
     }
 }
 
@@ -705,7 +707,8 @@ impl Core {
                 PyValue::List(items) | PyValue::Tuple(items) => stack.extend(items.iter().rev()),
                 PyValue::Dict(d) => stack.extend(d.items().iter().rev().map(|(_, v)| v)),
                 PyValue::Page(r) if !self.page_values.contains_key(&r.id()) => {
-                    let doc = self.op_doc.ok_or_else(|| PyErr::new(ExcKind::RuntimeError, "a page without a document"))?;
+                    let doc =
+                        self.op_doc.ok_or_else(|| PyErr::new(ExcKind::RuntimeError, "a page without a document"))?;
                     let live = self
                         .handles
                         .iter()

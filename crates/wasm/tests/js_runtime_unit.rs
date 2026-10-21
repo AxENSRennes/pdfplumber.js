@@ -763,10 +763,13 @@ fn diagnostics_are_the_warnings_and_records_python_shows() {
             }
             shown
         });
-        assert_eq!(got, match value_view(&out) {
-            Js::Arr(entries) => entries,
-            other => panic!("{other:?}"),
-        });
+        assert_eq!(
+            got,
+            match value_view(&out) {
+                Js::Arr(entries) => entries,
+                other => panic!("{other:?}"),
+            }
+        );
     }
 }
 

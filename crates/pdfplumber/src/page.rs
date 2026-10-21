@@ -41,11 +41,11 @@ use pdfminer::psparser::{LiteralName, PSLiteral};
 use pdfminer::utils::{Matrix, PathSegment, Point};
 use pycompat::bytes_format::bytes_mod_int;
 use pycompat::call::Signature;
+use pycompat::codecs;
 use pycompat::recursion::{c_call, c_called_leaf, class_call, eval_entry, leaf, py_frame, py_frames};
 use pycompat::repr::bytes_repr;
 use pycompat::specialize::{AttrSite, CallSite};
 use pycompat::typing_cache::Subscription;
-use pycompat::codecs;
 use pycompat::{exc, ExcKind, Num, PyErr, PyInt, PyResult, PyStr};
 
 use crate::container::{Container, ContainerCache, Objects};
@@ -2118,7 +2118,8 @@ pub(crate) fn apply_crop_fn(crop_fn: CropFn, crop_bbox: &PyValue, objs: &[Obj]) 
 /// (`None` when not given), with the `TypeError`s of a keyword that is
 /// `chars` or none of `names`, for the first such key in order.
 fn bind_kwargs(func: &str, kwargs: &Kwargs, names: &[&str]) -> PyResult<Vec<Option<PyValue>>> {
-    Signature { qualname: func, bound: &["chars"], keywords: Some(names) }.bind(kwargs.items().iter().map(|(k, _)| k))?;
+    Signature { qualname: func, bound: &["chars"], keywords: Some(names) }
+        .bind(kwargs.items().iter().map(|(k, _)| k))?;
     Ok(names.iter().map(|n| kwargs.get(n).cloned()).collect())
 }
 

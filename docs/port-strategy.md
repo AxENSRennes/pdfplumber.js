@@ -346,7 +346,17 @@ Lecture :
      `doc_pages`, la recherche en deux appels, `filter` par un masque),
      `CreationOrder` par défaut ; préchargement possible des CMaps d'un
      document (le rejeu d'un appel nul refait le travail des appels
-     précédents).
+     précédents). Le contrat est fixé par les types (`public-api.md`,
+     « Asynchrony », correctifs de la revue de la vague 4) : `pdf.pages`
+     et `pdf.metadata` sont des promesses (pages paresseuses, comme
+     pdfplumber), les pages dérivées aussi ; une `Page` dans un résultat
+     est un `PageRef` (son handle). Restent ouverts, notés dans
+     `public-api.md` : les flux d'images copiés entiers dans chaque
+     résultat (`rawdata`/`data` : une référence et une opération pour les
+     octets seraient moins coûteuses), le texte des `log.*` de pdfminer
+     (seuls leurs cadres sont comptés), la copie profonde d'un document lu
+     depuis des octets par `structure_tree` (`copy.deepcopy` de tout le
+     `PDFDocument`, non modélisée).
   Les questions ouvertes sont notées dans les en-têtes des modules, dans
   `architecture.md` et dans `js-runtime.md` (`search` suit la sémantique
   `RegExp` de JS, choix documenté ; `atan2` et le fournisseur de CMaps sont

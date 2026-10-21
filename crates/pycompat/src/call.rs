@@ -61,7 +61,8 @@ mod tests {
 
     #[test]
     fn keywords_bind_in_order() {
-        let method = Signature { qualname: "Page.crop", bound: &["self", "bbox"], keywords: Some(&["relative", "strict"]) };
+        let method =
+            Signature { qualname: "Page.crop", bound: &["self", "bbox"], keywords: Some(&["relative", "strict"]) };
         assert!(method.bind(&names(&["strict", "relative"])).is_ok());
         let e = method.bind(&names(&["relative", "bbox", "nope"])).unwrap_err();
         assert_eq!(e.message, "Page.crop() got multiple values for argument 'bbox'");

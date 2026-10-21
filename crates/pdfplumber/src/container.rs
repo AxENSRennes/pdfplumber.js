@@ -320,7 +320,7 @@ pub trait Container {
         let _frame = py_frame()?;
         let data = self.to_dict(&options.object_types)?;
         let serialized = Serializer::new(options.precision.clone(), &options.include_attrs, &options.exclude_attrs)?
-        .serialize(&PyValue::Dict(data))?;
+            .serialize(&PyValue::Dict(data))?;
         let indent = match &options.indent {
             None => JsonIndent::None,
             Some(v) if v.is_none() => JsonIndent::None,

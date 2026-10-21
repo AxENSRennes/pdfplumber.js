@@ -239,11 +239,8 @@ fn laparams_from(laparams: &PyValue) -> PyResult<LAParams> {
         }
     };
     let mut values: [Option<PyValue>; 7] = Default::default();
-    let signature = pycompat::call::Signature {
-        qualname: "LAParams.__init__",
-        bound: &["self"],
-        keywords: Some(&LAPARAMS_NAMES),
-    };
+    let signature =
+        pycompat::call::Signature { qualname: "LAParams.__init__", bound: &["self"], keywords: Some(&LAPARAMS_NAMES) };
     for (k, v) in &pairs {
         let PyValue::Str(k) = k else { return Err(exc::TypeError("keywords must be strings")) };
         signature.bind([k])?;

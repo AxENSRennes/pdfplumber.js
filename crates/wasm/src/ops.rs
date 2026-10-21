@@ -896,7 +896,8 @@ impl Core {
             Target::Object(oid) => match self.live.get(&oid) {
                 Some(&h) => (h, None),
                 None => {
-                    let o = self.ghosts.remove(&oid).ok_or_else(|| format!("{}: its object was not made again", e.op))?;
+                    let o =
+                        self.ghosts.remove(&oid).ok_or_else(|| format!("{}: its object was not made again", e.op))?;
                     let h = self.handles.insert(o).ok_or_else(|| "too many handles".to_owned())?;
                     (h, Some(oid))
                 }
@@ -1015,7 +1016,8 @@ impl Core {
             return response(STATUS_NEED_CMAPS, FORMAT_BINARY, false, &encode_names(&missing), &none);
         }
         match result {
-            Ok(out) => match crate::wire::with_page_handles(std::mem::take(&mut self.page_values), || self.encode(out)) {
+            Ok(out) => match crate::wire::with_page_handles(std::mem::take(&mut self.page_values), || self.encode(out))
+            {
                 Ok((format, fixup, payload)) => response(STATUS_OK, format, fixup, &payload, &collected),
                 Err(e) => response(STATUS_ERROR, FORMAT_BINARY, false, &encode_error(&e), &collected),
             },
