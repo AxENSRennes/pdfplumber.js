@@ -9,10 +9,14 @@ the same `open()` entry point in Node and browsers. How the runtime works
 [`js-runtime.md`](js-runtime.md).
 
 > **Status.** The runtime, the errors, the warnings channel and the document
-> handle are in place. The page layer of the Rust port (`pdfplumber.page`,
-> `pdf`, the interpreter) has not landed yet: `pdf.pages`, `pdf.metadata` and
-> every page-level feature below throw `NotImplemented` until it does. Their
-> names, options and result types are fixed here and in the TypeScript types.
+> handle are in place, and the page layer of the Rust port (`pdfplumber.pdf`,
+> `page`, `container`, `structure`, the interpreter) is reachable through the
+> operations of the WebAssembly core (`js-runtime.md`, "Documents et pages"),
+> verified against Python by the tests. The public classes are wave 5: until
+> then `pdf.pages`, `pdf.metadata` and every page-level feature below throw
+> `NotImplemented`. Their names, options and result types are fixed here and
+> in the TypeScript types. `open()` already runs `pdfplumber.open`: it
+> rejects as Python raises (a wrong password, a file that is not a PDF).
 
 ## Entrypoint
 
@@ -38,7 +42,8 @@ Supported inputs (`PDFInput`):
 Supported `open()` options (`OpenOptions`), with pdfplumber's names:
 
 - `pages`: one-based page numbers to load.
-- `password`: password for encrypted PDFs (a string or bytes).
+- `password`: password for encrypted PDFs (a string; an unencrypted
+  document never reads it).
 - `laparams`: `LAParams` keyword arguments (layout analysis), or `null`.
 - `unicode_norm`: one of `NFC`, `NFKC`, `NFD`, or `NFKD`.
 - `raise_unicode_errors`, `strict_metadata`: as in pdfplumber.
@@ -196,6 +201,14 @@ Pages can derive filtered page views, kept by the core:
 Crop options support `relative` and `strict`. Dedupe options include
 `tolerance` and `extra_attrs`.
 
+`filter(testFunction)` runs the function on the parent page's objects, which
+it computes first, and hands the core the truth of each result; the derived
+page's test function looks each object up there. Python calls the function
+later, when the derived page's objects are computed, on the same objects:
+the results are the same, unless the parent's cache is flushed in between
+(`close()`), which the core reports as `NotImplemented` (its objects are new
+ones).
+
 ## Tables
 
 Table APIs expose pdfplumber-style table inputs and outputs:
@@ -253,6 +266,15 @@ After `close()`, a document opened from a path (`Source::Path` in Rust)
 raises `ValueError: seek of closed file` when an object not read before
 is needed, as in Python (a document read from bytes is the caller's
 stream, which `close()` leaves open).
+
+Depth: each operation of the core runs as one statement at the top level of
+a Python script (`oracle/unit/js_pages_run.py`: a property read at a site of
+its own, a method called with `**options`), so a `RecursionError` (a PDF
+nested near Python's limits) happens where it happens in that script. A
+statement written otherwise in Python (explicit keyword arguments instead of
+`**options`, a property read at a new site) takes up to two C recursion units
+more or less: it shows only at the C recursion limit (`js-runtime.md`,
+"Documents et pages").
 
 Not modelled either, without an error: the order Python gives a NaN coordinate in the sets of
 `cluster_objects` (words, lines, table edges) follows its memory address,

@@ -1684,7 +1684,11 @@ et `update_wrapper` de `Page.__init__`, `re.sub` de `process_object`,
 `warnings.warn`, `dataclasses.asdict`, `copy.deepcopy`,
 `reprlib.recursive_repr`, `json.dumps`, `csv`) ; le `str(s)` de
 `decode_text` est un site de `pycompat::specialize` (à déclarer dans
-`oracle/depth.py`, `_call_sites` : premier commit de PAGE, ci-dessus). Le code de la vague 1 (`utils/text.rs`, `table.rs`, géométrie,
+`oracle/depth.py`, `_call_sites` : premier commit de PAGE, ci-dessus) ;
+chaque chargement d'une propriété est un site de `LOAD_ATTR`
+(`pycompat::specialize::AttrSite`, jonction ci-dessous : deux unités C
+pendant le getter tant que l'instruction n'est pas spécialisée pour la
+classe de l'objet). Le code de la vague 1 (`utils/text.rs`, `table.rs`, géométrie,
 regroupement) ne compte pas de cadres : il ne récurse pas et pdfplumber
 l'appelle au niveau de l'utilisateur, sauf sur le chemin d'une propriété de
 la page qui l'interprète (`TableFinder.__init__` et `get_edges` vers
@@ -1728,6 +1732,80 @@ l'oracle) : une étape qui interprète des pages ne peut plus compter des
   à la main) ; `scripts/check.sh` natif et `wasm32-wasip1`, construction
   `dist`, porte de profondeur étendue aux fenêtres de `adv-plumber` et
   `adv-structure`.
+
+#### Réalisation de la jonction (branche `wave4/join`)
+
+- **Fusion** : `wave4/page` contenait déjà `wave4/doc` jusqu'à son dernier
+  commit (`fa24d87`) : la fusion est vide, sans conflit.
+- **Chargements de propriétés** (`pycompat::specialize::AttrSite`) :
+  `oracle.verify` des quatre étapes `plumber_*` sur `adv-interp` a montré
+  que ses fenêtres à la limite des unités C (`climit-*`, 40 à 48 fichiers
+  par étape) différaient : Python lève `RecursionError` en interprétant
+  sous `page.objects` → `parse_objects` → `self.layout`, le port non. Un
+  `LOAD_ATTR` d'une propriété, à sa première exécution, trouve la propriété
+  par `PyObject_GetAttr`, dont `property.__get__` appelle le getter depuis
+  le C : une entrée de la boucle d'évaluation, deux unités tenues pendant
+  tout le getter (l'interprétation de la page comprise) ; la seconde
+  exécution spécialise l'instruction (`LOAD_ATTR_PROPERTY`, le cadre du
+  getter poussé en ligne, sans unité). `AttrSite` suit le compteur
+  adaptatif de CPython 3.12 (`Include/internal/pycore_code.h` ;
+  `Python/bytecodes.c`, `LOAD_ATTR`, `LOAD_ATTR_PROPERTY` ;
+  `Python/specialize.c`, `_Py_Specialize_LoadAttr`) : réchauffement 1, la
+  classe pour laquelle l'instruction est spécialisée (son `tp_version_tag`
+  : un `Container.chars` lu sur une `Page` puis sur une `CroppedPage`
+  désoptimise), 52 échecs avant de se spécialiser de nouveau, le recul
+  exponentiel d'une spécialisation qui échoue (un attribut de classe,
+  `Page.pages = None`, lu par une instance). Chaque chargement d'une
+  propriété du code de pdfplumber porté est un site (`page.py` 22,
+  `container.py` 19, `pdf.py` 10, `structure.py` 3, `table.py` 6) ; le
+  `getattr(self, t + "s")` de `to_dict`/`to_csv` prend l'unité de l'appel
+  générique du builtin (première exécution, `CallSite::builtin_call`) et,
+  pour une propriété, l'entrée du getter, toujours (`getattr` n'est pas un
+  `LOAD_ATTR`). L'état des sites est un état du processus : remis à zéro
+  par `py_process::start`, saisi et remis par `pdfminer::process_state`.
+  Les étapes `plumber_*` de `pdftrace` modélisent leurs propres chargements
+  de propriétés dont le getter peut interpréter (`pdf.pages`,
+  `page.objects`, `page.chars`, `page.edges`, `page.annots`,
+  `page.layout`...) et les appels de méthodes liées avec `**kwargs`
+  (`CALL_FUNCTION_EX` appelle la méthode par `PyObject_Call` : deux unités),
+  sous lesquels l'interprétation recommence quand les objets d'une page ont
+  levé ; les chargements de getters bon marché (`width`, `height` de
+  `boxes`, `Table.bbox`/`rows`/`columns`) et les `CALL` de méthodes liées
+  sous lesquels rien de profond ne tourne sont laissés de côté (notés dans
+  les modules).
+- **Mot de passe** : `pdfminer` ne lit le mot de passe que pour un document
+  chiffré (`PDFDocument::open_with`) : un mot de passe d'un type que le port
+  ne modélise pas (`bytes`) ouvre un document non chiffré, comme Python
+  (`open.jsonl` de `js_runtime.py` en a un), et lève `NotPorted` (non
+  enveloppé) pour un document chiffré.
+- **Frontière Wasm** (`js-runtime.md`, « Documents et pages ») : le `PDF`
+  dans `Document::state`, les opérations des documents, pages, pages
+  dérivées et tables (`crates/wasm/src/pages.rs`), chacune l'instruction
+  d'un script Python au niveau du module (`ENTRY_DEPTH` : un cadre, deux
+  unités C ; une propriété à son site, une méthode avec `*args,
+  **kwargs`, `getattr` d'un nom), `oracle/unit/js_pages_run.py` ; un appel
+  nul remet les documents qu'il a atteints dans leur état d'avant lui en
+  rejouant leur historique. `Page::search_with` (un `main_group`
+  quelconque) et `Page::search_text` (la première moitié de `search`) pour
+  la recherche en deux appels ; `getattr(pdf, "pages")` donne les pages.
+- **Résultats** (`oracle.verify`, `heavy.sh`, `--timeout 600`, fournisseur
+  de CMaps passé) :
+  - `all` (1 853 fichiers, 20 premières pages) : `plumber_objects`
+    1 852/1 853 (`pdfjs-issue19624-text.pdf`, la limite connue de la clé
+    de contenu des `id()`, ci-dessus), `plumber_text`, `plumber_tables`,
+    `plumber_doc` 1 853/1 853 ;
+  - `adv-plumber` (131), `adv-structure` (441), `adv-pages` (285),
+    `adv-objects` (333) : les quatre étapes identiques ;
+  - `adv-interp` (353) : `plumber_objects` et `plumber_doc` 353/353,
+    `plumber_text` 336/353 et `plumber_tables` 341/353 : les fichiers
+    `op-*` et `text-*` aux coordonnées NaN, dont `cluster_objects` range
+    les NaN dans un `set` par leur adresse (écart documenté,
+    `public-api.md`) ; Python lui-même change cet ordre d'un processus à
+    l'autre (trois traces de `002-op-cm-0.pdf` relancées : un ordre, la
+    trace du cache : un autre) ; et `096-text-TL.pdf` dont l'oracle
+    `plumber_text` est tué par la limite de 5 Go de `heavy.sh` ;
+  - régression sur `quick` : `psparser`, `objects`, `streams`, `pages`,
+    `interp`, `fonts`, `layout` 150/150.
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 
