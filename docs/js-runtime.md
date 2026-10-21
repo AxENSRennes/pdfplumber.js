@@ -347,7 +347,7 @@ et ses pages derrière des handles.
   explicites, `to_dict`, `to_json`, `to_csv`, et ceux du document
   (`objects`, `edges`, `to_dict`, `to_json`, `to_csv`) ; `repr` d'un `/K`
   imbriqué et `str(s)` de `decode_text` sous `pdf.structure_tree`), cherchée
-  par dichotomie sur le script : 40 fenêtres de quatre profondeurs. Rejouées par `js_runtime_unit.rs`
+  par dichotomie sur le script : 38 fenêtres de quatre profondeurs. Rejouées par `js_runtime_unit.rs`
   (`page_operations_match_pdfplumber_through_the_boundary`, deux formats,
   un fil neuf par session) et par JS (Node, navigateurs, cœur direct et
   worker) avec la `RegExp` de JS pour `search`, dont les spans doivent être
