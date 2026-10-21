@@ -321,10 +321,12 @@ et ses pages derrière des handles.
   du processus est remis après le rejeu aussi. Le document est alors l'objet
   qu'a l'exécution unique de Python à ce point (caches des pages, flux
   décodés, décodages en place des métadonnées et de `Page.annots`), pas un
-  document rouvert. Un handle de page que JS libère reste une pierre
-  tombale (refusée à JS, sa page jetée) pour les rejeux des appels qui
-  l'ont utilisé ; libérer le document libère ses pages, ses tables et son
-  historique. Une opération n'atteint qu'un document. Le rejeu refait le
+  document rouvert. Un handle de page ou de table que JS libère reste une
+  pierre tombale (refusée à JS, sa page ou sa table jetée) pour les rejeux
+  des appels qui l'ont utilisé ; libérer le document libère ses pages, ses
+  tables et son historique ; `free` ne peut pas entrer dans une `sequence`
+  (un appel nul ne le déferait pas). Une opération n'atteint qu'un
+  document ; l'appel nul retire de l'historique les entrées de cet appel. Le rejeu refait le
   travail des appels précédents, une fois par CMap manquante (le
   préchargement des CMaps d'un document est une optimisation possible de
   la vague 5).
