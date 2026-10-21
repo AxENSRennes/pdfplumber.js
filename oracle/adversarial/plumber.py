@@ -66,7 +66,8 @@ convert.py, utils/pdfinternals.py and what they call):
   ``to_json``/``to_csv``, ``plumber_doc``);
 - ``climit-*`` (``cases_climit``): a ``Tf`` operand nested in arrays before
   ``SCENE`` (``str()`` of it, ``literal_name``, one C unit per level), on
-  one page and on two, at every nesting from two below the first at which
+  one page, on two, and before a tagged page's content (``element_bbox``
+  of ``plumber_doc`` reads the page's objects), at every nesting from two below the first at which
   a ``plumber_*`` stage raises ``RecursionError`` up to the C limit: each
   operation of the stages that interprets the page (the first, or every
   one while the objects raise and nothing is cached: ``plumber_objects``,
@@ -84,6 +85,7 @@ from typing import Any
 from ._common import write_corpus
 from ._pdf import Name, Raw, Ref
 from .interp import HELVETICA, Builder, first_failing, form_chain, type0, type3
+from .structure import CONTENT as STRUCT_CONTENT
 from .structure import elem, tagged
 
 Case = tuple[str, bytes, "str | None"]
@@ -738,6 +740,8 @@ def climit_kinds() -> dict[str, Any]:
         "tf-list": lambda n: doc([(page(n), {})]),
         # the second page's loads and calls specialized
         "tf-list-2pages": lambda n: doc([(page(n), {})] * 2),
+        # a structure tree: element_bbox reads the objects of the page
+        "tf-list-tagged": lambda n: tagged(contents={0: b"BT " + b"[" * n + b"]" * n + b" 10 Tf ET\n" + STRUCT_CONTENT}),
     }
 
 
