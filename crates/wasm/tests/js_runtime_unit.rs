@@ -221,7 +221,7 @@ fn a_void_call_leaves_no_state_and_its_rerun_matches_pdfminer() {
     on_thread(64 << 20, move || {
         let mut core = Core::new();
         ok(call(&mut core, "cmap_configure", 0, list(names.iter().map(|n| PyValue::str(n)).collect()), None));
-        let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(b"%PDF".to_vec()))) else {
+        let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(tiny_pdf(b"")))) else {
             panic!("a handle")
         };
         let doc = PyValue::from(doc as i64);
@@ -297,7 +297,7 @@ fn a_void_call_puts_the_process_state_back() {
         use pdfminer::cmapdb::CMapDB;
         let mut core = Core::new();
         ok(call(&mut core, "cmap_configure", 0, list(names.iter().map(|n| PyValue::str(n)).collect()), None));
-        let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(b"%PDF".to_vec()))) else {
+        let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(tiny_pdf(b"")))) else {
             panic!("a handle")
         };
         let doc = PyValue::from(doc as i64);

@@ -1520,6 +1520,12 @@ impl Obj {
         Rc::ptr_eq(&self.0, &other.0)
     }
 
+    /// The identity of the dict (`id(obj)`, for a table of objects by
+    /// identity: the masks of `Page.filter` at the JavaScript boundary).
+    pub fn id(&self) -> usize {
+        Rc::as_ptr(&self.0) as usize
+    }
+
     pub fn len(&self) -> usize {
         self.0.items.len()
     }

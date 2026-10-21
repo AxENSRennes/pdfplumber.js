@@ -625,3 +625,31 @@ pub fn on_thread<T: Send + 'static>(stack: usize, f: impl FnOnce() -> T + Send +
 /// The result formats a test runs in turn, each on a fresh thread: both
 /// natively, one under WebAssembly (no fresh thread for the second).
 pub const FORMATS: &[&str] = if cfg!(target_family = "wasm") { &["binary"] } else { &["binary", "json"] };
+
+/// A minimal valid PDF: one 200 x 200 page whose content stream is
+/// `content` (uncompressed), with a correct cross-reference table.
+pub fn tiny_pdf(content: &[u8]) -> Vec<u8> {
+    let mut out = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    let objects: Vec<Vec<u8>> = vec![
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << >> >>".to_vec(),
+        [format!("<< /Length {} >>\nstream\n", content.len()).as_bytes(), content, b"\nendstream"].concat(),
+    ];
+    for (i, o) in objects.iter().enumerate() {
+        offsets.push(out.len());
+        out.extend_from_slice(format!("{} 0 obj\n", i + 1).as_bytes());
+        out.extend_from_slice(o);
+        out.extend_from_slice(b"\nendobj\n");
+    }
+    let xref = out.len();
+    out.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes());
+    for o in offsets {
+        out.extend_from_slice(format!("{o:010} 00000 n \n").as_bytes());
+    }
+    out.extend_from_slice(
+        format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1).as_bytes(),
+    );
+    out
+}

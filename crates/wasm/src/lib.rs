@@ -6,7 +6,8 @@
 //! - `abi`: the exported functions (`pp_alloc`, `pp_call`...), no
 //!   `wasm-bindgen`.
 //! - `ops`: requests, responses and operations; the handle table
-//!   (`handles`) of the objects JavaScript holds.
+//!   (`handles`) of the objects JavaScript holds; `pages`: the operations
+//!   of documents and pages (pdfplumber's `PDF` and `Page`).
 //! - `wire`: the result encodings (binary `PJB1`, JSON) and the argument
 //!   decoding; `strings`: Python `str` (lone surrogates included) to UTF-16.
 //! - `errors`: a Python exception as JavaScript receives it.
@@ -20,5 +21,6 @@ pub mod cmaps;
 pub mod errors;
 pub mod handles;
 pub mod ops;
+pub mod pages;
 pub mod strings;
 pub mod wire;

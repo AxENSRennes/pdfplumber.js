@@ -242,7 +242,9 @@ Not modelled (the core raises `NotPorted` where Python would go on):
 - a `laparams` margin (`line_overlap`, `char_margin`, `line_margin`,
   `word_margin`) that is not a number: Python stores any value and fails
   at its first use in the layout analysis;
-- a `password` that is neither `null` nor a string;
+- a `password` that is neither `null` nor a string, given for an
+  encrypted document (an unencrypted one never reads it, in Python as in
+  the port);
 - `to_dict`/`to_csv` with an `object_types` entry that names a method
   (`"extract_word"` gives `extract_words`): Python serializes the bound
   method's `str()`.

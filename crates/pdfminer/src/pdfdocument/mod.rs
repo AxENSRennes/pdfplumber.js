@@ -141,6 +141,20 @@ impl PDFDocument {
     /// `fallback` and none is valid), the trailers, the encryption and the
     /// catalog.
     pub fn new(parser: PDFParser, password: &str, caching: bool, fallback: bool) -> PyResult<Rc<PDFDocument>> {
+        PDFDocument::new_with(parser, &|| Ok(password.to_owned()), caching, fallback)
+    }
+
+    /// [`PDFDocument::new`] with a password read only when the document is
+    /// encrypted (`_initialize_password(password)` is the only use of
+    /// `password` in `__init__`): pdfplumber passes any object its caller
+    /// gave, which an unencrypted document never looks at, and the port
+    /// models only a `str` (`password()` raises `NotPorted` for another).
+    pub fn new_with(
+        parser: PDFParser,
+        password: &dyn Fn() -> PyResult<String>,
+        caching: bool,
+        fallback: bool,
+    ) -> PyResult<Rc<PDFDocument>> {
         // the class is called (from C), then its __init__
         let _entry = eval_entry()?;
         let _frame = py_frame()?;
@@ -171,13 +185,23 @@ impl PDFDocument {
     /// (`caching=True`, `fallback=True`): `data` is the content of `fp`, an
     /// object of class `file`.
     pub fn open(data: Rc<[u8]>, file: FileKind, password: &str) -> PyResult<Rc<PDFDocument>> {
+        PDFDocument::open_with(data, file, &|| Ok(password.to_owned()))
+    }
+
+    /// [`PDFDocument::open`] with a password read only when the document is
+    /// encrypted (see [`PDFDocument::new_with`]).
+    pub fn open_with(
+        data: Rc<[u8]>,
+        file: FileKind,
+        password: &dyn Fn() -> PyResult<String>,
+    ) -> PyResult<Rc<PDFDocument>> {
         let parser = PDFParser::new(pycompat::io::BytesIO::new(data), file)?;
-        PDFDocument::new(parser, password, true, true)
+        PDFDocument::new_with(parser, password, true, true)
     }
 
     /// The rest of `__init__`, once the document exists (in the frame of
     /// `__init__`, taken by [`PDFDocument::new`]).
-    fn init(&self, password: &str, fallback: bool) -> PyResult<()> {
+    fn init(&self, password: &dyn Fn() -> PyResult<String>, fallback: bool) -> PyResult<()> {
         // Retrieve the information of each header that was appended
         // (maybe multiple times) at the end of the document.
         let found = self.with_parser(|p| {
@@ -222,7 +246,7 @@ impl PDFDocument {
                 };
                 let param = dict_value(&encrypt)?;
                 *self.encryption.borrow_mut() = Some((id_value, param));
-                self._initialize_password(password)?;
+                self._initialize_password(&password()?)?;
             }
             if let Some(info) = trailer.get("Info") {
                 let info = dict_value(&info)?;

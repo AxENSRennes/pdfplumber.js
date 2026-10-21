@@ -1875,12 +1875,42 @@ impl Page {
         args: SearchArgs,
         kwargs: &Kwargs,
     ) -> PyResult<Vec<Obj>> {
+        let main_group = args.main_group;
+        self.search_with(matches, args.return_groups, args.return_chars, &|_, _| Ok(main_group), kwargs)
+    }
+
+    // pdfplumber/page.py:509 Page.search
+    /// [`Page::search`] whose `main_group` is any value `m.group()` takes
+    /// (`TextMap::search_with`): the JavaScript boundary resolves it for
+    /// each match.
+    pub fn search_with(
+        &self,
+        matches: &mut dyn FnMut(&PyStr) -> PyResult<Vec<RegexMatch>>,
+        return_groups: bool,
+        return_chars: bool,
+        main_group: &dyn Fn(usize, &RegexMatch) -> PyResult<usize>,
+        kwargs: &Kwargs,
+    ) -> PyResult<Vec<Obj>> {
         let _frame = py_frame()?;
         let textmap = self.get_textmap(&tuplify_list_kwargs(kwargs)?)?;
         // TextMap.search
         let _search = py_frame()?;
         let found = matches(&textmap.as_string)?;
-        textmap.search(&found, args.return_groups, args.return_chars, args.main_group)
+        textmap.search_with(&found, return_groups, return_chars, main_group)
+    }
+
+    // pdfplumber/page.py:509 Page.search
+    /// The text `page.search(pattern, **kwargs)` runs its pattern over:
+    /// `self.get_textmap(**tuplify_list_kwargs(kwargs)).as_string`, in the
+    /// frame of `search`. The JavaScript boundary searches in two calls
+    /// (`docs/architecture.md`, "Frontière JavaScript"): this text, which
+    /// JavaScript's `RegExp` runs over, then [`Page::search_with`] with its
+    /// matches, which finds the text map in the cache this call filled; so
+    /// the text map is computed (the page interpreted, if it was not) at
+    /// the depth Python's `search` computes it.
+    pub fn search_text(&self, kwargs: &Kwargs) -> PyResult<PyStr> {
+        let _frame = py_frame()?;
+        Ok(self.get_textmap(&tuplify_list_kwargs(kwargs)?)?.as_string.clone())
     }
 
     // pdfplumber/page.py:529 Page.extract_text

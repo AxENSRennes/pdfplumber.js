@@ -721,7 +721,7 @@ fn big_stack(f: impl FnOnce() + Send + 'static) {
 fn doc_cmap_decode_falls_back_to_an_empty_cmap_on_cmap_not_found_only() {
     let mut core = Core::new();
     ok(call(&mut core, "cmap_configure", 0, list(vec![PyValue::str("X-Bad")]), None));
-    let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(b"%PDF".to_vec()))) else { panic!() };
+    let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(tiny_pdf(b"")))) else { panic!() };
     let doc = PyValue::from(doc as i64);
     let decode = |core: &mut Core, doc: &PyValue, name: &str, code: PyValue| {
         call(core, "doc_cmap_decode", 0, list(vec![doc.clone(), PyValue::str(name), code]), None)
@@ -900,12 +900,12 @@ fn documents_handles_formats_and_the_benchmark() {
 fn documents_handles_formats_and_the_benchmark_body() {
     let mut core = Core::new();
     let opts = PyValue::Dict(Obj::from_pairs([("password", PyValue::str("pw"))]));
-    let Js::Num(h) = ok(call(&mut core, "doc_open", 0, opts, Some(b"%PDF-1.4".to_vec()))) else { panic!("a handle") };
+    let Js::Num(h) = ok(call(&mut core, "doc_open", 0, opts, Some(tiny_pdf(b"")))) else { panic!("a handle") };
     let h = h as u32;
     assert_ne!(h, 0);
     assert_eq!(
         ok(call(&mut core, "doc_info", h, PyValue::None, None)),
-        obj(vec![("size", Js::Num(8.0)), ("options", obj(vec![("password", s("pw"))]))])
+        obj(vec![("size", Js::Num(tiny_pdf(b"").len() as f64)), ("options", obj(vec![("password", s("pw"))]))])
     );
     let info = ok(call(&mut core, "info", 0, PyValue::None, None));
     let expected = obj(vec![

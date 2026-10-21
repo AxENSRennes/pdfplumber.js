@@ -84,6 +84,22 @@ impl<T> Handles<T> {
         self.slots.iter_mut().filter_map(|s| s.value.as_mut())
     }
 
+    /// The live objects with their handles, in slot order.
+    pub fn iter(&self) -> impl Iterator<Item = (u32, &T)> {
+        self.slots
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| s.value.as_ref().map(|v| ((s.generation << INDEX_BITS) | i as u32, v)))
+    }
+
+    /// The live objects with their handles, in slot order.
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (u32, &mut T)> {
+        self.slots
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(i, s)| s.value.as_mut().map(|v| ((s.generation << INDEX_BITS) | i as u32, v)))
+    }
+
     /// The number of live objects.
     pub fn len(&self) -> usize {
         self.slots.len() - 1 - self.free.len()

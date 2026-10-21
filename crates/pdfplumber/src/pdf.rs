@@ -11,7 +11,9 @@
 //! deviations): a `laparams` margin that is not a number (Python stores
 //! any object and fails at its first use in the analysis; the port refuses
 //! it at `open` with `NotPorted`), a `password` that is neither `None` nor
-//! a `str` (`NotPorted`). After `close()`, the file of a `PDF` opened from
+//! a `str` given for an encrypted document (`NotPorted`, raised where
+//! pdfminer reads the password: an unencrypted document never does, as in
+//! Python). After `close()`, the file of a `PDF` opened from
 //! a path is closed (`PDFDocument::close_file`): a read of the document
 //! raises `ValueError: seek of closed file`, as in Python.
 //!
@@ -337,9 +339,12 @@ impl PDF {
             Some(l) if !l.is_none() => Some(laparams_from(l)?),
             _ => None,
         };
-        let password = password_str(&options.password)?;
-        let doc = match PDFDocument::open(data, file, &password) {
+        // `password or ""`, read by pdfminer only for an encrypted document
+        let password = || password_str(&options.password);
+        let doc = match PDFDocument::open_with(data, file, &password) {
             Ok(doc) => doc,
+            // a password the port does not model, as it is
+            Err(e) if e.kind == ExcKind::NotPorted => return Err(e),
             Err(e) => {
                 // raise PdfminerException(e): the class call of an
                 // Exception subclass without __init__ of its own

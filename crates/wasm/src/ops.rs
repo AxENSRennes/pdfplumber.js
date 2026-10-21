@@ -21,11 +21,17 @@
 //! missing CMaps the list of their names, both in `PJB1`; the payload of a
 //! result is in the format chosen by `set_format` (`PJB1` by default).
 //!
-//! The page layer is not ported yet: the operations here are the document
-//! handle (it keeps the bytes and options) and the parts of the core that
-//! exist, exposed for the JavaScript tests (text extraction, words, search
-//! spans, tables over objects given by JavaScript, predefined CMaps), plus
-//! the transport tests and the encoding benchmark.
+//! The operations: documents (`pdfplumber.open`, the `PDF` the handle
+//! keeps) and their pages, original and derived, whose operations are
+//! pdfplumber's (`crate::pages`); the parts of the core exposed for the
+//! JavaScript tests over objects given by JavaScript (text extraction,
+//! words, search spans, tables, predefined CMaps); the transport tests and
+//! the encoding benchmark.
+//!
+//! **Depth.** Every request runs as a statement at the top level of a
+//! Python script ([`ENTRY_DEPTH`]: one Python frame, two C units in use,
+//! measured by `oracle/unit/js_runtime.py`), so that a `RecursionError`
+//! happens where it happens in such a script.
 //!
 //! **Void calls.** A call that asked for a predefined CMap JavaScript has
 //! not handed over yet ([`cmaps`]) ran without it, as if pdfminer had no
@@ -33,15 +39,23 @@
 //! with every CMap installed (`PDFCIDFont.get_cmap_from_spec` caches an
 //! empty `CMap()` in the document's font cache). The call is void: its
 //! result and diagnostics are discarded, the handles it created are
-//! removed, and every object drops the state it derived ([`Object::reset`];
-//! a call can reach any object whose handle it was given, in any argument),
-//! so that the re-run computes everything again with the CMaps. The
-//! modeled state of the Python process is put back as it was before the
-//! call (`pdfminer::process_state`: symbols interned, `re` patterns
-//! compiled, logger caches, specialized call sites, the CMaps `CMapDB`
-//! cached), so that the re-run reaches Python's recursion limits where
-//! Python's single run with every CMap installed does.
+//! removed, and the modeled state of the Python process is put back as it
+//! was before the call (`pdfminer::process_state`: symbols interned, `re`
+//! patterns compiled, `typing` subscriptions cached, logger caches,
+//! specialized call sites, the CMaps `CMapDB` cached), so that the re-run
+//! reaches Python's recursion limits where Python's single run with every
+//! CMap installed does. The documents the call reached are put back as
+//! they were before it too: each drops its state (its `PDF`, the pages of
+//! its page handles, [`Object::reset`]), which [`Core`] then rebuilds by
+//! replaying, results and diagnostics discarded, every earlier call that
+//! reached the document ([`Entry`], from `doc_open` on), each refilling
+//! the handles it had created; the process state is put back after the
+//! replay too. So the document is the object Python's single run has at
+//! that point, caches, decoded streams and in-place changes included (the
+//! metadata decoding, `Page.annots`), not a document opened again: the
+//! re-run then sees what Python's next statement sees.
 
+use std::collections::VecDeque;
 use std::rc::Rc;
 
 use pdfminer::cmapdb::{Attrs, CMap, CMapBase, CMapDB, Unichr};
@@ -52,12 +66,14 @@ use pdfplumber::utils::text::{
     chars_to_textmap, dedupe_chars, extract_text_kwargs, extract_words_kwargs, Kwargs, RegexMatch, TextMap,
 };
 use pycompat::diagnostics::{self, Level};
+use pycompat::recursion::{with_depth, Depth, C_RECURSION_LIMIT};
 use pycompat::{exc, ExcKind, PyErr, PyInt, PyResult, PyStr};
 use rustc_hash::FxHashMap;
 
 use crate::cmaps;
 use crate::errors::write_error;
 use crate::handles::Handles;
+use crate::pages::{PageObj, TableObj};
 use crate::strings::PyStrRef;
 use crate::wire::binary::BinWriter;
 use crate::wire::json::JsonWriter;
@@ -90,22 +106,33 @@ impl Format {
     }
 }
 
+/// Where every request runs: a statement at the top level of a Python
+/// script (`python script.py`: the module's frame, and the two C units of
+/// the evaluation loop the interpreter entered; `depth_here()` there gives
+/// 1 frame and 9 998 units left, `oracle/unit/js_runtime.py`, `depth.json`).
+pub const ENTRY_DEPTH: Depth = Depth { py: 1, c: C_RECURSION_LIMIT - 9998 };
+
 /// A document: the bytes and the options of `open()`, and the state
 /// derived from them ([`DocState`]), dropped by [`Document::reset`] when a
-/// call is void and rebuilt from the bytes by the re-run.
+/// call that reached it is void, and rebuilt by the replay of the calls
+/// that reached it before (see the module documentation).
 pub struct Document {
     pub data: Rc<[u8]>,
     pub options: PyValue,
     pub state: DocState,
 }
 
-/// The state a document derives from its bytes. The page layer will keep
-/// pdfplumber's `PDF` here (its `PDFResourceManager` caches fonts, and with
-/// them the CMaps they loaded); today, the CMaps of `doc_cmap_decode`.
+/// The state a document derives from its bytes.
 #[derive(Default)]
 pub struct DocState {
+    /// pdfplumber's `PDF` (`pdfplumber.open(io.BytesIO(data),
+    /// **options)`): its `PDFDocument`, its `PDFResourceManager` (whose
+    /// font cache holds the fonts, with the CMaps they loaded), its pages
+    /// and their caches. `None` only between a reset and the replay that
+    /// rebuilds it.
+    pub pdf: Option<Rc<pdfplumber::pdf::PDF>>,
     /// CMaps by name, as fonts cache them (an empty `CMap()` for a name
-    /// `CMapDB` did not find).
+    /// `CMapDB` did not find): the test operation `doc_cmap_decode`.
     pub cmaps: FxHashMap<String, Rc<dyn CMapBase>>,
 }
 
@@ -119,23 +146,53 @@ impl Document {
 /// An object JavaScript holds a handle to.
 pub enum Object {
     Document(Document),
+    /// A page of a document, or a page derived from one (`crop`,
+    /// `filter`...).
+    Page(PageObj),
+    /// A table a page found (`Table.extract` runs on it).
+    Table(TableObj),
     TextMap(TextMap),
     /// A value kept for the benchmark, or derived by a test operation.
     Value(PyValue),
 }
 
 impl Object {
-    /// Drops what the object derived in calls (see the module
+    /// The document whose state the object holds (`None`: none).
+    pub fn document(&self, handle: u32) -> Option<u32> {
+        match self {
+            Object::Document(_) => Some(handle),
+            Object::Page(p) => Some(p.doc),
+            Object::Table(t) => Some(t.doc),
+            Object::TextMap(_) | Object::Value(_) => None,
+        }
+    }
+
+    /// Drops what the object derived from its document (see the module
     /// documentation, "Void calls"). Every variant says what it keeps.
     pub fn reset(&mut self) {
         match self {
             Object::Document(d) => d.reset(),
+            Object::Page(p) => p.page = None,
+            Object::Table(t) => t.table = None,
             // computed from the arguments of the call that made it, with
             // no CMap: nothing to drop
             Object::TextMap(_) => {}
             Object::Value(_) => {}
         }
     }
+}
+
+/// A call that reached a document (one operation of a request; those of
+/// a `sequence` each), replayed to rebuild the document after a void call.
+#[derive(Clone)]
+pub struct Entry {
+    pub op: String,
+    pub handle: u32,
+    pub args: PyValue,
+    pub data: Option<Rc<[u8]>>,
+    /// The handles it created, in order: the replay refills them.
+    pub created: Vec<u32>,
+    pub doc: u32,
 }
 
 /// A value written by hand.
@@ -150,12 +207,23 @@ pub enum Out {
     Encoded(Format, PyValue),
 }
 
-/// The state of the boundary: the handle table and the result format.
+/// The state of the boundary: the handle table, the result format, and
+/// the calls that reached each document.
 pub struct Core {
     pub handles: Handles<Object>,
     pub format: Format,
     /// The handles created by the running call (removed if it is void).
-    created: Vec<u32>,
+    pub(crate) created: Vec<u32>,
+    /// Every call that reached a live document, in order (see the module
+    /// documentation, "Void calls").
+    pub(crate) history: Vec<Entry>,
+    /// The document the running operation reached.
+    pub(crate) op_doc: Option<u32>,
+    /// The documents the running call reached.
+    pub(crate) touched: Vec<u32>,
+    /// While replaying: the handles the replayed operation created, which
+    /// it refills instead of creating new ones.
+    pub(crate) replay: Option<VecDeque<u32>>,
 }
 
 impl Default for Core {
@@ -164,15 +232,15 @@ impl Default for Core {
     }
 }
 
-fn arg(args: &[PyValue], i: usize) -> PyResult<&PyValue> {
+pub(crate) fn arg(args: &[PyValue], i: usize) -> PyResult<&PyValue> {
     args.get(i).ok_or_else(|| exc::TypeError(format!("missing argument {i}")))
 }
 
-fn seq(v: &PyValue) -> PyResult<&[PyValue]> {
+pub(crate) fn seq(v: &PyValue) -> PyResult<&[PyValue]> {
     v.as_seq().ok_or_else(|| exc::TypeError(format!("expected a list, got {}", v.type_name())))
 }
 
-fn objs(v: &PyValue) -> PyResult<Vec<Obj>> {
+pub(crate) fn objs(v: &PyValue) -> PyResult<Vec<Obj>> {
     seq(v)?
         .iter()
         .map(|o| match o {
@@ -182,7 +250,7 @@ fn objs(v: &PyValue) -> PyResult<Vec<Obj>> {
         .collect()
 }
 
-fn kwargs(v: &PyValue) -> PyResult<Kwargs> {
+pub(crate) fn kwargs(v: &PyValue) -> PyResult<Kwargs> {
     match v {
         PyValue::None => Ok(Obj::new()),
         PyValue::Dict(d) => Ok(d.clone()),
@@ -190,22 +258,22 @@ fn kwargs(v: &PyValue) -> PyResult<Kwargs> {
     }
 }
 
-fn int(v: &PyValue) -> PyResult<i64> {
+pub(crate) fn int(v: &PyValue) -> PyResult<i64> {
     match v {
         PyValue::Int(i) => i.as_i64().ok_or_else(|| exc::OverflowError("int too large")),
         other => Err(exc::TypeError(format!("expected an int, got {}", other.type_name()))),
     }
 }
 
-fn str_arg(v: &PyValue) -> PyResult<&str> {
+pub(crate) fn str_arg(v: &PyValue) -> PyResult<&str> {
     v.as_str().ok_or_else(|| exc::TypeError(format!("expected a str, got {}", v.type_name())))
 }
 
-fn handle(v: &PyValue) -> PyResult<u32> {
+pub(crate) fn handle(v: &PyValue) -> PyResult<u32> {
     u32::try_from(int(v)?).map_err(|_| exc::ValueError("invalid handle"))
 }
 
-fn list_of_objs(objs: Vec<Obj>) -> PyValue {
+pub(crate) fn list_of_objs(objs: Vec<Obj>) -> PyValue {
     PyValue::list(objs.into_iter().map(PyValue::Dict))
 }
 
@@ -242,7 +310,7 @@ impl TablePage for ObjectsPage {
     }
 }
 
-fn opt_bbox(b: &Option<Bbox>) -> PyValue {
+pub(crate) fn opt_bbox(b: &Option<Bbox>) -> PyValue {
     b.as_ref().map_or(PyValue::None, bbox_value)
 }
 
@@ -262,7 +330,7 @@ fn opt_bbox(b: &Option<Bbox>) -> PyValue {
 /// part), whose `m.group`, `m.start` and `m.end`, all `search` reads, are
 /// those of the named group (`named` is `None` for a pattern without named
 /// groups).
-fn group_index(index: &PyValue, m: &RegexMatch, named: Option<&NamedGroups>) -> PyResult<usize> {
+pub(crate) fn group_index(index: &PyValue, m: &RegexMatch, named: Option<&NamedGroups>) -> PyResult<usize> {
     let no_such_group = || exc::IndexError("no such group");
     match index {
         PyValue::Bool(b) => Ok(usize::from(*b)),
@@ -280,10 +348,10 @@ fn group_index(index: &PyValue, m: &RegexMatch, named: Option<&NamedGroups>) -> 
 }
 
 /// The named groups of a match: name → span (`None`: did not take part).
-type NamedGroups = Vec<(PyStr, Option<(usize, usize)>)>;
+pub(crate) type NamedGroups = Vec<(PyStr, Option<(usize, usize)>)>;
 
 /// UTF-16 offsets of a JavaScript match → code point offsets of `s`.
-struct Utf16Index {
+pub(crate) struct Utf16Index {
     /// `cp[u]`: the code point offset at UTF-16 offset `u`, `None` inside
     /// a surrogate pair.
     cp: Vec<Option<usize>>,
@@ -292,7 +360,7 @@ struct Utf16Index {
 impl Utf16Index {
     /// The offsets of `s` as JavaScript holds it (`PyStr::to_utf16`: a
     /// lone surrogate is one unit, a supplementary code point two).
-    fn new(s: &PyStr) -> Utf16Index {
+    pub(crate) fn new(s: &PyStr) -> Utf16Index {
         let mut cp = Vec::with_capacity(s.as_bytes().len() + 1);
         let mut n = 0;
         for (i, c) in s.code_points().enumerate() {
@@ -307,7 +375,7 @@ impl Utf16Index {
     }
 
     /// A JavaScript span (`[start, end]`, or `None`).
-    fn span(&self, s: &PyValue) -> PyResult<Option<(usize, usize)>> {
+    pub(crate) fn span(&self, s: &PyValue) -> PyResult<Option<(usize, usize)>> {
         match s {
             PyValue::None => Ok(None),
             s => {
@@ -330,17 +398,58 @@ impl Utf16Index {
 impl Core {
     pub fn new() -> Core {
         cmaps::install();
-        Core { handles: Handles::new(), format: Format::Binary, created: Vec::new() }
+        Core {
+            handles: Handles::new(),
+            format: Format::Binary,
+            created: Vec::new(),
+            history: Vec::new(),
+            op_doc: None,
+            touched: Vec::new(),
+            replay: None,
+        }
     }
 
-    fn insert(&mut self, o: Object) -> PyResult<PyValue> {
+    /// Stores a new object; while replaying, refills the handle the
+    /// replayed call created instead (a page freed since stays freed).
+    pub(crate) fn insert(&mut self, o: Object) -> PyResult<PyValue> {
+        if let Some(queue) = &mut self.replay {
+            let h = queue
+                .pop_front()
+                .ok_or_else(|| PyErr::new(ExcKind::RuntimeError, "replay: more handles than the call made"))?;
+            if let Some(slot) = self.handles.get_mut(h) {
+                let freed = matches!(slot, Object::Page(p) if p.freed);
+                *slot = o;
+                if let Object::Page(p) = slot {
+                    p.freed = freed;
+                }
+            }
+            return Ok(PyValue::Int(PyInt::from(h)));
+        }
         let h = self.handles.insert(o).ok_or_else(|| exc::MemoryError("too many handles"))?;
         self.created.push(h);
         Ok(PyValue::Int(PyInt::from(h)))
     }
 
+    /// Notes that the running operation reached the document `doc` (one
+    /// document per operation: its replay rebuilds that document only).
+    pub(crate) fn reach(&mut self, doc: u32) -> PyResult<()> {
+        match self.op_doc {
+            Some(d) if d != doc => return Err(exc::ValueError("an operation reaches two documents")),
+            _ => self.op_doc = Some(doc),
+        }
+        if !self.touched.contains(&doc) {
+            self.touched.push(doc);
+        }
+        Ok(())
+    }
+
     fn document(&mut self, h: &PyValue) -> PyResult<&mut Document> {
-        match self.handles.get_mut(handle(h)?) {
+        let h = handle(h)?;
+        if !matches!(self.handles.get(h), Some(Object::Document(_))) {
+            return Err(exc::ValueError("invalid handle"));
+        }
+        self.reach(h)?;
+        match self.handles.get_mut(h) {
             Some(Object::Document(d)) => Ok(d),
             _ => Err(exc::ValueError("invalid handle")),
         }
@@ -369,7 +478,7 @@ impl Core {
             }
             "echo" => args.clone(),
             "free" => {
-                self.handles.remove(h).ok_or_else(|| exc::ValueError("invalid handle"))?;
+                self.free(h)?;
                 PyValue::None
             }
             "test_values" => return Ok(Out::Written(Box::new(write_test_values))),
@@ -447,8 +556,13 @@ impl Core {
                 })));
             }
             "doc_open" => {
+                // pdfplumber.open(io.BytesIO(data), **options)
                 let data = data.ok_or_else(|| exc::TypeError("doc_open needs the PDF bytes"))?;
-                self.insert(Object::Document(Document { data, options: args.clone(), state: DocState::default() }))?
+                let pdf = crate::pages::open(&data, args)?;
+                let state = DocState { pdf: Some(Rc::new(pdf)), ..DocState::default() };
+                let h = self.insert(Object::Document(Document { data, options: args.clone(), state }))?;
+                self.reach(handle(&h)?)?;
+                h
             }
             "doc_cmap_decode" => {
                 // [document, name, code]: `cmap.decode(code)` with the CMap
@@ -490,7 +604,7 @@ impl Core {
                     if op == "sequence" {
                         return Err(exc::ValueError("nested sequence"));
                     }
-                    match self.op(op, handle(arg(r, 1)?)?, arg(r, 2)?, None)? {
+                    match self.run_op(op, handle(arg(r, 1)?)?, arg(r, 2)?, None)? {
                         Out::Value(v) => out.push(v),
                         _ => return Err(exc::ValueError(format!("{op} cannot run in a sequence"))),
                     }
@@ -624,19 +738,99 @@ impl Core {
                 };
                 return Ok(Out::Encoded(format, v));
             }
-            _ => return Err(exc::ValueError(format!("unknown operation {name:?}"))),
+            _ => match self.page_op(name, h, args)? {
+                Some(out) => return Ok(out),
+                None => return Err(exc::ValueError(format!("unknown operation {name:?}"))),
+            },
         }))
     }
 
+    /// Runs one operation and, when it reached a document (and is not a
+    /// replay), records it in the history.
+    pub(crate) fn run_op(&mut self, name: &str, h: u32, args: &PyValue, data: Option<Rc<[u8]>>) -> PyResult<Out> {
+        let start = self.created.len();
+        let outer = self.op_doc.take();
+        let result = self.op(name, h, args, data.clone());
+        if let Some(doc) = self.op_doc.take() {
+            if self.replay.is_none() && self.handles.get(doc).is_some() {
+                let created = self.created[start..].to_vec();
+                self.history.push(Entry { op: name.to_owned(), handle: h, args: args.clone(), data, created, doc });
+            }
+        }
+        self.op_doc = outer;
+        result
+    }
+
+    /// `free`: a document goes with its pages, tables and history; a page
+    /// becomes a tombstone (refused to JavaScript, its page dropped, but
+    /// kept for the replays of the calls that used it before); any other
+    /// object goes.
+    fn free(&mut self, h: u32) -> PyResult<()> {
+        match self.handles.get_mut(h) {
+            None => return Err(exc::ValueError("invalid handle")),
+            Some(Object::Page(p)) if p.freed => return Err(exc::ValueError("invalid handle")),
+            Some(Object::Page(p)) => {
+                p.freed = true;
+                p.page = None;
+                return Ok(());
+            }
+            Some(Object::Document(_)) => {
+                let owned: Vec<u32> =
+                    self.handles.iter().filter(|(k, o)| *k != h && o.document(*k) == Some(h)).map(|(k, _)| k).collect();
+                for k in owned {
+                    self.handles.remove(k);
+                }
+                self.history.retain(|e| e.doc != h);
+            }
+            Some(_) => {}
+        }
+        self.handles.remove(h);
+        Ok(())
+    }
+
     /// Undoes what a void call did (see the module documentation): removes
-    /// the handles it created and drops the derived state of every object.
-    fn void(&mut self) {
+    /// the handles it created and its calls from the history, puts the
+    /// process state back, and rebuilds the documents it reached by
+    /// replaying their history.
+    fn void(&mut self, history_len: usize, process: ProcessState) {
         for h in std::mem::take(&mut self.created) {
             self.handles.remove(h);
         }
-        for o in self.handles.values_mut() {
-            o.reset();
+        self.history.truncate(history_len);
+        process.restore();
+        let docs: Vec<u32> = std::mem::take(&mut self.touched)
+            .into_iter()
+            .filter(|d| matches!(self.handles.get(*d), Some(Object::Document(_))))
+            .collect();
+        if docs.is_empty() {
+            return;
         }
+        for (k, o) in self.handles.iter_mut() {
+            if o.document(k).is_some_and(|d| docs.contains(&d)) {
+                o.reset();
+            }
+        }
+        let process = ProcessState::capture();
+        let entries: Vec<Entry> = self.history.iter().filter(|e| docs.contains(&e.doc)).cloned().collect();
+        for e in entries {
+            self.replay = Some(e.created.iter().copied().collect());
+            // the result is the one the call returned before
+            let _ = with_depth(ENTRY_DEPTH, || self.op(&e.op, e.handle, &e.args, e.data.clone()));
+            self.replay = None;
+            self.op_doc = None;
+        }
+        for (_, o) in self.handles.iter_mut() {
+            if let Object::Page(p) = o {
+                if p.freed {
+                    p.page = None;
+                }
+            }
+        }
+        self.touched.clear();
+        // every CMap the replayed calls need was handed over before them
+        let missed = cmaps::take_missing();
+        debug_assert!(missed.is_empty(), "a replay missed a CMap: {missed:?}");
+        process.restore();
     }
 
     /// Runs a request (see the module documentation) and returns the
@@ -645,6 +839,9 @@ impl Core {
         let mut diag_level = None;
         let mut h = 0;
         self.created.clear();
+        self.touched.clear();
+        self.op_doc = None;
+        let history_len = self.history.len();
         let process = ProcessState::capture();
         let (result, collected) = {
             let parsed = binary::decode(request).and_then(|req| {
@@ -660,7 +857,7 @@ impl Core {
             match parsed {
                 Err(e) => (Err(e), diagnostics::Collected::default()),
                 Ok((op, args)) => {
-                    let run = || self.op(&op, h, &args, data);
+                    let run = || with_depth(ENTRY_DEPTH, || self.run_op(&op, h, &args, data));
                     match diag_level {
                         // above every level: nothing is enabled, nothing formatted
                         None => (run(), diagnostics::Collected::default()),
@@ -673,8 +870,7 @@ impl Core {
         if !missing.is_empty() {
             // the re-run emits its own diagnostics: Python's, once
             drop((result, collected));
-            self.void();
-            process.restore();
+            self.void(history_len, process);
             let none = diagnostics::Collected::default();
             return response(STATUS_NEED_CMAPS, FORMAT_BINARY, false, &encode_names(&missing), &none);
         }
