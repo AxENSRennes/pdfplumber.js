@@ -546,11 +546,26 @@ def _recursion(results: dict[str, Any]) -> bool:
     return any(isinstance(r, ExcValue) and "recursion" in r.message for r, _ in results["results"])
 
 
+#: Explicit table lines: ``find_tables`` reads no object of the page, so
+#: ``Table.extract`` computes them (``self.page.chars``).
+EXPLICIT = {"vertical_strategy": "explicit", "horizontal_strategy": "explicit",
+            "explicit_vertical_lines": [1, 50, 100], "explicit_horizontal_lines": [1, 50, 100]}
+
+
 def depth_session(make: Any, ops: list[tuple[str, tuple[Any, ...]]], n: int) -> list[list[Any]]:
+    """A document of nesting ``n`` and the operations, on its page (``doc:``
+    before a name: on the document; ``table:``: on the first table the
+    previous operation found)."""
     s = Session()
     doc, pages = s.open(make(n), pages=1)
     for op, args in ops:
-        s.add(op, pages[0], *args, js=args[0] if op == "search" else None)
+        target = pages[0]
+        if op.startswith("doc:"):
+            op, target = op[4:], doc
+        elif op.startswith("table:"):
+            op, target = op[6:], s.count - 1
+        makes = 1 if op in ("page_find_tables", "page_find_table") else 0
+        s.add(op, target, *args, js=args[0] if op == "search" else None, makes=makes)
     return s.cases
 
 
@@ -573,6 +588,23 @@ def depth_windows() -> Iterator[tuple[str, list[list[Any]]]]:
         ("climit-tf-list-chars", climit["tf-list"], [("page_attr", ("chars",))], 9000, 10100),
         ("climit-tf-list-text", climit["tf-list"], [("page_extract_text", ({},))], 9000, 10100),
         ("climit-do-list-search", climit["do-list"], [("search", ("a", {}))], 9000, 10100),
+        # every way into the interpretation from the boundary
+        ("climit-tf-list-words", climit["tf-list"], [("page_extract_words", ({},))], 9000, 10100),
+        ("climit-tf-list-simple", climit["tf-list"], [("page_extract_text_simple", ({},))], 9000, 10100),
+        ("climit-tf-list-lines", climit["tf-list"], [("page_extract_text_lines", (True, False, {}))], 9000, 10100),
+        ("climit-tf-list-edges", climit["tf-list"], [("page_attr", ("edges",))], 9000, 10100),
+        ("climit-tf-list-hedges", climit["tf-list"], [("page_attr", ("horizontal_edges",))], 9000, 10100),
+        ("climit-tf-list-rect-edges", climit["tf-list"], [("page_attr", ("rect_edges",))], 9000, 10100),
+        ("climit-tf-list-curve-edges", climit["tf-list"], [("page_attr", ("curve_edges",))], 9000, 10100),
+        ("climit-tf-list-tables", climit["tf-list"], [("page_find_tables", ())], 9000, 10100),
+        ("climit-tf-list-strict", climit["tf-list"], [("page_extract_tables", ({"vertical_strategy": "lines_strict", "horizontal_strategy": "lines_strict"},))], 9000, 10100),
+        ("climit-tf-list-table-extract", climit["tf-list"], [("page_find_tables", (EXPLICIT,)), ("table:table_extract", ({},))], 9000, 10100),
+        ("climit-tf-list-dedupe", climit["tf-list"], [("page_dedupe_chars", ({},))], 9000, 10100),
+        ("climit-tf-list-csv", climit["tf-list"], [("page_to_csv", ({},))], 9000, 10100),
+        ("climit-tf-list-dict", climit["tf-list"], [("page_to_dict", ({"object_types": ["line", "char"]},))], 9000, 10100),
+        ("climit-tf-list-doc-objects", climit["tf-list"], [("doc:doc_objects", ())], 9000, 10100),
+        ("climit-tf-list-doc-csv", climit["tf-list"], [("doc:doc_to_csv", ({},))], 9000, 10100),
+        ("climit-tf-list-doc-dict", climit["tf-list"], [("doc:doc_to_dict", ({"object_types": ["char"]},))], 9000, 10100),
     ]
     for label, make, ops, lo, hi in kinds:
         fails = lambda n: _recursion(run_session(depth_session(make, ops, n)))  # noqa: E731
