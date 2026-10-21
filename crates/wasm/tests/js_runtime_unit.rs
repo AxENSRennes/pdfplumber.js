@@ -611,7 +611,7 @@ fn replay_session(format: &str, name: &str, cases: &[Value], out: &Value) -> usi
         let h = objs.target(&case[1]);
         let Value::List(args) = &case[2] else { panic!("args") };
         let (want, extra) = (value_view(&expected[0]), &expected[1]);
-        let where_ = format!("{format} {name} {op} {:?}", &case[2]);
+        let where_ = format!("{format} {name} {op} {:?}", case[2]);
         let got = match op {
             "doc_open" => {
                 let data = match &case[3] {
