@@ -25,7 +25,7 @@ const ctx = {
 
 for (const codegen of [true, false]) {
   describe(codegen ? "runtime" : "runtime, rows built without code generation", () => {
-    for (const t of tests) {
+    for (const t of tests as { name: string; only?: string; todo?: string; run: (c: typeof ctx) => Promise<void> }[]) {
       if (t.todo) {
         it.todo(`${t.name} (${t.todo})`);
         continue;

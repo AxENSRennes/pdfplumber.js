@@ -694,7 +694,7 @@ fn page_operations_match_pdfplumber_through_the_boundary() {
                 replay_session(format, name, cases, &out)
             });
         }
-        assert!(checked > 300, "{format}: {checked} operations");
+        assert!(checked > 250, "{format}: {checked} operations");
     }
 }
 

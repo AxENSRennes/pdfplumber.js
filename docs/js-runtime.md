@@ -34,8 +34,8 @@ statut 2 (CMaps manquantes) : fetch/fs des fichiers, "cmap_add", même requête 
   donne que des adresses de tampons qu'il possède. La crate a ses propres
   lints (`unsafe_code = "deny"` au lieu du `forbid` de l'espace de travail)
   pour que seul `abi.rs` autorise les `#[no_mangle]`, que le lint couvre.
-- **Handles** (`crates/wasm/src/handles.rs`) : documents, pages (à venir),
-  text maps. Un handle `u32` = index (20 bits) + génération (12 bits) : un
+- **Handles** (`crates/wasm/src/handles.rs`) : documents, pages et pages
+  dérivées, tables, text maps. Un handle `u32` = index (20 bits) + génération (12 bits) : un
   handle libéré puis réutilisé est refusé (`ValueError("invalid handle")`).
 - **Requêtes** : `crates/wasm/src/ops.rs` ; une requête est la liste PJB1
   `[op, handle, args, niveau]` plus un tampon de données optionnel. La
@@ -181,8 +181,7 @@ son `__qualname__`, son MRO (linéarisation C3 des bases d'`ExcKind`, avec
 est le nom Python (`errors.ts`). Le MRO de chacune des 71 classes d'`ExcKind`
 est comparé à celui de CPython (`oracle/unit/js_runtime.py`,
 `exceptions.jsonl`), en Rust et dans chaque moteur. `NotPorted` (un chemin
-non porté) devient l'erreur JS `NotImplemented`, comme les fonctions de page
-en attendant la couche page.
+non porté) devient l'erreur JS `NotImplemented`.
 
 ## Diagnostics
 
@@ -226,17 +225,16 @@ dans `check.sh`).
   une CMap introuvable par un `CMap()` vide, que le cache des polices du
   document garde). L'appel est alors nul (`ops.rs`, « Void calls ») : la
   frontière jette son résultat et ses diagnostics, retire les handles qu'il
-  a créés, fait oublier à **chaque** objet l'état qu'il a dérivé
-  (`Object::reset` : un appel atteint tout objet dont il a reçu le handle,
-  dans n'importe quel argument ; `Document::state`, où la couche page
-  mettra le `PDF` de pdfplumber, reconstruit depuis les octets), remet
-  l'état modélisé du processus Python tel qu'il était avant l'appel
-  (`pdfminer::process_state` : noms internés, motifs `re` compilés, caches
-  des loggers, sites d'appel spécialisés, caches de `CMapDB` ; sans quoi la
-  relance trouverait, par exemple, compilé à la page 2 de l'appel nul un
-  motif que l'exécution unique de Python compile plus profond à la page 1,
-  et une `RecursionError` disparaîtrait), et répond « CMaps manquantes »
-  avec les noms. JS les récupère (`fetch` dans le navigateur et
+  a créés et ses appels de l'historique, remet l'état modélisé du
+  processus Python tel qu'il était avant l'appel (`pdfminer::process_state`
+  : noms internés, motifs `re` compilés, indices de `typing` en cache,
+  caches des loggers, sites d'appel et de `LOAD_ATTR` spécialisés, caches
+  de `CMapDB` ; sans quoi la relance trouverait, par exemple, compilé à la
+  page 2 de l'appel nul un motif que l'exécution unique de Python compile
+  plus profond à la page 1, et une `RecursionError` disparaîtrait), et
+  remet chaque document que l'appel a atteint dans l'état où il était
+  avant lui (ci-dessous, « Documents et pages ») ; puis il répond « CMaps
+  manquantes » avec les noms. JS les récupère (`fetch` dans le navigateur et
   le worker, `fs` sous Node, ou la fonction `cmaps.load` de `configure`), les
   passe au cœur (`cmap_add`) et relance la même requête, qui voit les CMaps
   dès le début : son résultat est celui de Python avec toutes les CMaps
@@ -264,8 +262,89 @@ dans `check.sh`).
   en Rust (`crates/wasm/tests/js_runtime_unit.rs`, fichiers zlib et
   décompressés) et dans chaque moteur. `documents.jsonl` garde deux documents
   CJK (`noembed-sjis.pdf`, `pr-136-example.pdf`) avec le texte de pdfplumber
-  et les CMaps chargées : le test JS correspondant est marqué *todo* jusqu'à
-  la couche page.
+  et les CMaps chargées : le test JS les ouvre, prend `pdf.pages` et le
+  texte de la page par les opérations de la frontière, et compare le texte
+  et les fichiers demandés (chacun une fois) ; la session `cjk` de
+  `pages.jsonl` (ci-dessous) les rejoue avec des pages dérivées.
+
+## Documents et pages
+
+`crates/wasm/src/pages.rs` (vague 4, jonction) : le `PDF` de pdfplumber
+et ses pages derrière des handles.
+
+- **Document** : `doc_open` (les octets et les mots-clés de
+  `pdfplumber.open`) exécute `pdfplumber.open(io.BytesIO(data),
+  **options)` : les erreurs d'ouverture sont celles de Python (mot de passe,
+  `/Root` absent, mot-clé inconnu), et le handle garde le `PDF`
+  (`Document::state`), son `PDFResourceManager` (le cache des polices du
+  document, avec leurs CMaps) et ses pages. Opérations : `doc_metadata`,
+  `doc_pages` (un handle par page de `pdf.pages`, avec sa géométrie :
+  `page_number`, `initial_doctop`, `rotation`, les boîtes, `bbox`,
+  `width`, `height`), `doc_objects`, `doc_attr` (`getattr(pdf, nom)` :
+  listes par sorte, arêtes, `pages`), `doc_annots`, `doc_hyperlinks`,
+  `doc_structure_tree`, `doc_to_dict`/`to_json`/`to_csv`, `doc_close`
+  (`PDF.close()`, sans libérer le handle : `free` le fait).
+- **Pages** : `page_info`, `page_objects`, `page_attr` (`getattr(page,
+  nom)` : `chars`, `rects`..., les arêtes, `annots`, `hyperlinks`,
+  `objects`), `page_structure_tree`, `page_extract_text`,
+  `page_extract_text_simple`, `page_extract_words`,
+  `page_extract_text_lines`, la recherche en deux appels
+  (`page_search_text` : le texte que parcourt le motif, celui de la carte
+  de `search`, calculée là où `search` la calcule ; JS y exécute sa
+  `RegExp` ; `page_search` prend les spans, comme `textmap_search`),
+  `page_crop`/`page_within_bbox`/`page_outside_bbox`,
+  `page_filter` (le masque que JS a calculé sur les objets du parent, par
+  sorte : la fonction de test le lit par identité ; des objets recalculés
+  après un `flush_cache` du parent ne sont pas dans le masque, `NotPorted`),
+  `page_dedupe_chars` (ces cinq donnent un handle de page dérivée),
+  `page_find_tables`/`page_find_table` (un handle par table),
+  `page_extract_tables`/`page_extract_table`, `page_to_dict`/`to_json`/
+  `to_csv`, `page_close`, et `table_extract` sur une table.
+- **Profondeur** : chaque requête est une instruction au niveau du module
+  d'un script Python (`ENTRY_DEPTH` : un cadre, deux unités C, mesurés par
+  le script) ; une propriété y est lue à un site qui lui est propre
+  (`pycompat::specialize::AttrSite` : le getter appelé depuis le C la
+  première fois, deux unités), une méthode appelée avec `*args, **kwargs`
+  (`CALL_FUNCTION_EX` : la méthode liée entrée depuis le C, deux unités),
+  un attribut par son nom avec `getattr`. Ce script est
+  `oracle/unit/js_pages_run.py` : une `RecursionError` arrive par la
+  frontière là où elle arrive dans ce script. Une instruction de Python
+  écrite autrement (des mots-clés explicites plutôt que `**options`, une
+  propriété lue à un site neuf) prend jusqu'à deux unités C de moins ou de
+  plus : visible seulement à la limite des unités C.
+- **Appels nuls** : un document que l'appel nul a atteint jette son état
+  (son `PDF`, les pages de ses handles de pages et de tables,
+  `Object::reset`), puis le cœur **rejoue son historique** : chaque appel
+  qui l'a atteint (de `doc_open` à l'appel précédent, ceux d'une
+  `sequence` un par un ; `Entry`), résultats et diagnostics jetés, depuis
+  `ENTRY_DEPTH`, chacun remplissant les handles qu'il avait créés ; l'état
+  du processus est remis après le rejeu aussi. Le document est alors l'objet
+  qu'a l'exécution unique de Python à ce point (caches des pages, flux
+  décodés, décodages en place des métadonnées et de `Page.annots`), pas un
+  document rouvert. Un handle de page que JS libère reste une pierre
+  tombale (refusée à JS, sa page jetée) pour les rejeux des appels qui
+  l'ont utilisé ; libérer le document libère ses pages, ses tables et son
+  historique. Une opération n'atteint qu'un document. Le rejeu refait le
+  travail des appels précédents, une fois par CMap manquante (le
+  préchargement des CMaps d'un document est une optimisation possible de
+  la vague 5).
+- **Tests** : `oracle/unit/js_runtime.py` exécute des sessions de cas
+  dans un processus neuf chacune, au niveau du module de
+  `js_pages_run.py` (`pages.jsonl`) : `documents` (toutes les opérations,
+  fichiers `micro` et upstream, options d'ouverture, erreurs), `cjk`
+  (CMaps paresseuses, appels nuls et rejeux), et des fenêtres autour de la
+  première profondeur qui lève `RecursionError` par la frontière (Form
+  XObjects imbriqués sous `objects`, `chars` et `extract_text`, tirets
+  imbriqués sous `to_json`, opérandes imbriqués à la limite des unités C
+  sous `objects`, `chars`, `extract_text` et `search`), cherchée par
+  dichotomie sur le script. Rejouées par `js_runtime_unit.rs`
+  (`page_operations_match_pdfplumber_through_the_boundary`, deux formats,
+  un fil neuf par session) et par JS (Node, navigateurs, cœur direct et
+  worker) avec la `RegExp` de JS pour `search`, dont les spans doivent être
+  ceux de `re` ; `a_void_call_rebuilds_its_document_by_replaying_its_history`
+  compare une session aux appels nuls (pages dérivées, page libérée,
+  caches) à la même session dans un cœur qui a toutes les CMaps dès le
+  départ.
 
 ## Paquet JS
 

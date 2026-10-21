@@ -610,11 +610,15 @@ impl Container for PDF {
     }
 
     /// `getattr(pdf, name)` for the attribute names of the container's
-    /// lists and edges. pdfplumber never takes one of a `PDF`:
-    /// `Container.to_csv` takes those of each page, `PDF.to_dict` has its
-    /// own keys (`metadata`, `pages`).
+    /// lists and edges, and `pages` (the `Page`s as values). pdfplumber
+    /// never takes one of a `PDF` (`Container.to_csv` takes those of each
+    /// page, `PDF.to_dict` has its own keys); the JavaScript boundary does
+    /// (`doc_attr`).
     fn attribute(&self, name: &PyStr) -> PyResult<PyValue> {
-        crate::container::container_attribute(self, "PDF", name)
+        match name.as_str() {
+            Some("pages") => Ok(PyValue::list(PDF::pages(self)?.iter().map(|p| PyValue::Page(p.as_value())))),
+            _ => crate::container::container_attribute(self, "PDF", name),
+        }
     }
 
     fn flush_cache(&self, properties: Option<&[&str]>) {
