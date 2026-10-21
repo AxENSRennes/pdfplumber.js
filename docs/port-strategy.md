@@ -305,7 +305,17 @@ Lecture :
   (`PDFObject::Str`), `Page.annots`/`hyperlinks`/`structure_tree`,
   fichier fermé par `PDF.close`, étape `plumber_doc` identique sur `all`
   et sur `adv-structure` (441 PDF, avec `plumber_objects`), rejouée par
-  `structure_unit`.
+  `structure_unit`. Chantier PAGE (`wave4/page`, `architecture.md`,
+  « Réalisation (branche `wave4/page`) ») : `pdf.py`, `page.py`,
+  `container.py`, `convert.py`, le reste de `utils/pdfinternals.py` ;
+  étapes `plumber_objects` (1 852/1 853 sur `all` : un fichier aux boîtes
+  de texte en double, limite documentée du rang des `id()`),
+  `plumber_text` et `plumber_tables` (1 853/1 853), les quatre étapes
+  identiques sur `adv-plumber` (131), rejouées par `plumber_unit` ;
+  balayages de profondeur de la couche page (`plumber_sweep`), qui ont
+  fait compter les annotations des fonctions imbriquées
+  (`pycompat::typing_cache`), `pathlib.Path` et les cadres de `table.py`
+  au-dessus des propriétés de la page.
 - **Vagues suivantes**, dans l'ordre des dépendances :
   1. **Vague 4** : pdfplumber `page`, `pdf`, `container`, `structure`,
      `convert` : étapes `plumber_objects`, `plumber_text`,

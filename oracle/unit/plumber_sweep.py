@@ -133,6 +133,7 @@ OPS: list[tuple[list[Any], str, dict[str, Any]]] = [
     (["to_json", {"indent": "\t", "object_types": ["line"]}], "none", {}),
     (["to_json", {"indent": True, "object_types": ["line"]}], "none", {}),
     (["close_identity"], "none", {}),
+    (["page_close"], "none", {}),
     (["to_csv", {"object_types": ["textboxhorizontal", "textlinehorizontal", "textboxvertical", "textlinevertical"]}],
      "none", {"laparams": {"detect_vertical": True}}),
     (["to_json", {"object_types": ["_rect_edge", "_edge", "_curve_edge"]}], "edges", {}),
@@ -207,6 +208,12 @@ def deep_apply(path: str, pdf: Any, page: Any, op: list[Any]) -> tuple[str, Any]
             pdf.close()
             o2 = page.objects
             return "ok", [o1 is o2, len(o2["char"]) if "char" in o2 else 0]
+        if name == "page_close":
+            o1 = page.objects
+            t1 = page.extract_text()
+            page.close()
+            o2 = page.objects
+            return "ok", [o1 is o2, t1 == page.extract_text()]
         if name == "pdf_to_csv":
             return "ok", pdf.to_csv(**op[1])
         if name == "find_tables":
@@ -248,7 +255,7 @@ def summarize(op: list[Any], value: Any) -> Any:
     """What a trace writes of an operation's value (in the stage body)."""
     name = op[0]
     if name in ("text", "derived", "extract_tables", "extract_table", "to_json", "to_csv", "edges_identity",
-                "pdf_edges_identity", "pdf_to_csv", "close_identity"):
+                "pdf_edges_identity", "pdf_to_csv", "close_identity", "page_close"):
         return value
     if name in ("objects", "derive", "pdf_objects"):
         return [[k, len(v)] for k, v in value.items()]

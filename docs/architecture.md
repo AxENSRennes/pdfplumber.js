@@ -1427,8 +1427,73 @@ dégénérés, `cases_depth` pour chaque chemin récursif
   `plumber_*` sur `adv-plumber`, `micro` et les petits fichiers de
   `quick`, les fenêtres de profondeur aussi depuis un et deux cadres plus
   bas ; `open.jsonl` : `pdfplumber.open` avec des `laparams`, `pages`,
-  `password`, `unicode_norm` de tout type), rejoué par
-  `crates/pdftrace/tests/plumber_unit.rs`.
+  `password`, `unicode_norm` de tout type ; `utils.jsonl` :
+  `decode_psl_list`, que pdfplumber n'appelle pas lui-même), rejoué par
+  `crates/pdftrace/tests/plumber_unit.rs` ; `oracle/unit/plumber_sweep.py`
+  (les balayages de profondeur ci-dessus, 396 sur six fichiers
+  d'`adv-plumber`), rejoué par `crates/pdftrace/tests/plumber_sweep.rs`.
+- **Résultats** (arbre final, fusion de `wave4/doc` comprise) :
+  `plumber_objects` sur `all` (20 premières pages) 1 852/1 853 (le
+  fichier aux boîtes en double, ci-dessus), `plumber_text` et
+  `plumber_tables` 1 853/1 853 ; les quatre étapes `plumber_*` identiques
+  sur `adv-plumber` (131 PDF) ; `plumber_unit` (1 236 traces d'étapes, 165
+  ouvertures, `utils`), `plumber_sweep` (396 balayages) ; `scripts/check.sh`
+  complet (natif, `wasm32-wasip1`, porte de profondeur, paquet JS).
+- **Mutations** (`--in-diff` de `762bbe5..HEAD`, `--profile mutants -j 1
+  --timeout 60`, `heavy.sh`, rejeux `plumber_unit` et `plumber_sweep`
+  avec `PLUMBER_FAIL_FAST`, les fonctions de DOC exclues) : passe
+  ordinaire 1 218 mutants (`page.rs` 363, `pdf.rs`/`convert.rs`/
+  `pdfinternals.rs`/`obj.rs`/`table.rs` 255, `container.rs` 212, `pycompat`
+  et `pdfminer` touchés 131, étapes 257) ; leurs survivants ont fait
+  écrire les balayages de profondeur (et trouver les cadres non comptés,
+  ci-dessus), les cas de `font-kinds` (le cas levait avant tout caractère :
+  `fix_fontname_bytes` n'était pas atteint), d'une image au flux vide, des
+  `/ID` de structure en tableaux de nombres, des mots de passe faux non
+  `str`, des formes `unicode_norm` à surrogates sur des caractères au texte
+  vide, de `decode_psl_list`, des identités de caches avant et après
+  `flush_cache`/`close`, des `getattr` de `to_dict`/`to_csv` ; ils ont fait
+  retirer du code mort (`Page::is_original`, `Page::process_object`,
+  `Objects::len`/`is_empty`, les bras propres au `PDF` de son `getattr`,
+  que pdfplumber ne prend jamais, la sortie anticipée de
+  `PyStr::replace`). Après les passes `--iterate` : `page.rs` 5
+  survivants, le reste de la bibliothèque 9, `pycompat` 3, étapes 25 ;
+  les mutants de `decode_text_value` et `resolve_and_decode_obj` (code de
+  DOC) et d'`io.rs` sont tués par `structure_unit` (passe croisée : 32
+  mutants, 15 tués, 2 délais, 14 non compilables, 1 survivant) ; passe
+  `Ok(..)` (`scripts/mutants-ok.sh`) 170 mutants, 132 tués, puis 53 sur
+  les 70 repassés après les cas, 3 survivants ; mutants à la main des
+  cadres (`py_frame`, `leaf`, `eval_entry`, `class_call`, `c_call`, les
+  `Subscription::eval` retirés, 198) : 55 tués.
+
+  Survivants, tous équivalents ou inatteignables :
+  - **unités C seules** (36 mutants à la main : `eval_entry` des appels
+    depuis le C, `class_call`, `c_call` de `PdfminerException`) : les
+    unités C en cours restent loin de la limite (10 000) tant que les
+    cadres Python, eux, l'atteignent avant (`resolve_all`, `Serializer` :
+    deux ou trois cadres par niveau) ;
+  - **cadres dominés** (107 mutants à la main, `iter_level` : la création
+    du générateur imbriqué et sa dernière reprise) : un cadre que chaque
+    balayage atteint après un chemin plus profond du même appel
+    (l'interprétation sous une opération sur une page neuve, `Serializer`
+    avant l'encodeur JSON, `Page.__init__` après `create_pages`, la
+    création d'un générateur imbriqué que sa dernière reprise égale) ;
+  - **valeurs que le port ne produit pas** : un `dict` Python dans les
+    attributs d'un objet du layout (`resolve_all_value`, 3 : ce sont des
+    objets PDF), une ligne de `to_csv` qui serait un `dict` PDF, la
+    comparaison de deux `Page` (`PageRef::ptr_eq`, `py_eq`), un `str`
+    d'objet PDF imbriqué sous `str()` (`render_counted`, 2), le `getattr`
+    d'un `PDF` (jamais pris) ;
+  - **écarts documentés** (`NotPorted`) : un `indent` au-delà de 2**20,
+    le `getattr` d'une méthode ;
+  - **équivalents** : `|` et `^` sur des bits disjoints (`b64encode`),
+    `seek_closed_error` (la lecture d'un fichier fermé vérifie aussi :
+    seule une position au-delà de 2**63, après `close`, distinguerait
+    l'ordre des deux erreurs), l'implémentation de `Debug` de `PageRef` ;
+  - **étapes** (harnais) : conditions redondantes (`Names` : un nom
+    d'image en ligne et un flux sans identifiant ; `annot_value` : les clés
+    `name`/`P` absentes du premier niveau), `select` (`% n` puis `% n`),
+    bornes du lecteur des `spans` sur un texte bien formé, le rang de
+    secours de `ContentIds` (jamais pris quand la trace concorde).
 
 ### Chantier DOC
 

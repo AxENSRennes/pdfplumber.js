@@ -183,6 +183,15 @@ fn deep_apply(case: &Case<'_>, pdf: &PDF, page: Option<&Rc<Page>>) -> PyResult<D
             let chars = o2.get("char").map_or(0, |c| c.len());
             Deep::Value(Value::List(vec![Value::Bool(Rc::ptr_eq(&o1, &o2)), int(chars)]))
         }
+        "page_close" => {
+            let p = page();
+            let o1 = p.objects()?;
+            let t1 = p.extract_text(&Kwargs::new())?;
+            p.close()?;
+            let o2 = p.objects()?;
+            let t2 = p.extract_text(&Kwargs::new())?;
+            Deep::Value(Value::List(vec![Value::Bool(Rc::ptr_eq(&o1, &o2)), Value::Bool(t1 == t2)]))
+        }
         "pdf_to_csv" => {
             let k = kwargs(&op[1]);
             let options = SerializeOptions {
