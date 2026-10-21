@@ -1806,6 +1806,24 @@ l'oracle) : une étape qui interprète des pages ne peut plus compter des
     `plumber_text` est tué par la limite de 5 Go de `heavy.sh` ;
   - régression sur `quick` : `psparser`, `objects`, `streams`, `pages`,
     `interp`, `fonts`, `layout` 150/150.
+- **Temps** (`quick`, 150 fichiers, 302 pages, 20 premières pages ;
+  Python mesuré dans le processus après les imports, `pdftrace` par
+  fichier, machine partagée) : `plumber_objects` 574 ms par page pour
+  Python, 152 ms pour `pdftrace` (×3,8) ; `plumber_text` 681 / 81 ms
+  (×8,4) ; `plumber_tables` 601 / 117 ms (×5,2) ; `plumber_doc` 765 /
+  217 ms (×3,5). Les traces dominent le temps de `pdftrace` (écriture
+  canonique de chaque objet). Sans trace (`crates/pdftrace/examples/
+  plumber_phases.rs` et son jumeau Python, mêmes fichiers) : ouverture
+  4,5 / 0,32 ms par page (×14), `page.layout` (interprétation et
+  périphérique) 73 / 5,7 ms (×13), `page.objects` 41 / 12,3 ms (×3,4),
+  `extract_text` 6,6 / 2,1 ms (×3,2), `extract_words` 4,7 / 1,6 ms (×3,1),
+  `find_tables` 6,0 / 1,8 ms (×3,3) ; en tout 137 / 24 ms (×5,7). Point
+  chaud : `page.objects` (`process_object` de chaque objet du layout :
+  `resolve_all`, dicts d'attributs, conversions de valeurs), la moitié du
+  temps du port hors traces, deux fois l'interprétation ; puis le code de
+  la vague 1 (texte, mots, tables), trois fois plus rapide que Python
+  seulement. Fichier lent relativement : `issue12841_reduced.pdf` (0,2 s
+  contre 0,07 s pour `plumber_objects`).
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 
