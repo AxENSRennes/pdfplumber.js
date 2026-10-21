@@ -5,12 +5,12 @@
  * of the public contract.
  */
 
-import { diagnosticsPolicy, getCore } from "./api.js";
+import { diagnosticsPolicy, dropCore, getCore } from "./api.js";
 import { WasmCore, decodeResponse, encodeRequest, type CallOptions, type Core } from "./core/runtime.js";
 import { compilePattern, matchSpans, type PatternOptions } from "./search.js";
 import type { Bbox, PDFObject, SearchResult, TableAxisGroup, Word } from "./types.js";
 
-export { WasmCore, decodeResponse, encodeRequest, getCore, diagnosticsPolicy };
+export { WasmCore, decodeResponse, encodeRequest, getCore, dropCore, diagnosticsPolicy };
 export { decodeBinary, decodeJson, encodeValue, encodeGeneralizedUtf8, decodeGeneralizedUtf8 } from "./core/wire.js";
 export { compilePattern, matchSpans, escapeRegExp } from "./search.js";
 export { CMAP_NAMES } from "./generated/cmap-names.js";

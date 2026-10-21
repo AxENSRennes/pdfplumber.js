@@ -41,6 +41,8 @@ use pdfplumber::page::{CropFn, FilterFn, Page};
 use pdfplumber::pdf::{OpenOptions, Source, PDF};
 use pdfplumber::table::{CellGroup, Table};
 use pdfplumber::utils::text::RegexMatch;
+use pycompat::recursion::{eval_entry, Guard};
+use pycompat::specialize::{AttrSite, CallSite};
 use pycompat::{exc, ExcKind, PyErr, PyResult, PyStr};
 use rustc_hash::FxHashMap;
 
@@ -118,20 +120,11 @@ fn str_list(v: &PyValue) -> PyResult<Option<Vec<PyStr>>> {
 /// The keyword arguments of `to_json`, `to_csv` and `to_dict`
 /// (`object_types`, `include_attrs`, `exclude_attrs`, `precision`,
 /// `indent`); `stream` is not one: the text is returned.
-fn serialize_options(v: &PyValue) -> PyResult<SerializeOptions> {
+fn serialize_options(v: &PyValue, func: &str, names: &[&str]) -> PyResult<SerializeOptions> {
     let k = kwargs(v)?;
+    check_keywords(&k, func, names)?;
     let none = PyValue::None;
     let get = |name: &str| k.get(name).unwrap_or(&none);
-    for (name, _) in k.items() {
-        if !["object_types", "include_attrs", "exclude_attrs", "precision", "indent"]
-            .contains(&&*name.to_string_lossy())
-        {
-            return Err(PyErr::with_message(
-                ExcKind::TypeError,
-                &PyStr::new("got an unexpected keyword argument ").concat(&PyStr::from(name.repr())),
-            ));
-        }
-    }
     Ok(SerializeOptions {
         object_types: str_list(get("object_types"))?,
         include_attrs: str_list(get("include_attrs"))?,
@@ -140,6 +133,24 @@ fn serialize_options(v: &PyValue) -> PyResult<SerializeOptions> {
         indent: k.get("indent").cloned().filter(|p| !p.is_none()),
     })
 }
+
+/// The `TypeError` of a call of `func` (its `__qualname__`) with a
+/// keyword argument it does not take (`names`; `stream` is not one here).
+fn check_keywords(kwargs: &Obj, func: &str, names: &[&str]) -> PyResult<()> {
+    for (name, _) in kwargs.items() {
+        if !names.iter().any(|n| *name == **n) {
+            return Err(PyErr::with_message(
+                ExcKind::TypeError,
+                &PyStr::new(&format!("{func}() got an unexpected keyword argument ")).concat(&PyStr::from(name.repr())),
+            ));
+        }
+    }
+    Ok(())
+}
+
+const TO_DICT: &[&str] = &["object_types"];
+const TO_JSON: &[&str] = &["object_types", "include_attrs", "exclude_attrs", "precision", "indent"];
+const TO_CSV: &[&str] = &["object_types", "precision", "include_attrs", "exclude_attrs"];
 
 /// `TableSettings.resolve(settings)` of a `None` or a dict.
 fn table_settings(v: &PyValue) -> PyResult<Option<Obj>> {
@@ -178,7 +189,7 @@ fn rows_value(rows: Vec<Vec<Option<PyStr>>>) -> PyValue {
 /// The geometry of a page: what `Page.__init__` sets (`page_number`,
 /// `initial_doctop`, `rotation`, `mediabox`, `cropbox`, the optional
 /// boxes when the page has them, `bbox`), and `width`/`height`.
-fn page_geometry(page: &Page) -> PyResult<Obj> {
+fn page_geometry(page: &Page, width: &AttrSite, height: &AttrSite) -> PyResult<Obj> {
     let mut d = Obj::from_pairs([
         ("page_number", PyValue::Int(page.page_number.clone())),
         ("initial_doctop", page.initial_doctop.clone()),
@@ -192,8 +203,8 @@ fn page_geometry(page: &Page) -> PyResult<Obj> {
         }
     }
     d.set("bbox", page.bbox.clone());
-    d.set("width", page.width()?);
-    d.set("height", page.height()?);
+    d.set("width", width.get(page.class_name(), || page.width())?);
+    d.set("height", height.get(page.class_name(), || page.height())?);
     Ok(d)
 }
 
@@ -241,6 +252,38 @@ fn mask_filter(parent: &Page, mask: &PyValue) -> PyResult<FilterFn> {
     }))
 }
 
+// The sites of the statements of `oracle/unit/js_pages_run.py`
+// (`pycompat::specialize`): one per operation, as one statement of a
+// script runs every call of that operation.
+static DOC_PAGES: AttrSite = AttrSite::new("js doc_pages obj.pages");
+static DOC_PAGES_WIDTH: AttrSite = AttrSite::new("js doc_pages p.width");
+static DOC_PAGES_HEIGHT: AttrSite = AttrSite::new("js doc_pages p.height");
+static DOC_OBJECTS: AttrSite = AttrSite::new("js doc_objects obj.objects");
+static DOC_ATTR: CallSite = CallSite::new("js doc_attr getattr(obj, name)");
+static DOC_ANNOTS: AttrSite = AttrSite::new("js doc_annots obj.annots");
+static DOC_HYPERLINKS: AttrSite = AttrSite::new("js doc_hyperlinks obj.hyperlinks");
+static DOC_STRUCTURE_TREE: AttrSite = AttrSite::new("js doc_structure_tree obj.structure_tree");
+static PAGE_INFO_WIDTH: AttrSite = AttrSite::new("js page_info obj.width");
+static PAGE_INFO_HEIGHT: AttrSite = AttrSite::new("js page_info obj.height");
+static PAGE_OBJECTS: AttrSite = AttrSite::new("js page_objects obj.objects");
+static PAGE_ATTR: CallSite = CallSite::new("js page_attr getattr(obj, name)");
+static PAGE_STRUCTURE_TREE: AttrSite = AttrSite::new("js page_structure_tree obj.structure_tree");
+
+/// `obj.method(*args, **kwargs)`: `CALL_FUNCTION_EX` calls the bound
+/// method through `PyObject_Call`, which enters its frame from C (the two
+/// units of an evaluation loop entry, held while it runs).
+fn method_call() -> PyResult<Guard> {
+    eval_entry()
+}
+
+/// A `str` argument.
+fn str_arg(v: &PyValue) -> PyResult<PyStr> {
+    match v {
+        PyValue::Str(s) => Ok(s.clone()),
+        other => Err(exc::TypeError(format!("expected a str, got {}", other.type_name()))),
+    }
+}
+
 impl Core {
     /// The `PDF` of the document `h` (the operation reaches it).
     fn pdf(&mut self, h: u32) -> PyResult<Rc<PDF>> {
@@ -277,73 +320,117 @@ impl Core {
     }
 
     /// The operations of documents, pages and tables; `None` for a name
-    /// that is none of them.
+    /// that is none of them. Each is the statement of
+    /// `oracle/unit/js_pages_run.py`: a property load at its own site, a
+    /// method called with `*args, **kwargs` (`CALL_FUNCTION_EX`: the bound
+    /// method from C, [`method_call`]), `getattr` of a name.
     pub(crate) fn page_op(&mut self, name: &str, h: u32, args: &PyValue) -> PyResult<Option<Out>> {
         let a = || seq(args);
         let value = match name {
             // documents (`h`: the document)
             "doc_metadata" => self.pdf(h)?.metadata_value(),
             "doc_pages" => {
-                // pdf.pages
-                let pages = self.pdf(h)?.pages()?;
+                // pages = pdf.pages, then each page's handle and geometry
+                let pdf = self.pdf(h)?;
+                let pages = DOC_PAGES.get("PDF", || pdf.pages())?;
                 let mut out = Vec::with_capacity(pages.len());
                 for p in pages {
-                    let mut info = page_geometry(&p)?;
-                    let handle = self.insert_page(h, p)?;
-                    let mut d = Obj::from_pairs([("handle", handle)]);
-                    for (k, v) in info.items() {
+                    let mut d = Obj::from_pairs([("handle", self.insert_page(h, p.clone())?)]);
+                    for (k, v) in page_geometry(&p, &DOC_PAGES_WIDTH, &DOC_PAGES_HEIGHT)?.items() {
                         d.set(k, v.clone());
                     }
-                    info = d;
-                    out.push(PyValue::Dict(info));
+                    out.push(PyValue::Dict(d));
                 }
                 PyValue::list(out)
             }
-            "doc_objects" => objects_value(&*self.pdf(h)?.objects()?),
+            "doc_objects" => {
+                let pdf = self.pdf(h)?;
+                objects_value(&*DOC_OBJECTS.get("PDF", || pdf.objects())?)
+            }
             "doc_attr" => {
                 // getattr(pdf, name): the lists by kind, the edges
-                let name = match arg(a()?, 0)? {
-                    PyValue::Str(s) => s.clone(),
-                    other => return Err(exc::TypeError(format!("expected a str, got {}", other.type_name()))),
-                };
-                self.pdf(h)?.attribute(&name)?
+                let name = str_arg(arg(a()?, 0)?)?;
+                pdfplumber::container::getattr(&*self.pdf(h)?, &name, &DOC_ATTR)?
             }
-            "doc_annots" => list_of_objs(self.pdf(h)?.annots()?),
-            "doc_hyperlinks" => list_of_objs(self.pdf(h)?.hyperlinks()?),
-            "doc_structure_tree" => PyValue::list(self.pdf(h)?.structure_tree()?),
+            "doc_annots" => {
+                let pdf = self.pdf(h)?;
+                list_of_objs(DOC_ANNOTS.get("PDF", || pdf.annots())?)
+            }
+            "doc_hyperlinks" => {
+                let pdf = self.pdf(h)?;
+                list_of_objs(DOC_HYPERLINKS.get("PDF", || pdf.hyperlinks())?)
+            }
+            "doc_structure_tree" => {
+                let pdf = self.pdf(h)?;
+                PyValue::list(DOC_STRUCTURE_TREE.get("PDF", || pdf.structure_tree())?)
+            }
             "doc_to_dict" => {
-                let o = serialize_options(arg(a()?, 0)?)?;
-                PyValue::Dict(self.pdf(h)?.to_dict(o.object_types.as_deref())?)
+                let pdf = self.pdf(h)?;
+                let _call = method_call()?;
+                let o = serialize_options(arg(a()?, 0)?, "PDF.to_dict", TO_DICT)?;
+                PyValue::Dict(pdf.to_dict(o.object_types.as_deref())?)
             }
-            "doc_to_json" => PyValue::Str(self.pdf(h)?.to_json(&serialize_options(arg(a()?, 0)?)?)?),
-            "doc_to_csv" => PyValue::Str(self.pdf(h)?.to_csv(&serialize_options(arg(a()?, 0)?)?)?),
+            "doc_to_json" => {
+                let pdf = self.pdf(h)?;
+                let _call = method_call()?;
+                PyValue::Str(pdf.to_json(&serialize_options(arg(a()?, 0)?, "Container.to_json", TO_JSON)?)?)
+            }
+            "doc_to_csv" => {
+                let pdf = self.pdf(h)?;
+                let _call = method_call()?;
+                PyValue::Str(pdf.to_csv(&serialize_options(arg(a()?, 0)?, "Container.to_csv", TO_CSV)?)?)
+            }
             "doc_close" => {
-                self.pdf(h)?.close()?;
+                let pdf = self.pdf(h)?;
+                let _call = method_call()?;
+                pdf.close()?;
                 PyValue::None
             }
             // pages (`h`: the page)
-            "page_info" => PyValue::Dict(page_geometry(&*self.page(h)?)?),
-            "page_objects" => objects_value(&*self.page(h)?.objects()?),
+            "page_info" => PyValue::Dict(page_geometry(&*self.page(h)?, &PAGE_INFO_WIDTH, &PAGE_INFO_HEIGHT)?),
+            "page_objects" => {
+                let page = self.page(h)?;
+                objects_value(&*PAGE_OBJECTS.get(page.class_name(), || page.objects())?)
+            }
             "page_attr" => {
                 // getattr(page, name): chars, rects, ..., edges, annots,
                 // hyperlinks, objects
-                let name = match arg(a()?, 0)? {
-                    PyValue::Str(s) => s.clone(),
-                    other => return Err(exc::TypeError(format!("expected a str, got {}", other.type_name()))),
-                };
-                self.page(h)?.attribute(&name)?
+                let name = str_arg(arg(a()?, 0)?)?;
+                pdfplumber::container::getattr(&*self.page(h)?, &name, &PAGE_ATTR)?
             }
-            "page_structure_tree" => PyValue::list(self.page(h)?.structure_tree()?),
-            "page_extract_text" => PyValue::Str(self.page(h)?.extract_text(&kwargs(arg(a()?, 0)?)?)?),
-            "page_extract_text_simple" => PyValue::Str(self.page(h)?.extract_text_simple(&kwargs(arg(a()?, 0)?)?)?),
-            "page_extract_words" => list_of_objs(self.page(h)?.extract_words(&kwargs(arg(a()?, 0)?)?)?),
+            "page_structure_tree" => {
+                let page = self.page(h)?;
+                PyValue::list(PAGE_STRUCTURE_TREE.get(page.class_name(), || page.structure_tree())?)
+            }
+            "page_extract_text" => {
+                let page = self.page(h)?;
+                let _call = method_call()?;
+                PyValue::Str(page.extract_text(&kwargs(arg(a()?, 0)?)?)?)
+            }
+            "page_extract_text_simple" => {
+                let page = self.page(h)?;
+                let _call = method_call()?;
+                PyValue::Str(page.extract_text_simple(&kwargs(arg(a()?, 0)?)?)?)
+            }
+            "page_extract_words" => {
+                let page = self.page(h)?;
+                let _call = method_call()?;
+                list_of_objs(page.extract_words(&kwargs(arg(a()?, 0)?)?)?)
+            }
             "page_extract_text_lines" => {
                 // [strip, return_chars, kwargs]
                 let a = a()?;
+                let page = self.page(h)?;
+                let _call = method_call()?;
                 let (strip, chars) = (arg(a, 0)?.truthy(), arg(a, 1)?.truthy());
-                list_of_objs(self.page(h)?.extract_text_lines(strip, chars, &kwargs(arg(a, 2)?)?)?)
+                list_of_objs(page.extract_text_lines(strip, chars, &kwargs(arg(a, 2)?)?)?)
             }
-            "page_search_text" => PyValue::Str(self.page(h)?.search_text(&kwargs(arg(a()?, 0)?)?)?),
+            "page_search_text" => {
+                // the first half of `page.search(pattern, **options)`
+                let page = self.page(h)?;
+                let _call = method_call()?;
+                PyValue::Str(page.search_text(&kwargs(arg(a()?, 0)?)?)?)
+            }
             "page_search" => {
                 // [kwargs, matches, return_groups, return_chars, main_group,
                 // named], as `textmap_search` (crate::ops) takes them
@@ -387,23 +474,29 @@ impl Core {
                     group_index(&main_group, m, named.as_ref().map(|n| &n[k]))
                 };
                 let kw = kwargs(arg(a, 0)?)?;
+                let _call = method_call()?;
                 list_of_objs(page.search_with(&mut read, return_groups, return_chars, &group, &kw)?)
             }
             "page_crop" | "page_within_bbox" | "page_outside_bbox" => {
-                // [bbox, relative, strict]
+                // page.crop(bbox, **kwargs): [bbox, {relative, strict}]
                 let a = a()?;
-                let crop_fn = match name {
-                    "page_crop" => CropFn::CropToBbox,
-                    "page_within_bbox" => CropFn::WithinBbox,
-                    _ => CropFn::OutsideBbox,
+                let (crop_fn, func) = match name {
+                    "page_crop" => (CropFn::CropToBbox, "Page.crop"),
+                    "page_within_bbox" => (CropFn::WithinBbox, "Page.within_bbox"),
+                    _ => (CropFn::OutsideBbox, "Page.outside_bbox"),
                 };
                 let page = self.page(h)?;
-                let derived = page.crop(arg(a, 0)?.clone(), crop_fn, arg(a, 1)?.truthy(), arg(a, 2)?.truthy())?;
+                let _call = method_call()?;
+                let kw = kwargs(a.get(1).unwrap_or(&PyValue::None))?;
+                check_keywords(&kw, func, &["relative", "strict"])?;
+                let relative = kw.get("relative").is_some_and(PyValue::truthy);
+                let strict = kw.get("strict").is_none_or(PyValue::truthy);
+                let derived = page.crop(arg(a, 0)?.clone(), crop_fn, relative, strict)?;
                 let handle = self.insert_page(self.page_doc(h), derived.clone())?;
                 derived_value(handle, &derived)
             }
             "page_filter" => {
-                // [mask]: {kind: [truth of each object]}
+                // page.filter(test): [mask], {kind: [truth of each object]}
                 let page = self.page(h)?;
                 let test = mask_filter(&page, arg(a()?, 0)?)?;
                 let derived = page.filter(test)?;
@@ -412,13 +505,16 @@ impl Core {
             }
             "page_dedupe_chars" => {
                 let page = self.page(h)?;
+                let _call = method_call()?;
                 let derived = page.dedupe_chars(&kwargs(arg(a()?, 0)?)?)?;
                 let handle = self.insert_page(self.page_doc(h), derived.clone())?;
                 derived_value(handle, &derived)
             }
             "page_find_tables" => {
+                // page.find_tables(*args): [] or [settings]
                 let page = self.page(h)?;
-                let tables = page.find_tables(table_settings(arg(a()?, 0)?)?.as_ref())?;
+                let _call = method_call()?;
+                let tables = page.find_tables(table_settings(a()?.first().unwrap_or(&PyValue::None))?.as_ref())?;
                 let doc = self.page_doc(h);
                 let mut out = Vec::with_capacity(tables.len());
                 for t in tables {
@@ -431,7 +527,11 @@ impl Core {
             }
             "page_find_table" => {
                 let page = self.page(h)?;
-                match page.find_table(table_settings(arg(a()?, 0)?)?.as_ref())? {
+                let found = {
+                    let _call = method_call()?;
+                    page.find_table(table_settings(a()?.first().unwrap_or(&PyValue::None))?.as_ref())?
+                };
+                match found {
                     None => PyValue::None,
                     Some(t) => {
                         let t = Rc::new(t);
@@ -442,21 +542,39 @@ impl Core {
                 }
             }
             "page_extract_tables" => {
-                let tables = self.page(h)?.extract_tables(table_settings(arg(a()?, 0)?)?.as_ref())?;
+                let page = self.page(h)?;
+                let _call = method_call()?;
+                let tables = page.extract_tables(table_settings(a()?.first().unwrap_or(&PyValue::None))?.as_ref())?;
                 PyValue::list(tables.into_iter().map(rows_value))
             }
-            "page_extract_table" => match self.page(h)?.extract_table(table_settings(arg(a()?, 0)?)?.as_ref())? {
-                None => PyValue::None,
-                Some(rows) => rows_value(rows),
-            },
-            "page_to_dict" => {
-                let o = serialize_options(arg(a()?, 0)?)?;
-                PyValue::Dict(self.page(h)?.to_dict(o.object_types.as_deref())?)
+            "page_extract_table" => {
+                let page = self.page(h)?;
+                let _call = method_call()?;
+                match page.extract_table(table_settings(a()?.first().unwrap_or(&PyValue::None))?.as_ref())? {
+                    None => PyValue::None,
+                    Some(rows) => rows_value(rows),
+                }
             }
-            "page_to_json" => PyValue::Str(self.page(h)?.to_json(&serialize_options(arg(a()?, 0)?)?)?),
-            "page_to_csv" => PyValue::Str(self.page(h)?.to_csv(&serialize_options(arg(a()?, 0)?)?)?),
+            "page_to_dict" => {
+                let page = self.page(h)?;
+                let _call = method_call()?;
+                let o = serialize_options(arg(a()?, 0)?, "Page.to_dict", TO_DICT)?;
+                PyValue::Dict(page.to_dict(o.object_types.as_deref())?)
+            }
+            "page_to_json" => {
+                let page = self.page(h)?;
+                let _call = method_call()?;
+                PyValue::Str(page.to_json(&serialize_options(arg(a()?, 0)?, "Container.to_json", TO_JSON)?)?)
+            }
+            "page_to_csv" => {
+                let page = self.page(h)?;
+                let _call = method_call()?;
+                PyValue::Str(page.to_csv(&serialize_options(arg(a()?, 0)?, "Container.to_csv", TO_CSV)?)?)
+            }
             "page_close" => {
-                self.page(h)?.close()?;
+                let page = self.page(h)?;
+                let _call = method_call()?;
+                page.close()?;
                 PyValue::None
             }
             // tables (`h`: the table)
@@ -469,6 +587,7 @@ impl Core {
                 self.reach(doc)?;
                 let (page, table) =
                     table.ok_or_else(|| PyErr::new(ExcKind::RuntimeError, "the table was not rebuilt"))?;
+                let _call = method_call()?;
                 rows_value(table.extract(&*page, &kwargs(arg(a()?, 0)?)?)?)
             }
             _ => return Ok(None),

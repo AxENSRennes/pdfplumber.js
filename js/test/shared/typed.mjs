@@ -55,6 +55,8 @@ export function fromTyped(j, lib, input = false) {
         return new lib.PSLiteral(go(x));
       case "kw":
         return new lib.PSKeyword(hexBytes(x));
+      case "stream":
+        return new lib.PDFStream(go(x.objid), go(x.genno), go(x.attrs), go(x.rawdata), go(x.data));
       case "ref":
         return new lib.PDFObjRef(typeof x === "number" ? x : go(x));
     }

@@ -37,6 +37,13 @@ export function configure(options: RuntimeOptions): void {
   corePromise = undefined;
 }
 
+/** @internal The next document opens in a new core, with the same
+ * runtime options (a new Python process: the tests replaying sessions of
+ * oracle/unit/js_pages_run.py). */
+export function dropCore(): void {
+  corePromise = undefined;
+}
+
 /** The core the next document opens in (a new one after a crash). */
 export async function getCore(): Promise<Core> {
   if (corePromise) {

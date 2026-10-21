@@ -17,6 +17,119 @@
 // }
 import { difference, fromTyped } from "./typed.mjs";
 
+/** A valid PDF of one page whose content stream is `size` spaces. */
+function pdfWithStream(size) {
+  const enc = new TextEncoder();
+  const parts = [];
+  const offsets = [];
+  let length = 0;
+  const push = (b) => {
+    parts.push(b);
+    length += b.length;
+  };
+  push(enc.encode("%PDF-1.4\n"));
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R >>",
+  ];
+  objects.forEach((o, i) => {
+    offsets.push(length);
+    push(enc.encode(`${i + 1} 0 obj\n${o}\nendobj\n`));
+  });
+  offsets.push(length);
+  push(enc.encode(`4 0 obj\n<< /Length ${size} >>\nstream\n`));
+  push(new Uint8Array(size).fill(0x20));
+  push(enc.encode("\nendstream\nendobj\n"));
+  const xref = length;
+  const entries = offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("");
+  push(enc.encode(`xref\n0 5\n0000000000 65535 f \n${entries}trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`));
+  const out = new Uint8Array(length);
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.length;
+  }
+  return out;
+}
+
+/** The search options `Page.search` takes itself (the others are the text
+ * map's). */
+const SEARCH_ARGS = ["regex", "case", "main_group", "return_chars", "return_groups"];
+
+/** Replays one session of pages.jsonl (oracle/unit/js_pages_run.py: the
+ * statements of a Python script) through the boundary's operations, in a
+ * new core (a new Python process); returns the number of cases checked.
+ * `search` runs as the public API will: the text, the JavaScript pattern
+ * over it (whose spans must be Python's), then the results. */
+async function replaySession(lib, input, out, readFile) {
+  lib.dropCore();
+  const t = await lib.internals();
+  const name = fromTyped(input[0], lib);
+  const cases = input[1];
+  const { results } = fromTyped(out, lib);
+  const handles = [];
+  const label = (h) => {
+    handles.push(h);
+    return `#${handles.length - 1}`;
+  };
+  const relabel = (v) => {
+    if (typeof v === "number") return label(v);
+    if (Array.isArray(v)) return v.map(relabel);
+    if (v && typeof v === "object" && "handle" in v) return { ...v, handle: label(v.handle) };
+    return v;
+  };
+  const makers = new Set([
+    "doc_open", "doc_pages", "page_crop", "page_within_bbox", "page_outside_bbox", "page_filter",
+    "page_dedupe_chars", "page_find_tables", "page_find_table",
+  ]);
+  let checked = 0;
+  for (let i = 0; i < cases.length; i++) {
+    const [opT, targetT, argsT, dataT, jsT] = cases[i];
+    const op = fromTyped(opT, lib);
+    const target = fromTyped(targetT, lib);
+    const handle = target === null ? 0 : handles[target];
+    const args = fromTyped(argsT, lib, true);
+    const [want, extra] = results[i];
+    const where = `${name} #${i} ${op} ${JSON.stringify(fromTyped(argsT, lib), (k, v) => (typeof v === "bigint" ? `${v}n` : v))}`;
+    let got;
+    try {
+      if (op === "doc_open") {
+        const data = typeof dataT === "string" ? await readFile(dataT) : fromTyped(dataT, lib);
+        got = await t.call("doc_open", args[0], 0, { data });
+      } else if (op === "search") {
+        const [, options] = args;
+        const kw = {};
+        const search = {};
+        for (const [k, v] of Object.entries(options)) (SEARCH_ARGS.includes(k) ? search : kw)[k] = v;
+        const text = await t.call("page_search_text", [kw], handle);
+        assertSame(text, extra.text, `${where}: the text`);
+        const re = lib.compilePattern(fromTyped(jsT, lib), { regex: search.regex, case: search.case });
+        const { spans, named } = lib.matchSpans(text, re);
+        assertSame(spans, extra.spans, `${where}: JavaScript's spans`);
+        assertSame(named, extra.named, `${where}: JavaScript's named groups`);
+        got = await t.call(
+          "page_search",
+          [kw, spans, search.return_groups ?? true, search.return_chars ?? true, search.main_group ?? 0, named],
+          handle,
+        );
+      } else if (op === "page_filter") {
+        got = await t.call(op, [extra], handle);
+      } else {
+        got = await t.call(op, args, handle);
+      }
+      if (makers.has(op)) got = relabel(got);
+    } catch (e) {
+      if (!(e instanceof lib.PDFPlumberError)) throw e;
+      got = { exception: e.name, message: e.message };
+    }
+    assertSame(got, want, where);
+    checked++;
+  }
+  lib.dropCore();
+  return checked;
+}
+
 function assert(cond, message) {
   if (!cond) throw new Error(`assertion failed: ${message}`);
 }
@@ -676,16 +789,55 @@ export const tests = [
       const t = await lib.internals();
       const size = 32 * 2 ** 20;
       const before = t.core.memoryBytes();
-      const pdf = await lib.open(new Uint8Array(size));
+      const pdf = await lib.open(pdfWithStream(size));
       const grown = t.core.memoryBytes() - before;
       await pdf.close();
       assert(grown < 1.5 * size, `memory grew by ${grown} bytes for ${size}`);
     },
   },
   {
-    name: "a CJK document extracts like pdfplumber",
-    todo: "needs the page layer (pdf.pages)",
-    async run() {},
+    name: "a CJK document extracts like pdfplumber, its CMaps fetched once",
+    only: "direct",
+    async run({ lib, oracle, readFile, readCMap }) {
+      let checked = 0;
+      for (const { in: input, out } of await oracle("documents")) {
+        const [rel, numberT] = input;
+        const number = fromTyped(numberT, lib);
+        const expected = fromTyped(out, lib);
+        const loads = [];
+        lib.configure({
+          cmaps: {
+            load: async (name) => {
+              loads.push(name);
+              return readCMap(name);
+            },
+          },
+        });
+        const t = await lib.internals();
+        // pdfplumber.open, pdf.pages, page.extract_text(): the first call
+        // that needs a CMap is void, the core rebuilds the document and the
+        // call runs again
+        const doc = await t.call("doc_open", {}, 0, { data: await readFile(rel) });
+        const pages = await t.call("doc_pages", null, doc);
+        const text = await t.call("page_extract_text", [{}], pages[number - 1].handle);
+        assertSame(text, expected.text, rel);
+        const want = [...expected.cmaps, ...expected.umaps.map((u) => `to-unicode-${u}`)].sort();
+        assertSame([...loads].sort(), want, `${rel}: the CMaps fetched`);
+        await t.free(doc);
+        checked++;
+      }
+      assert(checked >= 2, `${checked} documents`);
+    },
+  },
+  {
+    name: "page operations through the boundary match pdfplumber (sessions of a Python script)",
+    async run({ lib, oracle, readFile }) {
+      let checked = 0;
+      for (const { in: input, out } of await oracle("pages")) {
+        checked += await replaySession(lib, input, out, readFile);
+      }
+      assert(checked > 300, `${checked} operations`);
+    },
   },
   {
     name: "no buffer of the boundary leaks",

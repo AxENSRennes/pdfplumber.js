@@ -558,7 +558,11 @@ impl Core {
             "doc_open" => {
                 // pdfplumber.open(io.BytesIO(data), **options)
                 let data = data.ok_or_else(|| exc::TypeError("doc_open needs the PDF bytes"))?;
-                let pdf = crate::pages::open(&data, args)?;
+                // pdfplumber.open(...) with **kwargs: the classmethod from C
+                let pdf = {
+                    let _call = pycompat::recursion::eval_entry()?;
+                    crate::pages::open(&data, args)?
+                };
                 let state = DocState { pdf: Some(Rc::new(pdf)), ..DocState::default() };
                 let h = self.insert(Object::Document(Document { data, options: args.clone(), state }))?;
                 self.reach(handle(&h)?)?;

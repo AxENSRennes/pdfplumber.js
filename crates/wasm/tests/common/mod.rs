@@ -135,6 +135,13 @@ pub fn value_view(v: &Value) -> Js {
         Value::Literal(NameValue::Bytes(b)) => Js::Lit(Box::new(Js::Bytes(b.clone()))),
         Value::Keyword(k) => Js::Kw(k.clone()),
         Value::Ref(i) => Js::Ref(Box::new(int_view(i))),
+        Value::Stream(st) => Js::Stream(vec![
+            value_view(&st.objid),
+            value_view(&st.genno),
+            value_view(&Value::Dict(st.attrs.clone())),
+            value_view(&st.raw),
+            value_view(&st.data),
+        ]),
         Value::Exception { class, message } => {
             obj(vec![("exception", s(class)), ("message", Js::Str(pystr_units(message)))])
         }
