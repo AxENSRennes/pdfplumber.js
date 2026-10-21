@@ -1857,9 +1857,8 @@ l'oracle) : une étape qui interprète des pages ne peut plus compter des
     document). Restent, équivalents : `|` → `^` dans `Handles::iter`/
     `iter_mut` (bits disjoints de l'étiquette et de l'index), `Object::reset`
     → `()` (le rejeu remplit chaque objet de nouveau), les gardes
-    `p.freed`/`t.freed` de `Core::void` → `false` (une pierre tombale
-    gardée au lieu d'être nettoyée : mémoire seulement, le handle reste
-    libéré), `calls +=` → `-=` (identifiants distincts aussi en
+    `p.freed`/`t.freed` de `Core::void` → `false` (code retiré depuis :
+    les handles libérés sont libérés), `calls +=` → `-=` (identifiants distincts aussi en
     décroissant, arithmétique enveloppante) ;
   - `cargo mutants`, bibliothèque (`page.rs`, `pdf.rs`, `obj.rs`,
     `table.rs`, `container.rs`) : 48 mutants, 29 détectés, 2 non viables,
@@ -1907,9 +1906,70 @@ l'oracle) : une étape qui interprète des pages ne peut plus compter des
     lève ; sinon les objets sont en cache) ; la seconde moitié de la
     recherche (carte de texte en cache), `crop` (ne lit que `bbox`),
     `close`, l'entrée de `pdfplumber.open` (aucune récursion C à
-    l'ouverture avant la limite des cadres Python) ;
-    `ELEMENT_BBOX_PAGE_OBJECTS` (`element_bbox` d'un arbre de page :
-    aucune étape ni opération de la frontière ne l'appelle).
+    l'ouverture avant la limite des cadres Python). (La justification
+    donnée ici pour `ELEMENT_BBOX_PAGE_OBJECTS` était fausse : l'arbre de
+    page de `plumber_doc` l'atteint quand les éléments n'ont pas de
+    `/Pg` ; tué depuis, « Correctifs de la revue ».)
+
+#### Correctifs de la revue (branche `wave4/fix`)
+
+Revue indépendante de la jonction (page, document, profondeur et erreurs,
+tests/performances/Wasm), chaque constat revérifié :
+
+- **Rejeu d'un appel nul** (`crates/wasm/src/ops.rs`) : le rejeu d'un
+  document repartait de l'état du processus d'avant l'appel nul ; une
+  entrée qui avait levé `RecursionError` (un nom interné, un site
+  spécialisé, une CMap en cache plus tard) réussissait au rejeu et
+  laissait des objets ou des pages en cache que Python n'a jamais, ou
+  atteignait une police dont la CMap manquait, que le
+  `debug_assert!` de la version `release` laissait passer (texte vide sans
+  erreur). Chaque `Entry` garde l'état de départ de sa première exécution
+  (`ProcessState` : les symboles internés deviennent une chaîne
+  persistante, `psparser::Interned`, qu'un instantané partage pour le
+  prix d'un compteur de références, et le reste est partagé avec
+  l'instantané précédent s'il n'a pas changé) et sa fin (l'exception ou
+  rien) ; le rejeu repart de cet état et doit finir de même, objets créés
+  et CMaps comprises, sinon les documents deviennent inutilisables
+  (`RuntimeError` à toute opération qui les atteint). Fenêtres
+  `depth-replay-{depth,cmap,pages}-*` de `js_runtime.py` (huit chacune).
+- **Handles libérés** : les pierres tombales restaient dans la table
+  (`MemoryError("too many handles")` après 2^20 − 1) ; l'historique nomme
+  maintenant les objets par leur identité (`Target::Object`) et un rejeu
+  refait hors de la table un objet libéré. L'historique, lui, ne
+  raccourcit qu'à la libération du document (documenté, `js-runtime.md`).
+- **Chaîne de pages dérivées** : `Drop for Page` défait la chaîne des
+  parents en boucle (la « trashcan » de CPython) : 10^5 rognages
+  successifs se libèrent sur une pile de 256 Kio (débordement avant, et
+  dès 12 000 sous Wasm).
+- **Liaison des arguments** (`pycompat::call`) : un mot-clé qui nomme un
+  paramètre déjà lié (`self`, `pattern`, `strip`, `return_chars`, `bbox`,
+  `cls`, `path_or_fp`) lève le `TypeError` de CPython avant l'appel (dans
+  `Page`, `Table.extract`, `TableSettings`, `LAParams`, `PDF.open` et les
+  instructions de la frontière) ; un mot-clé inconnu s'écrit `'%S'`, pas
+  `repr` ; un `**` qui n'est pas un dict lève « argument after ** must be
+  a mapping » ; `TableSettings.resolve` de n'importe quelle valeur
+  (`ValueError("Cannot resolve settings: …")`, son `str()` compté). Les
+  options de `to_dict`/`to_json`/`to_csv` sont des valeurs Python
+  (`object_types` itéré, `t + "s"`, `CSV_COLS_REQUIRED + include_attrs`,
+  `set(exclude_attrs)`), `stream=None` accepté.
+- **`page_filter`** : la frontière calcule les objets du parent comme
+  `mask_of` (un cadre, un site de chargement à lui) : fenêtre
+  `climit-tf-list-filter`.
+- **Valeurs `Page`** : une sorte de valeur de la frontière (PJB1 `0x12`,
+  JSON `"page"`, `PageRef` en JS), le handle de la page.
+- **Avertissements** : `pycompat::warnings` (registre des filtres par
+  défaut, état du processus) ; le `logger.warning` de `PDFStructTree`
+  atteint les diagnostics ; `diagnostics.jsonl`.
+- **`ELEMENT_BBOX_PAGE_OBJECTS`** : sorte `tf-list-tagged-nopg` des
+  fenêtres `climit-*` d'`adv-plumber` (éléments sans `/Pg`, 17 fenêtres) ;
+  le mutant manuel du site y diffère (2 fenêtres sur 34 balisées).
+- **API JS** (types, `public-api.md`) : `pdf.pages` et `pdf.metadata`
+  sont des promesses (pages paresseuses), les pages dérivées aussi.
+- **Laissés ouverts, documentés** (`public-api.md`, `port-strategy.md`) :
+  les noms `inline-<k>` répétés d'une page à l'autre (décision de la
+  vague 4 gardée), les flux d'images copiés entiers dans chaque résultat,
+  le texte des `log.*` de pdfminer, la copie profonde d'un document lu
+  depuis des octets par `structure_tree`.
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 
