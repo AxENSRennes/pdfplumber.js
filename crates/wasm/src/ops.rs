@@ -49,11 +49,28 @@
 //! its page handles, [`Object::reset`]), which [`Core`] then rebuilds by
 //! replaying, results and diagnostics discarded, every earlier call that
 //! reached the document ([`Entry`], from `doc_open` on), each refilling
-//! the handles it had created; the process state is put back after the
-//! replay too. So the document is the object Python's single run has at
-//! that point, caches, decoded streams and in-place changes included (the
-//! metadata decoding, `Page.annots`), not a document opened again: the
-//! re-run then sees what Python's next statement sees.
+//! the handles it had created. Each replayed call runs from the process
+//! state its first run started from (kept with it: a symbol interned, a
+//! site specialized or a CMap cached by a later call would let the replay
+//! go deeper than the first run did, past a `RecursionError` it raised,
+//! and leave the document in another state), and must end as its first
+//! run did (the same exception or none, the same objects made, no CMap
+//! missed): a replay that does not leaves its documents unusable
+//! (`RuntimeError`) rather than different from Python's. The process state
+//! of the void call is put back after the replay. So the document is the
+//! object Python's single run has at that point, caches, decoded streams
+//! and in-place changes included (the metadata decoding, `Page.annots`),
+//! not a document opened again: the re-run then sees what Python's next
+//! statement sees.
+//!
+//! **Freed handles.** Freeing a page or a table frees its handle; the
+//! calls that made or used it stay in the history, under the object's
+//! identity ([`Target::Object`]): a replay makes the object again, out of
+//! the handle table, for the calls after it, then drops it. The history
+//! itself only shrinks when its document is freed: a document used for a
+//! long time keeps every call that reached it (its arguments and a
+//! process state shared with the calls around it), and a void call
+//! replays them all.
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -125,6 +142,9 @@ pub struct Document {
 /// The state a document derives from its bytes.
 #[derive(Default)]
 pub struct DocState {
+    /// Why the last replay could not rebuild the document (see the module
+    /// documentation): every operation that reaches it raises.
+    pub broken: Option<String>,
     /// pdfplumber's `PDF` (`pdfplumber.open(io.BytesIO(data),
     /// **options)`): its `PDFDocument`, its `PDFResourceManager` (whose
     /// font cache holds the fonts, with the CMaps they loaded), its pages
@@ -182,19 +202,33 @@ impl Object {
     }
 }
 
+/// What an operation acts on: a handle with no object behind it (0), or
+/// an object, named by its identity, which outlives its handle in the
+/// history (see the module documentation, "Freed handles").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Target {
+    Handle(u32),
+    Object(u64),
+}
+
 /// A call that reached a document (one operation of a request; those of
 /// a `sequence` each), replayed to rebuild the document after a void call.
 #[derive(Clone)]
 pub struct Entry {
     pub op: String,
-    pub handle: u32,
+    pub target: Target,
     pub args: PyValue,
     pub data: Option<Rc<[u8]>>,
-    /// The handles it created, in order: the replay refills them.
-    pub created: Vec<u32>,
+    /// The objects it created, in order: the replay refills their handles
+    /// (or makes them again, out of the table, once freed).
+    pub created: Vec<u64>,
     pub doc: u32,
     /// The call it belongs to ([`Core::calls`]).
     pub call: u64,
+    /// The process state it started from: its replay starts from it too.
+    pub process: ProcessState,
+    /// How it ended: its replay must end so.
+    pub outcome: Result<(), PyErr>,
 }
 
 /// A value written by hand.
@@ -223,11 +257,18 @@ pub struct Core {
     pub(crate) op_doc: Option<u32>,
     /// The documents the running call reached.
     pub(crate) touched: Vec<u32>,
-    /// While replaying: the handles the replayed operation created, which
-    /// it refills instead of creating new ones.
-    pub(crate) replay: Option<VecDeque<u32>>,
+    /// While replaying: the objects the replayed operation created, whose
+    /// handles it refills instead of creating new ones.
+    pub(crate) replay: Option<VecDeque<u64>>,
     /// The number of calls so far (the running one included).
     pub(crate) calls: u64,
+    /// The identity of the object of each handle, and the handle of each
+    /// live object ([`Target::Object`]).
+    pub(crate) oids: FxHashMap<u32, u64>,
+    pub(crate) live: FxHashMap<u64, u32>,
+    pub(crate) next_oid: u64,
+    /// While replaying: the objects made again whose handles were freed.
+    pub(crate) ghosts: FxHashMap<u64, Object>,
 }
 
 impl Default for Core {
@@ -411,40 +452,65 @@ impl Core {
             touched: Vec::new(),
             replay: None,
             calls: 0,
+            oids: FxHashMap::default(),
+            live: FxHashMap::default(),
+            next_oid: 1,
+            ghosts: FxHashMap::default(),
         }
     }
 
-    /// Stores a new object; while replaying, refills the handle the
-    /// replayed call created instead (a page freed since stays freed).
+    /// Stores a new object; while replaying, refills the handle of the
+    /// object the replayed call created instead, or keeps the object out
+    /// of the table when its handle was freed since.
     pub(crate) fn insert(&mut self, o: Object) -> PyResult<PyValue> {
         if let Some(queue) = &mut self.replay {
-            let h = queue
+            let oid = queue
                 .pop_front()
                 .ok_or_else(|| PyErr::new(ExcKind::RuntimeError, "replay: more handles than the call made"))?;
-            if let Some(slot) = self.handles.get_mut(h) {
-                let freed = matches!(
-                    slot,
-                    Object::Page(PageObj { freed: true, .. }) | Object::Table(TableObj { freed: true, .. })
-                );
-                *slot = o;
-                match slot {
-                    Object::Page(p) => p.freed = freed,
-                    Object::Table(t) => t.freed = freed,
-                    _ => {}
+            return Ok(match self.live.get(&oid) {
+                Some(&h) => {
+                    if let Some(slot) = self.handles.get_mut(h) {
+                        *slot = o;
+                    }
+                    PyValue::Int(PyInt::from(h))
                 }
-            }
-            return Ok(PyValue::Int(PyInt::from(h)));
+                None => {
+                    self.ghosts.insert(oid, o);
+                    PyValue::None
+                }
+            });
         }
         let h = self.handles.insert(o).ok_or_else(|| exc::MemoryError("too many handles"))?;
+        let oid = self.next_oid;
+        self.next_oid += 1;
+        self.oids.insert(h, oid);
+        self.live.insert(oid, h);
         self.created.push(h);
         Ok(PyValue::Int(PyInt::from(h)))
+    }
+
+    /// Removes the object of a handle.
+    fn remove(&mut self, h: u32) {
+        self.handles.remove(h);
+        if let Some(oid) = self.oids.remove(&h) {
+            self.live.remove(&oid);
+        }
     }
 
     /// Notes that the running operation reached the document `doc`. An
     /// operation reaches one document, that of the handle it acts on (no
     /// operation takes two documents' handles; a `sequence` records each of
-    /// its operations): its replay rebuilds that document only.
+    /// its operations): its replay rebuilds that document only. A document
+    /// a replay could not rebuild raises.
     pub(crate) fn reach(&mut self, doc: u32) -> PyResult<()> {
+        if let Some(Object::Document(Document { state: DocState { broken: Some(reason), .. }, .. })) =
+            self.handles.get(doc)
+        {
+            return Err(PyErr::new(
+                ExcKind::RuntimeError,
+                format!("the document could not be rebuilt after a void call: {reason}"),
+            ));
+        }
         self.op_doc = Some(doc);
         if !self.touched.contains(&doc) {
             self.touched.push(doc);
@@ -770,93 +836,132 @@ impl Core {
     pub(crate) fn run_op(&mut self, name: &str, h: u32, args: &PyValue, data: Option<Rc<[u8]>>) -> PyResult<Out> {
         let start = self.created.len();
         let outer = self.op_doc.take();
+        let target = self.oids.get(&h).map_or(Target::Handle(h), |&oid| Target::Object(oid));
+        let process = ProcessState::capture();
         let result = self.op(name, h, args, data.clone());
         if let Some(doc) = self.op_doc.take() {
-            let created = self.created[start..].to_vec();
+            let created = self.created[start..].iter().filter_map(|h| self.oids.get(h).copied()).collect();
             let call = self.calls;
-            self.history.push(Entry { op: name.to_owned(), handle: h, args: args.clone(), data, created, doc, call });
+            let outcome = result.as_ref().map(|_| ()).map_err(PyErr::clone);
+            self.history.push(Entry {
+                op: name.to_owned(),
+                target,
+                args: args.clone(),
+                data,
+                created,
+                doc,
+                call,
+                process,
+                outcome,
+            });
         }
         self.op_doc = outer;
         result
     }
 
     /// `free`: a document goes with its pages, tables and history; a page
-    /// or a table becomes a tombstone (refused to JavaScript, its page or
-    /// table dropped, but kept for the replays of the calls that used it
-    /// before); any other object goes.
+    /// or a table goes, the calls that made or used it staying in the
+    /// history (see the module documentation, "Freed handles"); any other
+    /// object goes.
     fn free(&mut self, h: u32) -> PyResult<()> {
-        match self.handles.get_mut(h) {
+        match self.handles.get(h) {
             None => return Err(exc::ValueError("invalid handle")),
-            Some(Object::Page(PageObj { freed: true, .. }) | Object::Table(TableObj { freed: true, .. })) => {
-                return Err(exc::ValueError("invalid handle"))
-            }
-            Some(Object::Page(p)) => {
-                p.freed = true;
-                p.page = None;
-                return Ok(());
-            }
-            Some(Object::Table(t)) => {
-                t.freed = true;
-                t.table = None;
-                return Ok(());
-            }
             Some(Object::Document(_)) => {
                 let owned: Vec<u32> =
                     self.handles.iter().filter(|(k, o)| *k != h && o.document(*k) == Some(h)).map(|(k, _)| k).collect();
                 for k in owned {
-                    self.handles.remove(k);
+                    self.remove(k);
                 }
                 self.history.retain(|e| e.doc != h);
             }
             Some(_) => {}
         }
-        self.handles.remove(h);
+        self.remove(h);
+        Ok(())
+    }
+
+    /// Replays one entry of the history (see the module documentation):
+    /// from the process state its first run started from, on its object
+    /// (made again out of the table if its handle was freed), refilling
+    /// the objects it created. `Err`: how the replay did not end as the
+    /// first run did.
+    fn replay_entry(&mut self, e: &Entry) -> Result<(), String> {
+        e.process.clone().restore();
+        let (h, ghost) = match e.target {
+            Target::Handle(h) => (h, None),
+            Target::Object(oid) => match self.live.get(&oid) {
+                Some(&h) => (h, None),
+                None => {
+                    let o = self.ghosts.remove(&oid).ok_or_else(|| format!("{}: its object was not made again", e.op))?;
+                    let h = self.handles.insert(o).ok_or_else(|| "too many handles".to_owned())?;
+                    (h, Some(oid))
+                }
+            },
+        };
+        self.replay = Some(e.created.iter().copied().collect());
+        let outcome = with_depth(ENTRY_DEPTH, || self.op(&e.op, h, &e.args, e.data.clone())).map(|_| ());
+        let left = self.replay.take().map_or(0, |q| q.len());
+        self.op_doc = None;
+        if let Some(oid) = ghost {
+            if let Some(o) = self.handles.remove(h) {
+                self.ghosts.insert(oid, o);
+            }
+        }
+        if outcome != e.outcome {
+            return Err(format!("{} ended with {:?}, its first run with {:?}", e.op, outcome, e.outcome));
+        }
+        if left != 0 {
+            return Err(format!("{} made {left} objects fewer than its first run", e.op));
+        }
         Ok(())
     }
 
     /// Undoes what a void call did (see the module documentation): removes
-    /// the handles it created and its calls from the history, puts the
-    /// process state back, and rebuilds the documents it reached by
-    /// replaying their history.
+    /// the handles it created and its calls from the history, rebuilds the
+    /// documents it reached by replaying their history, and puts the
+    /// process state back; a document whose replay does not end as its
+    /// first run did is left unusable.
     fn void(&mut self, process: ProcessState) {
         for h in std::mem::take(&mut self.created) {
-            self.handles.remove(h);
+            self.remove(h);
         }
         let call = self.calls;
         self.history.retain(|e| e.call != call);
-        process.restore();
         let docs: Vec<u32> = std::mem::take(&mut self.touched)
             .into_iter()
             .filter(|d| matches!(self.handles.get(*d), Some(Object::Document(_))))
             .collect();
-        if docs.is_empty() {
-            return;
-        }
         for (k, o) in self.handles.iter_mut() {
             if o.document(k).is_some_and(|d| docs.contains(&d)) {
                 o.reset();
             }
         }
-        let process = ProcessState::capture();
         let entries: Vec<Entry> = self.history.iter().filter(|e| docs.contains(&e.doc)).cloned().collect();
-        for e in entries {
-            self.replay = Some(e.created.iter().copied().collect());
-            // the result is the one the call returned before
-            let _ = with_depth(ENTRY_DEPTH, || self.op(&e.op, e.handle, &e.args, e.data.clone()));
-            self.replay = None;
-            self.op_doc = None;
-        }
-        for (_, o) in self.handles.iter_mut() {
-            match o {
-                Object::Page(p) if p.freed => p.page = None,
-                Object::Table(t) if t.freed => t.table = None,
-                _ => {}
+        let mut failed = None;
+        for e in &entries {
+            if let Err(reason) = self.replay_entry(e) {
+                failed = Some(reason);
+                break;
             }
         }
+        self.ghosts.clear();
         self.touched.clear();
-        // every CMap the replayed calls need was handed over before them
+        // every CMap the replayed calls asked for was handed over before
+        // their first run
         let missed = cmaps::take_missing();
-        debug_assert!(missed.is_empty(), "a replay missed a CMap: {missed:?}");
+        if failed.is_none() && !missed.is_empty() {
+            failed = Some(format!("the replay missed CMaps {missed:?}"));
+        }
+        if let Some(reason) = failed {
+            for (k, o) in self.handles.iter_mut() {
+                if o.document(k).is_some_and(|d| docs.contains(&d)) {
+                    o.reset();
+                    if let Object::Document(d) = o {
+                        d.state.broken = Some(reason.clone());
+                    }
+                }
+            }
+        }
         process.restore();
     }
 

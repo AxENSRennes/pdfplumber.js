@@ -345,10 +345,6 @@ fn derived_lines(lines: &mut Lines, page: &Rc<Page>, steps: &Value) -> PyResult<
 }
 
 /// The string list of a keyword argument.
-fn str_list(v: &PyValue) -> Vec<PyStr> {
-    v.as_seq().expect("a list").iter().map(|x| x.as_pystr().expect("a str").clone()).collect()
-}
-
 /// `page_dict(value, names)`: a `to_dict` value as written.
 fn page_dict(value: &Obj, names: &Names) -> PyResult<Value> {
     let mut items = Vec::new();
@@ -383,10 +379,11 @@ fn serialize_lines(lines: &mut Lines, page: &Rc<Page>, op: &Value) -> PyResult<(
     let method = parts[0].as_str().expect("a method");
     let kwargs = crate::plumber::obj_from_value(&parts[1]).expect("a kwargs dict");
     let label = format!("serialize {}", canon(op));
+    let none = PyValue::None;
     let options = SerializeOptions {
-        object_types: kwargs.get("object_types").map(str_list),
-        include_attrs: kwargs.get("include_attrs").map(str_list),
-        exclude_attrs: kwargs.get("exclude_attrs").map(str_list),
+        object_types: kwargs.get("object_types").unwrap_or(&none).clone(),
+        include_attrs: kwargs.get("include_attrs").unwrap_or(&none).clone(),
+        exclude_attrs: kwargs.get("exclude_attrs").unwrap_or(&none).clone(),
         precision: kwargs.get("precision").cloned(),
         indent: kwargs.get("indent").cloned(),
     };
@@ -405,7 +402,7 @@ fn serialize_lines(lines: &mut Lines, page: &Rc<Page>, op: &Value) -> PyResult<(
                 Err(e) => Err(e),
                 Ok(entry) => {
                     let value = match method {
-                        "to_dict" => page.to_dict(options.object_types.as_deref()).map(PyValue::Dict),
+                        "to_dict" => page.to_dict(&options.object_types).map(PyValue::Dict),
                         "to_json" => page.to_json(&options).map(PyValue::Str),
                         "to_csv" => page.to_csv(&options).map(PyValue::Str),
                         other => panic!("no method {other}"),
@@ -590,9 +587,8 @@ fn body(input: &StageInput<'_>, lines: &mut Lines) -> PyResult<()> {
         page_lines(lines, &pdf, page, &sha, index)?;
     }
     let to_dict = (|| -> PyResult<Value> {
-        let object_types: Vec<PyStr> =
-            ["char", "rect", "line", "curve", "image"].iter().map(|t| PyStr::new(t)).collect();
-        let value = pdf.to_dict(Some(&object_types))?;
+        let object_types = PyValue::list(["char", "rect", "line", "curve", "image"].iter().map(|t| PyValue::str(t)));
+        let value = pdf.to_dict(&object_types)?;
         let pages = RUN_ZIP_PAGES.get("PDF", || pdf.pages())?;
         let mut items = Vec::new();
         for (k, v) in value.items() {

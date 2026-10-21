@@ -40,7 +40,8 @@ pub const CSV_COLS_REQUIRED: [&str; 1] = ["object_type"];
 pub const CSV_COLS_TO_PREPEND: [&str; 10] =
     ["page_number", "x0", "x1", "y0", "y1", "doctop", "top", "bottom", "width", "height"];
 
-/// The function `get_attr_filter` returns (a lambda over a set).
+/// The function `get_attr_filter` returns (a lambda over a set; only the
+/// `str` items of the set can equal an attribute name).
 #[derive(Clone, Debug)]
 pub enum AttrFilter {
     /// `lambda attr: True`
@@ -49,6 +50,23 @@ pub enum AttrFilter {
     Include(Vec<PyStr>),
     /// `lambda attr: attr not in excl`, `excl = set(exclude_attrs)`
     Exclude(Vec<PyStr>),
+}
+
+/// `set(items)`: the items of an iterable, each hashable (`TypeError`
+/// otherwise), as the `str` among them.
+fn str_set(items: &PyValue) -> PyResult<Vec<PyStr>> {
+    let items = match crate::obj::py_iter(items) {
+        Some(items) => items?,
+        None => return Err(exc::TypeError(format!("'{}' object is not iterable", items.type_name()))),
+    };
+    let mut set = Vec::new();
+    for item in &items {
+        crate::obj::check_hashable(item)?;
+        if let PyValue::Str(s) = item {
+            set.push(s.clone());
+        }
+    }
+    Ok(set)
 }
 
 impl AttrFilter {
@@ -64,30 +82,30 @@ impl AttrFilter {
 
 // pdfplumber/convert.py:33 get_attr_filter
 /// `ValueError` for both lists, or for an excluded required attribute
-/// (`"Cannot exclude these required properties: ['object_type']"`).
-pub fn get_attr_filter(include_attrs: Option<&[PyStr]>, exclude_attrs: Option<&[PyStr]>) -> PyResult<AttrFilter> {
+/// (`"Cannot exclude these required properties: ['object_type']"`); any
+/// value as Python takes it: `CSV_COLS_REQUIRED + include_attrs` (a list
+/// only), `set(exclude_attrs)` (any iterable), their items hashable.
+pub fn get_attr_filter(include_attrs: &PyValue, exclude_attrs: &PyValue) -> PyResult<AttrFilter> {
     let _frame = py_frame()?;
-    match (include_attrs, exclude_attrs) {
-        (Some(_), Some(_)) => {
-            Err(exc::ValueError("Cannot specify `include_attrs` and `exclude_attrs` at the same time."))
+    match (!include_attrs.is_none(), !exclude_attrs.is_none()) {
+        (true, true) => Err(exc::ValueError("Cannot specify `include_attrs` and `exclude_attrs` at the same time.")),
+        (true, false) => {
+            let required = PyValue::list(CSV_COLS_REQUIRED.iter().map(|c| PyValue::str(c)));
+            Ok(AttrFilter::Include(str_set(&required.add(include_attrs)?)?))
         }
-        (Some(incl), None) => {
-            let mut set: Vec<PyStr> = CSV_COLS_REQUIRED.iter().map(|c| PyStr::new(c)).collect();
-            set.extend(incl.iter().cloned());
-            Ok(AttrFilter::Include(set))
-        }
-        (None, Some(excl)) => {
-            let required: Vec<PyStr> = CSV_COLS_REQUIRED.iter().map(|c| PyStr::new(c)).collect();
+        (false, true) => {
+            let excl = str_set(exclude_attrs)?;
             // set(exclude_attrs).intersection(set(CSV_COLS_REQUIRED)): a
             // set of one item at most, printed as a list
+            let required: Vec<PyStr> = CSV_COLS_REQUIRED.iter().map(|c| PyStr::new(c)).collect();
             let nonexcludable: Vec<&PyStr> = required.iter().filter(|r| excl.contains(r)).collect();
             if !nonexcludable.is_empty() {
                 let list = nonexcludable.iter().map(|r| r.repr()).collect::<Vec<_>>().join(", ");
                 return Err(exc::ValueError(format!("Cannot exclude these required properties: [{list}]")));
             }
-            Ok(AttrFilter::Exclude(excl.to_vec()))
+            Ok(AttrFilter::Exclude(excl))
         }
-        (None, None) => Ok(AttrFilter::All),
+        (false, false) => Ok(AttrFilter::All),
     }
 }
 
@@ -111,11 +129,7 @@ impl Serializer {
     // pdfplumber/convert.py:63 Serializer.__init__
     /// `Serializer(precision=..., include_attrs=..., exclude_attrs=...)`:
     /// the class call and `__init__`.
-    pub fn new(
-        precision: Option<PyValue>,
-        include_attrs: Option<&[PyStr]>,
-        exclude_attrs: Option<&[PyStr]>,
-    ) -> PyResult<Serializer> {
+    pub fn new(precision: Option<PyValue>, include_attrs: &PyValue, exclude_attrs: &PyValue) -> PyResult<Serializer> {
         let _call = class_call()?;
         let _frame = py_frame()?;
         let attr_filter = get_attr_filter(include_attrs, exclude_attrs)?;

@@ -40,6 +40,7 @@ use pdfminer::pdftypes::{PDFDict, PDFList, PDFObject, PDFStream};
 use pdfminer::psparser::{LiteralName, PSLiteral};
 use pdfminer::utils::{Matrix, PathSegment, Point};
 use pycompat::bytes_format::bytes_mod_int;
+use pycompat::call::Signature;
 use pycompat::recursion::{c_call, c_called_leaf, class_call, eval_entry, leaf, py_frame, py_frames};
 use pycompat::repr::bytes_repr;
 use pycompat::specialize::{AttrSite, CallSite};
@@ -1776,9 +1777,9 @@ impl Page {
     }
 
     // pdfplumber/page.py:452 Page.debug_tablefinder
-    pub fn debug_tablefinder(&self, table_settings: Option<&Kwargs>) -> PyResult<TableFinder> {
+    pub fn debug_tablefinder(&self, table_settings: &PyValue) -> PyResult<TableFinder> {
         let _frame = py_frame()?;
-        let tset = TableSettings::resolve(table_settings)?;
+        let tset = TableSettings::resolve_value(table_settings)?;
         // TableFinder(self, tset): the class call, __init__
         let _call = class_call()?;
         let _init = py_frame()?;
@@ -1786,9 +1787,9 @@ impl Page {
     }
 
     // pdfplumber/page.py:458 Page.find_tables
-    pub fn find_tables(&self, table_settings: Option<&Kwargs>) -> PyResult<Vec<Table>> {
+    pub fn find_tables(&self, table_settings: &PyValue) -> PyResult<Vec<Table>> {
         let _frame = py_frame()?;
-        let tset = TableSettings::resolve(table_settings)?;
+        let tset = TableSettings::resolve_value(table_settings)?;
         self.tables_of(tset)
     }
 
@@ -1810,9 +1811,9 @@ impl Page {
     // pdfplumber/page.py:464 Page.find_table
     /// The largest table (most cells, then top, then left: `sorter`,
     /// nested), or `None`.
-    pub fn find_table(&self, table_settings: Option<&Kwargs>) -> PyResult<Option<Table>> {
+    pub fn find_table(&self, table_settings: &PyValue) -> PyResult<Option<Table>> {
         let _frame = py_frame()?;
-        let tset = TableSettings::resolve(table_settings)?;
+        let tset = TableSettings::resolve_value(table_settings)?;
         self.find_table_resolved(tset)
     }
 
@@ -1841,9 +1842,9 @@ impl Page {
     }
 
     // pdfplumber/page.py:481 Page.extract_tables
-    pub fn extract_tables(&self, table_settings: Option<&Kwargs>) -> PyResult<Vec<Vec<Vec<Option<PyStr>>>>> {
+    pub fn extract_tables(&self, table_settings: &PyValue) -> PyResult<Vec<Vec<Vec<Option<PyStr>>>>> {
         let _frame = py_frame()?;
-        let tset = TableSettings::resolve(table_settings)?;
+        let tset = TableSettings::resolve_value(table_settings)?;
         let kwargs = tset.text_settings_kwargs("pdfplumber.table.Table.extract");
         let tables = self.find_tables_resolved(tset)?;
         let mut out = Vec::with_capacity(tables.len());
@@ -1854,9 +1855,9 @@ impl Page {
     }
 
     // pdfplumber/page.py:488 Page.extract_table
-    pub fn extract_table(&self, table_settings: Option<&Kwargs>) -> PyResult<Option<Vec<Vec<Option<PyStr>>>>> {
+    pub fn extract_table(&self, table_settings: &PyValue) -> PyResult<Option<Vec<Vec<Option<PyStr>>>>> {
         let _frame = py_frame()?;
-        let tset = TableSettings::resolve(table_settings)?;
+        let tset = TableSettings::resolve_value(table_settings)?;
         let kwargs = tset.text_settings_kwargs("pdfplumber.table.Table.extract");
         let table = {
             let _frame = py_frame()?;
@@ -1956,6 +1957,7 @@ impl Page {
         main_group: &dyn Fn(usize, &RegexMatch) -> PyResult<usize>,
         kwargs: &Kwargs,
     ) -> PyResult<Vec<Obj>> {
+        bind(SEARCH, kwargs)?;
         let _frame = py_frame()?;
         let textmap = self.get_textmap(&tuplify_list_kwargs(kwargs)?)?;
         // TextMap.search
@@ -1974,12 +1976,14 @@ impl Page {
     /// the text map is computed (the page interpreted, if it was not) at
     /// the depth Python's `search` computes it.
     pub fn search_text(&self, kwargs: &Kwargs) -> PyResult<PyStr> {
+        bind(SEARCH, kwargs)?;
         let _frame = py_frame()?;
         Ok(self.get_textmap(&tuplify_list_kwargs(kwargs)?)?.as_string.clone())
     }
 
     // pdfplumber/page.py:529 Page.extract_text
     pub fn extract_text(&self, kwargs: &Kwargs) -> PyResult<PyStr> {
+        bind(method("Page.extract_text"), kwargs)?;
         let _frame = py_frame()?;
         Ok(self.get_textmap(&tuplify_list_kwargs(kwargs)?)?.as_string.clone())
     }
@@ -1988,6 +1992,7 @@ impl Page {
     /// `utils.extract_text_simple(self.chars, **kwargs)`: its keyword
     /// arguments are `x_tolerance` and `y_tolerance` (3 by default).
     pub fn extract_text_simple(&self, kwargs: &Kwargs) -> PyResult<PyStr> {
+        bind(method("Page.extract_text_simple"), kwargs)?;
         let _frame = py_frame()?;
         let chars = EXTRACT_TEXT_SIMPLE_CHARS.get(self.class_name(), || Container::chars(self))?;
         let values = bind_kwargs("extract_text_simple", kwargs, &["x_tolerance", "y_tolerance"])?;
@@ -1998,6 +2003,7 @@ impl Page {
 
     // pdfplumber/page.py:535 Page.extract_words
     pub fn extract_words(&self, kwargs: &Kwargs) -> PyResult<Vec<Obj>> {
+        bind(method("Page.extract_words"), kwargs)?;
         let _frame = py_frame()?;
         let chars = EXTRACT_WORDS_CHARS.get(self.class_name(), || Container::chars(self))?;
         leaf(1)?;
@@ -2006,6 +2012,7 @@ impl Page {
 
     // pdfplumber/page.py:538 Page.extract_text_lines
     pub fn extract_text_lines(&self, strip: bool, return_chars: bool, kwargs: &Kwargs) -> PyResult<Vec<Obj>> {
+        bind(EXTRACT_TEXT_LINES, kwargs)?;
         let _frame = py_frame()?;
         let textmap = self.get_textmap(&tuplify_list_kwargs(kwargs)?)?;
         leaf(1)?; // TextMap.extract_text_lines
@@ -2059,6 +2066,7 @@ impl Page {
     /// A `FilteredPage` whose objects are this page's with the chars of
     /// `utils.dedupe_chars(self.chars, **kwargs)`, computed now.
     pub fn dedupe_chars(self: &Rc<Self>, kwargs: &Kwargs) -> PyResult<Rc<Page>> {
+        bind(method("Page.dedupe_chars"), kwargs)?;
         let _frame = py_frame()?;
         // FilteredPage(self, lambda x: True)
         let p = self.filtered(Rc::new(|_: &Obj| Ok(PyValue::Bool(true))))?;
@@ -2106,23 +2114,32 @@ pub(crate) fn apply_crop_fn(crop_fn: CropFn, crop_bbox: &PyValue, objs: &[Obj]) 
 /// (`None` when not given), with the `TypeError`s of a keyword that is
 /// `chars` or none of `names`, for the first such key in order.
 fn bind_kwargs(func: &str, kwargs: &Kwargs, names: &[&str]) -> PyResult<Vec<Option<PyValue>>> {
-    let mut values = vec![None; names.len()];
-    for (k, v) in kwargs.items() {
-        if *k == "chars" {
-            return Err(exc::TypeError(format!("{func}() got multiple values for argument 'chars'")));
-        }
-        match names.iter().position(|n| *k == **n) {
-            Some(i) => values[i] = Some(v.clone()),
-            None => {
-                return Err(PyErr::with_message(
-                    ExcKind::TypeError,
-                    &PyStr::new(&format!("{func}() got an unexpected keyword argument "))
-                        .concat(&PyStr::from(k.repr())),
-                ))
-            }
-        }
-    }
-    Ok(values)
+    Signature { qualname: func, bound: &["chars"], keywords: Some(names) }.bind(kwargs.items().iter().map(|(k, _)| k))?;
+    Ok(names.iter().map(|n| kwargs.get(n).cloned()).collect())
+}
+
+/// The signature of a method `Class.name(self, **kwargs)`.
+const fn method(qualname: &str) -> Signature<'_> {
+    Signature { qualname, bound: &["self"], keywords: None }
+}
+
+// pdfplumber/page.py:509 Page.search: its named parameters, which the
+// port takes apart from the keyword arguments
+const SEARCH: Signature<'static> = Signature {
+    qualname: "Page.search",
+    bound: &["self", "pattern", "regex", "case", "main_group", "return_chars", "return_groups"],
+    keywords: None,
+};
+
+// pdfplumber/page.py:538 Page.extract_text_lines
+const EXTRACT_TEXT_LINES: Signature<'static> =
+    Signature { qualname: "Page.extract_text_lines", bound: &["self", "strip", "return_chars"], keywords: None };
+
+/// Binds the keyword arguments of a call (`**kwargs`) to `signature`
+/// (`pycompat::call`): a name of a parameter the call bound already
+/// (`self`...) is a `TypeError` before the method runs.
+fn bind(signature: Signature<'_>, kwargs: &Kwargs) -> PyResult<()> {
+    signature.bind(kwargs.items().iter().map(|(k, _)| k))
 }
 
 /// `normalize_unicode(form, text)` (`unicodedata.normalize`): `TypeError`
@@ -2149,16 +2166,13 @@ impl Container for Page {
     }
 
     // pdfplumber/page.py:617 Page.to_dict
-    fn to_dict(&self, object_types: Option<&[PyStr]>) -> PyResult<Obj> {
+    fn to_dict(&self, object_types: &PyValue) -> PyResult<Obj> {
         let _frame = py_frame()?;
-        let types: Vec<PyStr> = match object_types {
-            Some(t) => t.to_vec(),
-            None => {
-                let objects = TO_DICT_OBJECTS.get(self.class_name(), || Page::objects(self))?;
-                let mut t: Vec<PyStr> = objects.keys().cloned().collect();
-                t.push(PyStr::new("annot"));
-                t
-            }
+        let types = if object_types.is_none() {
+            let objects = TO_DICT_OBJECTS.get(self.class_name(), || Page::objects(self))?;
+            PyValue::list(objects.keys().cloned().map(PyValue::Str).chain([PyValue::str("annot")]))
+        } else {
+            object_types.clone()
         };
         let mut d = Obj::from_pairs([
             ("page_number", PyValue::Int(self.page_number.clone())),
@@ -2170,9 +2184,9 @@ impl Container for Page {
         ]);
         d.set("width", TO_DICT_WIDTH.get(self.class_name(), || self.width())?);
         d.set("height", TO_DICT_HEIGHT.get(self.class_name(), || self.height())?);
-        for t in &types {
-            // d[t + "s"] = getattr(self, t + "s")
-            let name = t.concat(&PyStr::new("s"));
+        // for t in _object_types: d[t + "s"] = getattr(self, t + "s")
+        for t in &crate::container::object_types_iter(&types)? {
+            let name = crate::container::object_type_name(t)?;
             let value = crate::container::getattr(self, &name, &TO_DICT_GETATTR)?;
             d.set(&name, value);
         }

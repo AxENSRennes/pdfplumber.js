@@ -11,6 +11,7 @@
 //!   arithmetic and exact mixed comparisons, `int()`/`float()` parsing,
 //!   `float(int)`, true and floor division, `%`, `**`, `round()`, numeric
 //!   `hash()` and numbers as dict keys ([`NumKey`]).
+//! - [`call`]: how a call binds its keyword arguments (`TypeError`s).
 //! - [`builtins`]: `sum()` (3.12 compensated float sum), `min()`/`max()`
 //!   (first wins on ties), `round()`.
 //! - [`repr`]: `repr()` of float, bytes and str; `json.dumps(str)`.
@@ -44,6 +45,7 @@ pub mod base64;
 pub mod binascii;
 pub mod builtins;
 pub mod bytes_format;
+pub mod call;
 pub mod codecs;
 pub mod csv;
 pub mod diagnostics;

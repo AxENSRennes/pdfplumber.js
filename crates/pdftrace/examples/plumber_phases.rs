@@ -61,7 +61,7 @@ fn run() {
             lap(2, &mut || drop(p.objects()));
             lap(3, &mut || drop(p.extract_text(&kw)));
             lap(4, &mut || drop(p.extract_words(&kw)));
-            lap(5, &mut || drop(p.find_tables(None)));
+            lap(5, &mut || drop(p.find_tables(&pdfplumber::obj::PyValue::None)));
         }
         let t: Vec<String> = t.iter().map(|x| format!("{x:.4}")).collect();
         println!("{path}\t{}\t{}", pages.len(), t.join("\t"));

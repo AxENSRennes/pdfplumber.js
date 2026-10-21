@@ -749,6 +749,10 @@ impl Table {
     // pdfplumber/table.py:421 Table.extract
     /// The text of each cell (`None` where a row has no cell).
     pub fn extract(&self, page: &dyn TablePage, kwargs: &Kwargs) -> PyResult<Vec<Vec<Option<PyStr>>>> {
+        // the call binds `**kwargs`: `self` is bound already
+        // (pycompat::call)
+        pycompat::call::Signature { qualname: "Table.extract", bound: &["self"], keywords: None }
+            .bind(kwargs.items().iter().map(|(k, _)| k))?;
         // its frame, above `self.page.chars`
         let _frame = pycompat::recursion::py_frame()?;
         let chars = page_load(page, &EXTRACT_CHARS, || page.chars())?;
@@ -929,6 +933,11 @@ impl TableSettings {
                 "intersection_x_tolerance" => s.intersection_x_tolerance = Some(v),
                 "intersection_y_tolerance" => s.intersection_y_tolerance = Some(v),
                 "text_settings" => s.text_settings = v,
+                // bound to the instance already (CPython's argument
+                // binding, keyword by keyword in order)
+                "self" => {
+                    return Err(exc::TypeError("TableSettings.__init__() got multiple values for argument 'self'"))
+                }
                 _ => {
                     let mut m = PyStrBuilder::new();
                     m.push_rust_str("TableSettings.__init__() got an unexpected keyword argument '");
@@ -1038,6 +1047,23 @@ impl TableSettings {
         fallback(&mut self.intersection_x_tolerance, &self.intersection_tolerance);
         fallback(&mut self.intersection_y_tolerance, &self.intersection_tolerance);
         Ok(())
+    }
+
+    // pdfplumber/table.py:558 TableSettings.resolve
+    /// `TableSettings.resolve(settings)` of any value: `None` and a `dict`
+    /// as [`TableSettings::resolve`] (a `TableSettings`, which resolves to
+    /// itself, is never a value), anything else
+    /// `ValueError(f"Cannot resolve settings: {settings}")`, its `str()`
+    /// taking its C recursion units.
+    pub fn resolve_value(settings: &PyValue) -> PyResult<TableSettings> {
+        match settings {
+            PyValue::None => TableSettings::resolve(None),
+            PyValue::Dict(d) => TableSettings::resolve(Some(d)),
+            other => Err(PyErr::with_message(
+                ExcKind::ValueError,
+                &PyStr::new("Cannot resolve settings: ").concat(&other.str_counted()?),
+            )),
+        }
     }
 
     // pdfplumber/table.py:558 TableSettings.resolve

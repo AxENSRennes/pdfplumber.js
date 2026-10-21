@@ -29,8 +29,9 @@
 //!   (`flush_cache`, `close`), which the mask cannot answer (`NotPorted`).
 //!
 //! Every operation that reaches a document is recorded and replayed after
-//! a void call (`crate::ops`, "Void calls"); a page handle JavaScript
-//! freed stays as a tombstone for those replays.
+//! a void call (`crate::ops`, "Void calls"); a page or table JavaScript
+//! freed is made again by those replays, out of the handle table
+//! (`crate::ops`, "Freed handles").
 
 use std::rc::Rc;
 
@@ -41,7 +42,8 @@ use pdfplumber::page::{CropFn, FilterFn, Page};
 use pdfplumber::pdf::{OpenOptions, Source, PDF};
 use pdfplumber::table::{CellGroup, Table};
 use pdfplumber::utils::text::RegexMatch;
-use pycompat::recursion::{eval_entry, Guard};
+use pycompat::call::Signature;
+use pycompat::recursion::{eval_entry, py_frame, Guard};
 use pycompat::specialize::{AttrSite, CallSite};
 use pycompat::{exc, ExcKind, PyErr, PyResult, PyStr};
 use rustc_hash::FxHashMap;
@@ -53,115 +55,152 @@ use crate::ops::{arg, group_index, kwargs, list_of_objs, opt_bbox, seq, Core, Na
 pub struct PageObj {
     /// The handle of its document.
     pub doc: u32,
-    /// `None` between a reset and the replay that refills it, and for a
-    /// page JavaScript freed (outside replays).
+    /// `None` between a reset and the replay that refills it.
     pub page: Option<Rc<Page>>,
-    /// Freed by JavaScript: refused to its calls, kept for the replays.
-    pub freed: bool,
 }
 
 /// A table handle: a table `find_tables` found, with the page it was found
 /// on (`Table.page`).
 pub struct TableObj {
     pub doc: u32,
-    /// `None` between a reset and the replay that refills it, and for a
-    /// table JavaScript freed (outside replays).
+    /// `None` between a reset and the replay that refills it.
     pub table: Option<(Rc<Page>, Rc<Table>)>,
-    /// Freed by JavaScript: refused to its calls, kept for the replays.
-    pub freed: bool,
 }
 
-/// `pdfplumber.open(io.BytesIO(data), **options)`: the keyword arguments
-/// of pdfplumber/pdf.py:73 `PDF.open` (`None`: none), with the
-/// `TypeError` of an unknown one; their values as given (pdfplumber checks
-/// them where it uses them). `gs_path` and `repair_setting` only matter
-/// with `repair=True`, which is out of scope (`NotPorted`).
+// pdfplumber/pdf.py:73 PDF.open (a classmethod: `cls` is bound)
+const OPEN: Signature<'static> = Signature {
+    qualname: "PDF.open",
+    bound: &["cls", "path_or_fp"],
+    keywords: Some(&[
+        "pages",
+        "laparams",
+        "password",
+        "strict_metadata",
+        "unicode_norm",
+        "repair",
+        "gs_path",
+        "repair_setting",
+        "raise_unicode_errors",
+    ]),
+};
+
+/// `pdfplumber.open(io.BytesIO(data), **(options or {}))`: the keyword
+/// arguments of pdfplumber/pdf.py:73 `PDF.open`, bound as CPython binds
+/// them (`pycompat::call`); their values as given (pdfplumber checks them
+/// where it uses them). `gs_path` and `repair_setting` only matter with
+/// `repair=True`, which is out of scope (`NotPorted`).
 pub fn open(data: &Rc<[u8]>, options: &PyValue) -> PyResult<PDF> {
     let mut o = OpenOptions::new();
-    match options {
-        PyValue::None => {}
-        PyValue::Dict(d) => {
-            for (k, v) in d.items() {
-                match k.as_str() {
-                    Some("pages") => o.pages = Some(v.clone()),
-                    Some("laparams") => o.laparams = Some(v.clone()),
-                    Some("password") => o.password = Some(v.clone()),
-                    Some("strict_metadata") => o.strict_metadata = v.truthy(),
-                    Some("unicode_norm") => o.unicode_norm = Some(v.clone()),
-                    Some("raise_unicode_errors") => o.raise_unicode_errors = v.truthy(),
-                    Some("repair") => o.repair = v.truthy(),
-                    Some("gs_path" | "repair_setting") => {}
-                    _ => {
-                        return Err(PyErr::with_message(
-                            ExcKind::TypeError,
-                            &PyStr::new("PDF.open() got an unexpected keyword argument ")
-                                .concat(&PyStr::from(k.repr())),
-                        ))
-                    }
-                }
-            }
+    let options = if options.truthy() { star_kwargs(options, "pdfplumber.pdf.PDF.open")? } else { Obj::new() };
+    bind(OPEN, &options)?;
+    for (k, v) in options.items() {
+        match k.as_str() {
+            Some("pages") => o.pages = Some(v.clone()),
+            Some("laparams") => o.laparams = Some(v.clone()),
+            Some("password") => o.password = Some(v.clone()),
+            Some("strict_metadata") => o.strict_metadata = v.truthy(),
+            Some("unicode_norm") => o.unicode_norm = Some(v.clone()),
+            Some("raise_unicode_errors") => o.raise_unicode_errors = v.truthy(),
+            Some("repair") => o.repair = v.truthy(),
+            // gs_path, repair_setting
+            _ => {}
         }
-        other => return Err(exc::TypeError(format!("expected keyword arguments, got {}", other.type_name()))),
     }
     PDF::open(Source::Stream { data: data.clone(), kind: FileKind::BytesIO }, o)
 }
 
-/// A `list[str]` argument (`object_types`...), `None` for `None`.
-fn str_list(v: &PyValue) -> PyResult<Option<Vec<PyStr>>> {
+/// The mapping of `f(**v)`: a dict, else CPython's `TypeError` (`func`:
+/// the function's module and qualified name, as `_PyObject_FunctionStr`
+/// writes it), raised before the call.
+fn star_kwargs(v: &PyValue, func: &str) -> PyResult<Obj> {
     match v {
-        PyValue::None => Ok(None),
-        v => seq(v)?
-            .iter()
-            .map(|s| match s {
-                PyValue::Str(s) => Ok(s.clone()),
-                other => Err(exc::TypeError(format!("expected a str, got {}", other.type_name()))),
-            })
-            .collect::<PyResult<Vec<_>>>()
-            .map(Some),
+        PyValue::Dict(d) => Ok(d.clone()),
+        other => Err(exc::TypeError(format!("{func}() argument after ** must be a mapping, not {}", other.type_name()))),
     }
 }
 
-/// The keyword arguments of `to_json`, `to_csv` and `to_dict`
-/// (`object_types`, `include_attrs`, `exclude_attrs`, `precision`,
-/// `indent`); `stream` is not one: the text is returned.
-fn serialize_options(v: &PyValue, func: &str, names: &[&str]) -> PyResult<SerializeOptions> {
-    let k = kwargs(v)?;
-    check_keywords(&k, func, names)?;
+/// Binds the keyword arguments of a call (`pycompat::call`).
+fn bind(signature: Signature<'_>, kwargs: &Obj) -> PyResult<()> {
+    signature.bind(kwargs.items().iter().map(|(k, _)| k))
+}
+
+/// The signature of a method `Class.name(self, **kwargs)`.
+const fn method(qualname: &str) -> Signature<'_> {
+    Signature { qualname, bound: &["self"], keywords: None }
+}
+
+/// `TypeError` for a call of `qualname` (a method) with more positional
+/// arguments than its `max` parameters after `self` (CPython's message).
+fn check_arity(qualname: &str, given: usize, min: usize, max: usize) -> PyResult<()> {
+    if given <= max {
+        return Ok(());
+    }
+    let takes = if min == max {
+        format!("{} positional argument{}", max + 1, if max == 0 { "" } else { "s" })
+    } else {
+        format!("from {} to {} positional arguments", min + 1, max + 1)
+    };
+    Err(exc::TypeError(format!("{qualname}() takes {takes} but {} were given", given + 1)))
+}
+
+/// The options of `to_json`, `to_csv` and `to_dict`, bound to the
+/// method's parameters as given: `stream=None` returns the text (another
+/// stream is not modelled), the other values go to the ported code as
+/// they are, which raises where Python raises (`t + "s"`,
+/// `CSV_COLS_REQUIRED + include_attrs`, `set(exclude_attrs)`).
+fn serialize_options(v: &PyValue, func: &str, signature: Signature<'_>) -> PyResult<SerializeOptions> {
+    let k = star_kwargs(v, func)?;
+    bind(signature, &k)?;
+    if k.get("stream").is_some_and(|s| !s.is_none()) {
+        return Err(PyErr::new(
+            ExcKind::NotPorted,
+            "not modelled: to_json/to_csv into a stream (stream=None returns the text)",
+        ));
+    }
     let none = PyValue::None;
-    let get = |name: &str| k.get(name).unwrap_or(&none);
+    let get = |name: &str| k.get(name).unwrap_or(&none).clone();
     Ok(SerializeOptions {
-        object_types: str_list(get("object_types"))?,
-        include_attrs: str_list(get("include_attrs"))?,
-        exclude_attrs: str_list(get("exclude_attrs"))?,
+        object_types: get("object_types"),
+        include_attrs: get("include_attrs"),
+        exclude_attrs: get("exclude_attrs"),
         precision: k.get("precision").cloned().filter(|p| !p.is_none()),
         indent: k.get("indent").cloned().filter(|p| !p.is_none()),
     })
 }
 
-/// The `TypeError` of a call of `func` (its `__qualname__`) with a
-/// keyword argument it does not take (`names`; `stream` is not one here).
-fn check_keywords(kwargs: &Obj, func: &str, names: &[&str]) -> PyResult<()> {
-    for (name, _) in kwargs.items() {
-        if !names.iter().any(|n| *name == **n) {
-            return Err(PyErr::with_message(
-                ExcKind::TypeError,
-                &PyStr::new(&format!("{func}() got an unexpected keyword argument ")).concat(&PyStr::from(name.repr())),
-            ));
-        }
-    }
-    Ok(())
+// pdfplumber/page.py:617 Page.to_dict, pdfplumber/pdf.py:201 PDF.to_dict
+const fn to_dict(qualname: &str) -> Signature<'_> {
+    Signature { qualname, bound: &["self"], keywords: Some(&["object_types"]) }
 }
+// pdfplumber/container.py:108 Container.to_json
+const TO_JSON: Signature<'static> = Signature {
+    qualname: "Container.to_json",
+    bound: &["self"],
+    keywords: Some(&["stream", "object_types", "include_attrs", "exclude_attrs", "precision", "indent"]),
+};
+// pdfplumber/container.py:132 Container.to_csv
+const TO_CSV: Signature<'static> = Signature {
+    qualname: "Container.to_csv",
+    bound: &["self"],
+    keywords: Some(&["stream", "object_types", "precision", "include_attrs", "exclude_attrs"]),
+};
+// pdfplumber/page.py:538 Page.extract_text_lines, called with `strip` and
+// `return_chars` as positional arguments
+const EXTRACT_TEXT_LINES: Signature<'static> =
+    Signature { qualname: "Page.extract_text_lines", bound: &["self", "strip", "return_chars"], keywords: None };
+// pdfplumber/page.py:509 Page.search, called with `pattern` (the other
+// search options are taken apart by JavaScript)
+const SEARCH: Signature<'static> = Signature {
+    qualname: "Page.search",
+    bound: &["self", "pattern", "regex", "case", "main_group", "return_chars", "return_groups"],
+    keywords: None,
+};
 
-const TO_DICT: &[&str] = &["object_types"];
-const TO_JSON: &[&str] = &["object_types", "include_attrs", "exclude_attrs", "precision", "indent"];
-const TO_CSV: &[&str] = &["object_types", "precision", "include_attrs", "exclude_attrs"];
-
-/// `TableSettings.resolve(settings)` of a `None` or a dict.
-fn table_settings(v: &PyValue) -> PyResult<Option<Obj>> {
-    match v {
-        PyValue::None => Ok(None),
-        v => kwargs(v).map(Some),
-    }
+/// `table_settings` of `find_tables(*args)` and the other table methods:
+/// at most one positional argument, `None` when there is none.
+fn table_settings(args: &[PyValue], qualname: &str) -> PyResult<PyValue> {
+    check_arity(qualname, args.len(), 0, 1)?;
+    Ok(args.first().cloned().unwrap_or(PyValue::None))
 }
 
 fn group_value(g: &CellGroup) -> PyValue {
@@ -224,10 +263,17 @@ fn derived_value(handle: PyValue, page: &Page) -> PyValue {
 }
 
 /// The test function of a `FilteredPage` made from a JavaScript mask: the
-/// truth of each object of the parent's `objects`, by kind, in order.
+/// truth of each object of the parent's `objects`, by kind, in order. The
+/// statement's `mask_of(page, name)` (`oracle/unit/js_pages_run.py`): a
+/// function's frame, which reads `page.objects` at a site of its own
+/// (computed there if no statement computed them before; JavaScript's
+/// `filter` computes them with `page_objects` first, to run its function).
 fn mask_filter(parent: &Page, mask: &PyValue) -> PyResult<FilterFn> {
     let mask = kwargs(mask)?;
-    let objects = parent.objects()?;
+    let objects = {
+        let _mask_of = py_frame()?;
+        MASK_OF_OBJECTS.get(parent.class_name(), || parent.objects())?
+    };
     let mut kept: Vec<(Obj, bool)> = Vec::new();
     for (kind, objs) in objects.iter() {
         let truth = match mask.get(kind) {
@@ -272,6 +318,7 @@ static PAGE_INFO_HEIGHT: AttrSite = AttrSite::new("js page_info obj.height");
 static PAGE_OBJECTS: AttrSite = AttrSite::new("js page_objects obj.objects");
 static PAGE_ATTR: CallSite = CallSite::new("js page_attr getattr(obj, name)");
 static PAGE_STRUCTURE_TREE: AttrSite = AttrSite::new("js page_structure_tree obj.structure_tree");
+static MASK_OF_OBJECTS: AttrSite = AttrSite::new("js page_filter mask_of page.objects");
 
 /// `obj.method(*args, **kwargs)`: `CALL_FUNCTION_EX` calls the bound
 /// method through `PyObject_Call`, which enters its frame from C (the two
@@ -315,10 +362,10 @@ impl Core {
     }
 
     /// The page of the page handle `h` (the operation reaches its
-    /// document); a freed page only while replaying.
+    /// document).
     fn page(&mut self, h: u32) -> PyResult<Rc<Page>> {
         let (doc, page) = match self.handles.get(h) {
-            Some(Object::Page(p)) if !p.freed || self.replay.is_some() => (p.doc, p.page.clone()),
+            Some(Object::Page(p)) => (p.doc, p.page.clone()),
             _ => return Err(exc::ValueError("invalid handle")),
         };
         self.reach(doc)?;
@@ -335,7 +382,7 @@ impl Core {
 
     /// A new page handle of document `doc`.
     fn insert_page(&mut self, doc: u32, page: Rc<Page>) -> PyResult<PyValue> {
-        self.insert(Object::Page(PageObj { doc, page: Some(page), freed: false }))
+        self.insert(Object::Page(PageObj { doc, page: Some(page) }))
     }
 
     /// The operations of documents, pages and tables; `None` for a name
@@ -385,22 +432,25 @@ impl Core {
             }
             "doc_to_dict" => {
                 let pdf = self.pdf(h)?;
+                let o = serialize_options(arg(a()?, 0)?, "pdfplumber.pdf.PDF.to_dict", to_dict("PDF.to_dict"))?;
                 let _call = method_call()?;
-                let o = serialize_options(arg(a()?, 0)?, "PDF.to_dict", TO_DICT)?;
-                PyValue::Dict(pdf.to_dict(o.object_types.as_deref())?)
+                PyValue::Dict(pdf.to_dict(&o.object_types)?)
             }
             "doc_to_json" => {
                 let pdf = self.pdf(h)?;
+                let o = serialize_options(arg(a()?, 0)?, "pdfplumber.container.Container.to_json", TO_JSON)?;
                 let _call = method_call()?;
-                PyValue::Str(pdf.to_json(&serialize_options(arg(a()?, 0)?, "Container.to_json", TO_JSON)?)?)
+                PyValue::Str(pdf.to_json(&o)?)
             }
             "doc_to_csv" => {
                 let pdf = self.pdf(h)?;
+                let o = serialize_options(arg(a()?, 0)?, "pdfplumber.container.Container.to_csv", TO_CSV)?;
                 let _call = method_call()?;
-                PyValue::Str(pdf.to_csv(&serialize_options(arg(a()?, 0)?, "Container.to_csv", TO_CSV)?)?)
+                PyValue::Str(pdf.to_csv(&o)?)
             }
             "doc_close" => {
                 let pdf = self.pdf(h)?;
+                check_arity("PDF.close", a()?.len(), 0, 0)?;
                 let _call = method_call()?;
                 pdf.close()?;
                 PyValue::None
@@ -423,32 +473,42 @@ impl Core {
             }
             "page_extract_text" => {
                 let page = self.page(h)?;
+                let kw = star_kwargs(arg(a()?, 0)?, "pdfplumber.page.Page.extract_text")?;
+                bind(method("Page.extract_text"), &kw)?;
                 let _call = method_call()?;
-                PyValue::Str(page.extract_text(&kwargs(arg(a()?, 0)?)?)?)
+                PyValue::Str(page.extract_text(&kw)?)
             }
             "page_extract_text_simple" => {
                 let page = self.page(h)?;
+                let kw = star_kwargs(arg(a()?, 0)?, "pdfplumber.page.Page.extract_text_simple")?;
+                bind(method("Page.extract_text_simple"), &kw)?;
                 let _call = method_call()?;
-                PyValue::Str(page.extract_text_simple(&kwargs(arg(a()?, 0)?)?)?)
+                PyValue::Str(page.extract_text_simple(&kw)?)
             }
             "page_extract_words" => {
                 let page = self.page(h)?;
+                let kw = star_kwargs(arg(a()?, 0)?, "pdfplumber.page.Page.extract_words")?;
+                bind(method("Page.extract_words"), &kw)?;
                 let _call = method_call()?;
-                list_of_objs(page.extract_words(&kwargs(arg(a()?, 0)?)?)?)
+                list_of_objs(page.extract_words(&kw)?)
             }
             "page_extract_text_lines" => {
                 // [strip, return_chars, kwargs]
                 let a = a()?;
                 let page = self.page(h)?;
+                let kw = star_kwargs(arg(a, 2)?, "pdfplumber.page.Page.extract_text_lines")?;
+                bind(EXTRACT_TEXT_LINES, &kw)?;
                 let _call = method_call()?;
                 let (strip, chars) = (arg(a, 0)?.truthy(), arg(a, 1)?.truthy());
-                list_of_objs(page.extract_text_lines(strip, chars, &kwargs(arg(a, 2)?)?)?)
+                list_of_objs(page.extract_text_lines(strip, chars, &kw)?)
             }
             "page_search_text" => {
                 // the first half of `page.search(pattern, **options)`
                 let page = self.page(h)?;
+                let kw = star_kwargs(arg(a()?, 0)?, "pdfplumber.page.Page.search")?;
+                bind(SEARCH, &kw)?;
                 let _call = method_call()?;
-                PyValue::Str(page.search_text(&kwargs(arg(a()?, 0)?)?)?)
+                PyValue::Str(page.search_text(&kw)?)
             }
             "page_search" => {
                 // [kwargs, matches, return_groups, return_chars, main_group,
@@ -492,7 +552,8 @@ impl Core {
                     let named = named.borrow();
                     group_index(&main_group, m, named.as_ref().map(|n| &n[k]))
                 };
-                let kw = kwargs(arg(a, 0)?)?;
+                let kw = star_kwargs(arg(a, 0)?, "pdfplumber.page.Page.search")?;
+                bind(SEARCH, &kw)?;
                 let _call = method_call()?;
                 list_of_objs(page.search_with(&mut read, return_groups, return_chars, &group, &kw)?)
             }
@@ -505,9 +566,15 @@ impl Core {
                     _ => (CropFn::OutsideBbox, "Page.outside_bbox"),
                 };
                 let page = self.page(h)?;
+                // obj.crop(bbox, **options): options may be left out
+                let kw = match a.get(1) {
+                    None => Obj::new(),
+                    Some(v) => star_kwargs(v, &format!("pdfplumber.page.{func}"))?,
+                };
+                let signature =
+                    Signature { qualname: func, bound: &["self", "bbox"], keywords: Some(&["relative", "strict"]) };
+                bind(signature, &kw)?;
                 let _call = method_call()?;
-                let kw = kwargs(a.get(1).unwrap_or(&PyValue::None))?;
-                check_keywords(&kw, func, &["relative", "strict"])?;
                 let relative = kw.get("relative").is_some_and(PyValue::truthy);
                 let strict = kw.get("strict").is_none_or(PyValue::truthy);
                 let derived = page.crop(arg(a, 0)?.clone(), crop_fn, relative, strict)?;
@@ -524,21 +591,24 @@ impl Core {
             }
             "page_dedupe_chars" => {
                 let page = self.page(h)?;
+                let kw = star_kwargs(arg(a()?, 0)?, "pdfplumber.page.Page.dedupe_chars")?;
+                bind(method("Page.dedupe_chars"), &kw)?;
                 let _call = method_call()?;
-                let derived = page.dedupe_chars(&kwargs(arg(a()?, 0)?)?)?;
+                let derived = page.dedupe_chars(&kw)?;
                 let handle = self.insert_page(self.page_doc(h), derived.clone())?;
                 derived_value(handle, &derived)
             }
             "page_find_tables" => {
                 // page.find_tables(*args): [] or [settings]
                 let page = self.page(h)?;
+                let settings = table_settings(a()?, "Page.find_tables")?;
                 let _call = method_call()?;
-                let tables = page.find_tables(table_settings(a()?.first().unwrap_or(&PyValue::None))?.as_ref())?;
+                let tables = page.find_tables(&settings)?;
                 let doc = self.page_doc(h);
                 let mut out = Vec::with_capacity(tables.len());
                 for t in tables {
                     let t = Rc::new(t);
-                    let table = TableObj { doc, table: Some((page.clone(), t.clone())), freed: false };
+                    let table = TableObj { doc, table: Some((page.clone(), t.clone())) };
                     let handle = self.insert(Object::Table(table))?;
                     out.push(table_value(handle, &t)?);
                 }
@@ -547,15 +617,16 @@ impl Core {
             "page_find_table" => {
                 let page = self.page(h)?;
                 let found = {
+                    let settings = table_settings(a()?, "Page.find_table")?;
                     let _call = method_call()?;
-                    page.find_table(table_settings(a()?.first().unwrap_or(&PyValue::None))?.as_ref())?
+                    page.find_table(&settings)?
                 };
                 match found {
                     None => PyValue::None,
                     Some(t) => {
                         let t = Rc::new(t);
                         let doc = self.page_doc(h);
-                        let table = TableObj { doc, table: Some((page, t.clone())), freed: false };
+                        let table = TableObj { doc, table: Some((page, t.clone())) };
                         let handle = self.insert(Object::Table(table))?;
                         table_value(handle, &t)?
                     }
@@ -563,36 +634,41 @@ impl Core {
             }
             "page_extract_tables" => {
                 let page = self.page(h)?;
+                let settings = table_settings(a()?, "Page.extract_tables")?;
                 let _call = method_call()?;
-                let tables = page.extract_tables(table_settings(a()?.first().unwrap_or(&PyValue::None))?.as_ref())?;
+                let tables = page.extract_tables(&settings)?;
                 PyValue::list(tables.into_iter().map(rows_value))
             }
             "page_extract_table" => {
                 let page = self.page(h)?;
+                let settings = table_settings(a()?, "Page.extract_table")?;
                 let _call = method_call()?;
-                match page.extract_table(table_settings(a()?.first().unwrap_or(&PyValue::None))?.as_ref())? {
+                match page.extract_table(&settings)? {
                     None => PyValue::None,
                     Some(rows) => rows_value(rows),
                 }
             }
             "page_to_dict" => {
                 let page = self.page(h)?;
+                let o = serialize_options(arg(a()?, 0)?, "pdfplumber.page.Page.to_dict", to_dict("Page.to_dict"))?;
                 let _call = method_call()?;
-                let o = serialize_options(arg(a()?, 0)?, "Page.to_dict", TO_DICT)?;
-                PyValue::Dict(page.to_dict(o.object_types.as_deref())?)
+                PyValue::Dict(page.to_dict(&o.object_types)?)
             }
             "page_to_json" => {
                 let page = self.page(h)?;
+                let o = serialize_options(arg(a()?, 0)?, "pdfplumber.container.Container.to_json", TO_JSON)?;
                 let _call = method_call()?;
-                PyValue::Str(page.to_json(&serialize_options(arg(a()?, 0)?, "Container.to_json", TO_JSON)?)?)
+                PyValue::Str(page.to_json(&o)?)
             }
             "page_to_csv" => {
                 let page = self.page(h)?;
+                let o = serialize_options(arg(a()?, 0)?, "pdfplumber.container.Container.to_csv", TO_CSV)?;
                 let _call = method_call()?;
-                PyValue::Str(page.to_csv(&serialize_options(arg(a()?, 0)?, "Container.to_csv", TO_CSV)?)?)
+                PyValue::Str(page.to_csv(&o)?)
             }
             "page_close" => {
                 let page = self.page(h)?;
+                check_arity("Page.close", a()?.len(), 0, 0)?;
                 let _call = method_call()?;
                 page.close()?;
                 PyValue::None
@@ -601,14 +677,16 @@ impl Core {
             "table_extract" => {
                 // table.extract(**kwargs)
                 let (doc, table) = match self.handles.get(h) {
-                    Some(Object::Table(t)) if !t.freed || self.replay.is_some() => (t.doc, t.table.clone()),
+                    Some(Object::Table(t)) => (t.doc, t.table.clone()),
                     _ => return Err(exc::ValueError("invalid handle")),
                 };
                 self.reach(doc)?;
                 let (page, table) =
                     table.ok_or_else(|| PyErr::new(ExcKind::RuntimeError, "the table was not rebuilt"))?;
+                let kw = star_kwargs(arg(a()?, 0)?, "pdfplumber.table.Table.extract")?;
+                bind(method("Table.extract"), &kw)?;
                 let _call = method_call()?;
-                rows_value(table.extract(&*page, &kwargs(arg(a()?, 0)?)?)?)
+                rows_value(table.extract(&*page, &kw)?)
             }
             _ => return Ok(None),
         };

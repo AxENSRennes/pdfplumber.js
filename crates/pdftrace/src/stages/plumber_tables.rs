@@ -125,7 +125,7 @@ fn edge_v(e: &Obj) -> PyResult<Value> {
 /// `finder_lines(page, i, settings)`: a generator (a frame).
 fn finder_lines(lines: &mut Lines, page: &Page, i: usize, settings: &pdfplumber::utils::text::Kwargs) -> PyResult<()> {
     let _gen = py_frame()?;
-    match page.debug_tablefinder(Some(settings)) {
+    match page.debug_tablefinder(&PyValue::Dict(settings.clone())) {
         Err(e) => lines.push(format!("finder {i} {}", exc(&e))),
         Ok(finder) => {
             let is = i.to_string();
@@ -178,14 +178,14 @@ fn finder_lines(lines: &mut Lines, page: &Page, i: usize, settings: &pdfplumber:
             }
         }
     }
-    match page.find_table(Some(settings)) {
+    match page.find_table(&PyValue::Dict(settings.clone())) {
         Err(e) => lines.push(format!("find_table {i} {}", exc(&e))),
         Ok(found) => lines.push(format!(
             "find_table {i} {}",
             canon(&found.map_or(Ok(Value::None), |t| t.bbox().map(|b| bbox_v(&b)))?)
         )),
     }
-    match page.extract_tables(Some(settings)) {
+    match page.extract_tables(&PyValue::Dict(settings.clone())) {
         Err(e) => lines.push(format!("extract_tables {i} {}", exc(&e))),
         Ok(tables) => lines.push(bounded(
             "extract_tables",
@@ -193,7 +193,7 @@ fn finder_lines(lines: &mut Lines, page: &Page, i: usize, settings: &pdfplumber:
             &canon(&Value::List(tables.iter().map(|t| rows_v(t)).collect())),
         )),
     }
-    match page.extract_table(Some(settings)) {
+    match page.extract_table(&PyValue::Dict(settings.clone())) {
         Err(e) => lines.push(format!("extract_table {i} {}", exc(&e))),
         Ok(table) => {
             lines.push(bounded("extract_table", &i.to_string(), &canon(&table.map_or(Value::None, |t| rows_v(&t)))))

@@ -19,13 +19,27 @@
 //! deeper point. [`ProcessState::capture`] before the call and
 //! [`ProcessState::restore`] when it is void give that.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use crate::cmapdb::{CMapDB, CMapDBCaches};
 use crate::psparser::{py_symbols_restore, py_symbols_snapshot, PyInterned};
 
 /// The modeled state of the process (see the module documentation).
+///
+/// A snapshot is cheap to keep: the interned symbols are shared with the
+/// other snapshots ([`PyInterned`]), and the rest, whose size is bounded
+/// by the port's static sites, is shared with the previous snapshot when
+/// it did not change. The boundary keeps the state each call started
+/// from (`crates/wasm/src/ops.rs`, "Void calls").
 #[derive(Clone)]
 pub struct ProcessState {
     interned: PyInterned,
+    rest: Rc<Rest>,
+}
+
+/// The parts of a [`ProcessState`] besides the interned symbols.
+struct Rest {
     compiled: Vec<&'static str>,
     subscriptions: Vec<&'static str>,
     loggers: pycompat::logging::LoggerCaches,
@@ -33,27 +47,55 @@ pub struct ProcessState {
     cmaps: CMapDBCaches,
 }
 
+impl Rest {
+    fn same(&self, other: &Rest) -> bool {
+        self.compiled == other.compiled
+            && self.subscriptions == other.subscriptions
+            && self.loggers == other.loggers
+            && self.call_sites == other.call_sites
+            && self.cmaps.same(&other.cmaps)
+    }
+}
+
+thread_local! {
+    /// The [`Rest`] of the last snapshot, which the next one shares when
+    /// nothing changed.
+    static LAST: RefCell<Option<Rc<Rest>>> = const { RefCell::new(None) };
+}
+
 impl ProcessState {
     /// The state of this thread's process now.
     pub fn capture() -> ProcessState {
-        ProcessState {
-            interned: py_symbols_snapshot(),
+        let rest = Rest {
             compiled: pycompat::re_cache::snapshot(),
             subscriptions: pycompat::typing_cache::snapshot(),
             loggers: pycompat::logging::snapshot(),
             call_sites: pycompat::specialize::snapshot(),
             cmaps: CMapDB::caches_snapshot(),
-        }
+        };
+        let rest = LAST.with(|last| {
+            let mut last = last.borrow_mut();
+            match &*last {
+                Some(r) if r.same(&rest) => r.clone(),
+                _ => {
+                    let r = Rc::new(rest);
+                    *last = Some(r.clone());
+                    r
+                }
+            }
+        });
+        ProcessState { interned: py_symbols_snapshot(), rest }
     }
 
     /// Puts this state back.
     pub fn restore(self) {
         py_symbols_restore(self.interned);
-        pycompat::re_cache::restore(self.compiled);
-        pycompat::typing_cache::restore(self.subscriptions);
-        pycompat::logging::restore(self.loggers);
-        pycompat::specialize::restore(self.call_sites);
-        CMapDB::restore_caches(self.cmaps);
+        let rest = &*self.rest;
+        pycompat::re_cache::restore(rest.compiled.clone());
+        pycompat::typing_cache::restore(rest.subscriptions.clone());
+        pycompat::logging::restore(rest.loggers.clone());
+        pycompat::specialize::restore(rest.call_sites.clone());
+        CMapDB::restore_caches(rest.cmaps.clone());
     }
 }
 

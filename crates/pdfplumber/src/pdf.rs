@@ -239,17 +239,16 @@ fn laparams_from(laparams: &PyValue) -> PyResult<LAParams> {
         }
     };
     let mut values: [Option<PyValue>; 7] = Default::default();
+    let signature = pycompat::call::Signature {
+        qualname: "LAParams.__init__",
+        bound: &["self"],
+        keywords: Some(&LAPARAMS_NAMES),
+    };
     for (k, v) in &pairs {
         let PyValue::Str(k) = k else { return Err(exc::TypeError("keywords must be strings")) };
-        match LAPARAMS_NAMES.iter().position(|n| *k == **n) {
-            Some(i) => values[i] = Some(v.clone()),
-            None => {
-                return Err(PyErr::with_message(
-                    ExcKind::TypeError,
-                    &PyStr::new("LAParams.__init__() got an unexpected keyword argument ")
-                        .concat(&PyStr::from(k.repr())),
-                ))
-            }
+        signature.bind([k])?;
+        if let Some(i) = LAPARAMS_NAMES.iter().position(|n| *k == **n) {
+            values[i] = Some(v.clone());
         }
     }
     // the class call, __init__ (which calls _validate)
@@ -592,7 +591,7 @@ impl Container for PDF {
 
     // pdfplumber/pdf.py:201 PDF.to_dict
     /// `{"metadata": ..., "pages": [page.to_dict(object_types) ...]}`
-    fn to_dict(&self, object_types: Option<&[PyStr]>) -> PyResult<Obj> {
+    fn to_dict(&self, object_types: &PyValue) -> PyResult<Obj> {
         let _frame = py_frame()?;
         let mut pages = Vec::new();
         for page in TO_DICT_PAGES.get("PDF", || PDF::pages(self))? {

@@ -120,18 +120,51 @@ pub struct ContainerCache {
     pub edges: Option<Rc<Vec<Obj>>>,
 }
 
-/// The options of `to_json` and `to_csv` (`stream` is not one: the port
-/// returns the text, which is what `stream=None` does).
-#[derive(Clone, Debug, Default)]
+/// The options of `to_json` and `to_csv`, as given (`stream` is not one:
+/// the port returns the text, which is what `stream=None` does).
+#[derive(Clone, Debug)]
 pub struct SerializeOptions {
-    /// `object_types` (`None`: every kind of `objects`, and `"annot"`)
-    pub object_types: Option<Vec<PyStr>>,
-    pub include_attrs: Option<Vec<PyStr>>,
-    pub exclude_attrs: Option<Vec<PyStr>>,
+    /// `object_types`: `None` (every kind of `objects`, and `"annot"`), or
+    /// any value, iterated (`for t in object_types`), each item `t + "s"`
+    pub object_types: PyValue,
+    /// `include_attrs` (`CSV_COLS_REQUIRED + include_attrs`) and
+    /// `exclude_attrs` (`set(exclude_attrs)`), `None` when not given
+    pub include_attrs: PyValue,
+    pub exclude_attrs: PyValue,
     /// `precision`, as given (`round(x, precision)`)
     pub precision: Option<PyValue>,
     /// `indent` of `json.dumps` (`to_json` only), as given
     pub indent: Option<PyValue>,
+}
+
+impl Default for SerializeOptions {
+    fn default() -> Self {
+        SerializeOptions {
+            object_types: PyValue::None,
+            include_attrs: PyValue::None,
+            exclude_attrs: PyValue::None,
+            precision: None,
+            indent: None,
+        }
+    }
+}
+
+/// `for t in object_types`: the items `to_dict` and `to_csv` iterate
+/// (`TypeError` for a value that is not iterable).
+pub fn object_types_iter(object_types: &PyValue) -> PyResult<Vec<PyValue>> {
+    match crate::obj::py_iter(object_types) {
+        Some(items) => items,
+        None => Err(pycompat::exc::TypeError(format!("'{}' object is not iterable", object_types.type_name()))),
+    }
+}
+
+/// `t + "s"`: the attribute name of an object type (`TypeError` for an
+/// item that is not a `str`).
+pub fn object_type_name(t: &PyValue) -> PyResult<PyStr> {
+    match &t.add(&PyValue::str("s"))? {
+        PyValue::Str(name) => Ok(name.clone()),
+        other => unreachable!("only str + str succeeds, not {}", other.type_name()),
+    }
 }
 
 /// pdfplumber/container.py:12 `Container`
@@ -145,7 +178,7 @@ pub trait Container {
     fn objects(&self) -> PyResult<Rc<Objects>>;
 
     // pdfplumber/container.py:23 Container.to_dict
-    fn to_dict(&self, object_types: Option<&[PyStr]>) -> PyResult<Obj>;
+    fn to_dict(&self, object_types: &PyValue) -> PyResult<Obj>;
 
     /// The cached properties of [`ContainerCache`].
     fn container_cache(&self) -> &RefCell<ContainerCache>;
@@ -285,12 +318,8 @@ pub trait Container {
     /// without an indent, the Python one with).
     fn to_json(&self, options: &SerializeOptions) -> PyResult<PyStr> {
         let _frame = py_frame()?;
-        let data = self.to_dict(options.object_types.as_deref())?;
-        let serialized = Serializer::new(
-            options.precision.clone(),
-            options.include_attrs.as_deref(),
-            options.exclude_attrs.as_deref(),
-        )?
+        let data = self.to_dict(&options.object_types)?;
+        let serialized = Serializer::new(options.precision.clone(), &options.include_attrs, &options.exclude_attrs)?
         .serialize(&PyValue::Dict(data))?;
         let indent = match &options.indent {
             None => JsonIndent::None,
@@ -322,14 +351,13 @@ pub trait Container {
     /// is not a `str` (`PyValue::str_counted`), `\r\n` line ends.
     fn to_csv(&self, options: &SerializeOptions) -> PyResult<PyStr> {
         let _frame = py_frame()?;
-        let object_types: Vec<PyStr> = match &options.object_types {
-            Some(t) => t.clone(),
-            None => {
-                let mut t: Vec<PyStr> =
-                    TO_CSV_OBJECTS.get(self.class_name(), || self.objects())?.keys().cloned().collect();
-                t.push(PyStr::new("annot"));
-                t
-            }
+        // object_types = list(self.objects.keys()) + ["annot"] when None
+        let object_types = if options.object_types.is_none() {
+            let objects = TO_CSV_OBJECTS.get(self.class_name(), || self.objects())?;
+            let keys = objects.keys().cloned().map(PyValue::Str).chain([PyValue::str("annot")]);
+            PyValue::list(keys)
+        } else {
+            options.object_types.clone()
         };
         let mut serialized: Vec<PyValue> = Vec::new();
         let mut fields: Vec<PyStr> = Vec::new();
@@ -349,14 +377,11 @@ pub trait Container {
                 Some(pages) => pages.into_iter().map(Some).collect(),
             }
         };
-        let serializer = Serializer::new(
-            options.precision.clone(),
-            options.include_attrs.as_deref(),
-            options.exclude_attrs.as_deref(),
-        )?;
+        let serializer = Serializer::new(options.precision.clone(), &options.include_attrs, &options.exclude_attrs)?;
         for page in &pages {
-            for t in &object_types {
-                let name = t.concat(&PyStr::new("s"));
+            // for t in object_types: iterated again for each page
+            for t in &object_types_iter(&object_types)? {
+                let name = object_type_name(t)?;
                 // getattr(page, t + "s")
                 let objs = match page {
                     None => getattr(self, &name, &TO_CSV_GETATTR)?,

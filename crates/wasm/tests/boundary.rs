@@ -1014,12 +1014,12 @@ fn the_response_envelope_aligns_its_parts() {
     }
 }
 
-/// Handles of pages and tables: a freed one is refused (it stays a
-/// tombstone for the replays of the calls that used it), freeing a
+/// Handles of pages and tables: a freed one is refused and its slot is
+/// free (the replays make its object again, out of the table), freeing a
 /// document frees its pages and tables, `free` cannot run in a `sequence`
 /// (a void call would not undo it), and an operation reaches one document.
 #[test]
-fn page_and_table_handles_are_freed_as_tombstones() {
+fn page_and_table_handles_are_freed() {
     let mut core = Core::new();
     // a ruled 2 x 2 grid: one table
     let grid: &[u8] = b"10 10 m 110 10 l 10 60 m 110 60 l 10 110 m 110 110 l \
@@ -1063,10 +1063,24 @@ fn page_and_table_handles_are_freed_as_tombstones() {
         let Js::Obj(info) = ok(call(core, "info", 0, PyValue::None, None)) else { panic!() };
         info[3].1.clone()
     };
-    // two documents, two pages, the table (tombstones included)
-    assert_eq!(count(&mut core), Js::Num(5.0));
+    // two documents and the other page: the freed handles are free
+    assert_eq!(count(&mut core), Js::Num(3.0));
+    // a crop made and freed again and again holds no handle (the table
+    // has room for 2^20 - 1: it used to fill up with tombstones)
+    let Js::Arr(pages) = ok(call(&mut core, "doc_pages", other as u32, list(vec![]), None)) else { panic!() };
+    let page = handle_of(&pages[0]);
+    let bbox = list(vec![0, 0, 50, 50].into_iter().map(PyValue::from).collect());
+    let mut handles = std::collections::BTreeSet::new();
+    for _ in 0..2000 {
+        let crop = ok(call(&mut core, "page_crop", page, list(vec![bbox.clone()]), None));
+        let crop = handle_of(&crop);
+        handles.insert(crop & 0xf_ffff);
+        assert_eq!(ok(call(&mut core, "free", crop, PyValue::None, None)), Js::Null);
+    }
+    assert_eq!(handles.len(), 1, "one slot reused");
+    assert_eq!(count(&mut core), Js::Num(4.0));
     assert_eq!(ok(call(&mut core, "free", doc as u32, PyValue::None, None)), Js::Null);
-    assert_eq!(count(&mut core), Js::Num(2.0));
+    assert_eq!(count(&mut core), Js::Num(3.0));
     assert!(matches!(ok(call(&mut core, "page_info", other_page, list(vec![]), None)), Js::Obj(_)));
 }
 

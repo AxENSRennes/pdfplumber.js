@@ -69,10 +69,6 @@ fn str_of(v: &Value) -> &str {
     v.as_str().expect("a str")
 }
 
-fn str_list(v: &PyValue) -> Vec<PyStr> {
-    v.as_seq().expect("a list").iter().map(|s| s.as_pystr().expect("a str").clone()).collect()
-}
-
 /// What `deep_apply` returns.
 enum Deep {
     Value(Value),
@@ -195,9 +191,9 @@ fn deep_apply(case: &Case<'_>, pdf: &PDF, page: Option<&Rc<Page>>) -> PyResult<D
         "pdf_to_csv" => {
             let k = kwargs(&op[1]);
             let options = SerializeOptions {
-                object_types: k.get("object_types").map(str_list),
-                include_attrs: k.get("include_attrs").map(str_list),
-                exclude_attrs: k.get("exclude_attrs").map(str_list),
+                object_types: k.get("object_types").cloned().unwrap_or(PyValue::None),
+                include_attrs: k.get("include_attrs").cloned().unwrap_or(PyValue::None),
+                exclude_attrs: k.get("exclude_attrs").cloned().unwrap_or(PyValue::None),
                 precision: k.get("precision").cloned(),
                 indent: k.get("indent").cloned(),
             };
@@ -207,7 +203,7 @@ fn deep_apply(case: &Case<'_>, pdf: &PDF, page: Option<&Rc<Page>>) -> PyResult<D
             let Value::List(s) = &op[1] else { panic!("settings") };
             let settings = settings_of(page(), s)?;
             let mut out = Vec::new();
-            for t in page().find_tables(Some(&settings))? {
+            for t in page().find_tables(&PyValue::Dict(settings))? {
                 leaf(1)?; // t.bbox: a property, a leaf
                 let bbox = t.bbox()?;
                 let rows = t.extract(&**page(), &Kwargs::new())?;
@@ -217,25 +213,25 @@ fn deep_apply(case: &Case<'_>, pdf: &PDF, page: Option<&Rc<Page>>) -> PyResult<D
         }
         "extract_tables" => {
             let Value::List(s) = &op[1] else { panic!("settings") };
-            let tables = page().extract_tables(Some(&settings_of(page(), s)?))?;
+            let tables = page().extract_tables(&PyValue::Dict(settings_of(page(), s)?))?;
             Deep::Value(Value::List(tables.iter().map(|t| rows_value(t)).collect()))
         }
         "extract_table" => {
             let Value::List(s) = &op[1] else { panic!("settings") };
-            let table = page().extract_table(Some(&settings_of(page(), s)?))?;
+            let table = page().extract_table(&PyValue::Dict(settings_of(page(), s)?))?;
             Deep::Value(table.map_or(Value::None, |t| rows_value(&t)))
         }
         "debug_tablefinder" => {
             let Value::List(s) = &op[1] else { panic!("settings") };
-            let tf = page().debug_tablefinder(Some(&settings_of(page(), s)?))?;
+            let tf = page().debug_tablefinder(&PyValue::Dict(settings_of(page(), s)?))?;
             Deep::Finder([tf.edges.len(), tf.intersections.points.len(), tf.cells.len(), tf.tables.len()])
         }
         method @ ("to_json" | "to_csv") => {
             let k = kwargs(&op[1]);
             let options = SerializeOptions {
-                object_types: k.get("object_types").map(str_list),
-                include_attrs: k.get("include_attrs").map(str_list),
-                exclude_attrs: k.get("exclude_attrs").map(str_list),
+                object_types: k.get("object_types").cloned().unwrap_or(PyValue::None),
+                include_attrs: k.get("include_attrs").cloned().unwrap_or(PyValue::None),
+                exclude_attrs: k.get("exclude_attrs").cloned().unwrap_or(PyValue::None),
                 precision: k.get("precision").cloned(),
                 indent: k.get("indent").cloned(),
             };
