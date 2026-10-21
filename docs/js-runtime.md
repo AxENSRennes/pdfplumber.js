@@ -337,9 +337,17 @@ et ses pages derrière des handles.
   (CMaps paresseuses, appels nuls et rejeux), et des fenêtres autour de la
   première profondeur qui lève `RecursionError` par la frontière (Form
   XObjects imbriqués sous `objects`, `chars` et `extract_text`, tirets
-  imbriqués sous `to_json`, opérandes imbriqués à la limite des unités C
-  sous `objects`, `chars`, `extract_text` et `search`), cherchée par
-  dichotomie sur le script. Rejouées par `js_runtime_unit.rs`
+  imbriqués sous `to_json`, chaîne d'éléments de structure sous
+  `pdf.structure_tree` ; opérandes imbriqués à la limite des unités C sous
+  chaque chemin qui interprète la page : `objects`, chaque liste par sorte
+  et chaque liste d'arêtes par `getattr`, `extract_text`,
+  `extract_text_simple`, `extract_words`, `extract_text_lines`, `search`,
+  `dedupe_chars`, `find_tables`, `find_table`, `extract_tables`,
+  `extract_table`, `Table.extract` d'une table trouvée par lignes
+  explicites, `to_dict`, `to_json`, `to_csv`, et ceux du document
+  (`objects`, `edges`, `to_dict`, `to_json`, `to_csv`) ; `repr` d'un `/K`
+  imbriqué et `str(s)` de `decode_text` sous `pdf.structure_tree`), cherchée
+  par dichotomie sur le script : 40 fenêtres de quatre profondeurs. Rejouées par `js_runtime_unit.rs`
   (`page_operations_match_pdfplumber_through_the_boundary`, deux formats,
   un fil neuf par session) et par JS (Node, navigateurs, cœur direct et
   worker) avec la `RegExp` de JS pour `search`, dont les spans doivent être
