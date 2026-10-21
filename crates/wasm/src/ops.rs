@@ -440,13 +440,12 @@ impl Core {
         Ok(PyValue::Int(PyInt::from(h)))
     }
 
-    /// Notes that the running operation reached the document `doc` (one
-    /// document per operation: its replay rebuilds that document only).
+    /// Notes that the running operation reached the document `doc`. An
+    /// operation reaches one document, that of the handle it acts on (no
+    /// operation takes two documents' handles; a `sequence` records each of
+    /// its operations): its replay rebuilds that document only.
     pub(crate) fn reach(&mut self, doc: u32) -> PyResult<()> {
-        match self.op_doc {
-            Some(d) if d != doc => return Err(exc::ValueError("an operation reaches two documents")),
-            _ => self.op_doc = Some(doc),
-        }
+        self.op_doc = Some(doc);
         if !self.touched.contains(&doc) {
             self.touched.push(doc);
         }
@@ -481,6 +480,8 @@ impl Core {
                 ("pdfminer", PyValue::str("20260107")),
                 ("pdfplumber", PyValue::str("0.11.9")),
                 ("handles", PyValue::from(self.handles.len() as i64)),
+                // the calls the documents' replays would run
+                ("history", PyValue::from(self.history.len() as i64)),
             ])),
             "set_format" => {
                 self.format = Format::parse(args)?;

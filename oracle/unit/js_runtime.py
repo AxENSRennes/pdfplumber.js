@@ -445,6 +445,10 @@ def documents_session() -> list[list[Any]]:
     s.add("page_attr", pages[0], "edges")
     s.add("page_objects", pages[0])
     _table_ops(s, pages[0], tables=_tables(rel, 0), found=_found(rel, 0))
+    # filters whose truth differs from object to object
+    for predicate in ("not-rect", "small"):
+        filtered = s.add("page_filter", pages[0], predicate, makes=1)
+        s.add("page_objects", filtered)
     # a ruled table
     rel = "upstream/pdfplumber-python/tests/pdfs/nics-background-checks-2015-11.pdf"
     doc, pages = s.open(rel, {"pages": [1]}, pages=1)
@@ -497,6 +501,9 @@ def documents_session() -> list[list[Any]]:
     s.add("doc_open", None, {"pages": "1"}, data="corpus/micro/text-operators.pdf", makes=1)
     s.add("doc_pages", s.count - 1)
     s.add("doc_open", None, {"nope": 1}, data="corpus/micro/text-operators.pdf")
+    s.add("doc_open", None, {"laparams": {"bogus": 1}}, data="corpus/micro/text-operators.pdf")
+    s.add("doc_open", None, {"gs_path": "gs", "repair_setting": "default"}, data="corpus/micro/text-operators.pdf",
+          makes=1)
     s.add("doc_open", None, {"password": b"x"}, data="corpus/micro/text-operators.pdf", makes=1)
     s.add("doc_open", None, {}, data=b"%PDF-1.4 nothing")
     return s.cases
@@ -543,8 +550,11 @@ def run_session(cases: list[list[Any]]) -> dict[str, Any]:
     return {"depth": raw["depth"], "results": [[typed_json.decode(r), typed_json.decode(x)] for r, x in raw["results"]]}
 
 
-def _recursion(results: dict[str, Any]) -> bool:
-    return any(isinstance(r, ExcValue) and "recursion" in r.message for r, _ in results["results"])
+def _recursion(results: dict[str, Any], last: bool = False) -> bool:
+    """Whether an operation raised ``RecursionError`` (``last``: the last
+    one)."""
+    rs = results["results"][-1:] if last else results["results"]
+    return any(isinstance(r, ExcValue) and "recursion" in r.message for r, _ in rs)
 
 
 #: Explicit table lines: ``find_tables`` reads no object of the page, so
@@ -563,9 +573,9 @@ def depth_session(make: Any, ops: list[tuple[str, tuple[Any, ...]]], n: int) -> 
         target = pages[0]
         if op.startswith("doc:"):
             op, target = op[4:], doc
-        elif op.startswith("table:"):
-            op, target = op[6:], s.count - 1
-        makes = 1 if op in ("page_find_tables", "page_find_table") else 0
+        elif op.startswith("table:") or op.startswith("crop:"):
+            op, target = op.split(":", 1)[1], s.count - 1
+        makes = 1 if op in ("page_find_tables", "page_find_table", "page_crop") else 0
         s.add(op, target, *args, js=args[0] if op == "search" else None, makes=makes)
     return s.cases
 
@@ -618,9 +628,22 @@ def depth_windows() -> Iterator[tuple[str, list[list[Any]]]]:
         ("struct-chain-doc", adv_structure.WINDOWS["chain-to-dict"][0], [("doc:doc_structure_tree", ())], 2, 1200),
         ("struct-repr-doc", adv_structure.WINDOWS["k-nested-list-repr"][0], [("doc:doc_structure_tree", ())], 9000, 10100),
         ("struct-str-doc", adv_structure.WINDOWS["actualtext-str-first"][0], [("doc:doc_structure_tree", ())], 9000, 10100),
+        ("struct-str-page", adv_structure.WINDOWS["actualtext-str-first"][0], [("page_structure_tree", ())], 9000, 10100),
+        # a site run for one class, specialized for it, then for another
+        # (the first runs raised: nothing was cached); bisected on the last
+        ("class-text", climit["tf-list"], [("page_extract_text", ({},)), ("page_extract_text", ({},)),
+                                           ("page_crop", ([0, 0, 200, 200], {})), ("crop:page_extract_text", ({},))],
+         9000, 10100),
+        ("class-table", climit["tf-list"], [("page_find_tables", (EXPLICIT,)), ("table:table_extract", ({},)),
+                                            ("table:table_extract", ({},)), ("page_crop", ([0, 0, 200, 200], {})),
+                                            ("crop:page_find_tables", (EXPLICIT,)), ("table:table_extract", ({},))],
+         9000, 10100),
+        ("class-doc", climit["tf-list"], [("page_attr", ("chars",)), ("page_attr", ("chars",)),
+                                          ("doc:doc_attr", ("chars",))], 9000, 10100),
     ]
     for label, make, ops, lo, hi in kinds:
-        fails = lambda n: _recursion(run_session(depth_session(make, ops, n)))  # noqa: E731
+        last = label.startswith("class-")
+        fails = lambda n: _recursion(run_session(depth_session(make, ops, n)), last)  # noqa: E731
         assert not fails(lo) and fails(hi), (label, lo, hi)
         while hi - lo > 1:
             mid = (lo + hi) // 2

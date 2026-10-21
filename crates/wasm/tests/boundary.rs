@@ -913,6 +913,7 @@ fn documents_handles_formats_and_the_benchmark_body() {
         ("pdfminer", s("20260107")),
         ("pdfplumber", s("0.11.9")),
         ("handles", Js::Num(1.0)),
+        ("history", Js::Num(1.0)),
     ]);
     assert_eq!(info, expected);
     assert_eq!(ok(call(&mut core, "free", h, PyValue::None, None)), Js::Null);
@@ -1067,4 +1068,30 @@ fn page_and_table_handles_are_freed_as_tombstones() {
     assert_eq!(ok(call(&mut core, "free", doc as u32, PyValue::None, None)), Js::Null);
     assert_eq!(count(&mut core), Js::Num(2.0));
     assert!(matches!(ok(call(&mut core, "page_info", other_page, list(vec![]), None)), Js::Obj(_)));
+}
+
+/// The documented deviations of `pdfplumber.open` reach JavaScript as
+/// `NotPorted`, not wrapped in `PdfminerException`: `repair=True`
+/// (Ghostscript), a password that is not a `str` for an encrypted document
+/// (an unencrypted one never reads it: `js_runtime.py` `open.jsonl`).
+#[test]
+fn open_reports_what_is_not_modelled_as_not_ported() {
+    let root = std::path::PathBuf::from(std::env::var("PDFPLUMBER_ROOT").expect("PDFPLUMBER_ROOT"));
+    let encrypted = std::fs::read(root.join("upstream/pdfplumber-python/tests/pdfs/password-example.pdf")).unwrap();
+    let mut core = Core::new();
+    let open = |core: &mut Core, key: &str, value: PyValue, data: Vec<u8>| {
+        let r = call(core, "doc_open", 0, PyValue::Dict(Obj::from_pairs([(key, value)])), Some(data));
+        error_name(&r).0
+    };
+    assert_eq!(open(&mut core, "password", PyValue::Bytes(Rc::from(&b"test"[..])), encrypted.clone()), "NotPorted");
+    assert_eq!(open(&mut core, "repair", PyValue::Bool(true), tiny_pdf(b"")), "NotPorted");
+    assert_eq!(open(&mut core, "password", PyValue::str("wrong"), encrypted.clone()), "PdfminerException");
+    let ok_open = call(
+        &mut core,
+        "doc_open",
+        0,
+        PyValue::Dict(Obj::from_pairs([("password", PyValue::str("test"))])),
+        Some(encrypted),
+    );
+    assert_eq!(ok_open.status, 0);
 }

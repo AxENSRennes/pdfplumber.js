@@ -143,6 +143,25 @@ mod tests {
     }
 
     #[test]
+    fn iteration_gives_each_live_object_with_its_handle() {
+        let mut h = Handles::new();
+        let a = h.insert("a").unwrap();
+        h.remove(a);
+        // the slot reused: generation 1
+        let b = h.insert("b").unwrap();
+        let c = h.insert("c").unwrap();
+        assert_ne!(b >> INDEX_BITS, 0);
+        assert_eq!(h.iter().map(|(k, v)| (k, *v)).collect::<Vec<_>>(), [(b, "b"), (c, "c")]);
+        for (k, v) in h.iter_mut() {
+            if k == b {
+                *v = "B";
+            }
+        }
+        assert_eq!(h.get(b), Some(&"B"));
+        assert_eq!(h.iter_mut().map(|(k, _)| k).collect::<Vec<_>>(), [b, c]);
+    }
+
+    #[test]
     fn generations_wrap_after_4096_uses_of_a_slot() {
         let mut h = Handles::new();
         let first = h.insert(0).unwrap();

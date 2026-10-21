@@ -737,13 +737,24 @@ fn cjk_scenario(preload: &[String]) -> (Vec<Js>, Vec<String>, Js) {
         Js::Obj(items) => items.iter().find(|(kk, _)| *kk == k.encode_utf16().collect::<Vec<_>>()).unwrap().1.clone(),
         other => panic!("a dict: {other:?}"),
     };
+    let empty = || PyValue::Dict(pdfplumber::obj::Obj::new());
+    let info = |core: &mut Core, key: usize| {
+        let Js::Obj(info) = ok(call(core, "info", 0, PyValue::None, None)) else { panic!() };
+        info[key].1.clone()
+    };
     let mut out = Vec::new();
+    // another document first: the CJK document's handle is not 1
+    let other = fs::read(root.join("corpus/micro/text-operators.pdf")).unwrap();
+    let other = num(&run(&mut core, "doc_open", 0, PyValue::None, Some(other)));
+    let Js::Arr(other_pages) = run(&mut core, "doc_pages", other, list(vec![]), None) else { panic!() };
+    let other_page = num(&field(&other_pages[0], "handle"));
     let doc = run(&mut core, "doc_open", 0, PyValue::None, Some(data));
     let doc = num(&doc);
     let Js::Arr(pages) = run(&mut core, "doc_pages", doc, list(vec![]), None) else { panic!() };
     let (first, last) = (num(&field(&pages[0], "handle")), num(&field(pages.last().unwrap(), "handle")));
     // state the replays must rebuild: a derived page of a derived page, a
-    // page freed (a tombstone the replays refill), a page's text map cache
+    // page and a table freed (tombstones the replays refill), a live table,
+    // a page's text map cache
     let crop = run(&mut core, "page_crop", first, list(vec![PyValue::list([0, 0, 400, 400].map(PyValue::from))]), None);
     let crop = num(&field(&crop, "handle"));
     let inner = run(
@@ -759,19 +770,42 @@ fn cjk_scenario(preload: &[String]) -> (Vec<Js>, Vec<String>, Js) {
     let inner = num(&field(&inner, "handle"));
     out.push(run(&mut core, "page_info", inner, list(vec![]), None));
     assert_eq!(ok(call(&mut core, "free", crop, PyValue::None, None)), Js::Null);
+    // explicit lines: the tables are found without interpreting the page
+    let explicit = PyValue::Dict(pdfplumber::obj::Obj::from_pairs([
+        ("vertical_strategy", PyValue::str("explicit")),
+        ("horizontal_strategy", PyValue::str("explicit")),
+        ("explicit_vertical_lines", PyValue::list([50, 300, 550].map(PyValue::from))),
+        ("explicit_horizontal_lines", PyValue::list([50, 400, 800].map(PyValue::from))),
+    ]));
+    let mut tables = Vec::new();
+    for _ in 0..2 {
+        let Js::Arr(t) = run(&mut core, "page_find_tables", first, list(vec![explicit.clone()]), None) else {
+            panic!()
+        };
+        tables.push(num(&field(&t[0], "handle")));
+    }
+    let (freed_table, live_table) = (tables[0], tables[1]);
+    assert_eq!(ok(call(&mut core, "free", freed_table, PyValue::None, None)), Js::Null);
+    // a document opened and freed: its history goes, not the others'
+    let spare = fs::read(root.join("corpus/micro/text-operators.pdf")).unwrap();
+    let spare = num(&run(&mut core, "doc_open", 0, PyValue::None, Some(spare)));
+    run(&mut core, "doc_pages", spare, list(vec![]), None);
+    assert_eq!(ok(call(&mut core, "free", spare, PyValue::None, None)), Js::Null);
     // the first interpretation: void calls (the CMaps), the document rebuilt
-    out.push(run(&mut core, "page_extract_text", inner, list(vec![PyValue::Dict(pdfplumber::obj::Obj::new())]), None));
+    out.push(run(&mut core, "page_extract_text", inner, list(vec![empty()]), None));
     out.push(run(&mut core, "page_attr", first, list(vec![PyValue::str("chars")]), None));
-    out.push(run(&mut core, "page_extract_text", last, list(vec![PyValue::Dict(pdfplumber::obj::Obj::new())]), None));
+    out.push(run(&mut core, "page_extract_text", last, list(vec![empty()]), None));
     out.push(run(&mut core, "page_objects", inner, list(vec![]), None));
-    // a freed page is refused
+    out.push(run(&mut core, "table_extract", live_table, list(vec![empty()]), None));
+    out.push(run(&mut core, "page_extract_text", other_page, list(vec![empty()]), None));
+    // freed handles are refused
     let freed = result(call(&mut core, "page_info", crop, list(vec![]), None));
-    let Js::Obj(info) = ok(call(&mut core, "info", 0, PyValue::None, None)) else { panic!() };
-    out.push(info[3].1.clone());
-    // the document goes with its pages and its history
+    assert_eq!(result(call(&mut core, "table_extract", freed_table, list(vec![empty()]), None)), freed);
+    out.push(info(&mut core, 3)); // handles
+    out.push(info(&mut core, 4)); // history
+                                  // the document goes with its pages, tables and history
     ok(call(&mut core, "free", doc, PyValue::None, None));
-    let Js::Obj(info) = ok(call(&mut core, "info", 0, PyValue::None, None)) else { panic!() };
-    out.push(info[3].1.clone());
+    out.push(info(&mut core, 3));
     out.push(result(call(&mut core, "page_info", first, list(vec![]), None)));
     (out, loaded, freed)
 }
@@ -791,9 +825,14 @@ fn a_void_call_rebuilds_its_document_by_replaying_its_history() {
     assert!(none.is_empty(), "no void call with every CMap handed over: {none:?}");
     assert_eq!(lazy, eager);
     assert_eq!(freed, exc("ValueError", "invalid handle"));
-    // the handles left: the document, its pages, the crops (the freed one a
-    // tombstone), then none of its own once it is freed
-    assert!(matches!(lazy[5], Js::Num(n) if n >= 4.0), "{:?}", lazy[5]);
-    assert_eq!(lazy[6], Js::Num(0.0));
-    assert_eq!(lazy[7], exc("ValueError", "invalid handle"));
+    // the live table's rows
+    assert!(matches!(&lazy[5], Js::Arr(rows) if rows.len() == 2), "{:?}", lazy[5]);
+    // the handles left: two documents, their pages, the crops and the
+    // tables (the freed ones tombstones), then the other document's once
+    // this one is freed; the history (lazy = eager: a void call's own
+    // entries go, a replay records nothing)
+    assert!(matches!(lazy[7], Js::Num(n) if n >= 8.0), "{:?}", lazy[7]);
+    assert!(matches!(lazy[8], Js::Num(n) if n >= 12.0), "{:?}", lazy[8]);
+    assert_eq!(lazy[9], Js::Num(2.0));
+    assert_eq!(lazy[10], exc("ValueError", "invalid handle"));
 }
