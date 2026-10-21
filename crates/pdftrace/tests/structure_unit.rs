@@ -15,6 +15,7 @@
 //! the file names containing one of them.
 
 use std::fs;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use pdfminer::cmapdb::{CMapDB, DirCMapProvider};
@@ -140,6 +141,173 @@ fn stage_traces() {
         failures.len(),
         failures[..failures.len().min(20)].join("\n")
     );
+}
+
+/// A PDF of one page whose structure elements are `elems` (objects 11..),
+/// under the root 10 (`/K [11 0 R]`), with the parent tree `parents` (the
+/// page's `/StructParents 0`). Written here: Python never returns on the
+/// cycles these tests build, so there is no oracle trace to replay.
+fn tagged_pdf(elems: &[(u32, &str)], parents: &str) -> Vec<u8> {
+    let mut objects: Vec<(u32, String)> = vec![
+        (1, "<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 10 0 R >>".into()),
+        (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".into()),
+        (3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R /StructParents 0 >>".into()),
+        (4, "<< /Length 23 >>\nstream\n/P <</MCID 0>> BDC EMC\nendstream".into()),
+        (10, "<< /Type /StructTreeRoot /K [11 0 R] /ParentTree 20 0 R >>".into()),
+        (20, format!("<< /Nums [0 [{parents}]] >>")),
+    ];
+    objects.extend(elems.iter().map(|(n, body)| (*n, (*body).to_owned())));
+    objects.sort_by_key(|(n, _)| *n);
+    let mut out = b"%PDF-1.7\n".to_vec();
+    let mut offsets = Vec::new();
+    for (n, body) in &objects {
+        offsets.push((*n, out.len()));
+        out.extend_from_slice(format!("{n} 0 obj\n{body}\nendobj\n").as_bytes());
+    }
+    let size = objects.last().map_or(0, |(n, _)| n + 1);
+    let xref = out.len();
+    out.extend_from_slice(format!("xref\n0 {size}\n").as_bytes());
+    for n in 0..size {
+        match offsets.iter().find(|(m, _)| *m == n) {
+            Some((_, pos)) => out.extend_from_slice(format!("{pos:010} 00000 n \n").as_bytes()),
+            None => out.extend_from_slice(b"0000000000 65535 f \n"),
+        }
+    }
+    out.extend_from_slice(format!("trailer\n<< /Size {size} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n").as_bytes());
+    out
+}
+
+/// Structure elements: `(object number, dict)`.
+type Elems<'a> = &'a [(u32, &'a str)];
+
+/// `page.structure_tree` of the first page of `pdf`.
+fn page_tree(pdf: Vec<u8>) -> PyResult<Vec<pdfplumber::obj::PyValue>> {
+    use pdfplumber::pdf::{OpenOptions, Source, PDF};
+    let source = Source::Stream { data: pdf.into(), kind: pdfminer::pdfparser::FileKind::BytesIO };
+    let pdf = PDF::open(source, OpenOptions::new())?;
+    let pages = pdf.pages()?;
+    pages[0].structure_tree()
+}
+
+/// A cycle among the elements a page's parent tree reaches: Python's
+/// `_resolve_children` loops for ever; the port raises `MemoryError` once
+/// every element was processed (`pdfplumber::structure`, "Not modeled").
+#[test]
+fn page_scope_cycles_raise_memory_error() {
+    let cases: [(&str, Elems<'_>, &str); 4] = [
+        // the cycle through an element's second child, after a branch
+        // without one
+        (
+            "second-child",
+            &[
+                (11, "<< /S /Document /P 10 0 R /K [12 0 R 13 0 R] >>"),
+                (12, "<< /S /P /P 11 0 R /K [0] >>"),
+                (13, "<< /S /Div /P 11 0 R /K [0 11 0 R] >>"),
+            ],
+            "12 0 R 13 0 R",
+        ),
+        // the element's parent among its children
+        (
+            "parent",
+            &[(11, "<< /S /Document /P 10 0 R /K [12 0 R] >>"), (12, "<< /S /P /P 11 0 R /K [0 11 0 R] >>")],
+            "12 0 R",
+        ),
+        // itself among its children
+        ("self", &[(11, "<< /S /Document /P 10 0 R /K [11 0 R 0] >>")], "11 0 R"),
+        // a longer cycle, reached through an element seen twice
+        (
+            "long",
+            &[
+                (11, "<< /S /Document /P 10 0 R /K [12 0 R 12 0 R] >>"),
+                (12, "<< /S /Div /P 11 0 R /K [13 0 R] >>"),
+                (13, "<< /S /P /P 12 0 R /K [0 14 0 R] >>"),
+                (14, "<< /S /Span /P 13 0 R /K [12 0 R] >>"),
+            ],
+            "14 0 R",
+        ),
+    ];
+    for (name, elems, parents) in cases {
+        let err = page_tree(tagged_pdf(elems, parents)).expect_err(name);
+        assert_eq!(err.kind, pycompat::ExcKind::MemoryError, "{name}: {err:?}");
+    }
+}
+
+/// Without a cycle the walk ends however often it reaches an element (a
+/// DAG's elements are processed once per path), and an element that
+/// raises is reached before the walk repeats itself: the guard never
+/// fires there.
+#[test]
+fn page_scope_dags_end() {
+    let dag = tagged_pdf(
+        &[
+            (11, "<< /S /Document /P 10 0 R /K [12 0 R 13 0 R 12 0 R] >>"),
+            (12, "<< /S /Div /P 11 0 R /K [14 0 R 14 0 R] >>"),
+            (13, "<< /S /Div /P 11 0 R /K [14 0 R] >>"),
+            (14, "<< /S /P /P 12 0 R /K [0] >>"),
+        ],
+        "14 0 R 13 0 R",
+    );
+    let tree = page_tree(dag).expect("a DAG's tree");
+    assert_eq!(tree.len(), 1);
+    // a cycle, and an element whose children cannot be iterated: its
+    // PDFKeyError comes first
+    let failing = tagged_pdf(
+        &[
+            (11, "<< /S /Document /P 10 0 R /K [12 0 R 15 0 R] >>"),
+            (12, "<< /S /P /P 11 0 R /K [0 11 0 R] >>"),
+            (15, "<< /S /Span /P 11 0 R /K 16 0 R >>"),
+            (16, "<< /Length 1 >>\nstream\nx\nendstream"),
+        ],
+        "12 0 R 15 0 R",
+    );
+    let err = page_tree(failing).expect_err("the stream's error");
+    assert_eq!(err.kind, pycompat::ExcKind::PDFKeyError, "{err:?}");
+}
+
+/// `Findable.find_all`/`find` of an element walk its children as the
+/// tree's walk its own (`_find_all`, the same code): below a single
+/// top-level element that does not match, the tree finds what the element
+/// finds, in the same order (the stage calls the tree's only).
+#[test]
+fn element_find_is_the_tree_find_below_it() {
+    use pdfplumber::pdf::{OpenOptions, Source, PDF};
+    use pdfplumber::structure::{Matcher, PDFStructTree, Scope};
+    let pdf = tagged_pdf(
+        &[
+            (11, "<< /S /Document /P 10 0 R /K [12 0 R 13 0 R] >>"),
+            (12, "<< /S /P /P 11 0 R /K [0 14 0 R] >>"),
+            (13, "<< /S /Div /P 11 0 R /K [15 0 R] >>"),
+            (14, "<< /S /Span /P 12 0 R /K [0] >>"),
+            (15, "<< /S /P /P 13 0 R /K [0] >>"),
+        ],
+        "12 0 R 14 0 R 15 0 R",
+    );
+    let source = Source::Stream { data: pdf.into(), kind: pdfminer::pdfparser::FileKind::BytesIO };
+    let pdf = PDF::open(source, OpenOptions::new()).expect("open");
+    let tree = PDFStructTree::new(&pdf.core.doc, Scope::Document(&pdf)).expect("a tree");
+    let el = tree.children[0].clone();
+    let p = pycompat::PyStr::new("P");
+    let not_document = |e: &pdfplumber::structure::PDFStructElement| Ok(e.r#type.as_str() != Some("Document"));
+    for (m1, m2, m3, m4) in [
+        (Matcher::Tag(&p), Matcher::Tag(&p), Matcher::Tag(&p), Matcher::Tag(&p)),
+        (
+            Matcher::Func(&not_document),
+            Matcher::Func(&not_document),
+            Matcher::Func(&not_document),
+            Matcher::Func(&not_document),
+        ),
+    ] {
+        let from_el: Vec<_> = el.find_all(m1).expect("find_all").map(|e| e.expect("an element")).collect();
+        let from_tree: Vec<_> = tree.find_all(m2).expect("find_all").map(|e| e.expect("an element")).collect();
+        assert!(!from_el.is_empty());
+        assert_eq!(from_el.len(), from_tree.len());
+        assert!(from_el.iter().zip(&from_tree).all(|(a, b)| Rc::ptr_eq(a, b)));
+        let first_el = el.find(m3).expect("find").expect("a match");
+        let first_tree = tree.find(m4).expect("find").expect("a match");
+        assert!(Rc::ptr_eq(&first_el, &from_el[0]) && Rc::ptr_eq(&first_tree, &from_el[0]));
+    }
+    let span = pycompat::PyStr::new("Nothing");
+    assert!(el.find(Matcher::Tag(&span)).expect("find").is_none());
 }
 
 /// The value of a decoding: the text, or the exception.

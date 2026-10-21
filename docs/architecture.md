@@ -1479,17 +1479,22 @@ et sans `raise_unicode_errors`), sur pages tournées.
   unités C par niveau d'éléments, deux cadres par niveau d'un attribut
   imbriqué), puis l'élagage (itératif chez Python, récursif ici sur une
   profondeur qu'`asdict` a déjà bornée). Les feuilles passent par
-  `copy.deepcopy` : un nom (`PSLiteral`, `PSKeyword`) six cadres, une
-  référence (ou un flux d'un document chiffré, dont `decipher` est une
-  méthode du document) copie le document jusqu'à l'objet fichier,
+  `copy.deepcopy`, dont le port suit le parcours et les cadres
+  (`copy_frames`) : un nom (`PSLiteral`, `PSKeyword`) six cadres, une
+  référence copie le document jusqu'à l'objet fichier,
   `TypeError("cannot pickle 'BufferedReader' instances")` pour un
   fichier ouvert par un chemin, après 22 cadres (le plus profond est dans
-  les sections xref du document, avant `_parser` dans son `__dict__` ;
-  mesuré par `python -m oracle.depth_probe structure`). Non modélisé : un
+  les sections xref du document, avant `_parser` dans son `__dict__`), un
+  flux (qu'y laisse le décodage des métadonnées en place) ses attributs,
+  avec leurs références, et, pour un document chiffré, le gestionnaire de
+  sécurité dont `decipher` est une méthode (14 cadres pour RC4 ; mesuré
+  par `python -m oracle.depth_probe structure`). Non modélisés : un
   document dont `xrefs`, `info` ou `catalog` tiennent des objets directs
-  imbriqués plus profond (la copie y descend plus bas avant l'erreur), et
-  la copie complète du document lu depuis des octets (JavaScript : le
-  port garde la référence, une valeur égale, sans compter ses cadres).
+  imbriqués plus profond (la copie y descend plus bas avant l'erreur), les
+  `/CF` des gestionnaires AES, la mémoire de `copy` (un objet revu n'est
+  pas reparcouru), et la copie complète du document lu depuis des octets
+  (JavaScript : le port garde la référence, une valeur égale, sans
+  compter ses cadres).
 - **`repr`** : le `__repr__` généré de la dataclass derrière
   `dataclasses._recursive_repr` (le wrapper appelé depuis le C, deux
   cadres et quatre unités C par niveau), les champs par `repr_counted`.
@@ -1546,8 +1551,8 @@ et sans `raise_unicode_errors`), sur pages tournées.
   `password_given` : l'étape Python reçoit `None` sans mot de passe, et
   ses lignes `password` diffèrent pour un mot de passe vide donné (cinq
   fichiers du corpus).
-- **Corpus `adv-structure`** (`oracle/adversarial/structure.py`, 426
-  PDF) : les cas de la liste ci-dessus, et 15 fenêtres de profondeur
+- **Corpus `adv-structure`** (`oracle/adversarial/structure.py`, 441
+  PDF) : les cas de la liste ci-dessus, et 16 fenêtres de profondeur
   autour du premier niveau qui échoue en Python, cherché par dichotomie
   sur l'étape (`--probe`) : `to_dict` d'une chaîne d'éléments (330 ;
   329 avec une révision littérale à la feuille, 323 avec une référence
@@ -1555,7 +1560,7 @@ et sans `raise_unicode_errors`), sur pages tournées.
   parents), `prune` (986), `repr` (497), un attribut imbriqué (492), les
   unités C du `repr(ref)` d'une liste imbriquée dans `/K` (9 990), du
   `str(s)` de `decode_text` à sa première exécution (9 989) et aux
-  suivantes (9 990), du `repr` d'un attribut (9 991), `resolve_and_decode`
+  suivantes (9 990), sur la seconde page (9 992 : la propriété `page.structure_tree` de la lambda de l'étape y est chargée par l'instruction spécialisée), du `repr` d'un attribut (9 991), `resolve_and_decode`
   de dicts et de listes imbriqués (987), l'arbre des nombres des parents
   (978). Rejoué par `oracle/unit/structure.py` (`structure_unit.rs`),
   les fenêtres aussi depuis un et deux cadres plus bas.
@@ -1571,8 +1576,31 @@ et sans `raise_unicode_errors`), sur pages tournées.
   (`stream_is_external`) : `close()` ne le ferme pas.
 - **Résultats** : `plumber_doc` sur `all` (20 premières pages), 1 853
   fichiers identiques (le dernier après la fermeture du fichier) ;
-  `plumber_doc` et `plumber_objects` sur `adv-structure`, 426 identiques
-  chacune ; `structure_unit` (648 traces, 3 300 cas de `codecs`).
+  `plumber_doc` et `plumber_objects` sur `adv-structure`, 441 identiques
+  chacune ; `structure_unit` (676 traces, 5 148 cas de `codecs`, et les tests Rust du garde des cycles).
+- **Mutations** (`--profile mutants -j 1 --timeout 60 -- --package=pdftrace
+  --test=structure_unit`, puis `scripts/mutants-ok.sh` et des mutants à
+  la main pour les corps sans `Default`) : `structure.rs` (261 mutants,
+  dont 197 « unviable » de `PyResult`), `codecs.rs` (66), les fonctions
+  DOC de `page.rs` avec `_normalize_box` (57), `read_metadata` et
+  `PDF::structure_tree` (19), `resolve_and_decode*`/`decode_text_value`
+  (30), le diff de `pdftypes.rs` (`Str`, 29), `property_load`,
+  `file_kind`, `close_file` ; passe `Ok(..)` (73 mutants) ; 22 mutants à
+  la main (chaque corps remplacé par une valeur concrète : tous tués, celui
+  de `property_load` par la fenêtre `actualtext-str-page2`).
+  Les survivants ont donné des cas (`adv-structure` : flux parmi les
+  attributs, avec ou sans chiffrement, référence dans leurs listes ;
+  `/Annots` décodé en `str` ; pages tournées non carrées ; cycle puis
+  erreur) et des tests Rust (garde des cycles, `find` d'un élément) ;
+  restent, justifiés : `(ch & 0x3FF) << 10 | (ch2 & 0x3FF)` en `^`
+  (bits disjoints) dans `decode_utf16` ; `checking && !edges...` en `||`
+  dans `_resolve_children` (un élément retraité avant la décision
+  réinscrit les mêmes arêtes : même décision) ; dans `pdftypes.rs`, les
+  bras `Str` de `==` entre deux `PDFObject` et de l'égalité et du hachage
+  des `ObjId` (aucun chemin ne compare deux `str` décodées ni ne fait d'une
+  `str` un identifiant d'objet : les identifiants viennent du parseur et
+  des références) ; `PDFStructElement.__iter__` remplacé par le champ
+  `children` (rien ne l'appelait).
 
 ### Plan de comptage des cadres
 

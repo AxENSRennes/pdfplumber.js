@@ -45,11 +45,12 @@ tree, marked content on its pages):
 
 from __future__ import annotations
 
+import random
 import sys
 from typing import Any, Callable
 
 from ._common import write_corpus
-from ._pdf import Doc, Name, Raw, Ref, classic, flate
+from ._pdf import Doc, Name, Raw, Ref, classic, flate, standard_encryption
 
 Case = tuple[str, bytes, "str | None"]
 
@@ -72,6 +73,7 @@ CONTENT0 = 60
 ROOT = 10
 PARENT_TREE = 100
 INFO = 200
+ENCRYPT = 199
 
 MISSING = object()
 
@@ -90,6 +92,7 @@ def tagged(
     streams: dict[int, bytes] | None = None,
     struct_root: Any = MISSING,
     trailer_extra: dict | None = None,
+    encrypted: bool = False,
 ) -> bytes:
     """A tagged document. Defaults: one page, the tree ``Document`` (11)
     -> ``P`` (12, MCID 0) and ``Span`` (13, MCIDs 1, 2), a parent tree
@@ -157,7 +160,15 @@ def tagged(
             doc.add(INFO, info)
             trailer["Info"] = Ref(INFO)
     trailer.update(trailer_extra or {})
-    return classic(doc, trailer)
+    enc = None
+    if encrypted:
+        # RC4, empty user password (the stages open it without one)
+        docid = b"0123456789abcdef"
+        enc = standard_encryption(random.Random(1), r=3, user="", owner="o", docid=docid)
+        doc.add(ENCRYPT, dict(enc.param), encrypt=False)
+        trailer["Encrypt"] = Ref(ENCRYPT)
+        trailer["ID"] = [docid, docid]
+    return classic(doc, trailer, enc)
 
 
 def elem(s: Any, parent: int, k: Any = MISSING, **attrs: Any) -> dict:
@@ -348,6 +359,18 @@ def cases_attributes() -> list[Case]:
     a_case("value-ref-nested", A={"Widths": [1, [Ref(40)]]}, extra={40: 7})
     a_case("value-literal", A={"Placement": Name("Block"), "L": [Name("a"), {"b": Name("c")}]})
     a_case("value-string", A={"T": b"\xfe\xff\x00h\x00i"})
+    # a stream among the attribute values: the metadata decoding resolved
+    # the reference in place (/Info refers to the attribute dict); the deep
+    # copy of to_dict copies the stream, its attributes (a reference there:
+    # the document's file, TypeError) and the security handler of an
+    # encrypted document (its decipher method)
+    for label, encrypted, length, items in (("plain", False, 1, [Name("n"), [1]]), ("encrypted", True, 1, [Name("n"), [1]]),
+                                            ("ref-length", False, Ref(73), [Name("n"), [1]]),
+                                            ("ref-in-list", False, 1, [Name("n"), [Ref(73)]])):
+        out.append((f"attr-stream-via-info-{label}", tagged(
+            elems={12: elem("P", 11, 0, A=Ref(70))}, info={"X": Ref(70)},
+            extra={70: {"O": Name("Layout"), "S": Ref(71)}, 71: {"Length": length, "L": items}, 73: 1},
+            streams={71: b"x"}, encrypted=encrypted), None))
     a_case("not-dict-int", A=5)
     a_case("not-dict-string", A=b"x")
     a_case("not-dict-stream", A=Ref(42), extra={42: {"Length": 1}})
@@ -465,6 +488,13 @@ def cases_parent_tree() -> list[Case]:
     pt("parent-root-type-other", root_extra={"Type": Name("Other")})
     pt("parent-direct", elems={12: elem("P", 11, 0, P={"Type": Name("StructTreeRoot")})})
     pt("parent-int", elems={12: elem("P", 11, 0, P=4)})
+    # a cycle among the elements the parent tree reaches, and an element
+    # whose /K is a stream: _resolve_children reaches the stream (its
+    # PDFKeyError) before it could loop for ever on the cycle
+    pt("cycle-then-error", {"Nums": [0, [Ref(12), Ref(15)]]},
+       elems={11: elem("Document", ROOT, [Ref(12), Ref(15)]), 12: elem("P", 11, [0, Ref(11)]),
+              13: None, 15: elem("Span", 11, Ref(16))},
+       extra={16: {"Length": 1}}, streams={16: b"x"})
     pt("parent-dag", {"Nums": [0, [Ref(14), Ref(14)]]},
        elems={11: elem("Document", ROOT, [Ref(12), Ref(13)]), 12: elem("P", 11, [Ref(14)]),
               13: elem("Div", 11, [Ref(14)]), 14: elem("Span", 12, [0, 1])})
@@ -496,6 +526,14 @@ def cases_metadata() -> list[Case]:
     md("refers-to-annot", {"Annot": Ref(30)}, extra={30: {"Type": Name("Annot"), "Subtype": Name("Link"), "Rect": [1, 2, 3, 4],
                                                          "A": {"S": Name("URI"), "URI": b"http://x/"}, "T": b"\xff"}},
        page_extra={0: {"Annots": [Ref(30)]}})
+    # the page dict decoded in place up to a value that refers to itself
+    # (RecursionError, logged): its /Annots, a name, is a str from then on,
+    # which page.annots iterates (its /Type, after, is left a name)
+    for label, annots in (("name", b"/A"), ("empty-name", b"/")):
+        page = (b"<< /Annots " + annots + b" /Bomb 90 0 R /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] "
+                b"/Contents 60 0 R /Resources << /Font << /F1 9 0 R >> >> /StructParents 0 >>")
+        out.append((f"info-mutates-page-annots-{label}", tagged(
+            info={"P": Ref(PAGE0)}, extra={PAGE0: Raw(page), 90: {"Self": Ref(90)}}, page_extra={0: {}}), None))
     md("is-catalog", Ref(1))
     md("is-page", Ref(PAGE0))
     md("not-dict", Raw(b"[1 2]"))
@@ -534,6 +572,10 @@ def cases_annots() -> list[Case]:
     for rot in (90, 180, 270, -90, 450, 90.0):
         an(f"rotate-{rot}", [Ref(30)], page={"Rotate": rot})
     an("rotate-string", [Ref(30)], page={"Rotate": b"%d"})
+    # a page that is not square: rotate_point takes its width or its height
+    for rot in (90, 180, 270):
+        an(f"rotate-{rot}-portrait", [Ref(30)], page={"Rotate": rot, "MediaBox": [0, 0, 200, 300]})
+    an("rotate-90-cropbox", [Ref(30)], page={"Rotate": 90, "MediaBox": [0, 0, 200, 300], "CropBox": [10, 20, 150, 250]})
     an("cropbox", [Ref(30)], page={"CropBox": [5, 5, 150, 150]})
     an("mediabox-offset", [Ref(30)], page={"MediaBox": [50, 50, 250, 300]})
     for label, rect in [("swapped", [110, 40, 10, 20]), ("floats", [1.5, 2.5, 3.5, 4.5]), ("short", [1, 2, 3]),
@@ -696,6 +738,18 @@ def _w11(n: int) -> bytes:
                          13: elem("Span", 11, [1, 2], ActualText=Raw(b"[300 " + bytes(_ser(nested_list(n, 1))) + b"]"))})
 
 
+# C units: decode_text's str(s) in the tree of the second page: the
+# property `page.structure_tree` of the stage's lambda is loaded by a
+# specialized instruction there (no unit), by the generic one for the first
+# page (two)
+@window("actualtext-str-page2", 9992)
+def _w16(n: int) -> bytes:
+    deep = Raw(b"[300 " + bytes(_ser(nested_list(n, 1))) + b"]")
+    return tagged(npages=2, elems={11: elem("Document", ROOT, [Ref(12), Ref(13), Ref(14)]),
+                                   14: elem("P", 11, [0], Pg=Ref(PAGE0 + 1), ActualText=deep)},
+                  parent_tree={"Nums": [0, [Ref(12), Ref(13), Ref(13)], 1, [Ref(14)]]})
+
+
 # C units: the repr of an element's nested attribute (element_repr)
 @window("attribute-repr", 9991)
 def _w12(n: int) -> bytes:
@@ -756,6 +810,7 @@ def probe() -> None:
         "actualtext-str-first": lambda t: "RecursionError" in _line(t, "structure_tree "),
         "actualtext-str-second": lambda t: "RecursionError" in _line(t, "structure_tree "),
         "attribute-repr": lambda t: _line(t, "element_repr ").startswith("element_repr !"),
+        "actualtext-str-page2": lambda t: "RecursionError" in _page_line(t, 2, "page_structure_tree "),
         "metadata-nested-dicts": lambda t: _line(t, "open !RecursionError") != "",
         "metadata-nested-lists": lambda t: _line(t, "open !RecursionError") != "",
         "parent-tree-kids": lambda t: "RecursionError" in _line(t, "page_structure_tree "),
@@ -783,6 +838,17 @@ def probe() -> None:
                 else:
                     lo = mid
             print(f"{name}: first failing {hi}", flush=True)
+
+
+def _page_line(trace: list[str], page: int, prefix: str) -> str:
+    """The first line starting with ``prefix`` after ``page <page>``."""
+    seen = False
+    for line in trace:
+        if line.startswith(f"page {page} "):
+            seen = True
+        elif seen and line.startswith(prefix):
+            return line
+    return ""
 
 
 def _line(trace: list[str], prefix: str) -> str:

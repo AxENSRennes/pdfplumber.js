@@ -267,48 +267,13 @@ pub static DECODE_TEXT_STR: CallSite = CallSite::new("pdfinternals.decode_text s
 /// refers to itself is decoded until `RecursionError`, keeping what the
 /// levels already left. See [`resolve_and_decode_obj`].
 pub fn resolve_and_decode(obj: &PyValue) -> PyResult<PyValue> {
-    match obj {
-        // A value that is not a PDF object (no caller passes a Python list
-        // or dict): the same operations on a copy.
-        PyValue::List(items) => {
-            let _frame = py_frame()?;
-            let mut out = Vec::with_capacity(items.len());
-            for v in items.iter() {
-                let _entry = eval_entry()?;
-                out.push(resolve_and_decode(v)?);
-            }
-            Ok(PyValue::List(out.into()))
-        }
-        PyValue::Dict(d) => {
-            let _frame = py_frame()?;
-            let mut out = d.clone();
-            for (k, v) in d.items() {
-                out.set(k, resolve_and_decode(v)?);
-            }
-            Ok(PyValue::Dict(out))
-        }
-        PyValue::Str(s) => Ok(PyValue::from_pdf(resolve_and_decode_obj(&PDFObject::Str(s.clone()))?)),
-        PyValue::Pdf(o) => Ok(PyValue::from_pdf(resolve_and_decode_obj(o)?)),
-        other => match pdf_scalar(other) {
-            Some(o) => Ok(PyValue::from_pdf(resolve_and_decode_obj(&o)?)),
-            None => {
-                let _frame = py_frame()?;
-                Ok(other.clone())
-            }
-        },
-    }
-}
-
-/// A Python scalar as the PDF object it comes from.
-fn pdf_scalar(v: &PyValue) -> Option<PDFObject> {
-    Some(match v {
-        PyValue::None => PDFObject::Null,
-        PyValue::Bool(b) => PDFObject::Bool(*b),
-        PyValue::Int(i) => PDFObject::Int(i.clone()),
-        PyValue::Float(f) => PDFObject::Float(f.get()),
-        PyValue::Bytes(b) => PDFObject::Bytes(b.clone()),
-        _ => return None,
-    })
+    // pdfplumber's callers give a PDF object (the metadata:
+    // [`resolve_and_decode_obj`]) or a name (a `str`: `Page.process_object`'s
+    // color space names); a Python container is not modeled.
+    let PyValue::Str(s) = obj else {
+        return Err(pycompat::PyErr::not_ported("resolve_and_decode of a value that is not a str"));
+    };
+    Ok(PyValue::from_pdf(resolve_and_decode_obj(&PDFObject::Str(s.clone()))?))
 }
 
 // pdfplumber/utils/pdfinternals.py:24 resolve_and_decode
