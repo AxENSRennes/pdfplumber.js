@@ -764,26 +764,17 @@ impl Core {
         }))
     }
 
-    /// Runs one operation and, when it reached a document (and is not a
-    /// replay), records it in the history.
+    /// Runs one operation of a request and, when it reached a document,
+    /// records it in the history (a replay runs [`Core::op`] itself: it
+    /// records nothing; a `sequence` is not recorded, its operations are).
     pub(crate) fn run_op(&mut self, name: &str, h: u32, args: &PyValue, data: Option<Rc<[u8]>>) -> PyResult<Out> {
         let start = self.created.len();
         let outer = self.op_doc.take();
         let result = self.op(name, h, args, data.clone());
         if let Some(doc) = self.op_doc.take() {
-            if self.replay.is_none() && self.handles.get(doc).is_some() {
-                let created = self.created[start..].to_vec();
-                let call = self.calls;
-                self.history.push(Entry {
-                    op: name.to_owned(),
-                    handle: h,
-                    args: args.clone(),
-                    data,
-                    created,
-                    doc,
-                    call,
-                });
-            }
+            let created = self.created[start..].to_vec();
+            let call = self.calls;
+            self.history.push(Entry { op: name.to_owned(), handle: h, args: args.clone(), data, created, doc, call });
         }
         self.op_doc = outer;
         result

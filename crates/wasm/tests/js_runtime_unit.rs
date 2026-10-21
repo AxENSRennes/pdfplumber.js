@@ -791,6 +791,10 @@ fn cjk_scenario(preload: &[String]) -> (Vec<Js>, Vec<String>, Js) {
     let spare = num(&run(&mut core, "doc_open", 0, PyValue::None, Some(spare)));
     run(&mut core, "doc_pages", spare, list(vec![]), None);
     assert_eq!(ok(call(&mut core, "free", spare, PyValue::None, None)), Js::Null);
+    // a sequence: its operations are recorded one by one, and replayed
+    // without being recorded again
+    let info_of = |h: u32| list(vec![PyValue::str("page_info"), PyValue::from(i64::from(h)), list(vec![])]);
+    out.push(run(&mut core, "sequence", 0, list(vec![info_of(first), info_of(inner)]), None));
     // the first interpretation: void calls (the CMaps), the document rebuilt
     out.push(run(&mut core, "page_extract_text", inner, list(vec![empty()]), None));
     out.push(run(&mut core, "page_attr", first, list(vec![PyValue::str("chars")]), None));
@@ -826,13 +830,13 @@ fn a_void_call_rebuilds_its_document_by_replaying_its_history() {
     assert_eq!(lazy, eager);
     assert_eq!(freed, exc("ValueError", "invalid handle"));
     // the live table's rows
-    assert!(matches!(&lazy[5], Js::Arr(rows) if rows.len() == 2), "{:?}", lazy[5]);
+    assert!(matches!(&lazy[6], Js::Arr(rows) if rows.len() == 2), "{:?}", lazy[6]);
     // the handles left: two documents, their pages, the crops and the
     // tables (the freed ones tombstones), then the other document's once
     // this one is freed; the history (lazy = eager: a void call's own
     // entries go, a replay records nothing)
-    assert!(matches!(lazy[7], Js::Num(n) if n >= 8.0), "{:?}", lazy[7]);
-    assert!(matches!(lazy[8], Js::Num(n) if n >= 12.0), "{:?}", lazy[8]);
-    assert_eq!(lazy[9], Js::Num(2.0));
-    assert_eq!(lazy[10], exc("ValueError", "invalid handle"));
+    assert!(matches!(lazy[8], Js::Num(n) if n >= 8.0), "{:?}", lazy[8]);
+    assert!(matches!(lazy[9], Js::Num(n) if n >= 12.0), "{:?}", lazy[9]);
+    assert_eq!(lazy[10], Js::Num(2.0));
+    assert_eq!(lazy[11], exc("ValueError", "invalid handle"));
 }
