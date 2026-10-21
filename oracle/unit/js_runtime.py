@@ -566,10 +566,14 @@ EXPLICIT = {"vertical_strategy": "explicit", "horizontal_strategy": "explicit",
 def depth_session(make: Any, ops: list[tuple[str, tuple[Any, ...]]], n: int) -> list[list[Any]]:
     """A document of nesting ``n`` and the operations, on its page (``doc:``
     before a name: on the document; ``table:``: on the first table the
-    previous operation found)."""
+    previous operation found; ``reopen``: the following operations are on
+    a second document of nesting ``n``, whose page has computed nothing)."""
     s = Session()
     doc, pages = s.open(make(n), pages=1)
     for op, args in ops:
+        if op == "reopen":
+            doc, pages = s.open(make(n), pages=1)
+            continue
         target = pages[0]
         if op.startswith("doc:"):
             op, target = op[4:], doc
@@ -629,16 +633,20 @@ def depth_windows() -> Iterator[tuple[str, list[list[Any]]]]:
         ("struct-repr-doc", adv_structure.WINDOWS["k-nested-list-repr"][0], [("doc:doc_structure_tree", ())], 9000, 10100),
         ("struct-str-doc", adv_structure.WINDOWS["actualtext-str-first"][0], [("doc:doc_structure_tree", ())], 9000, 10100),
         ("struct-str-page", adv_structure.WINDOWS["actualtext-str-first"][0], [("page_structure_tree", ())], 9000, 10100),
-        # a site run for one class, specialized for it, then for another
-        # (the first runs raised: nothing was cached); bisected on the last
+        # a site run for one class, specialized for it, then for another;
+        # bisected on the last operation, on a second document (the first
+        # document's page caches its objects when its second run, specialized,
+        # holds fewer units than the last: the last would then read them)
         ("class-text", climit["tf-list"], [("page_extract_text", ({},)), ("page_extract_text", ({},)),
-                                           ("page_crop", ([0, 0, 200, 200], {})), ("crop:page_extract_text", ({},))],
+                                           ("reopen", ()), ("page_crop", ([0, 0, 200, 200], {})),
+                                           ("crop:page_extract_text", ({},))],
          9000, 10100),
         ("class-table", climit["tf-list"], [("page_find_tables", (EXPLICIT,)), ("table:table_extract", ({},)),
-                                            ("table:table_extract", ({},)), ("page_crop", ([0, 0, 200, 200], {})),
+                                            ("table:table_extract", ({},)), ("reopen", ()),
+                                            ("page_crop", ([0, 0, 200, 200], {})),
                                             ("crop:page_find_tables", (EXPLICIT,)), ("table:table_extract", ({},))],
          9000, 10100),
-        ("class-doc", climit["tf-list"], [("page_attr", ("chars",)), ("page_attr", ("chars",)),
+        ("class-doc", climit["tf-list"], [("page_attr", ("chars",)), ("page_attr", ("chars",)), ("reopen", ()),
                                           ("doc:doc_attr", ("chars",))], 9000, 10100),
     ]
     for label, make, ops, lo, hi in kinds:
