@@ -645,6 +645,36 @@ pub enum PageKind {
     Filtered { parent: Rc<Page>, filter_fn: FilterFn },
 }
 
+impl PageKind {
+    /// The parent of a derived page, taken out (the kind becomes
+    /// `Original`).
+    fn take_parent(&mut self) -> Option<Rc<Page>> {
+        match std::mem::replace(self, PageKind::Original) {
+            PageKind::Original => None,
+            PageKind::Cropped { parent, .. } | PageKind::Filtered { parent, .. } => Some(parent),
+        }
+    }
+}
+
+/// Frees a chain of derived pages (each the `crop`, `filter` or
+/// `dedupe_chars` of the previous one) without recursion: the parent each
+/// page holds is unlinked in a loop, as CPython frees such a chain without
+/// recursing (the "trashcan" of `subtype_dealloc`); a recursive drop would
+/// overflow the native stack after some 10^4 pages under WebAssembly.
+impl Drop for Page {
+    fn drop(&mut self) {
+        let mut next = self.kind.take_parent();
+        while let Some(parent) = next {
+            next = match Rc::try_unwrap(parent) {
+                // the last owner: its own parent next, then it drops with
+                // no parent left
+                Ok(mut page) => page.kind.take_parent(),
+                Err(_) => None,
+            };
+        }
+    }
+}
+
 /// The `crop_fn` of a `CroppedPage` (`crop` and `within_bbox`/
 /// `outside_bbox`): `utils.crop_to_bbox`, `utils.within_bbox`,
 /// `utils.outside_bbox` (`crate::utils::geometry`).

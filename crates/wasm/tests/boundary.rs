@@ -1122,3 +1122,30 @@ fn open_reports_what_is_not_modelled_as_not_ported() {
     );
     assert_eq!(ok_open.status, 0);
 }
+
+/// A chain of derived pages, each the crop of the previous one, is freed
+/// without recursion (`Drop for Page`), as CPython frees it: a recursive
+/// drop overflowed the native stack after about 12 000 pages under
+/// WebAssembly (an 8 MiB stack), and here on a 256 KiB thread.
+#[test]
+fn a_long_chain_of_derived_pages_drops_without_recursion() {
+    use pdfplumber::page::CropFn;
+    use pdfplumber::pdf::{OpenOptions, Source, PDF};
+    let run = || {
+        let data: Rc<[u8]> = Rc::from(tiny_pdf(b"BT /F1 10 Tf (a) Tj ET"));
+        let kind = pdfminer::pdfparser::FileKind::BytesIO;
+        let pdf = PDF::open(Source::Stream { data, kind }, OpenOptions::new()).unwrap();
+        let mut page = pdf.pages().unwrap()[0].clone();
+        let bbox = page.bbox.clone();
+        for _ in 0..100_000 {
+            page = page.crop(bbox.clone(), CropFn::CropToBbox, false, true).unwrap();
+        }
+        drop(pdf);
+        drop(page);
+    };
+    if cfg!(target_family = "wasm") {
+        run();
+    } else {
+        std::thread::Builder::new().stack_size(256 << 10).spawn(run).unwrap().join().unwrap();
+    }
+}
