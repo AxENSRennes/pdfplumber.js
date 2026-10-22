@@ -848,6 +848,8 @@ def depth_windows() -> Iterator[tuple[str, list[list[Any]]]]:
         ("figures-objects", figures, [("page_objects", ())], 2, 1200),
         ("figures-text", figures, [("page_extract_text", ({},))], 2, 1200),
         ("figures-chars", figures, [("page_attr", ("chars",))], 2, 1200),
+        # the filter's mask_of: a frame above page.objects
+        ("figures-filter", figures, [("page_filter", ("upright",))], 2, 1200),
         ("dash-json", dash, [("page_to_json", ({"object_types": ["rect"]},))], 2, 1200),
         ("climit-tf-list-objects", climit["tf-list"], [("page_objects", ())], 9000, 10100),
         ("climit-tf-list-chars", climit["tf-list"], [("page_attr", ("chars",))], 9000, 10100),
