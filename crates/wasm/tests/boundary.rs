@@ -826,10 +826,11 @@ fn search_spans_from_javascript_are_checked() {
 /// `expectedTestValues` in `js/test/shared/tests.mjs`, here so that
 /// mutation testing sees them.
 #[test]
+#[cfg_attr(
+    target_family = "wasm",
+    ignore = "the recursive test decoders cannot read \"deep\" on WebAssembly's stack (js/test checks the values in Node and the browsers)"
+)]
 fn test_values_are_what_javascript_expects() {
-    if cfg!(target_family = "wasm") {
-        return; // the recursive test decoders cannot read "deep" on WebAssembly's stack
-    }
     big_stack(|| {
         let units = |u: &[u16]| Js::Str(u.to_vec());
         let num = Js::Num;

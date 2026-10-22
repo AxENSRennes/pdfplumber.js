@@ -728,7 +728,11 @@ fn page_operations_match_pdfplumber_through_the_boundary() {
 /// pdfplumber's log records, in order, across the calls of a new process.
 #[test]
 fn diagnostics_are_the_warnings_and_records_python_shows() {
+    // At least the two scenarios of `diagnostic_cases`, which show a warning
+    // and log records: empty data must not pass.
+    let (mut checked, mut entries) = (0, 0);
     for (input, out) in data().cases("diagnostics") {
+        checked += 1;
         let got = on_thread(1 << 28, move || {
             pycompat::warnings::reset();
             let name = input[0].as_str().unwrap().to_owned();
@@ -763,14 +767,14 @@ fn diagnostics_are_the_warnings_and_records_python_shows() {
             }
             shown
         });
-        assert_eq!(
-            got,
-            match value_view(&out) {
-                Js::Arr(entries) => entries,
-                other => panic!("{other:?}"),
-            }
-        );
+        let expected = match value_view(&out) {
+            Js::Arr(entries) => entries,
+            other => panic!("{other:?}"),
+        };
+        entries += expected.len();
+        assert_eq!(got, expected);
     }
+    assert!(checked >= 2 && entries >= 3, "{checked} cases, {entries} diagnostics");
 }
 
 /// The operations of a scenario on a CJK document, in a new core: handles

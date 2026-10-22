@@ -1808,7 +1808,9 @@ l'oracle) : une étape qui interprète des pages ne peut plus compter des
     1 852/1 853 (`pdfjs-issue19624-text.pdf`, la limite connue de la clé
     de contenu des `id()`, ci-dessus), `plumber_text`, `plumber_tables`,
     `plumber_doc` 1 853/1 853 ;
-  - `adv-plumber` (182, dont 51 fenêtres `climit-*` ajoutées par la jonction), `adv-structure` (441), `adv-pages` (285),
+  - `adv-plumber` (182 à la jonction, dont 51 fenêtres `climit-*` ajoutées
+    par elle ; 199 et 68 fenêtres depuis `wave4/fix`, qui ajoute les 17
+    `tf-list-tagged-nopg`, ci-dessous), `adv-structure` (441), `adv-pages` (285),
     `adv-objects` (333) : les quatre étapes identiques ;
   - `adv-interp` (353) : `plumber_objects` et `plumber_doc` 353/353,
     `plumber_text` 336/353 et `plumber_tables` 341/353 : les fichiers
@@ -1845,8 +1847,8 @@ l'oracle) : une étape qui interprète des pages ne peut plus compter des
   et une page balisée pour `element_bbox`), de la première profondeur qui
   lève dans une étape `plumber_*` moins deux jusqu'à la limite des unités
   C (9 984 à 10 000) : chaque opération qui interprète la page y rencontre
-  la limite à sa profondeur propre. `adv-plumber` : 182 fichiers, les
-  quatre étapes identiques ; `wasm-depth-gate.sh` les passe aux quatre
+  la limite à sa profondeur propre. `adv-plumber` : 182 fichiers à la
+  jonction (199 depuis `wave4/fix`), les quatre étapes identiques ; `wasm-depth-gate.sh` les passe aux quatre
   étapes.
 - **Mutations** (code changé par la jonction depuis `83ff2d3`) :
   - `cargo mutants`, frontière (`crates/wasm`, `ops.rs`, `pages.rs`,
