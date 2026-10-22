@@ -58,14 +58,47 @@ describe("public API identities and lifetimes", () => {
     const annots = (await pages[1].annots) as unknown as Annot[];
     expect(await pdf.page(annots[0].data.P)).toBe(pages[1]);
     await pdf.close();
-    // a reference of before close() names a page of the flushed list
+    // a reference of before close() names a page of the flushed list: the
+    // page object of before, while it lives
     const old = await pdf.page(annots[0].data.P);
+    expect(old).toBe(pages[1]);
     const fresh = await pdf.pages;
     expect(fresh[1]).not.toBe(pages[1]);
-    expect(old).not.toBe(fresh[1]);
-    expect(old.page_number).toBe(2);
     const now = (await fresh[1].annots) as unknown as Annot[];
     expect(await pdf.page(now[0].data.P)).toBe(fresh[1]);
+    expect(await pdf.page(annots[0].data.P)).toBe(pages[1]);
+    await pdf.release();
+    await expect(pdf.page(now[0].data.P)).rejects.toThrow(api.DocumentReleased);
+  });
+
+  it("a reference whose handle the API does not hold is the current page of its number", async () => {
+    api.configure({});
+    for (const read of ["annots", "toDict", "docToDict", "hyperlinks"] as const) {
+      const pdf = await api.open(ANNOTATED);
+      // the document's annotations first: their pages get handles of
+      // their own, which later values name (the first live handle)
+      await pdf.annots;
+      const pages = await pdf.pages;
+      let annots: Annot[];
+      if (read === "annots") annots = (await pages[0].annots) as unknown as Annot[];
+      else if (read === "hyperlinks") annots = (await pdf.hyperlinks) as unknown as Annot[];
+      else if (read === "toDict") annots = (await pages[0].toDict()).annots as Annot[];
+      else annots = ((await pdf.toDict()).pages as { annots: Annot[] }[])[0].annots;
+      if (annots.length) expect(await pdf.page(annots[0].data.P)).toBe(pages[annots[0].data.P.page_number as number - 1]);
+      await pdf.release();
+    }
+  });
+
+  it("release() frees the document's handles", async () => {
+    api.configure({});
+    await collect();
+    const before = await handles();
+    const pdf = await api.open(ANNOTATED);
+    const pages = await pdf.pages;
+    await pages[0].crop([0, 0, 100, 100]);
+    expect(await handles()).toBeGreaterThan(before);
+    await pdf.release();
+    expect(await handles()).toBe(before);
     await pdf.release();
   });
 
@@ -88,7 +121,7 @@ describe("public API identities and lifetimes", () => {
     const images = await page.images;
     if (images.length) {
       const objects = await page.objects;
-      expect((objects.image[0] as { stream: unknown }).stream).toBe((images[0] as { stream: unknown }).stream);
+      expect(objects.image[0].stream).toBe(images[0].stream);
     }
     await pdf.release();
   });
@@ -109,6 +142,13 @@ describe("public API identities and lifetimes", () => {
     for (const el of found) expect(all).toContain(el);
     expect(await tree.find((el) => el.type === "P")).toBe(found[0]);
     await expect(tree.elementBbox({} as api.PDFStructElement)).rejects.toThrow(TypeError);
+    const other = await pdf.structTree();
+    await expect(other.elementBbox(tree.children[0])).rejects.toThrow(TypeError);
+    expect(await other.elementBbox(other.children[0])).toEqual(await tree.elementBbox(tree.children[0]));
+    const [page] = await pdf.pages;
+    const another = await api.open(join(pdfs, "word365_structure.pdf"));
+    await expect(another.structTree(page)).rejects.toThrow(TypeError);
+    await another.release();
     await pdf.release();
   });
 

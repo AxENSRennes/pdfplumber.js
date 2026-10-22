@@ -290,8 +290,10 @@ export class PDFPlumberDocument {
   /** The pages by handle (`PageRef` resolution): the pages of `pdf.pages`,
    * of `page(ref)`, and the derived pages a value may name (`pin`). */
   readonly #byHandle = new Map<number, PDFPlumberPage>();
-  /** The other derived pages, which the document does not keep: freed in
-   * the core once unreachable (`track`). */
+  /** The pages the document does not keep but still names while they live:
+   * the other derived pages (freed in the core once unreachable, `track`),
+   * and the pages of `pdf.pages` read before a `close()` (pages of the list
+   * `close()` flushed, which a reference read before it names). */
   readonly #weak = new Map<number, WeakRef<PDFPlumberPage>>();
   /** The pages of Python's current `pdf.pages` list (`PDF._pages`, made
    * again after each `close()`) the API has objects of, by page number:
@@ -318,13 +320,12 @@ export class PDFPlumberDocument {
     registry?.register(this, { core, handle, life: this.#life, document: true }, this.#token);
   }
 
-  /** @internal A job on this document: rejects once it is released. */
+  /** @internal A job on this document; a member called once it is
+   * released rejects. (A job queued before `release()` runs: the core frees
+   * the document after it, in the order of the calls.) */
   job<T>(f: (call: CoreCall) => Promise<T>): Promise<T> {
     if (this.#life.released) return Promise.reject(new DocumentReleased());
-    return this.core.exclusive((call) => {
-      if (this.#life.released) throw new DocumentReleased();
-      return f(call);
-    });
+    return this.core.exclusive(f);
   }
 
   /** @internal Frees the core's handle of `obj` (a derived page, a table)
@@ -580,10 +581,15 @@ export class PDFPlumberDocument {
     return this.job(async (call) => {
       await call("doc_close", this.handle, [], this.callOptions());
       // the pages are made again at the next read (`PDF.close()` flushes
-      // `_pages`); a derived page keeps the page it derives from, as in
-      // Python, and stays what a value naming it resolves to
+      // `_pages`); the pages of before are still what a reference read
+      // before names, while they live (the document no longer keeps them);
+      // a derived page keeps the page it derives from, as in Python
       this.#pages = undefined;
-      for (const [h, page] of this.#byHandle) if (page.parent === undefined) this.#byHandle.delete(h);
+      for (const [h, page] of this.#byHandle) {
+        if (page.parent !== undefined) continue;
+        this.#byHandle.delete(h);
+        this.#weak.set(h, new WeakRef(page));
+      }
       this.#current.clear();
       this.#epoch++;
     });

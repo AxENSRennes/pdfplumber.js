@@ -572,6 +572,11 @@ if __name__ == "__main__":
             else:
                 obj = None if target is None else objs[target]
             args = substitute(args)
+            if op == "api_pages":
+                # pdf.pages read again (harness only): the API keeps the
+                # first read that resolved, runs doc_pages again after one
+                # that raised (args[0]: the read of before)
+                op = "doc_pages" if isinstance(RAW[args[0]], Exception) else "api_cached"
             if op == "api_page":
                 # pdf.page(ref) of the API (harness only): no statement for
                 # a page the API has an object of (args[0]: the targets of
@@ -777,6 +782,8 @@ if __name__ == "__main__":
                 result = None
             elif op == "api_known":
                 result = {"known": known}
+            elif op == "api_cached":
+                result = None
             else:
                 raise AssertionError(op)
         except Exception as e:

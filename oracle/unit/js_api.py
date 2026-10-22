@@ -470,6 +470,8 @@ class Doc:
     def __init__(self) -> None:
         self.pages: list[Obj] | None = None
         self.pages_value: Callable[[Results], Any] | None = None
+        #: the case of the read that made ``pages``
+        self.pages_case = -1
         self.released = False
         #: the pages the API holds objects of (``js_pages_run.held_by_api``
         #: entries), with whether each is a page of ``pdf.pages`` (which
@@ -546,7 +548,7 @@ class Session:
     def geometry_of(self, r: Results, handle: str) -> dict[str, Any]:
         """The geometry of the page the API holds under ``handle``."""
         for c in self.pages_cases:
-            if not r.unresolved(c) and not r.failed(c):
+            if not r.unresolved(c) and not r.failed(c) and type(r.value(c)) is list:
                 for g in r.value(c):
                     if g["handle"] == handle:
                         return page_geometry(g)
@@ -659,17 +661,34 @@ class Session:
 
     def pages(self, doc: Obj) -> list[Obj]:
         """``await pdf.pages``: ``doc_pages`` at the first read (and after
-        ``close()``), the same array then (the sessions read again only
-        pages that loaded: a rejected read is not kept by the API)."""
+        ``close()``), the same array then; a rejected read is not kept by
+        the API: the next read runs ``doc_pages`` again (``api_pages``:
+        ``doc_pages`` if the read of before raised, nothing otherwise)."""
         d = doc.doc
         cid, released = self._async(doc, "get", "pages", [])
         if released:
             d.pages = None
             return []
         if d.pages is not None:
-            self._expect(cid, doc, d.pages_value)  # type: ignore[arg-type]
+            first = d.pages_case
+            again = self.case("api_pages", doc.target, [first])
+            kept = d.pages_value
+
+            def value_again(r: Results) -> Any:
+                if r.unresolved(first) or not r.failed(first):
+                    return kept(r)  # type: ignore[misc]
+                if r.failed(again):
+                    return r.error(again)
+                return [Named("PDFPlumberPage", page_geometry(g)) for g in r.value(again)]
+
+            self._expect(cid, doc, value_again)
+            self.pages_cases.append(again)
+            d.held.append(([again, "*"], True))
+            d.pages_case = again
+            d.pages_value = value_again
             return d.pages
         c = self.case("doc_pages", doc.target, [])
+        d.pages_case = c
         self.pages_cases.append(c)
         d.held.append(([c, "*"], True))
 
@@ -735,10 +754,10 @@ class Session:
 
     @staticmethod
     def _closed(d: Doc) -> None:
-        """``pdf.close()`` made the API drop its pages (not the derived
-        ones): they are made again at the next read."""
+        """``pdf.close()``: the pages are made again at the next read; the
+        API still names the pages of before while they live (the session
+        holds them all)."""
         d.pages = None
-        d.held = [(t, root) for t, root in d.held if not root]
 
     def release(self, doc: Obj) -> None:
         """``pdf.release()``: the document leaves the core (no statement);
@@ -1394,6 +1413,13 @@ def order_session() -> Session:
         s.doc_get(doc, "objects")
         s.close(doc)
         s.pages(doc)
+    # calls made before release() run (the core frees the document after
+    # them), calls made after reject
+    again = s.pages(doc)[0]
+    with s.concurrently([2, 1, 0]):
+        s.page_get(again, "chars")
+        s.release(doc)
+        s.text(again, "extractText", None)
     return s
 
 
@@ -1418,6 +1444,8 @@ def adversarial_session(name: str, data: bytes) -> Session:
     s = Session(f"adv-{Path(name).stem}")
     doc = s.open(data=data)
     page = s.pages(doc)[0]
+    # read again: the same pages, or doc_pages again after a read that raised
+    s.pages(doc)
     s.page_get(page, "objects")
     s.text(page, "extractText", None)
     s.text(page, "extractWords", None)
@@ -1453,6 +1481,13 @@ def inputs_session() -> Session:
     # an option that cannot cross: TypeError, no statement
     cid = s._call(None, "call", "open", [{"bogus": Refused("function")}], input={"bytes_of": rel})
     s._expect(cid, None, lambda r: js_error("TypeError"))
+    # null options: no option (pdfplumber.open(x))
+    cid = s._call(None, "call", "open", [None], input={"bytes_of": rel})
+    c = s.case("doc_open", None, [None], rel)
+    s._expect(cid, None, lambda r: r.error(c) if r.failed(c) else Named("PDFPlumberDocument", {}))
+    doc = Obj("document", [cid], [c, 0], Doc(), lambda r: not r.failed(c))
+    s.text(s.pages(doc)[0], "extractText", None)
+    s.release(doc)
     return s
 
 
@@ -1516,8 +1551,12 @@ def arguments_session() -> Session:
         else:
             c = s.case({"extractText": "page_extract_text", "extractWords": "page_extract_words"}[member], page.target, [None])
         s._expect(cid, page, lambda r, c=c: r.plain(c))
-    cid = s._call(page, "call", "search", ["a", None])
-    c = s.case("search", page.target, ["a", None], js="a")
+    for options in (None, [1]):
+        cid = s._call(page, "call", "search", ["a", options])
+        c = s.case("search", page.target, ["a", options], js="a")
+        s._expect(cid, page, lambda r, c=c: r.plain(c))
+    cid = s._call(page, "call", "extractTextLines", [[]])
+    c = s.case("page_extract_text_lines", page.target, [True, True, []])
     s._expect(cid, page, lambda r: r.plain(c))
     # a word given back to a call that reads objects (dedupe's extra_attrs
     # are names; crop's bbox from a word's coordinates)
@@ -1670,7 +1709,7 @@ ADV_STRUCTURE = ["000-basic.pdf", "001-no-struct-tree-root.pdf", "023-root-k-obj
                  "024-root-k-objr-other-page.pdf", "025-root-k-duplicate.pdf", "026-root-k-two-roots.pdf"]
 
 #: The matchers of the structure sessions (``Session.struct_find``).
-MATCHERS: list[tuple[str, Any]] = [("tag", "P"), ("tag", "Span"), ("regexp", "H[0-9]"), ("regexp", "S"),
+MATCHERS: list[tuple[str, Any]] = [("tag", "P"), ("tag", "Span"), ("regexp", "H[0-9]"), ("regexp", "S"), ("regexp", "an"),
                                    ("regexp", ""), ("predicate", "starts-with-H"), ("predicate", "has-mcids"),
                                    ("value", 5)]
 
