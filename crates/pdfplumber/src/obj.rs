@@ -440,14 +440,28 @@ impl Drop for PyValue {
     }
 }
 
+thread_local! {
+    /// The work list of [`drop_nested`], kept between drops (performance: a
+    /// dict of a page object holds tuples, which went through a new vector
+    /// at each drop). A drop inside a drop (a value of the list, emptied)
+    /// finds it taken and uses a vector of its own, which stays empty.
+    static DROP_STACK: std::cell::Cell<Vec<PyValue>> = const { std::cell::Cell::new(Vec::new()) };
+}
+
 /// The drop of a container `v` is the last owner of (see above).
 #[inline(never)]
 fn drop_nested(v: &mut PyValue) {
-    let mut stack = Vec::new();
+    // (a value dropped while the thread's storage is destroyed gets a
+    // vector of its own)
+    let mut stack = DROP_STACK.try_with(std::cell::Cell::take).unwrap_or_default();
     take_items(v, &mut stack);
     while let Some(mut v) = stack.pop() {
         take_items(&mut v, &mut stack);
         // `v` holds nothing of its own now: dropping it is shallow
+    }
+    // (empty: put back for the next drop, unless it grew large)
+    if stack.capacity() <= 4096 {
+        let _ = DROP_STACK.try_with(|s| s.set(stack));
     }
 }
 
