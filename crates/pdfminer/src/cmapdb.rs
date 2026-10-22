@@ -1000,6 +1000,17 @@ pub struct CMapDBCaches {
 }
 
 impl CMapDBCaches {
+    /// Whether both hold the same maps under the same names.
+    pub fn same(&self, other: &CMapDBCaches) -> bool {
+        self.cmaps.len() == other.cmaps.len()
+            && self.umaps.len() == other.umaps.len()
+            && self.cmaps.iter().all(|(k, v)| other.cmaps.get(k).is_some_and(|w| Rc::ptr_eq(v, w)))
+            && self
+                .umaps
+                .iter()
+                .all(|(k, [a, b])| other.umaps.get(k).is_some_and(|[c, d]| Rc::ptr_eq(a, c) && Rc::ptr_eq(b, d)))
+    }
+
     /// The names in `_cmap_cache`, then those in `_umap_cache`, each sorted.
     pub fn names(&self) -> (Vec<&str>, Vec<&str>) {
         let mut cmaps: Vec<&str> = self.cmaps.keys().map(String::as_str).collect();
@@ -1447,5 +1458,39 @@ impl PSStackParserExt for CMapParserExt<'_> {
 
         p.push((pos, PDFObject::Keyword(token)))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod caches_tests {
+    use super::*;
+
+    /// `CMapDBCaches::same` (what lets two process states share their
+    /// caches): the same maps under the same names, nothing else.
+    #[test]
+    fn caches_are_the_same_only_with_the_same_maps_under_the_same_names() {
+        let cmap = || Rc::new(CMap::new(Attrs::default()));
+        let umap = || Rc::new(UnicodeMap::new(Attrs::default()));
+        let (x, y) = (cmap(), cmap());
+        let (h, v, w) = (umap(), umap(), umap());
+        type Umaps<'a> = [(&'a str, [&'a Rc<UnicodeMap>; 2])];
+        let caches = |cmaps: &[(&str, &Rc<CMap>)], umaps: &Umaps<'_>| CMapDBCaches {
+            cmaps: cmaps.iter().map(|(k, c)| (k.to_string(), Rc::clone(c))).collect(),
+            umaps: umaps.iter().map(|(k, [a, b])| (k.to_string(), [Rc::clone(a), Rc::clone(b)])).collect(),
+        };
+        let base = caches(&[("A", &x)], &[("J", [&h, &v])]);
+        assert!(base.same(&caches(&[("A", &x)], &[("J", [&h, &v])])));
+        let others = [
+            caches(&[], &[("J", [&h, &v])]),
+            caches(&[("A", &x)], &[]),
+            caches(&[("B", &x)], &[("J", [&h, &v])]),
+            caches(&[("A", &y)], &[("J", [&h, &v])]),
+            caches(&[("A", &x)], &[("J", [&w, &v])]),
+            caches(&[("A", &x)], &[("J", [&h, &w])]),
+            caches(&[("A", &x)], &[("K", [&h, &v])]),
+        ];
+        for (i, other) in others.iter().enumerate() {
+            assert!(!base.same(other) && !other.same(&base), "case {i}");
+        }
     }
 }

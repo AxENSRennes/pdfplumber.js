@@ -84,6 +84,22 @@ impl<T> Handles<T> {
         self.slots.iter_mut().filter_map(|s| s.value.as_mut())
     }
 
+    /// The live objects with their handles, in slot order.
+    pub fn iter(&self) -> impl Iterator<Item = (u32, &T)> {
+        self.slots
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| s.value.as_ref().map(|v| ((s.generation << INDEX_BITS) | i as u32, v)))
+    }
+
+    /// The live objects with their handles, in slot order.
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (u32, &mut T)> {
+        self.slots
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(i, s)| s.value.as_mut().map(|v| ((s.generation << INDEX_BITS) | i as u32, v)))
+    }
+
     /// The number of live objects.
     pub fn len(&self) -> usize {
         self.slots.len() - 1 - self.free.len()
@@ -124,6 +140,25 @@ mod tests {
         assert_eq!(h.values_mut().map(|v| *v).collect::<Vec<_>>(), ["C", "b"]);
         assert_eq!(h.get(b | (1 << INDEX_BITS)), None);
         assert_eq!(h.get(12345), None);
+    }
+
+    #[test]
+    fn iteration_gives_each_live_object_with_its_handle() {
+        let mut h = Handles::new();
+        let a = h.insert("a").unwrap();
+        h.remove(a);
+        // the slot reused: generation 1
+        let b = h.insert("b").unwrap();
+        let c = h.insert("c").unwrap();
+        assert_ne!(b >> INDEX_BITS, 0);
+        assert_eq!(h.iter().map(|(k, v)| (k, *v)).collect::<Vec<_>>(), [(b, "b"), (c, "c")]);
+        for (k, v) in h.iter_mut() {
+            if k == b {
+                *v = "B";
+            }
+        }
+        assert_eq!(h.get(b), Some(&"B"));
+        assert_eq!(h.iter_mut().map(|(k, _)| k).collect::<Vec<_>>(), [b, c]);
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 export { open, configure, PDFPlumberDocument, PDFPlumberPage } from "./api.js";
 export { PDFPlumberError, NotImplemented, CoreCrash } from "./errors.js";
-export { PSLiteral, PSKeyword, PDFObjRef, PDFStream, PyFloat, PyTuple, pyFloat, pyTuple } from "./pdfobjects.js";
+export { PSLiteral, PSKeyword, PDFObjRef, PDFStream, PageRef, PyFloat, PyTuple, pyFloat, pyTuple } from "./pdfobjects.js";
 export type {
   PDFInput,
   OpenOptions,

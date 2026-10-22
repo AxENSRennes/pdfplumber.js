@@ -36,6 +36,16 @@ export class PDFStream {
   ) {}
 }
 
+/** A pdfplumber `Page` held as a value (an annotation's `data.P`, the
+ * pages of `pdf.pages` read by name): the handle of the page in the core,
+ * and its `page_number`. */
+export class PageRef {
+  constructor(
+    readonly handle: number,
+    readonly page_number: number | bigint,
+  ) {}
+}
+
 /** Forces a JavaScript number to cross as a Python `float` (an integral
  * number otherwise crosses as an `int`). */
 export class PyFloat {

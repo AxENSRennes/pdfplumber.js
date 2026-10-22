@@ -114,7 +114,9 @@ observable, et seulement là.
   en Python. L'ordre des clés est celui de Python (ordre d'affectation de
   `__dict__` des objets `LT*`, puis ajouts de `process_object`). Les attributs
   fréquents peuvent avoir un accès rapide, mais la vue dictionnaire reste exacte
-  (`extra_attrs`, `to_dict`, l'API JS en dépendent).
+  (`extra_attrs`, `to_dict`, l'API JS en dépendent). Le `/P` des
+  annotations est la page elle-même (`PyValue::Page`, `obj::PageRef` :
+  `<Page:n>`, égale à elle seule).
 - **Exceptions** : `pycompat::PyErr { kind, message }`, où `kind` reprend la
   classe Python (`PSEOF`, `PSSyntaxError`, `PDFSyntaxError`, `KeyError`,
   `TypeError`, `AssertionError`, `ValueError`, `IndexError`, `zlib.error`,
@@ -124,8 +126,10 @@ observable, et seulement là.
   l'utilisateur), `message` en est une copie avec U+FFFD, et seul
   `PyErr::py_message()` est exact : tout ce qui montre `str(e)` (traces,
   frontière JavaScript, en UTF-16 par `PyStr::to_utf16`) lit
-  `py_message()`. Les `try/except` upstream deviennent des `match` sur ces
-  types.
+  `py_message()`. Une exception levée avec une autre pour seul argument
+  (`PdfminerException(e)`, `MalformedPDFException(e)`) la garde
+  (`PyErr::wrapping`, `PyErr::cause`). Les `try/except` upstream deviennent
+  des `match` sur ces types.
 - **Avertissements** (`logging`, `warnings.warn`) : leur texte est sans effet
   sur la sortie et remonte par un canal de diagnostics (option `onWarning`
   côté JS) ; leurs cadres Python comptent pour la profondeur de récursion
@@ -133,7 +137,13 @@ observable, et seulement là.
   (`logging.disable`, ou `setLevel(ERROR)` sur le logger `pdfminer`, mêmes
   cadres) : dans la configuration par défaut de Python, un `log.warning`
   est émis par `logging.lastResort`, plus profond, et formate ses `%r`
-  (écart non modélisé, `verification.md`, « Étapes »).
+  (écart non modélisé, `verification.md`, « Étapes »). Texte transmis
+  aujourd'hui : le `logger.warning` de `PDF.__init__` (métadonnées), celui
+  de `PDFStructTree` (« Unknown attribute class »), le `warnings.warn` de
+  `Page.annots`, ce dernier une fois par texte (`pycompat::warnings` : les
+  filtres par défaut de Python et leur registre, état du processus remis
+  par un appel nul). Les appels `log.*` de pdfminer ne comptent que leurs
+  cadres : leur texte n'est pas transmis (`public-api.md`).
 - **Réglages** : `pdfminer.settings.STRICT = False`, comme l'oracle.
 
 ## Profondeur de récursion
@@ -383,7 +393,11 @@ invalide son cache et celui des étapes qui en dépendent).
   `LTFigure.name`, `LTImage.name` et le `name` des images de pdfplumber.
   Python repère ces noms par le site d'appel (`do_EI`), Rust par les noms
   qu'il a donnés ; les deux ne divergent que si un PDF nomme une XObject
-  `inline-<k>`.
+  `inline-<k>`. Les noms ne sont uniques que dans l'interprétation d'une
+  page : deux pages (ou une page interprétée de nouveau après
+  `flush_cache`) redonnent `inline-0`, `inline-1`… et `pdf.images`,
+  `pdf.objects["image"]` ont des noms répétés, là où les adresses de
+  Python diffèrent pour des images vivantes en même temps.
 - **Hors périmètre** : `PDFConverter`, `TextConverter`, `HTMLConverter`,
   `XMLConverter`, `HOCRConverter` et `pdfdevice.TagExtractor`
   (en-têtes de `converter.rs` et `pdfdevice.rs`).
@@ -1127,6 +1141,867 @@ de la revue sous `/tmp/claude-review-w3-*`) :
   comparaison Wasm/natif sur `quick` est versionnée
   (`oracle/wasm_parity.py`, fournisseur de CMaps et `--oracle-dir`
   passés explicitement, `verification.md`, « Définition de « fini » »).
+
+## Vague 4 : la couche page de pdfplumber
+
+Base commune : branche `wave4/base` (depuis `rewrite/rust-core` à
+`762bbe5`). Deux chantiers parallèles, PAGE et DOC, partent de cette base
+et ne modifient pas le contrat ci-dessous sans accord : un changement d'une
+étape Python invalide son cache et celui des étapes qui en dépendent
+(`plumber_text`, `plumber_tables` et `plumber_doc` dépendent de
+`plumber_objects`, les deux dernières de `plumber_text`).
+
+### Ce que contient la base
+
+- **La spécification** : les étapes Python `oracle/stages/plumber_objects.py`,
+  `plumber_text.py`, `plumber_tables.py`, `plumber_doc.py` (parcours et
+  format des lignes en tête de chaque fichier). Elles mènent pdfplumber
+  comme un utilisateur : `pdfplumber.open(path, pages=[1..N],
+  password=..., **options)` (`--max-pages` devient l'option `pages` :
+  `PDF.pages` parcourt tout l'arbre des pages et ne construit que les
+  `Page` choisies), pages paresseuses, aucune rustine. Les options
+  (opérations de texte, réglages de tables, pages dérivées, sérialisations,
+  options d'ouverture) sont des tables de données ; chaque page en prend une
+  tranche déterministe (`select` : décalage tiré du SHA-256 du fichier et du
+  rang de la page), si bien que le corpus couvre toutes les variantes et
+  qu'une trace reste bornée. Les tables passent au Rust par
+  `oracle/codegen/plumber_ops.py` → `crates/pdftrace/src/stages/plumber_ops.rs`
+  (JSON typé ; `--check` dans `scripts/check.sh`) ; les aides partagées des
+  quatre étapes sont dans `stages/plumber_common.rs` (`select`, `exc`,
+  `digest`, `bounded`, tables).
+- **Les interfaces Rust**, squelettes qui compilent (corps `todo!()` avec
+  la référence upstream, la paresse, le cache et le plan de comptage des
+  cadres en commentaire) : `pdf.rs`, `page.rs`, `container.rs`,
+  `convert.rs`, `structure.rs`, `utils/exceptions.rs`, le reste de
+  `utils/pdfinternals.rs`.
+- **Changements partagés, faits dans la base** : `PyErr::wrapping` et
+  `PyErr::cause` (`PdfminerException(e)` garde `e` : `str()` identique, la
+  classe de la cause visible en JavaScript ; les traces écrivent `!PdfminerException("…")
+  cause !PDFSyntaxError("…")`) ; `PyValue::Page(PageRef)` (le `/P` des
+  annotations, que `Page.annots` remplace par la page : `<Page:n>`, égalité
+  par identité ; écrit `Page{"page_number": n}` dans les traces et
+  `{"page_number": n}` en JavaScript en attendant l'API des pages) ;
+  `page_layout` (le corps de `Page.layout`) déplacé de `pdftrace` dans
+  `pdfplumber::page` (les étapes `interp`, `fonts`, `layout` l'importent) ;
+  `oracle.verify` passe toujours `--cmap-dir` (outillage, ci-dessous).
+- **Laissé au premier commit de PAGE**, parce que ces fichiers sont dans
+  l'empreinte de tous les caches (`oracle/depth.py` : de toutes les
+  étapes de l'oracle et de toutes les données unitaires ;
+  `oracle/corpus.py` : de toutes les données unitaires, 2,3 Go, des heures
+  à régénérer) et qu'il vaut mieux les invalider une seule fois, avant
+  toute construction de cache de la vague : le site d'appel `decode_text
+  str(s)` dans `_call_sites` de `oracle/depth.py`, et un nom `adv-<nom>`
+  pour un générateur `oracle/adversarial/<nom>.py` qui n'est pas une étape
+  (`oracle/corpus.py` n'accepte aujourd'hui que `adv-<étape>` ; il faut
+  `adv-plumber` et `adv-structure`). DOC rebase sur ce commit.
+
+### Décisions
+
+- **Journalisation** : la référence reste la journalisation coupée
+  (« Étapes » de `verification.md`), y compris le `logger.warning` de
+  `PDF.__init__` (logger `pdfplumber.pdf`). Le `warnings.warn` de
+  `Page.annots` (`raise_unicode_errors=False`) garde les filtres par défaut
+  de Python : montré une fois par texte, catégorie et ligne
+  (`pycompat::warnings`, registre comparé à Python par `diagnostics.jsonl`
+  de `oracle/unit/js_runtime.py`) ; ses cadres sont à mesurer.
+- **`id()` du layout** : toute étape `plumber_*` qui analyse (`laparams`)
+  prend le rang des `id()` dans la trace Python (`ORACLE_INPUT`,
+  `--oracle-dir`), comme `layout`. Seule `plumber_objects` analyse (sa
+  seconde ouverture, `laparams={}`) ; l'ordre brut des caractères n'y étant
+  pas visible, une boîte est désignée par son contenu (empreinte de ses
+  caractères `LTChar{…}` triés, un groupe de celles de ses éléments) : deux
+  éléments de même empreinte sont interchangeables (mêmes caractères, même
+  géométrie). La bibliothèque reçoit l'ordre par `OpenOptions::ids`
+  (`IdsFactory`) ; la bibliothèque et l'API JS gardent `CreationOrder`.
+  Sonde de la base (40 fichiers de `quick` riches en images, annotations,
+  structure et tables, chaque étape tracée deux fois avec
+  `PYTHONHASHSEED` = 1 et 98765) : `plumber_text`, `plumber_tables` et
+  `plumber_doc` identiques ; `plumber_objects` ne diffère que par ses
+  lignes `ids` sur 12 fichiers (les objets écrits avant elles identiques :
+  les adresses changent, pas forcément l'analyse), comme l'étape `layout`.
+- **Recherche** : `plumber_text` écrit, avant chaque résultat de `search`,
+  les correspondances du `re` de Python (`spans`, `ORACLE_INPUT`) ; le Rust
+  les donne à `Page::search` et recopie la ligne (« Frontière
+  JavaScript » : `re` n'est pas porté).
+- **Images en ligne** : `"inline-<k>"` dans le port, `inline{"n": k}` dans
+  les traces ; atteint `page.images[].name` et, avec `laparams`, le `name`
+  des figures (écart documenté, `public-api.md`) ; unique dans
+  l'interprétation d'une page seulement : répété d'une page à l'autre dans
+  `pdf.images` et `pdf.objects`.
+- **Hors périmètre** (en-têtes des modules, `public-api.md`) :
+  `display.py` (`to_image`, pypdfium2 et PIL), `repair.py` (Ghostscript
+  dans un sous-processus : `repair=True` lève `NotPorted`), `cli.py`. Les
+  autres options de `pdfplumber.open` sont portées : `pages`, `laparams`,
+  `password`, `strict_metadata`, `unicode_norm`, `raise_unicode_errors`.
+- **Paresse et caches** : ceux de pdfplumber exactement (`PDF.pages` et
+  sa liste partielle après une exception, `Page.layout`, `Page.objects`,
+  arêtes, `lru_cache` de `get_textmap`, `pdf.objects` sur les mêmes dicts,
+  `doctop` cumulé sur les pages choisies, `flush_cache`/`close`) : ils
+  décident l'ordre, l'identité, la récursion et l'état des flux
+  (`rawdata` vidé par un décodage).
+- **Pilotage** : `Page::layout` mène `page_layout` (un
+  `PDFResourceManager` par document, dans `PdfCore`) ; les étapes de
+  `pdftrace` appellent la bibliothèque (`PDF::open`, `Page`).
+- **Mesures de la spécification** (`--set quick`, `heavy.sh`,
+  `--oracle-only -j 3 --timeout 600`, 150 fichiers, aucune erreur ni
+  délai) : `plumber_objects` 86 s (218 s cumulées, 188 Mo de traces ;
+  309 Mo sans les références `lchars`), `plumber_text` 113 s (249 s,
+  38 Mo), `plumber_tables` 90 s (229 s, 33 Mo), `plumber_doc` 110 s
+  (275 s, 4 Mo) ; fichiers les plus lents : `highlights.pdf` 53 s
+  (`plumber_text`), `pdfjs-issue5509.pdf` 49 s (`plumber_doc`). Sur
+  `all` (×12) : environ 3 h 15 de calcul cumulé (1 h 10 avec `-j 3`) et
+  3,2 Go de cache ; construire avec `--timeout 600`.
+
+### Contrat entre les chantiers
+
+Fixé dans `wave4/base` (signatures et sémantique documentées dans le code) :
+
+- `pdfplumber::pdf` : `Source` (`Path` : fichier ouvert par le `PDF`,
+  `Stream` : objet fichier de l'appelant, `FileKind`), `OpenOptions`,
+  `IdsFactory`, `PdfCore` (`doc`, `rsrcmgr`, `laparams`, `unicode_norm`,
+  `raise_unicode_errors`, `ids`), `PDF` (`open`, `close`, `pages`,
+  `objects`, `metadata`, `annots`, `hyperlinks`, `structure_tree`,
+  `PdfCache`).
+- `pdfplumber::page` : `page_layout`, `Page` (champs dans l'ordre de
+  `__init__`, `PageKind::{Original, Cropped, Filtered}`, `CropFn`,
+  `FilterFn`, `PageCache`, `TextMapCache`, `SearchArgs`, `as_value`) et
+  ses méthodes (`new`, `layout`, `objects`, `process_object`,
+  `iter_layout_objects`, `parse_objects`, `point2coord`, texte, tables,
+  `crop`, `filter`, `dedupe_chars`, `annots`, `hyperlinks`,
+  `structure_tree`, `close`, `repr`), `fix_fontname_bytes`,
+  `tuplify_list_kwargs`, `test_proposed_bbox`, `ALL_ATTRS`,
+  `CP936_FONTNAMES` ; `impl Container` et `impl TablePage`.
+- `pdfplumber::container` : `Container` (méthodes requises `pages`,
+  `objects`, `to_dict`, `container_cache`, `attribute`, `flush_cache` ;
+  fournies : listes par sorte, arêtes, `to_json`, `to_csv`), `Objects`,
+  `ContainerCache`, `SerializeOptions`.
+- `pdfplumber::convert` : `Serializer`, `AttrFilter`, `get_attr_filter`,
+  `to_b64`, constantes.
+- `pdfplumber::structure` : `PDFStructTree` (`new(doc, Scope)`,
+  `element_bbox`, `find_all`, `find`…), `PDFStructElement` (`all_mcids`,
+  `to_dict`, `repr`, `find_all`, `find`), `Matcher`, `Scope`.
+- `pdfplumber::utils::exceptions` : `wrap`, `pdfminer_exception`,
+  `malformed_pdf_exception` ; `pdfinternals` : `decode_text_value`,
+  `resolve_and_decode`, `decode_psl_list`.
+- `pdftrace::stages` : `plumber_common` (`select`, `exc`, `digest`,
+  `bounded`, `table`), `plumber_ops`, `StageInput::oracle` pour
+  `plumber_objects` (`ids`) et `plumber_text` (`spans`).
+- Qui écrit quoi : PAGE écrit `pdf.rs` hors métadonnées, `page.rs` hors
+  `annots`/`hyperlinks`/`structure_tree`, `container.rs`, `convert.rs`, le
+  reste de `pdfinternals.rs` (en premier : DOC en a besoin, avec le site
+  d'appel `decode_text str(s)`) ; DOC écrit `structure.rs`, les
+  métadonnées de `PDF::open`, `Page::annots`, `hyperlinks`,
+  `structure_tree`, `PDF::annots`, `hyperlinks`, `structure_tree`. Chacun
+  teste avec les étapes de l'autre au fur et à mesure qu'elles passent ;
+  jusque-là, un rejeu unitaire de son côté (pages construites par les
+  objets d'un PDF, par exemple).
+
+### Chantier PAGE
+
+`pdf.py`, `page.py` (objets, layout, texte, tables, pages dérivées),
+`container.py`, `convert.py` (avec `pycompat::json` : l'encodeur de
+`json.dumps` de CPython, et `pycompat::csv` : `csv.DictWriter`, guillemets
+minimaux, `\r\n`), le reste de `pdfinternals.py` ; les étapes Rust
+`plumber_objects`, `plumber_text`, `plumber_tables` ; le corpus adverse
+`oracle/adversarial/plumber.py` → `adv-plumber` (vérifié par les quatre
+étapes) : objets de toute sorte et attributs atypiques (`mcid` imbriqué à
+10^4 niveaux et autour de la limite des unités C, `MCID` de tout type,
+`/ColorSpace` d'image en tableaux imbriqués autour de la limite des
+cadres de `resolve_all`, noms de polices en `bytes` dont les cinq de
+`CP936_FONTNAMES`, mediabox qui ne commence pas à 0, `/Rotate` de 0 à
+270, boîtes inversées ou dégénérées, Form XObjects imbriqués, images en
+ligne nommées comme le port les nomme), `pages=` de tout type, `doctop`
+sur pages choisies, `laparams` de tout type (clé inconnue, valeurs hors
+domaine), pages aux égalités de distance de boîtes, textes et tables
+dégénérés, `cases_depth` pour chaque chemin récursif
+(`iter_layout_objects` sur des figures imbriquées, `resolve_all`,
+`get_text` des conteneurs, `Serializer` et l'encodeur JSON).
+
+#### Réalisation (branche `wave4/page`)
+
+- **Bibliothèque** (`crates/pdfplumber`) : `pdf.rs` (`PDF.open` et
+  `__init__` : `LAParams(**laparams)` avec les `TypeError` de `**` et des
+  mots-clés inconnus, `_validate`, le mot de passe, `PdfminerException`
+  de `PDFDocument(...)` ; `pages` avec `iter_pages` repris par
+  `enumerate` et `next(gen)` repris du C, `CreatePages::resumed_from_c`
+  ajouté à `pdfpage.rs` ; `doctop` cumulé sur les pages choisies, `page_number
+  not in pp` par `py_contains` ; `objects`, `close`, `to_dict`,
+  `getattr`) ; `page.rs` (`Page.__init__`, `DerivedPage`, `CroppedPage`,
+  `FilteredPage` dans un `Page` à `PageKind` ; `layout` mène
+  `page_layout` avec l'`IdSource` de `OpenOptions::ids` ; `objects`,
+  `parse_objects`, `iter_layout_objects` et sa chaîne de générateurs,
+  `process_object` pour chaque objet du layout, `LTAnno` compris, dans
+  l'ordre de `__dict__` ; `point2coord` ; texte, recherche, tables ;
+  `get_textmap` et son `lru_cache` (128 entrées, clés hachées comme
+  Python : `x_tolerance=1` et `1.0` partagent un `TextMap`) ; `crop`,
+  `within_bbox`, `outside_bbox`, `filter`, `dedupe_chars` ; `to_dict`,
+  `getattr`, `flush_cache`, `close`) ; `container.rs` (listes, arêtes en
+  cache, `to_json`, `to_csv`) ; `convert.rs` (`Serializer`,
+  `get_attr_filter`, `to_b64`) ; le reste de `pdfinternals.rs`
+  (`decode_text` de toute valeur avec le site `DECODE_TEXT_STR`,
+  `resolve_and_decode`, `decode_psl_list`) ; `obj.rs` :
+  `PyValue::repr_counted`/`str_counted` (une unité C par valeur, les
+  objets PDF par `PDFObject::repr`). `pycompat` : `json` (les deux
+  encodeurs de `json.dumps` : celui en C sans `indent`, une unité par
+  conteneur et une pour l'appel de l'encodeur ; celui en Python avec
+  `indent`, un cadre par conteneur et un par flottant, `floatstr`),
+  `csv` (le `writerow` de `_csv.c` : guillemet doublé, `\` échappé par
+  lui-même sans guillemets, `,`, `\r`, `\n` entre guillemets, un seul
+  champ vide écrit `""`), `base64::b64encode`, `PyStr::replace`.
+- **Fichier fermé** : `PDF.close` ferme le fichier qu'il a ouvert
+  (`PDFDocument::close_file`) ; `pycompat::io::BytesIO` partage un état
+  « fermé » entre ses copies et son `seek` lève alors l'erreur de CPython
+  (`seek of closed file` pour un `BufferedReader`, vérifiée avant la
+  conversion de la position, `I/O operation on closed file.` pour un
+  `BytesIO`) : relire après `close()` un objet jamais lu lève
+  `ValueError` comme en Python (`closed_objects` de `plumber_doc`).
+- **Balayages de profondeur** (`oracle/unit/plumber_sweep.py`,
+  `tests/plumber_sweep.rs`) : les étapes appellent les méthodes de page
+  loin de la limite, et les fenêtres `depth-*` ne l'atteignent que dans
+  l'interprétation, `resolve_all` et `Serializer`. Chaque opération de la
+  couche page est donc lancée sur une page neuve depuis chaque profondeur
+  entre la place de son cadre le plus profond et aucune : une
+  `RecursionError` arrive au premier instant où l'opération dépasse la
+  limite, si bien que chaque cadre sur le chemin de chaque profondeur
+  atteinte est le premier au-delà dans une des traces. Ils ont trouvé les
+  cadres que le port ne comptait pas : les annotations des fonctions
+  imbriquées, évaluées à chaque appel de la fonction englobante
+  (pdfplumber n'importe pas `annotations` de `__future__`) et dont chaque
+  indice d'alias de `typing` passe par le `lru_cache` de `_tp_cache`,
+  plusieurs cadres plus bas la première fois dans un processus
+  (`pycompat::typing_cache`, état de processus comme `re_cache` ;
+  `iter_pages` de `PDF.pages`, `rotate_point` de `Page.annots`,
+  `process_attr`, `sorter`) ; `pathlib.Path(path)` de `PDF.open` ;
+  `TableFinder.__init__`, `get_edges` et `Table.extract`, au-dessus des
+  propriétés de la page qui l'interprètent ; les `calculate_area` et
+  `get_bbox_overlap` de `test_proposed_bbox`.
+- **Cadres mesurés** (`oracle/depth_probe.py`, sous limites) :
+  `lru_cache()(f)` de `Page.__init__` et `DerivedPage.__init__` (`lru_cache`
+  un cadre, puis `decorating_function` → `update_wrapper`, deux),
+  l'appel du `lru_cache` (une unité C, `_PyObject_MakeTpCall`, puis
+  `_get_textmap` appelé depuis le C en cas d'échec), `re.sub(lt_pat, ...)`
+  de `process_object` (`re.sub` → `re._compile`, deux cadres, le motif
+  déjà compilé), `json.dumps` (`dumps` → `encode` → `iterencode`, puis
+  `_iterencode` repris par `list()` depuis le C et un cadre par
+  conteneur), `csv.DictWriter` (`writeheader` → `writerow` →
+  `_dict_to_list`, dont l'expression génératrice est reprise par le
+  `writerow` en C ; `writerows` appelle `_dict_to_list` depuis le C).
+- **Unités C des comparaisons** (`obj.rs`) : non comptées, à dessein.
+  Une valeur d'objet de page ne dépasse pas quelques centaines de niveaux
+  d'imbrication : ce qui vient du document passe par `resolve_all` (deux
+  cadres par niveau de liste, un par niveau de dict : `RecursionError`
+  vers 490 et 990 niveaux), et le seul attribut qui n'y passe pas, `dash`,
+  n'est jamais comparé (les arêtes de tables qui le copient ne sont
+  comparées qu'à leurs coordonnées) ; sa sérialisation (`to_json`,
+  `to_csv`) lève `RecursionError` aux cadres de `Serializer` (trois par
+  niveau) bien avant 10 000 unités. Le cas `mc-mcid-deep` d'`adv-plumber`
+  (un `MCID` imbriqué 10^4 niveaux, en tableaux et en dicts) le vérifie.
+- **Écarts documentés** (`docs/public-api.md`, « Not Ported ») : une
+  marge de `laparams` qui n'est pas un nombre (Python la garde et échoue à
+  son premier usage dans l'analyse : `NotPorted` à l'ouverture) ; un mot
+  de passe qui n'est ni `None` ni une `str` (`NotPorted`) ; `getattr` d'une méthode dans `to_dict`/`to_csv`
+  (`object_types=["extract_word"]` : une méthode liée, `NotPorted`) ; un
+  XObject nommé comme le port nomme les images en ligne (`inline-<k>` :
+  les deux noms se confondent) ; l'ordre d'un NaN dans un `set` de
+  `cluster_objects` (son adresse en CPython, `utils/clustering.rs`).
+- **Étapes** : `plumber_objects` (avec `ContentIds` : le rang des `id()`
+  de la trace Python par clé de contenu, donné à l'analyse par
+  `OpenOptions::ids`), `plumber_text` (les `spans` de la trace Python
+  donnés à `Page::search`, le `TextMap` calculé où `search_spans` le
+  calcule), `plumber_tables` ; `plumber_common` : `open_pdf`, `Names`
+  (un nom d'image n'est en ligne que si son flux n'a pas d'identifiant
+  d'objet ; les noms les plus longs remplacés d'abord dans un texte),
+  `ObjectsWriter`, `box_lines`. Chaque générateur et fonction des étapes
+  Python prend son cadre, pour que pdfplumber s'exécute à la profondeur
+  où Python l'exécute.
+- **Limite de la clé de contenu des `id()`** : deux boîtes de texte
+  identiques (même texte dessiné deux fois au même endroit, en gras
+  simulé) ont la même clé ; la base les suppose interchangeables, mais
+  l'analyse ne l'est pas tout à fait (l'ordre d'insertion du `Plane` et
+  la position dans la liste des boîtes départagent aussi). Sur `all`, un
+  fichier le montre, `pdfjs-issue19624-text.pdf` (page 2 : 55 clés
+  dupliquées, jusqu'à 31 copies) : Python y donne une trace différente à
+  chaque exécution (cinq exécutions, cinq traces : les adresses
+  changent), et le port, avec le rang des `id()` d'une trace, ne
+  reconstruit pas toujours les mêmes groupes (les objets sont identiques
+  sur trois tirages sur quatre, la ligne `ids` diffère). Le corriger
+  demande une clé qui distingue les doublons (un rang dans l'ordre brut
+  des caractères, invisible à travers pdfplumber), donc un changement de
+  l'étape Python et de tous ses caches.
+- **Corpus et données unitaires** : `oracle/adversarial/plumber.py` →
+  `adv-plumber` (boîtes et rotations, géométrie aux bords des pages
+  dérivées, chemins dégénérés et infinis, tirets et couleurs, images,
+  contenu marqué de toute sorte, polices dont les noms `CP936`,
+  doublons, ligatures, surrogates isolés, tolérances des mots et des
+  tables, texte tourné et vertical, milliers de petits objets, annotations
+  malformées, égalités de distance du layout, figures imbriquées ;
+  `cases_depth` : chaînes de Form XObjects, `/ColorSpace` et `/MCID`
+  imbriqués en tableaux ou par chaînes de références, tirets imbriqués pour
+  `Serializer`) ; `oracle/unit/plumber.py` (les traces des quatre étapes
+  `plumber_*` sur `adv-plumber`, `micro` et les petits fichiers de
+  `quick`, les fenêtres de profondeur aussi depuis un et deux cadres plus
+  bas ; `open.jsonl` : `pdfplumber.open` avec des `laparams`, `pages`,
+  `password`, `unicode_norm` de tout type ; `utils.jsonl` :
+  `decode_psl_list`, que pdfplumber n'appelle pas lui-même), rejoué par
+  `crates/pdftrace/tests/plumber_unit.rs` ; `oracle/unit/plumber_sweep.py`
+  (les balayages de profondeur ci-dessus, 396 sur six fichiers
+  d'`adv-plumber`), rejoué par `crates/pdftrace/tests/plumber_sweep.rs`.
+- **Résultats** (arbre final, fusion de `wave4/doc` comprise) :
+  `plumber_objects` sur `all` (20 premières pages) 1 852/1 853 (le
+  fichier aux boîtes en double, ci-dessus), `plumber_text` et
+  `plumber_tables` 1 853/1 853 ; les quatre étapes `plumber_*` identiques
+  sur `adv-plumber` (131 PDF) ; `plumber_unit` (1 236 traces d'étapes, 165
+  ouvertures, `utils`), `plumber_sweep` (396 balayages) ; `scripts/check.sh`
+  complet (natif, `wasm32-wasip1`, porte de profondeur, paquet JS).
+- **Mutations** (`--in-diff` de `762bbe5..HEAD`, `--profile mutants -j 1
+  --timeout 60`, `heavy.sh`, rejeux `plumber_unit` et `plumber_sweep`
+  avec `PLUMBER_FAIL_FAST`, les fonctions de DOC exclues) : passe
+  ordinaire 1 218 mutants (`page.rs` 363, `pdf.rs`/`convert.rs`/
+  `pdfinternals.rs`/`obj.rs`/`table.rs` 255, `container.rs` 212, `pycompat`
+  et `pdfminer` touchés 131, étapes 257) ; leurs survivants ont fait
+  écrire les balayages de profondeur (et trouver les cadres non comptés,
+  ci-dessus), les cas de `font-kinds` (le cas levait avant tout caractère :
+  `fix_fontname_bytes` n'était pas atteint), d'une image au flux vide, des
+  `/ID` de structure en tableaux de nombres, des mots de passe faux non
+  `str`, des formes `unicode_norm` à surrogates sur des caractères au texte
+  vide, de `decode_psl_list`, des identités de caches avant et après
+  `flush_cache`/`close`, des `getattr` de `to_dict`/`to_csv` ; ils ont fait
+  retirer du code mort (`Page::is_original`, `Page::process_object`,
+  `Objects::len`/`is_empty`, les bras propres au `PDF` de son `getattr`,
+  que pdfplumber ne prend jamais, la sortie anticipée de
+  `PyStr::replace`). Après les passes `--iterate` : `page.rs` 5
+  survivants, le reste de la bibliothèque 9, `pycompat` 3, étapes 25 ;
+  les mutants de `decode_text_value` et `resolve_and_decode_obj` (code de
+  DOC) sont tués par `structure_unit` (passe croisée sur eux et le fichier
+  fermé d'`io.rs` : 32 mutants, 15 tués, 2 délais, 14 non compilables, 1
+  survivant, `seek_closed_error`, ci-dessous) ; passe
+  `Ok(..)` (`scripts/mutants-ok.sh`) 170 mutants, 132 tués, puis 53 sur
+  les 70 repassés après les cas, puis `Page::close` (un balayage qui
+  appelle `page.close()`) : 2 survivants ; mutants à la main des
+  cadres (`py_frame`, `leaf`, `eval_entry`, `class_call`, `c_call`, les
+  `Subscription::eval` retirés, 198) : 55 tués.
+
+  Survivants, tous équivalents ou inatteignables :
+  - **unités C seules** (36 mutants à la main : `eval_entry` des appels
+    depuis le C, `class_call`, `c_call` de `PdfminerException`) : les
+    unités C en cours restent loin de la limite (10 000) tant que les
+    cadres Python, eux, l'atteignent avant (`resolve_all`, `Serializer` :
+    deux ou trois cadres par niveau) ;
+  - **cadres dominés** (107 mutants à la main, `iter_level` : la création
+    du générateur imbriqué et sa dernière reprise) : un cadre que chaque
+    balayage atteint après un chemin plus profond du même appel
+    (l'interprétation sous une opération sur une page neuve, `Serializer`
+    avant l'encodeur JSON, `Page.__init__` après `create_pages`, la
+    création d'un générateur imbriqué que sa dernière reprise égale) ;
+  - **valeurs que le port ne produit pas** : un `dict` Python dans les
+    attributs d'un objet du layout (`resolve_all_value`, 3 : ce sont des
+    objets PDF), une ligne de `to_csv` qui serait un `dict` PDF, la
+    comparaison de deux `Page` (`PageRef::ptr_eq`, `py_eq`), un `str`
+    d'objet PDF imbriqué sous `str()` (`render_counted`, 2), le `getattr`
+    d'un `PDF` (jamais pris) ;
+  - **écarts documentés** (`NotPorted`) : un `indent` au-delà de 2**20,
+    le `getattr` d'une méthode ;
+  - **équivalents** : `|` et `^` sur des bits disjoints (`b64encode`),
+    `seek_closed_error` (la lecture d'un fichier fermé vérifie aussi :
+    seule une position au-delà de 2**63, après `close`, distinguerait
+    l'ordre des deux erreurs), l'implémentation de `Debug` de `PageRef` ;
+  - **étapes** (harnais) : conditions redondantes (`Names` : un nom
+    d'image en ligne et un flux sans identifiant ; `annot_value` : les clés
+    `name`/`P` absentes du premier niveau), `select` (`% n` puis `% n`),
+    bornes du lecteur des `spans` sur un texte bien formé, le rang de
+    secours de `ContentIds` (jamais pris quand la trace concorde).
+
+### Chantier DOC
+
+`structure.py`, les métadonnées (`PDF.__init__`, `strict_metadata`),
+`Page.annots`/`hyperlinks` et ceux du `PDF`, `structure_tree` ; l'étape
+Rust `plumber_doc` ; le corpus adverse `oracle/adversarial/structure.py`
+→ `adv-structure` (vérifié par `plumber_doc` et `plumber_objects`) :
+arbres de structure avec et sans `/ParentTree`, `/K` entier, dict, tableau,
+références, MCR et OBJR, `/Pg` absent ou hors des pages choisies, DAG,
+`/RoleMap`, `/ClassMap`, attributs `/A`/`/C` en tableaux avec révisions,
+`/ID`, `/T`, `/Lang`, `/Alt`, `/ActualText` de tout type (dont une liste
+d'entiers > 255 suivie d'une liste imbriquée : le `str(s)` de
+`decode_text`, une unité C de plus à sa première exécution),
+références dans les attributs (le `deepcopy` d'`asdict`), arbres profonds
+autour des premières profondeurs qui échouent (`prune`, `asdict`,
+`repr`) ; métadonnées imbriquées, profondes (`resolve_and_decode`), en
+UTF-16 et PDFDocEncoding, `/Info` multiples ou partagés ; annotations aux
+`/Rect` atypiques, `/A` et `/URI`, `/T`, `/Contents` non décodables (avec
+et sans `raise_unicode_errors`), sur pages tournées.
+
+#### Réalisation (branche `wave4/doc`)
+
+- **`structure.rs`** : `structure.py` fonction par fonction.
+  `PDFStructTree::new(doc, Scope)` (l'appel de classe, `__init__`, la
+  portée page par l'arbre des parents ou, sans `/ParentTree`, par l'arbre
+  entier), `_make_element`, `_make_attributes`, `_parse_parent_tree`,
+  `_parse_struct_tree` et son `prune` récursif, `_resolve_children`,
+  `on_parsed_page`, `element_bbox` ; `PDFStructElement` (`all_mcids`,
+  `to_dict`, `repr`). Les objets du document sont lus avec les opérateurs
+  de Python quel que soit leur type (`py_in`, `py_getitem`, `py_get`,
+  `py_iter`, les attributs `.name`, `.objid`, `.items()`) : un arbre de
+  structure est un graphe d'objets quelconque, et chaque accès lève là où
+  Python lève (`TypeError`, `AttributeError`, `KeyError`, `PDFKeyError`
+  d'un flux, `AssertionError` des `assert`, `StopIteration` du `next()`
+  de l'arbre des parents). Les tables `seen` sont indexées par
+  `repr(ref)` (le `repr` intégré : une unité C, plus celles de l'objet).
+- **Écarts d'interface** (contrat de la base amendé) : `find_all` rend un
+  itérateur paresseux (`FindAll`, le générateur de Python : `find`
+  s'arrête au premier élément, une exception du filtre arrive quand le
+  parcours l'atteint, un DAG profond n'est pas parcouru en entier pour
+  rien) au lieu d'un `Vec` ; `PDFStructElement::to_dict(file)` prend la
+  classe du fichier du document (`pdfparser::FileKind`,
+  `PDFDocument::file_kind`), dont dépend la copie profonde d'`asdict` ;
+  `PDFStructTree::page_dict` est une table de hachage `ObjId -> int`.
+- **`to_dict`** : `dataclasses.asdict` (les cadres de `_asdict_inner`, de
+  `_is_dataclass_instance`, de `fields` et des expressions génératrices
+  que `list()`/`dict()` reprennent depuis le C : trois cadres et deux
+  unités C par niveau d'éléments, deux cadres par niveau d'un attribut
+  imbriqué), puis l'élagage (itératif chez Python, récursif ici sur une
+  profondeur qu'`asdict` a déjà bornée). Les feuilles passent par
+  `copy.deepcopy`, dont le port suit le parcours et les cadres
+  (`copy_frames`) : un nom (`PSLiteral`, `PSKeyword`) six cadres, une
+  référence copie le document jusqu'à l'objet fichier,
+  `TypeError("cannot pickle 'BufferedReader' instances")` pour un
+  fichier ouvert par un chemin, après 22 cadres (le plus profond est dans
+  les sections xref du document, avant `_parser` dans son `__dict__`), un
+  flux (qu'y laisse le décodage des métadonnées en place) ses attributs,
+  avec leurs références, et, pour un document chiffré, le gestionnaire de
+  sécurité dont `decipher` est une méthode (14 cadres pour RC4 ; mesuré
+  par `python -m oracle.depth_probe structure`). Non modélisés : un
+  document dont `xrefs`, `info` ou `catalog` tiennent des objets directs
+  imbriqués plus profond (la copie y descend plus bas avant l'erreur), les
+  `/CF` des gestionnaires AES, la mémoire de `copy` (un objet revu n'est
+  pas reparcouru), et la copie complète du document lu depuis des octets
+  (JavaScript : le port garde la référence, une valeur égale, sans
+  compter ses cadres).
+- **`repr`** : le `__repr__` généré de la dataclass derrière
+  `dataclasses._recursive_repr` (le wrapper appelé depuis le C, deux
+  cadres et quatre unités C par niveau), les champs par `repr_counted`.
+- **Boucle infinie de Python** : un cycle parmi les éléments qu'atteint
+  l'arbre des parents d'une page fait boucler `_resolve_children` sans
+  fin (chaque tour allonge les listes : Python finit à court de mémoire).
+  Le port relève, à la première visite de chaque élément, les éléments
+  qu'il met en file ; quand tout élément atteint a été traité une fois
+  (son traitement ne dépend de rien qui change, il ne lèverait plus rien)
+  et qu'un cycle est atteignable, il lève `MemoryError`. Sans oracle
+  possible (Python ne rend pas la main), écarté du corpus adverse ; les
+  cycles de la portée document, eux, finissent en `RecursionError` dans
+  `prune`, comme en Python (`cycle-*` d'`adv-structure`).
+- **Métadonnées en place** : `resolve_and_decode` décode un `dict` **dans
+  le dict du document** (`obj[k] = ...`) et la suite le voit : le corpus
+  a des `/Info` qui désignent le catalogue (un fichier oss-fuzz de
+  pdfplumber), un dict d'annotation (`bug1978317.pdf`), des listes et
+  dicts imbriqués. `PDFObject` gagne la variante `Str(PyStr)` (une `str`
+  Python, que seul ce décodage produit) ; `repr`, `str`, `==`, le hachage
+  des `ObjId`, la vérité, `in`, `x[0]`, `canon`, les valeurs typées et la
+  frontière Wasm la traitent comme Python traite une `str`.
+  `read_metadata` (`pdf.rs`) : les `/Info` fusionnés dans un nouveau
+  dict, chaque valeur décodée (`resolve_and_decode_obj`), l'exception
+  levée avec `strict_metadata`, sinon journalisée (logger
+  `pdfplumber.pdf`, canal des diagnostics) et la valeur laissée telle
+  quelle (après ce qu'elle a déjà modifié en place).
+- **Annotations** (`page.rs`) : `Page.annots` (`resolve_all` des
+  `/Annots`, `list(map(parse, ...))`, n'importe quel itérable, chaque
+  `parse` depuis le C), `rotate_point` (`r // 90` : `TypeError` pour une
+  rotation flottante ou `bytes`), `parse` (`/Rect` dépaqueté comme Python,
+  `_normalize_box`/`_invert_box` d'un 4-uplet de valeurs, `/URI`, `/T`,
+  `/Contents` décodés par `bytes.decode("utf-8")` puis `("utf-16")` :
+  `pycompat::codecs`, les décodeurs stricts de CPython et leur
+  `UnicodeDecodeError` exact ; `raise_unicode_errors=False` garde les
+  octets et émet l'avertissement sur le canal des diagnostics ; `/P`
+  remplacé par la page, un flux qui a `/P` lève le `TypeError`
+  d'affectation), `CroppedPage` par `apply_crop_fn` de PAGE ;
+  `Page.hyperlinks`, `Page.structure_tree`, `PDF.structure_tree`.
+  Non modélisés : les cadres de `warnings.warn` (10 au premier message,
+  6 à un autre, aucun quand le registre l'a déjà vu ; `Page.annots`
+  n'est jamais appelé près de la limite).
+- **`decode_text`** : le `"".join` des générateurs tient ses unités C
+  jusqu'à son retour ou son exception, avant le `str(s)` du `except
+  IndexError` (la base les gardait pendant `str(s)` : deux unités de
+  trop, vues par les fenêtres `actualtext-str-*`).
+- **Étape `plumber_doc`** (`pdftrace`) : le parcours de
+  `oracle/stages/plumber_doc.py`, les cadres des générateurs délégués
+  (`yield from` : `SEND` exécute un générateur en ligne, sans unité C)
+  et des lambdas ; le premier `LOAD_ATTR` d'une propriété à un site
+  (`pdf.structure_tree`, `page.structure_tree` dans les lambdas de
+  l'étape) appelle le getter depuis le C, deux unités C
+  (`pycompat::specialize::CallSite::property_load`, l'instruction se
+  spécialise ensuite en `LOAD_ATTR_PROPERTY`). `StageInput` gagne
+  `password_given` : l'étape Python reçoit `None` sans mot de passe, et
+  ses lignes `password` diffèrent pour un mot de passe vide donné (cinq
+  fichiers du corpus).
+- **Corpus `adv-structure`** (`oracle/adversarial/structure.py`, 441
+  PDF) : les cas de la liste ci-dessus, et 16 fenêtres de profondeur
+  autour du premier niveau qui échoue en Python, cherché par dichotomie
+  sur l'étape (`--probe`) : `to_dict` d'une chaîne d'éléments (330 ;
+  329 avec une révision littérale à la feuille, 323 avec une référence
+  dans ses attributs, 327 avec un attribut imbriqué ; 330 sans arbre des
+  parents), `prune` (986), `repr` (497), un attribut imbriqué (492), les
+  unités C du `repr(ref)` d'une liste imbriquée dans `/K` (9 990), du
+  `str(s)` de `decode_text` à sa première exécution (9 989) et aux
+  suivantes (9 990), sur la seconde page (9 992 : la propriété `page.structure_tree` de la lambda de l'étape y est chargée par l'instruction spécialisée), du `repr` d'un attribut (9 991), `resolve_and_decode`
+  de dicts et de listes imbriqués (987), l'arbre des nombres des parents
+  (978). Rejoué par `oracle/unit/structure.py` (`structure_unit.rs`),
+  les fenêtres aussi depuis un et deux cadres plus bas.
+- **Fichier fermé** (laissé ouvert par la base) : `PDF.close` ferme le
+  fichier ouvert par un chemin (`PDFDocument::close_file`,
+  `pycompat::io::BytesIO::close`), et la lecture suivante d'un objet
+  qui n'est pas en cache lève le `ValueError` d'un `BufferedReader` fermé
+  (`seek of closed file`, `read of closed file`), que `PDF.pages` enveloppe
+  dans `PdfminerException` : la seule différence de `plumber_doc` sur
+  `all` (`issue11549_reduced.pdf`, un objet illisible relu après
+  `close()`), et le cas `closed-file-reread` d'`adv-structure`. Un
+  document lu depuis des octets est le flux de l'appelant
+  (`stream_is_external`) : `close()` ne le ferme pas.
+- **Résultats** : `plumber_doc` sur `all` (20 premières pages), 1 853
+  fichiers identiques (le dernier après la fermeture du fichier) ;
+  `plumber_doc` et `plumber_objects` sur `adv-structure`, 441 identiques
+  chacune ; `structure_unit` (676 traces, 5 148 cas de `codecs`, et les tests Rust du garde des cycles).
+- **Mutations** (`--profile mutants -j 1 --timeout 60 -- --package=pdftrace
+  --test=structure_unit`, puis `scripts/mutants-ok.sh` et des mutants à
+  la main pour les corps sans `Default`) : `structure.rs` (261 mutants,
+  dont 197 « unviable » de `PyResult`), `codecs.rs` (66), les fonctions
+  DOC de `page.rs` avec `_normalize_box` (57), `read_metadata` et
+  `PDF::structure_tree` (19), `resolve_and_decode*`/`decode_text_value`
+  (30), le diff de `pdftypes.rs` (`Str`, 29), `property_load`,
+  `file_kind`, `close_file` ; passe `Ok(..)` (73 mutants) ; 22 mutants à
+  la main (chaque corps remplacé par une valeur concrète : tous tués, celui
+  de `property_load` par la fenêtre `actualtext-str-page2`).
+  Les survivants ont donné des cas (`adv-structure` : flux parmi les
+  attributs, avec ou sans chiffrement, référence dans leurs listes ;
+  `/Annots` décodé en `str` ; pages tournées non carrées ; cycle puis
+  erreur) et des tests Rust (garde des cycles, `find` d'un élément) ;
+  restent, justifiés : `(ch & 0x3FF) << 10 | (ch2 & 0x3FF)` en `^`
+  (bits disjoints) dans `decode_utf16` ; `checking && !edges...` en `||`
+  dans `_resolve_children` (un élément retraité avant la décision
+  réinscrit les mêmes arêtes : même décision) ; dans `pdftypes.rs`, les
+  bras `Str` de `==` entre deux `PDFObject` et de l'égalité et du hachage
+  des `ObjId` (aucun chemin ne compare deux `str` décodées ni ne fait d'une
+  `str` un identifiant d'objet : les identifiants viennent du parseur et
+  des références) ; `PDFStructElement.__iter__` remplacé par le champ
+  `children` (rien ne l'appelait).
+
+### Plan de comptage des cadres
+
+Chaque fonction ou propriété portée prend son cadre ; les appels faits
+depuis le C (`map`, `filter`, `dict(...)`, `list(genexpr)`,
+`"".join(genexpr)`, `sorted(key=...)`) leurs unités (`eval_entry`) ; les
+appels de classe `class_call` (`PDF`, `Page`, `CroppedPage`,
+`FilteredPage`, `LAParams`, `PDFResourceManager`, `PDFStructTree`,
+`PDFStructElement`, `Serializer`) ; les générateurs leur cadre à chaque
+reprise (`iter_pages`, `iter_layout_objects` à chaque niveau de `yield
+from`, `_find_all`, `all_mcids`) ; la bibliothèque standard par des
+constantes mesurées avec `oracle/depth_probe.py` (`functools.lru_cache`
+et `update_wrapper` de `Page.__init__`, `re.sub` de `process_object`,
+`warnings.warn`, `dataclasses.asdict`, `copy.deepcopy`,
+`reprlib.recursive_repr`, `json.dumps`, `csv`) ; le `str(s)` de
+`decode_text` est un site de `pycompat::specialize` (à déclarer dans
+`oracle/depth.py`, `_call_sites` : premier commit de PAGE, ci-dessus) ;
+chaque chargement d'une propriété est un site de `LOAD_ATTR`
+(`pycompat::specialize::AttrSite`, jonction ci-dessous : deux unités C
+pendant le getter tant que l'instruction n'est pas spécialisée pour la
+classe de l'objet). Le code de la vague 1 (`utils/text.rs`, `table.rs`, géométrie,
+regroupement) ne compte pas de cadres : il ne récurse pas et pdfplumber
+l'appelle au niveau de l'utilisateur, sauf sur le chemin d'une propriété de
+la page qui l'interprète (`TableFinder.__init__` et `get_edges` vers
+`page.edges` et `page.extract_words`, `Table.extract` vers `page.chars`,
+réalisation de PAGE ci-dessus) ; restent les unités C des
+comparaisons, `hash` et `repr` de valeurs imbriquées (`obj.rs`), à compter
+avec leurs cas de `adv-plumber`. Les constructeurs des vagues 0 à 2
+gardent deux unités par appel de classe (sans effet observable).
+
+### Outillage
+
+`oracle.verify` passe toujours `--cmap-dir` à `pdftrace` (par défaut le
+répertoire de `oracle/codegen/cmaps.py` sous le cache, écrit au besoin ;
+un `--cmap-dir` sans `names.txt` arrête tout, code 2, avant le cache de
+l'oracle) : une étape qui interprète des pages ne peut plus compter des
+écarts « no CMap provider installed » faute d'avoir exporté
+`PDFPLUMBER_CMAP_DIR` (`oracle/tests/test_verify.py`).
+
+### Jonction
+
+`wave4/page` puis la fusion de `wave4/doc`. Ensuite :
+
+- **Wasm** : `DocState` (`crates/wasm/src/ops.rs`) tient le `PDF` de
+  pdfplumber (`pdfplumber::pdf::PDF`, avec son `PDFResourceManager` et ses
+  pages) au lieu des seules CMaps ; `Document::reset` le jette quand un
+  appel est nul (une CMap prédéfinie manquante) et la relance rouvre le
+  document depuis ses octets (`Source::Stream`, `FileKind::BytesIO`) avec
+  l'état du processus remis (`pdfminer::process_state`). Des opérations
+  qui interprètent des pages : `pages` (géométrie), `page_objects`,
+  `extract_text`/`words`/`text_lines`/`search` (deux temps : le texte de
+  la carte, puis les correspondances de la `RegExp`), `tables`, pages
+  dérivées (handles), `metadata`, `annots`, `structure_tree`, `to_json`.
+  Le test CJK `documents.jsonl` marqué *todo* passe par `pdf.pages`.
+- **Vérification** : `oracle.verify` des quatre étapes sur `all`
+  (`--timeout 600`), `adv-plumber`, `adv-structure`, et des étapes des
+  vagues précédentes sur leurs corpus (les caches de l'oracle sont
+  reconstruits si `oracle/depth.py` a changé) ; `oracle.wasm_parity
+  --set quick --stages plumber_objects,plumber_text,plumber_tables,plumber_doc`
+  (`--oracle-dir` pour les étapes `ORACLE_INPUT`) ;
+  mutations de tout le code de la vague (passe ordinaire, `Ok(..)`, cadres
+  à la main) ; `scripts/check.sh` natif et `wasm32-wasip1`, construction
+  `dist`, porte de profondeur étendue aux fenêtres de `adv-plumber` et
+  `adv-structure`.
+
+#### Réalisation de la jonction (branche `wave4/join`)
+
+- **Fusion** : `wave4/page` contenait déjà `wave4/doc` jusqu'à son dernier
+  commit (`fa24d87`) : la fusion est vide, sans conflit.
+- **Chargements de propriétés** (`pycompat::specialize::AttrSite`) :
+  `oracle.verify` des quatre étapes `plumber_*` sur `adv-interp` a montré
+  que ses fenêtres à la limite des unités C (`climit-*`, 40 à 48 fichiers
+  par étape) différaient : Python lève `RecursionError` en interprétant
+  sous `page.objects` → `parse_objects` → `self.layout`, le port non. Un
+  `LOAD_ATTR` d'une propriété, à sa première exécution, trouve la propriété
+  par `PyObject_GetAttr`, dont `property.__get__` appelle le getter depuis
+  le C : une entrée de la boucle d'évaluation, deux unités tenues pendant
+  tout le getter (l'interprétation de la page comprise) ; la seconde
+  exécution spécialise l'instruction (`LOAD_ATTR_PROPERTY`, le cadre du
+  getter poussé en ligne, sans unité). `AttrSite` suit le compteur
+  adaptatif de CPython 3.12 (`Include/internal/pycore_code.h` ;
+  `Python/bytecodes.c`, `LOAD_ATTR`, `LOAD_ATTR_PROPERTY` ;
+  `Python/specialize.c`, `_Py_Specialize_LoadAttr`) : réchauffement 1, la
+  classe pour laquelle l'instruction est spécialisée (son `tp_version_tag`
+  : un `Container.chars` lu sur une `Page` puis sur une `CroppedPage`
+  désoptimise), 52 échecs avant de se spécialiser de nouveau, le recul
+  exponentiel d'une spécialisation qui échoue (un attribut de classe,
+  `Page.pages = None`, lu par une instance). Chaque chargement d'une
+  propriété du code de pdfplumber porté est un site (`page.py` 22,
+  `container.py` 19, `pdf.py` 10, `structure.py` 3, `table.py` 6) ; le
+  `getattr(self, t + "s")` de `to_dict`/`to_csv` prend l'unité de l'appel
+  générique du builtin (première exécution, `CallSite::builtin_call`) et,
+  pour une propriété, l'entrée du getter, toujours (`getattr` n'est pas un
+  `LOAD_ATTR`). L'état des sites est un état du processus : remis à zéro
+  par `py_process::start`, saisi et remis par `pdfminer::process_state`.
+  Les étapes `plumber_*` de `pdftrace` modélisent leurs propres chargements
+  de propriétés dont le getter peut interpréter (`pdf.pages`,
+  `page.objects`, `page.chars`, `page.edges`, `page.annots`,
+  `page.layout`...) et les appels de méthodes liées avec `**kwargs`
+  (`CALL_FUNCTION_EX` appelle la méthode par `PyObject_Call` : deux unités),
+  sous lesquels l'interprétation recommence quand les objets d'une page ont
+  levé ; les chargements de getters bon marché (`width`, `height` de
+  `boxes`, `Table.bbox`/`rows`/`columns`) et les `CALL` de méthodes liées
+  sous lesquels rien de profond ne tourne sont laissés de côté (notés dans
+  les modules).
+- **Mot de passe** : `pdfminer` ne lit le mot de passe que pour un document
+  chiffré (`PDFDocument::open_with`) : un mot de passe d'un type que le port
+  ne modélise pas (`bytes`) ouvre un document non chiffré, comme Python
+  (`open.jsonl` de `js_runtime.py` en a un), et lève `NotPorted` (non
+  enveloppé) pour un document chiffré.
+- **Frontière Wasm** (`js-runtime.md`, « Documents et pages ») : le `PDF`
+  dans `Document::state`, les opérations des documents, pages, pages
+  dérivées et tables (`crates/wasm/src/pages.rs`), chacune l'instruction
+  d'un script Python au niveau du module (`ENTRY_DEPTH` : un cadre, deux
+  unités C ; une propriété à son site, une méthode avec `*args,
+  **kwargs`, `getattr` d'un nom), `oracle/unit/js_pages_run.py` ; un appel
+  nul remet les documents qu'il a atteints dans leur état d'avant lui en
+  rejouant leur historique. `Page::search_with` (un `main_group`
+  quelconque) et `Page::search_text` (la première moitié de `search`) pour
+  la recherche en deux appels ; `getattr(pdf, "pages")` donne les pages.
+- **Résultats** (`oracle.verify`, `heavy.sh`, `--timeout 600`, fournisseur
+  de CMaps passé) :
+  - `all` (1 853 fichiers, 20 premières pages) : `plumber_objects`
+    1 852/1 853 (`pdfjs-issue19624-text.pdf`, la limite connue de la clé
+    de contenu des `id()`, ci-dessus), `plumber_text`, `plumber_tables`,
+    `plumber_doc` 1 853/1 853 ;
+  - `adv-plumber` (182, dont 51 fenêtres `climit-*` ajoutées par la jonction), `adv-structure` (441), `adv-pages` (285),
+    `adv-objects` (333) : les quatre étapes identiques ;
+  - `adv-interp` (353) : `plumber_objects` et `plumber_doc` 353/353,
+    `plumber_text` 336/353 et `plumber_tables` 341/353 : les fichiers
+    `op-*` et `text-*` aux coordonnées NaN, dont `cluster_objects` range
+    les NaN dans un `set` par leur adresse (écart documenté,
+    `public-api.md`) ; Python lui-même change cet ordre d'un processus à
+    l'autre (trois traces de `002-op-cm-0.pdf` relancées : un ordre, la
+    trace du cache : un autre) ; et `096-text-TL.pdf` dont l'oracle
+    `plumber_text` est tué par la limite de 5 Go de `heavy.sh` ;
+  - régression sur `quick` : `psparser`, `objects`, `streams`, `pages`,
+    `interp`, `fonts`, `layout` 150/150.
+- **Temps** (`quick`, 150 fichiers, 302 pages, 20 premières pages ;
+  Python mesuré dans le processus après les imports, `pdftrace` par
+  fichier, machine partagée) : `plumber_objects` 574 ms par page pour
+  Python, 152 ms pour `pdftrace` (×3,8) ; `plumber_text` 681 / 81 ms
+  (×8,4) ; `plumber_tables` 601 / 117 ms (×5,2) ; `plumber_doc` 765 /
+  217 ms (×3,5). Les traces dominent le temps de `pdftrace` (écriture
+  canonique de chaque objet). Sans trace (`crates/pdftrace/examples/
+  plumber_phases.rs` et son jumeau Python, mêmes fichiers) : ouverture
+  4,5 / 0,32 ms par page (×14), `page.layout` (interprétation et
+  périphérique) 73 / 5,7 ms (×13), `page.objects` 41 / 12,3 ms (×3,4),
+  `extract_text` 6,6 / 2,1 ms (×3,2), `extract_words` 4,7 / 1,6 ms (×3,1),
+  `find_tables` 6,0 / 1,8 ms (×3,3) ; en tout 137 / 24 ms (×5,7). Point
+  chaud : `page.objects` (`process_object` de chaque objet du layout :
+  `resolve_all`, dicts d'attributs, conversions de valeurs), la moitié du
+  temps du port hors traces, deux fois l'interprétation ; puis le code de
+  la vague 1 (texte, mots, tables), trois fois plus rapide que Python
+  seulement. Fichier lent relativement : `issue12841_reduced.pdf` (0,2 s
+  contre 0,07 s pour `plumber_objects`).
+- **Fenêtres `climit-*` d'`adv-plumber`** : les fenêtres des unités C
+  d'`adv-interp` sont dichotomisées sur les étapes de l'interpréteur ; les
+  étapes `plumber_*` y échouent toutes au même endroit. `adv-plumber` a les
+  siennes (un opérande de `Tf` imbriqué avant la scène, sur une page, deux,
+  et une page balisée pour `element_bbox`), de la première profondeur qui
+  lève dans une étape `plumber_*` moins deux jusqu'à la limite des unités
+  C (9 984 à 10 000) : chaque opération qui interprète la page y rencontre
+  la limite à sa profondeur propre. `adv-plumber` : 182 fichiers, les
+  quatre étapes identiques ; `wasm-depth-gate.sh` les passe aux quatre
+  étapes.
+- **Mutations** (code changé par la jonction depuis `83ff2d3`) :
+  - `cargo mutants`, frontière (`crates/wasm`, `ops.rs`, `pages.rs`,
+    `handles.rs`) : 112 mutants, 86 détectés, 5 non viables, 21 manqués ;
+    après les tests ajoutés, la passe ciblée : 44 mutants, 33 détectés,
+    4 non viables, 7 manqués, dont `run_op` (`&&` → `||`, la condition
+    retirée depuis : `run_op` enregistre toute opération qui atteint un
+    document). Restent, équivalents : `|` → `^` dans `Handles::iter`/
+    `iter_mut` (bits disjoints de l'étiquette et de l'index), `Object::reset`
+    → `()` (le rejeu remplit chaque objet de nouveau), les gardes
+    `p.freed`/`t.freed` de `Core::void` → `false` (code retiré depuis :
+    les handles libérés sont libérés), `calls +=` → `-=` (identifiants distincts aussi en
+    décroissant, arithmétique enveloppante) ;
+  - `cargo mutants`, bibliothèque (`page.rs`, `pdf.rs`, `obj.rs`,
+    `table.rs`, `container.rs`) : 48 mutants, 29 détectés, 2 non viables,
+    17 manqués ; passe ciblée : 22 mutants, 8 détectés, 14 manqués ; les
+    fenêtres `class-*` refaites (dernière opération sur un second
+    document) tuent les quatre constantes de `Page` (`class_name`,
+    `property_class`). `is_property` réduit aux noms que `to_dict` et
+    `to_csv` construisent (`doc_attr`/`page_attr` : `NotPorted` pour un
+    nom qui ne finit pas par `s`, `width`, `bbox`, `layout`..., où Python
+    rend l'attribut) : 6 mutants, 2 détectés, 4 manqués. Restent,
+    équivalents : `is_property` → `true` (deux unités de plus pendant un
+    getter qui ne descend pas : un attribut absent, `_objects`,
+    `cached_properties`, `pages` d'une page), le bras `pages` supprimé ou
+    sa comparaison inversée (`PDF.pages` ne contient aucune récursion C),
+    `==` → `!=` dans `to_csv` (la branche de l'autre classe calcule les
+    mêmes pages, ses unités tenues pendant `pages`),
+    `<impl Container for PDF>::class_name` (`""`, `"xyzzy"` : un `PDF` ne
+    partage de site qu'avec des pages, dont la classe diffère dans les
+    deux cas ; la seule autre lecture, `is_property(_, "pages")`, tient
+    deux unités pendant `PDF.pages`, qui ne contient aucune récursion C),
+    `TablePage::property_class` par défaut (`Some("")`, `Some("xyzzy")` :
+    la page d'objets de la frontière et des rejeux a `chars` et `edges`
+    en attributs simples, dont le « getter » ne descend pas) ;
+  - passe `Ok(..)` (`scripts/mutants-ok.sh`) : 135 mutants, 115 détectés,
+    13 non viables, 7 manqués, tous dans du code de `ops.rs`/`pages.rs`
+    réécrit depuis et repassé par la passe ciblée ; étapes (`pdftrace`) :
+    10 mutants, 10 détectés ;
+  - sites d'unités C (`scripts/unit-site-mutants.py`, que cargo-mutants
+    ne mute pas, 138 sites) : 63 détectés, 75 survivants, chacun
+    justifié : getters bon marché sous le site (`width`, `height`, `bbox`
+    de `rotate_point`, `point2coord`, `process_object`, `_get_textmap`,
+    `to_dict`, la géométrie des pages de `doc_pages`, le tri de `sorter`, `Table.rows`) ; getters
+    en cache sous le site (`parse_objects` avant la racine, `layout` après
+    `objects_lines`, `hyperlinks` après `annots`, `TableFinder` après
+    `find_tables`, `dedupe_chars` après les objets) ; sites dominés, dont
+    un voisin du même chemin a déjà calculé ou levé (`edges` lit `lines`
+    avant `rect_edges`/`curve_edges`, `PDF.objects` lit `p.objects.keys()`
+    avant `p.objects[kind]`, `TableFinder.get_edges` lit les arêtes
+    verticales avant les horizontales) ; `PDF.pages`, `annots`,
+    `hyperlinks`, `close`, `structure_tree`, qui n'interprètent aucune
+    page et ne contiennent aucune récursion C (les pages, `to_csv`,
+    `to_dict`, l'arbre de structure, les annotations du pilote des
+    étapes) ; opérations des étapes après la première qui a interprété la
+    page (`plumber_text`, `plumber_tables` s'arrêtent à la première qui
+    lève ; sinon les objets sont en cache) ; la seconde moitié de la
+    recherche (carte de texte en cache), `crop` (ne lit que `bbox`),
+    `close`, l'entrée de `pdfplumber.open` (aucune récursion C à
+    l'ouverture avant la limite des cadres Python). (La justification
+    donnée ici pour `ELEMENT_BBOX_PAGE_OBJECTS` était fausse : l'arbre de
+    page de `plumber_doc` l'atteint quand les éléments n'ont pas de
+    `/Pg` ; tué depuis, « Correctifs de la revue ».)
+
+#### Correctifs de la revue (branche `wave4/fix`)
+
+Revue indépendante de la jonction (page, document, profondeur et erreurs,
+tests/performances/Wasm), chaque constat revérifié :
+
+- **Rejeu d'un appel nul** (`crates/wasm/src/ops.rs`) : le rejeu d'un
+  document repartait de l'état du processus d'avant l'appel nul ; une
+  entrée qui avait levé `RecursionError` (un nom interné, un site
+  spécialisé, une CMap en cache plus tard) réussissait au rejeu et
+  laissait des objets ou des pages en cache que Python n'a jamais, ou
+  atteignait une police dont la CMap manquait, que le
+  `debug_assert!` de la version `release` laissait passer (texte vide sans
+  erreur). Chaque `Entry` garde l'état de départ de sa première exécution
+  (`ProcessState` : les symboles internés deviennent une chaîne
+  persistante, `psparser::Interned`, qu'un instantané partage pour le
+  prix d'un compteur de références, et le reste est partagé avec
+  l'instantané précédent s'il n'a pas changé) et sa fin (l'exception ou
+  rien) ; le rejeu repart de cet état et doit finir de même, objets créés
+  et CMaps comprises, sinon les documents deviennent inutilisables
+  (`RuntimeError` à toute opération qui les atteint). Fenêtres
+  `depth-replay-{depth,cmap,pages}-*` de `js_runtime.py` (huit chacune).
+- **Handles libérés** : les pierres tombales restaient dans la table
+  (`MemoryError("too many handles")` après 2^20 − 1) ; l'historique nomme
+  maintenant les objets par leur identité (`Target::Object`) et un rejeu
+  refait hors de la table un objet libéré. L'historique, lui, ne
+  raccourcit qu'à la libération du document (documenté, `js-runtime.md`).
+- **Chaîne de pages dérivées** : `Drop for Page` défait la chaîne des
+  parents en boucle (la « trashcan » de CPython) : 10^5 rognages
+  successifs se libèrent sur une pile de 256 Kio (débordement avant, et
+  dès 12 000 sous Wasm).
+- **Liaison des arguments** (`pycompat::call`) : un mot-clé qui nomme un
+  paramètre déjà lié (`self`, `pattern`, `strip`, `return_chars`, `bbox`,
+  `cls`, `path_or_fp`) lève le `TypeError` de CPython avant l'appel (dans
+  `Page`, `Table.extract`, `TableSettings`, `LAParams`, `PDF.open` et les
+  instructions de la frontière) ; un mot-clé inconnu s'écrit `'%S'`, pas
+  `repr` ; un `**` qui n'est pas un dict lève « argument after ** must be
+  a mapping » ; `TableSettings.resolve` de n'importe quelle valeur
+  (`ValueError("Cannot resolve settings: …")`, son `str()` compté). Les
+  options de `to_dict`/`to_json`/`to_csv` sont des valeurs Python
+  (`object_types` itéré, `t + "s"`, `CSV_COLS_REQUIRED + include_attrs`,
+  `set(exclude_attrs)`), `stream=None` accepté.
+- **`page_filter`** : la frontière calcule les objets du parent comme
+  `mask_of` (un cadre, un site de chargement à lui) : fenêtre
+  `climit-tf-list-filter`.
+- **Valeurs `Page`** : une sorte de valeur de la frontière (PJB1 `0x12`,
+  JSON `"page"`, `PageRef` en JS), le handle de la page.
+- **Avertissements** : `pycompat::warnings` (registre des filtres par
+  défaut, état du processus) ; le `logger.warning` de `PDFStructTree`
+  atteint les diagnostics ; `diagnostics.jsonl`.
+- **`ELEMENT_BBOX_PAGE_OBJECTS`** : sorte `tf-list-tagged-nopg` des
+  fenêtres `climit-*` d'`adv-plumber` (éléments sans `/Pg`, 17 fenêtres) ;
+  le mutant manuel du site y diffère (2 fenêtres sur 34 balisées).
+- **API JS** (types, `public-api.md`) : `pdf.pages` et `pdf.metadata`
+  sont des promesses (pages paresseuses), les pages dérivées aussi.
+- **Vérification** : `plumber_*` identiques sur `adv-plumber` (199),
+  `adv-structure` (441), `adv-pages` (285), `adv-objects` (333) et sur
+  `all` (1 853, sauf `pdfjs-issue19624-text.pdf` pour `plumber_objects`,
+  limite connue du rang des `id()`) ; sur `adv-interp`, `plumber_objects`
+  et `plumber_doc` identiques, `plumber_text` (16) et `plumber_tables`
+  (12) diffèrent par l'ordre de coordonnées NaN dans `cluster_objects`
+  (écart documenté, `public-api.md`) ; étapes `psparser` à
+  `interp_text` identiques sur `quick` (150) ; rejeux de la frontière
+  (`js_runtime_unit`, 2 formats) identiques.
+- **Mutations** (lignes changées depuis `wave4/join`, `--in-diff`) :
+  frontière 62 mutants, 54 détectés, 6 non viables, 2 manqués (le bras
+  `strict_metadata` d'`open`, tué depuis par une session ; la garde de
+  `label_pages`, équivalente : la recherche du handle vivant retrouve
+  celui que la première occurrence a créé) ; pdfminer 44 mutants, 19
+  détectés, 23 manqués, tous dans le partage des instantanés
+  (`CMapDBCaches::same`, `Rest::same`, `capture`, `PyInterned::is_empty`),
+  tués depuis par des tests unitaires (repassés à la main dans une copie)
+  sauf trois équivalents : `same` → `false` et la garde de `capture` →
+  `false` (aucun partage : mémoire seulement ; le test qui exige le
+  partage tue les deux) et le bras `(Some, Some)` de `Interned::restore`
+  supprimé (le parcours remonte alors jusqu'à la racine : même ensemble,
+  plus lentement), `fmt` de `Debug for PyInterned` (texte de débogage) ;
+  pycompat et pdfplumber 24 mutants, 19 détectés, 4 non viables, 1 manqué
+  (`warnings::reset`, testé depuis). Passe `Ok(..)` : frontière 148
+  mutants, 131 détectés, 15 non viables, 1 délai (détecté), 1 manqué (la
+  garde de `label_pages`, ci-dessus) ; bibliothèque 47 mutants, 1 manqué
+  (`bind` des méthodes de `Page`, que la frontière précède : tué par un
+  test qui appelle la bibliothèque directement). À la main : les corps
+  `Ok(..)` sans `Default` d'`open` (options ignorées), `mask_filter`
+  (tout vrai), `get_attr_filter` (`AttrFilter::All`), le cadre de
+  `mask_of` (fenêtre `figures-filter`) et le site `MASK_OF_OBJECTS`
+  (fenêtre `climit-tf-list-filter`) : détectés.
+- **Laissés ouverts, documentés** (`public-api.md`, `port-strategy.md`) :
+  les noms `inline-<k>` répétés d'une page à l'autre (décision de la
+  vague 4 gardée), les flux d'images copiés entiers dans chaque résultat,
+  le texte des `log.*` de pdfminer, la copie profonde d'un document lu
+  depuis des octets par `structure_tree`.
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 

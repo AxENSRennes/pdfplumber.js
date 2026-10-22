@@ -4,7 +4,7 @@
  * encoding of PJB1 arguments. Mirrors crates/wasm/src/wire/{binary,json}.rs.
  */
 
-import { PDFObjRef, PDFStream, PSKeyword, PSLiteral, PyFloat, PyTuple } from "../pdfobjects.js";
+import { PageRef, PDFObjRef, PDFStream, PSKeyword, PSLiteral, PyFloat, PyTuple } from "../pdfobjects.js";
 
 export const TAG = {
   NONE: 0x00,
@@ -25,6 +25,7 @@ export const TAG = {
   STREAM: 0x0f,
   TABLE: 0x10,
   INLINE_STR: 0x11,
+  PAGE: 0x12,
 } as const;
 
 export const COL = {
@@ -78,6 +79,7 @@ const enum K {
   LITERAL,
   REF,
   STREAM,
+  PAGE,
 }
 
 interface Frame {
@@ -302,6 +304,9 @@ class Reader {
         case TAG.STREAM:
           stack.push({ k: K.STREAM, arr: new Array(5), n: 5, i: 0 });
           continue;
+        case TAG.PAGE:
+          stack.push({ k: K.PAGE, arr: new Array(2), n: 2, i: 0 });
+          continue;
         case TAG.TABLE:
           value = this.table();
           break;
@@ -330,6 +335,10 @@ class Reader {
           value = new PSLiteral(value as string | Uint8Array);
         } else if (top.k === K.REF) {
           value = new PDFObjRef(value as number | bigint);
+        } else if (top.k === K.PAGE) {
+          top.arr![top.i++] = value;
+          if (top.i < top.n) break;
+          value = new PageRef(top.arr![0] as number, top.arr![1] as number | bigint);
         } else {
           top.arr![top.i++] = value;
           if (top.i < top.n) break;
@@ -620,6 +629,17 @@ function fixup(root: unknown): unknown {
                 x.rawdata as Uint8Array,
                 x.data as Uint8Array,
               ),
+          ]);
+          break;
+        }
+        case "page": {
+          const page = { handle: sp[1], page_number: sp[2] };
+          for (const f of ["handle", "page_number"]) stack.push([page as Record<string, unknown>, f]);
+          holder[key] = page;
+          pending.push([
+            holder,
+            key,
+            (x: Record<string, unknown>) => new PageRef(x.handle as number, x.page_number as number),
           ]);
           break;
         }

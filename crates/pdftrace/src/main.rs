@@ -133,7 +133,16 @@ fn trace(stage: &Stage, args: &Args, pdf: &[u8], out: &mut dyn Write) -> io::Res
     let oracle = oracle_trace(args, pdf)?;
     // each trace of the oracle runs in a new process
     pdftrace::stages::py_process::set_for_stage(stage.name);
-    run(&StageInput { pdf, password: &args.password, max_pages: args.max_pages, oracle: oracle.as_deref() }, out)
+    run(
+        &StageInput {
+            pdf,
+            password: &args.password,
+            password_given: args.password_given,
+            max_pages: args.max_pages,
+            oracle: oracle.as_deref(),
+        },
+        out,
+    )
 }
 
 /// Writes the trace of `file` to `dir/<sha256>.txt` through a temporary file,

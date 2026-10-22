@@ -22,6 +22,7 @@ use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 
 use pycompat::listsort::sort_by_key;
 use pycompat::pystr::PyStrBuilder;
+use pycompat::specialize::AttrSite;
 use pycompat::{exc, ExcKind, PyErr, PyResult, PyStr};
 
 use crate::obj::{bbox_value, check_hashable, py_contains, py_iter, Bbox, HashKey, Hot, Obj, PyFloat, PyValue};
@@ -43,6 +44,13 @@ pub const DEFAULT_MIN_WORDS_HORIZONTAL: i64 = 1;
 
 /// What `TableFinder` and `Table.extract` read from a page.
 pub trait TablePage {
+    /// The class whose properties `chars` and `edges` are (a load
+    /// specializes for it: `pycompat::specialize::AttrSite`), `None` for a
+    /// page whose `chars` and `edges` are plain attributes (the pages the
+    /// unit generators make of a page's objects).
+    fn property_class(&self) -> Option<&'static str> {
+        None
+    }
     /// `page.chars`
     fn chars(&self) -> PyResult<Vec<Obj>>;
     /// `page.edges`
@@ -52,6 +60,26 @@ pub trait TablePage {
     /// `page.extract_words(**kwargs)` (pdfplumber/page.py:535 Page.extract_words)
     fn extract_words(&self, kwargs: &Kwargs) -> PyResult<Vec<Obj>> {
         extract_words_kwargs(&self.chars()?, kwargs)
+    }
+}
+
+// The property loads of pdfplumber/table.py (`pycompat::specialize`).
+static EXTRACT_CHARS: AttrSite = AttrSite::new("Table.extract self.page.chars");
+static EXTRACT_ROWS: AttrSite = AttrSite::new("Table.extract self.rows");
+static EDGES_V_LINES: AttrSite = AttrSite::new("TableFinder.get_edges self.page.edges (v, lines)");
+static EDGES_V_STRICT: AttrSite = AttrSite::new("TableFinder.get_edges self.page.edges (v, lines_strict)");
+static EDGES_H_LINES: AttrSite = AttrSite::new("TableFinder.get_edges self.page.edges (h, lines)");
+static EDGES_H_STRICT: AttrSite = AttrSite::new("TableFinder.get_edges self.page.edges (h, lines_strict)");
+
+/// `page.chars` or `page.edges` at a site: a property load of the page's
+/// class, or a plain attribute's.
+fn page_load<T>(page: &dyn TablePage, site: &AttrSite, get: impl FnOnce() -> PyResult<T>) -> PyResult<T> {
+    match page.property_class() {
+        Some(class) => site.get(class, get),
+        None => {
+            site.plain("page");
+            get()
+        }
     }
 }
 
@@ -721,7 +749,13 @@ impl Table {
     // pdfplumber/table.py:421 Table.extract
     /// The text of each cell (`None` where a row has no cell).
     pub fn extract(&self, page: &dyn TablePage, kwargs: &Kwargs) -> PyResult<Vec<Vec<Option<PyStr>>>> {
-        let chars = page.chars()?;
+        // the call binds `**kwargs`: `self` is bound already
+        // (pycompat::call)
+        pycompat::call::Signature { qualname: "Table.extract", bound: &["self"], keywords: None }
+            .bind(kwargs.items().iter().map(|(k, _)| k))?;
+        // its frame, above `self.page.chars`
+        let _frame = pycompat::recursion::py_frame()?;
+        let chars = page_load(page, &EXTRACT_CHARS, || page.chars())?;
         let mut kwargs = kwargs.clone();
         let mut table_arr = Vec::new();
 
@@ -742,7 +776,7 @@ impl Table {
             Ok(h_mid.ge(x0)? && h_mid.lt(x1)? && v_mid.ge(top)? && v_mid.lt(bottom)?)
         }
 
-        let rows = self.rows()?;
+        let rows = EXTRACT_ROWS.get("Table", || self.rows())?;
         let mids =
             if rows.is_empty() { Vec::new() } else { chars.iter().map(midpoints).collect::<PyResult<Vec<_>>>()? };
         for row in rows {
@@ -899,6 +933,11 @@ impl TableSettings {
                 "intersection_x_tolerance" => s.intersection_x_tolerance = Some(v),
                 "intersection_y_tolerance" => s.intersection_y_tolerance = Some(v),
                 "text_settings" => s.text_settings = v,
+                // bound to the instance already (CPython's argument
+                // binding, keyword by keyword in order)
+                "self" => {
+                    return Err(exc::TypeError("TableSettings.__init__() got multiple values for argument 'self'"))
+                }
                 _ => {
                     let mut m = PyStrBuilder::new();
                     m.push_rust_str("TableSettings.__init__() got an unexpected keyword argument '");
@@ -1011,6 +1050,23 @@ impl TableSettings {
     }
 
     // pdfplumber/table.py:558 TableSettings.resolve
+    /// `TableSettings.resolve(settings)` of any value: `None` and a `dict`
+    /// as [`TableSettings::resolve`] (a `TableSettings`, which resolves to
+    /// itself, is never a value), anything else
+    /// `ValueError(f"Cannot resolve settings: {settings}")`, its `str()`
+    /// taking its C recursion units.
+    pub fn resolve_value(settings: &PyValue) -> PyResult<TableSettings> {
+        match settings {
+            PyValue::None => TableSettings::resolve(None),
+            PyValue::Dict(d) => TableSettings::resolve(Some(d)),
+            other => Err(PyErr::with_message(
+                ExcKind::ValueError,
+                &PyStr::new("Cannot resolve settings: ").concat(&other.str_counted()?),
+            )),
+        }
+    }
+
+    // pdfplumber/table.py:558 TableSettings.resolve
     /// `TableSettings.resolve(settings)` for `None` or a `dict` (a
     /// `TableSettings` resolves to itself).
     pub fn resolve(settings: Option<&Kwargs>) -> PyResult<TableSettings> {
@@ -1089,6 +1145,10 @@ fn explicit_items(v: &PyValue) -> PyResult<Vec<PyValue>> {
 impl TableFinder {
     // pdfplumber/table.py:588 TableFinder.__init__
     pub fn new(page: &dyn TablePage, settings: TableSettings) -> PyResult<TableFinder> {
+        // the frames down to the page's properties, whose first access
+        // interprets the page (the rest counts none: docs/architecture.md):
+        // TableSettings.resolve(settings) returns a TableSettings as it is
+        pycompat::recursion::leaf(1)?;
         let edges = TableFinder::get_edges(page, &settings)?;
         let intersections = edges_to_intersections(
             &edges,
@@ -1102,6 +1162,8 @@ impl TableFinder {
 
     // pdfplumber/table.py:602 TableFinder.get_edges
     pub fn get_edges(page: &dyn TablePage, settings: &TableSettings) -> PyResult<Vec<Obj>> {
+        // its frame, above `page.extract_words`, `page.edges`
+        let _frame = pycompat::recursion::py_frame()?;
         for (orientation, strategy, lines) in [
             ("vertical", &settings.vertical_strategy, &settings.explicit_vertical_lines),
             ("horizontal", &settings.horizontal_strategy, &settings.explicit_horizontal_lines),
@@ -1148,8 +1210,10 @@ impl TableFinder {
         let prefilter = &settings.edge_min_length_prefilter;
         let line = PyValue::str("line");
         let mut v = match v_strat {
-            "lines" => filter_edges(&page.edges()?, Some("v"), None, prefilter)?,
-            "lines_strict" => filter_edges(&page.edges()?, Some("v"), Some(&line), prefilter)?,
+            "lines" => filter_edges(&page_load(page, &EDGES_V_LINES, || page.edges())?, Some("v"), None, prefilter)?,
+            "lines_strict" => {
+                filter_edges(&page_load(page, &EDGES_V_STRICT, || page.edges())?, Some("v"), Some(&line), prefilter)?
+            }
             "text" => words_to_edges_v(&words, &settings.min_words_vertical)?,
             _ => Vec::new(), // "explicit"
         };
@@ -1177,8 +1241,10 @@ impl TableFinder {
         }
 
         let mut h = match h_strat {
-            "lines" => filter_edges(&page.edges()?, Some("h"), None, prefilter)?,
-            "lines_strict" => filter_edges(&page.edges()?, Some("h"), Some(&line), prefilter)?,
+            "lines" => filter_edges(&page_load(page, &EDGES_H_LINES, || page.edges())?, Some("h"), None, prefilter)?,
+            "lines_strict" => {
+                filter_edges(&page_load(page, &EDGES_H_STRICT, || page.edges())?, Some("h"), Some(&line), prefilter)?
+            }
             "text" => words_to_edges_h(&words, &settings.min_words_horizontal)?,
             _ => Vec::new(), // "explicit"
         };

@@ -96,10 +96,10 @@ Chaque étape a un nom stable, une implémentation Python
 | `interp` | chaque appel de l'interpréteur au périphérique de pdfplumber (`set_ctm`, pages, figures, `paint_path`, `render_image`, `render_string`/`render_char` et l'avance rendue, balises), avec les états graphique et texte, et où remontent les exceptions |
 | `fonts_text`, `interp_text` | `fonts` et `interp` sur le `PDFTextDevice` de pdfminer (`render_char` rend `0`) au lieu du périphérique de pdfplumber : l'interpréteur vérifié sans convertisseur (`oracle/stages/interp_text.py`) |
 | `layout` | le `LTPage` brut (`laparams=None`, le défaut de pdfplumber) puis analysé (`LAParams()`), tous attributs (`mcid`, `tag` compris), et le rang des `id()` de l'analyse (`ids`) ; non reproductible d'une construction du cache à l'autre sur les pages où des boîtes sont à égale distance (les `id()` sont des adresses : un tirage), la parité suivant le tirage du cache (`pdftrace --oracle-dir`) |
-| `plumber_objects` (vague 4) | `page.objects` de pdfplumber, tous attributs, plus boîtes et `doctop` |
-| `plumber_text` (vague 4) | `extract_text` (simple, `layout=True`, options), `extract_words`, `extract_text_lines`, `search`, `dedupe_chars` |
-| `plumber_tables` (vague 4) | `find_tables`/`extract_tables` pour les stratégies `lines`, `lines_strict`, `text`, `explicit` |
-| `plumber_doc` (vague 4) | métadonnées, annotations, liens, arbre de structure, `crop`/`within_bbox`/`outside_bbox` |
+| `plumber_objects` (vague 4) | `pdfplumber.open(path, pages=[1..N], …)` : boîtes et `doctop` de chaque `Page`, `page.objects` de toute sorte, tous attributs, annotations, liens, `pdf.objects`/`annots`/`hyperlinks` ; puis la même chose avec `laparams={}` (boîtes et lignes de texte, caractères par référence à la première ouverture, `ids` : rang des `id()` de l'analyse, clé de contenu ; `ORACLE_INPUT`) |
+| `plumber_text` (vague 4) | `extract_text` (simple, `layout=True`, jeux d'options), `extract_text_simple`, `extract_words`, `extract_text_lines`, `search` (correspondances du `re` de Python, `spans`, `ORACLE_INPUT`), `dedupe_chars`, sur la page et sur des pages rognées, filtrées, dédoublonnées |
+| `plumber_tables` (vague 4) | `debug_tablefinder` (arêtes, intersections, cellules, tables, lignes, colonnes, texte), `find_table`, `extract_tables`, `extract_table` pour `lines`, `lines_strict`, `text`, `explicit` (lignes tirées de la page) et des variantes de réglages, sur la page et des pages dérivées |
+| `plumber_doc` (vague 4) | métadonnées (`strict_metadata` des deux façons), arbre de structure (document et pages, `find_all`, `find`, `all_mcids`, `element_bbox`, `repr`), `crop`/`within_bbox`/`outside_bbox` (strict ou non, relatif ou non), `filter`, `dedupe_chars`, `to_dict`/`to_json`/`to_csv`, `close`, options `unicode_norm`, `raise_unicode_errors`, `pages`, mots de passe |
 
 En tête de chaque `oracle/stages/<nom>.py` : les modules upstream exercés, le
 parcours exact (ordre des appels à `getobj`/`get_data`, qui a des effets de
@@ -172,6 +172,17 @@ bord par le cache) et le format de chaque ligne. Règles communes :
   `inline{"n": k}`, et l'étape `layout` écrit le rang des `id()` de son
   analyse (lignes `ids`), que `pdftrace` relit (`ORACLE_INPUT`, ci-dessous).
 
+Les quatre étapes `plumber_*` mènent pdfplumber comme un utilisateur
+(`pdfplumber.open`, `oracle/stages/plumber_objects.py` `open_pdf`) ;
+`--max-pages` y devient l'option `pages` (`PDF.pages` parcourt tout l'arbre
+des pages et ne construit que les pages choisies). Leurs jeux d'options sont
+des tables (`oracle/codegen/plumber_ops.py` les écrit pour le Rust) dont
+chaque page prend une tranche déterministe (`select`, tirée du SHA-256 du
+fichier et du rang de la page) ; un résultat de plus de 65 536 caractères
+s'écrit par sa longueur et son empreinte (`outd`). Une exception de
+pdfplumber qui en enveloppe une autre s'écrit suivie de ` cause ` et de
+celle-ci.
+
 Les modules sans PDF en entrée (filtres, inflate, chiffrement, parseur de
 CMap, analyse de mise en page, tables à partir de bords) ont aussi des **tests
 différentiels unitaires** : `oracle/unit/<module>.py` génère des cas (graine
@@ -223,12 +234,17 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   | `document.py` | `pdfparser`, `pdfdocument` (xrefs, `getobj`, flux d'objets, mot de passe, plans, libellés, noms), `pdfpage`, `pdfplumber::page` (boîtes), `pdfinternals.resolve_all`, `pycompat::bytes_format`, le comptage des cadres (`psparser`, accesseurs, filtres, `pycompat::logging`) | `document_unit.rs` | traces des étapes `objects`, `streams`, `pages`, `psparser` sur `adv-objects` et `adv-pages` (régénérés d'abord ; fenêtres de profondeur autour de la limite des cadres comprises), `micro` et les petits fichiers de `quick` ; `objects` sur un `io.BytesIO` (erreurs de `seek`/`read` d'un `BytesIO`) ; `api` (`get_outlines`, `get_page_labels`, `lookup_name`, `get_dest`, `PDFPage.get_pages`, `repr` des pages) ; chaque trace dans un processus fils créé pour elle (`os.fork`), comme `verify` en lance un par trace, et `py_process.jsonl` (les noms internés au départ des fils), dont le rejeu repart ; `bytes % int` (formats générés, et les largeurs qu'aucune machine ne peut allouer : `MemoryError`) ; `PDFXRefFallback.PDFOBJ_CUE` sur chaque caractère Latin-1 |
   | `interp.py` | `pdfinterp` (tout le module), `pdfdevice`, et par les étapes `interp`, `fonts`, `layout` : `converter`, `pdfplumber::page`, l'analyse du layout, `pdftrace::stages` | `interp_unit.rs` | traces des étapes `interp`, `fonts`, `layout` (la trace Python donnée en entrée de l'oracle : l'ordre des `id()`), `interp_text` et `fonts_text` sur `adv-interp` (régénéré d'abord, fenêtres de profondeur comprises), `micro` et les petits fichiers de `quick`, chaque trace dans un processus fils (`py_process.jsonl`), CMaps prédéfinies du `cmap_dir` de `meta.json` |
   | `interp_deep.py` | les cadres des chemins de l'interpréteur vers le périphérique (`pdfinterp`, `pdfdevice`) | `interp_unit.rs` (`deep_sweeps`) | `interp_text` avec `DeepTracingDevice` (chaque méthode du périphérique descend d'abord `DESCENT` = 60 cadres : chaque appel au périphérique devient plus profond que tout ce qui le précède sur sa page) sur chaque fichier de `adv-interp` hors chaînes `depth-*`, l'interprétation de chaque page (`page_layout`) descendue de 17 profondeurs successives (`down`) qui font passer la limite de récursion d'un cadre au-dessus du point le plus profond des pages du fichier (mesuré par un crochet de profil borné) à 15 cadres plus haut ; puis, sans descente (le périphérique de l'étape), de chaque profondeur entre ce point et le cadre de `page_layout` (ce que la page fait avant son premier appel : `begin_page`, `init_resources`, polices, espaces de couleur, `/ProcSet`, `init_state`) ; le document est ouvert et les lignes écrites à la profondeur de l'étape ; la première trace complète, les autres par leur SHA-256. `api.jsonl` (`resource_manager_get_cmap`) : `PDFResourceManager.get_cmap(name, strict)`, qu'aucune page n'appelle, sur des CMaps identité, prédéfinies, des `UnicodeMap` et des noms absents, et depuis chaque profondeur à 30 cadres de la limite |
-  | `js_runtime.py` | `crates/wasm` (`errors`, `cmaps`, `ops`, `wire`) | `crates/wasm/tests/js_runtime_unit.rs` (et les tests JS de `js/test/shared/`, Node et navigateurs) | MRO de chaque classe d'exception, CMaps prédéfinies par le protocole paresseux, texte, mots, `dedupe_chars`, `TextMap.search`/lignes, tables sur des objets de pages réelles ; documents CJK pour la couche page |
+  | `structure.py` | `pdfplumber::structure`, les métadonnées de `pdfplumber::pdf` (`read_metadata`), `Page.annots`/`hyperlinks`/`structure_tree`, `utils::pdfinternals` (`decode_text`, `resolve_and_decode`), `pycompat::codecs`, `pdftrace::stages::plumber_doc` | `structure_unit.rs` | traces de l'étape `plumber_doc` sur `adv-structure` (régénéré d'abord ; fenêtres de profondeur aussi depuis un et deux cadres plus bas) et sur les fichiers de `quick` qui ont un arbre de structure, des métadonnées imbriquées ou des annotations ; `plumber_objects` sur les cas d'annotations ; `bytes.decode("utf-8")` et `("utf-16")` de suites d'octets générées (`codecs`) |
+  | `js_runtime.py` | `crates/wasm` (`errors`, `cmaps`, `ops`, `pages`, `wire`), la couche page par la frontière | `crates/wasm/tests/js_runtime_unit.rs` (et les tests JS de `js/test/shared/`, Node et navigateurs) | MRO de chaque classe d'exception, CMaps prédéfinies par le protocole paresseux, texte, mots, `dedupe_chars`, `TextMap.search`/lignes, tables sur des objets de pages réelles ; documents CJK (texte et CMaps chargées) ; `pages.jsonl` : sessions d'opérations des documents et des pages exécutées au niveau du module de `js_pages_run.py`, un processus neuf par session (toutes les opérations sur des fichiers `micro` et upstream, documents CJK aux appels nuls, fenêtres autour de la première profondeur qui lève `RecursionError` par la frontière : figures imbriquées, tirets, opérandes à la limite C), la profondeur du niveau du module (`ENTRY_DEPTH`) |
+  | `plumber.py` | `pdfplumber::{pdf, page, container, convert, utils::pdfinternals}` (et `structure` par `plumber_doc`), `pycompat::{json, csv}`, `pdftrace::stages::plumber_*` | `plumber_unit.rs` | traces des étapes `plumber_objects`, `plumber_text`, `plumber_tables`, `plumber_doc` sur `adv-plumber` (régénéré d'abord, fenêtres de profondeur comprises, aussi depuis un et deux cadres plus bas, et fenêtres `climit-*` des unités C), `micro` et les petits fichiers de `quick`, chaque trace dans un processus fils (`py_process.jsonl`), les étapes `ORACLE_INPUT` recevant leur trace Python ; `open.jsonl` : `pdfplumber.open` avec des `laparams` (clés inconnues, `boxes_flow` de tout type et hors domaine, marges entières, booléennes, infinies, NaN), `pages` (listes, tuples, vides, flottants, booléens, `str`, entiers), `password`, `strict_metadata`, `unicode_norm` (dont des formes à surrogates isolés, sur une page de caractères au texte vide), `raise_unicode_errors` sur trois petits documents : `doctop`, objets et rang des `id()` de l'analyse ; `utils.jsonl` : `decode_psl_list` |
+  | `plumber_sweep.py` | `pdfplumber::{pdf, page, container, convert}`, les cadres de `table.rs` jusqu'aux propriétés de la page, `pycompat::typing_cache` | `plumber_sweep.rs` | balayages de profondeur : chaque opération de la couche page (texte, recherche, pages dérivées, arêtes, tables, `to_json`/`to_csv`, annotations, `PDF.pages`/`objects`/`to_csv`, `pdfplumber.open`, `close`) sur une page neuve de six fichiers d'`adv-plumber` (et les objets après le layout, avec et sans `laparams`), lancée de chaque profondeur qui fait passer la limite de récursion par ses cadres (de la place de son cadre le plus profond, mesurée par un crochet de profil borné, à aucune), comparée par SHA-256 ; identité des arêtes en cache et `flush_cache`, `getattr` de `to_dict` (`hyperlinks`, `pages`, `_objects`, `cached_properties`, `_rect_edges`...) |
 
   Les tables générées (`oracle/codegen/`) sont vérifiées par `--check` dans
   `scripts/check.sh` : `libm_tables.py`, `atan2_tables.py`, `unicodedata_tables.py`, `saslprep_tables.py`,
   `pdfminer_tables.py` (`glyphlist`, `latin_enc`, `fontmetrics`), `pdffont_tables.py` (`NIBBLES`, `CFFFont.STANDARD_STRINGS`),
-  `ccitt_tables.py`. Les CMaps prédéfinies converties par
+  `ccitt_tables.py`, et les tables d'options des étapes `plumber_*`
+  (`plumber_ops.py` → `crates/pdftrace/src/stages/plumber_ops.rs`). Les
+  CMaps prédéfinies converties par
   `oracle/codegen/cmaps.py` ne sont pas versionnées : elles vivent dans
   `<cache>/cmap/<empreinte>/`, que le générateur `cmaps.py` remplit et
   désigne au rejeu (`cmap_dir` de `meta.json`).
@@ -304,18 +320,21 @@ Mode d'emploi détaillé : [`oracle/README.md`](../oracle/README.md).
   vérifie la pile, pas la parité.
 - `pdftrace --cmap-dir DIR` (par défaut `$PDFPLUMBER_CMAP_DIR`) : le
   fournisseur des CMaps prédéfinies (`<cache>/cmap/<empreinte>/`, le
-  `cmap_dir` des données unitaires `cmaps` ou `interp`). Les étapes
-  `fonts`, `interp`, `layout`, `fonts_text`, `interp_text` en ont besoin :
-  sans lui, une police à CMap prédéfinie donne `RuntimeError("no CMap
-  provider installed …")` et `verify` compte un écart (8 fichiers
-  d'`adv-interp`, `*-font-cmap-*` et `*-depth-font-predefined-cmap-*`) ;
-  exporter `PDFPLUMBER_CMAP_DIR` avant `oracle.verify`.
+  `cmap_dir` des données unitaires `cmaps` ou `interp`). Les étapes qui
+  interprètent des pages (`fonts`, `interp`, `layout`, `fonts_text`,
+  `interp_text`, `plumber_*`) en ont besoin : sans lui, une police à CMap
+  prédéfinie donne `RuntimeError("no CMap provider installed …")` (8
+  fichiers d'`adv-interp`, `*-font-cmap-*` et
+  `*-depth-font-predefined-cmap-*`). `oracle.verify` le passe donc
+  toujours (`--cmap-dir`, par défaut le répertoire de
+  `oracle/codegen/cmaps.py` sous le cache, écrit au besoin ; un répertoire
+  sans `names.txt` arrête `verify` avant le cache de l'oracle, code 2).
 - Les deux outils acceptent aussi `--option=valeur` ; `verify` et le cache
   passent toujours le mot de passe sous la forme `--password=P` (un mot de
   passe peut commencer par `-`). Avec `--out`, `pdftrace` ajoute après
   chaque fichier la ligne `<sha256>\t<secondes>` à `DIR/_times.tsv`.
 - `python -m oracle.verify --stage S --set NOM [-j N] [--max-pages N]
-  [--pdftrace CHEMIN] [--limit K] [--files …] [--json]` : construit au besoin
+  [--pdftrace CHEMIN] [--cmap-dir DIR] [--limit K] [--files …] [--json]` : construit au besoin
   le cache de l'oracle (`-j` processus, 3 par défaut), lance `pdftrace` par lots
   de fichiers de même mot de passe, compare octet pour octet, puis affiche le
   décompte (identiques / différents / plantages Rust / délais Rust / délais
@@ -383,7 +402,7 @@ Les constantes mesurées sont aussi vérifiées par les cas de l'ensemble
 | `pdfjs` | `upstream/pdfjs/test/pdfs` (937 PDF, beaucoup de cas tordus) |
 | `quick` | tout `micro`, plus les fichiers de `all` dont le SHA-256 commence par un octet < 18 (~7 % ; 150 PDF en tout aujourd'hui) : l'appartenance ne dépend que du contenu du fichier, en ajouter n'en retire aucun |
 | `all` | tout ce qui précède (1 853 PDF distincts aujourd'hui) |
-| `adv-<étape>` | corpus adverse généré pour une étape (voir plus bas) ; plusieurs étapes peuvent vérifier le même ; aujourd'hui `adv-objects` (333 PDF), `adv-pages` (285) et `adv-interp` (353), sur lesquels chaque étape implémentée est vérifiée à l'intégration d'une vague (`interp_text` et `fonts_text` : `adv-interp`) |
+| `adv-<étape>` | corpus adverse généré pour une étape (voir plus bas ; la vague 4 étend le nom à un générateur que plusieurs étapes vérifient, `adv-plumber`, `adv-structure` : `architecture.md`, « Vague 4 ») ; plusieurs étapes peuvent vérifier le même ; aujourd'hui `adv-objects` (333 PDF), `adv-pages` (285) et `adv-interp` (353), sur lesquels chaque étape implémentée est vérifiée à l'intégration d'une vague (`interp_text` et `fonts_text` : `adv-interp`) |
 
 Un fichier est tout `*.pdf` (casse ignorée) des dossiers, récursivement, en
 ordre de chemin relatif. Les fichiers identiques sont dédoublonnés par SHA-256
@@ -471,6 +490,16 @@ d'écrire ses cas) :
   spécialisé), `repr()` des entrées impaires d'une image en ligne et d'un
   dictionnaire au bas de chaînes de 0, 1, 50 et 300 Form XObjects (deux
   unités par niveau, celles de `func(*args)`).
+- `oracle/adversarial/plumber.py` → `adv-plumber` (vérifié par les quatre étapes `plumber_*`) : la couche page de pdfplumber, cas listés en tête du générateur (`architecture.md`, « Vague 4 », « Réalisation » du chantier PAGE) ; `cases_depth` : chaînes de Form XObjects (l'interpréteur puis `iter_layout_objects`), `/ColorSpace` d'image et `/MCID` imbriqués en tableaux ou par chaînes de références (`resolve_all`), tirets imbriqués (`Serializer` de `to_json`/`to_csv`, `plumber_doc`) ; `cases_climit` : un opérande de `Tf` imbriqué en tableaux avant la scène, sur une page et sur deux, à chaque profondeur de deux sous la première qui lève dans une étape `plumber_*` jusqu'à la limite des unités C (chaque opération qui interprète la page échoue à sa propre profondeur, fixée par les chargements de propriétés et les appels au-dessus d'elle, du pilote de l'étape à l'interpréteur). Pas de NaN dans les clés que `cluster_objects` met dans un `set` (leur ordre suit leur adresse en CPython).
+- Les étapes `plumber_*` passent aussi sur `adv-interp`, `adv-pages` et
+  `adv-objects` (jonction de la vague 4). Les fenêtres `climit-*`
+  d'`adv-interp` y vérifient les unités C de la couche page au-dessus de
+  l'interprétation (`page.objects`, `parse_objects`, `self.layout`... : les
+  chargements de propriétés, `pycompat::specialize::AttrSite`). Ses
+  fichiers `op-*`/`text-*` aux coordonnées NaN ne sont pas vérifiables par
+  `plumber_text` (17) et `plumber_tables` (12) : l'ordre des NaN dans les
+  `set` de `cluster_objects` suit leur adresse, et Python lui-même en donne
+  un autre d'un processus à l'autre.
 - `oracle/adversarial/pages.py` → `adv-pages` (285 PDF) : héritage (`/Resources`,
   `/MediaBox`, `/CropBox`, `/Rotate`, depuis les nœuds et le catalogue),
   boucles et partages dans l'arbre, `/Kids` absents ou atypiques (entiers,
@@ -486,6 +515,27 @@ d'écrire ses cas) :
   arbre de noms par `api_trace`), une fenêtre de longueurs autour du
   premier niveau qui échoue en Python (`docs/architecture.md`,
   « Profondeur de récursion »).
+- `oracle/adversarial/structure.py` → `adv-structure` (441 PDF ; vérifié
+  par `plumber_doc` et `plumber_objects`, rejoué par
+  `oracle/unit/structure.py`) : arbres de structure (`/StructTreeRoot`
+  absent ou de tout type, `/K` de toute sorte et imbrication, MCR et OBJR
+  vers une annotation, un élément, une autre page, DAG, cycles de la
+  portée document, `/Pg` absents, atypiques ou hors des pages choisies,
+  `/RoleMap`, `/ClassMap`, attributs `/A`/`/C` en tableaux avec
+  révisions, références dans les attributs, `/BBox`, MCID absents ou
+  dupliqués, textes `/ID`, `/T`, `/Lang`, `/Alt`, `/ActualText` de tout
+  type), arbres des parents (absent, sans `/StructParents`, imbriqués,
+  avec `null`, parents qui n'atteignent pas la racine), métadonnées
+  (`/Info` de tout type, partagées, imbriquées, qui se désignent
+  elles-mêmes, désignent le catalogue, une page, un élément, deux `/Info`),
+  annotations (`/Rect`, `/A`, `/URI`, `/T`, `/Contents` de tout type,
+  chaînes non décodables, flux, pages tournées) ; `cases_depth` : seize
+  fenêtres autour du premier niveau qui échoue en Python (`--probe`, par
+  dichotomie sur l'étape) : `to_dict`, `prune`, `repr`, unités C de
+  `repr(ref)`, de `str(s)` (première exécution du site et suivantes) et du
+  `repr` d'un attribut, `resolve_and_decode`, arbre des nombres des
+  parents (`docs/architecture.md`, « Vague 4 », chantier DOC). Pas de
+  cycle par l'arbre des parents d'une page : Python y boucle sans fin.
 
 ## Mutations
 
@@ -593,6 +643,25 @@ crate::PyErr>`. Avec `--in-diff`, le diff doit venir des fichiers réécrits
 (la même substitution `perl` appliquée à la version de base et à la
 version courante, puis `diff -u a/<fichier> b/<fichier>`) : un diff du
 dépôt ne correspond plus à la copie que voit cargo mutants.
+
+**Mutants manuels des sites d'unités C.** cargo-mutants ne retire pas
+une instruction `let _g = …?;` ni l'enveloppe `SITE.get(classe, || …)`
+d'un chargement de propriété : les unités C qu'un site modélise
+(`AttrSite`, `CallSite::builtin_call`, `eval_entry`, `method_call`) ne
+sont mutées que par un script qui retire chaque site tour à tour, sur la
+copie de travail, reconstruit et lance les vérifications qui peuvent le
+voir : `oracle.verify` des étapes concernées sur les fenêtres `climit-*`
+(`adv-interp`, `adv-plumber`) pour le code des bibliothèques et des
+étapes, `js_runtime_unit` (fenêtres de la frontière) pour le code des
+bibliothèques et de la frontière. Un site survivant est soit tué par une
+fenêtre qui fait passer la limite par lui, soit justifié : getter bon
+marché ou déjà en cache sous le site (rien de profond ne tourne pendant
+que ses unités sont tenues), site dominé (un autre site au-dessus de lui
+dans le même chemin échoue toujours avant), ou chemin inatteignable par
+la frontière. Une fenêtre dichotomisée sur une opération après d'autres
+sur la même page doit s'assurer que les précédentes n'ont rien mis en
+cache à sa profondeur (sinon la dichotomie mesure la précédente :
+`js_runtime.py`, fenêtres `class-*`, un second document).
 
 ## Définition de « fini » pour un module
 

@@ -175,7 +175,11 @@ class StageRunner(unittest.TestCase):
             lines = stages.trace_lines(name, REPO / "corpus" / "micro" / "broken-recovery.pdf")
             self.assertEqual(lines[-1], "!end", name)
             lines = stages.trace_lines(name, REPO / "corpus" / "micro" / "encrypted-password.pdf")  # no password
-            self.assertEqual(lines, ['!PDFPasswordIncorrect("")'], name)
+            if name.startswith("plumber_"):
+                # pdfplumber.open wraps it; the stage writes the open line and ends
+                self.assertEqual(lines, ['open !PdfminerException("") cause !PDFPasswordIncorrect("")', "!end"], name)
+            else:
+                self.assertEqual(lines, ['!PDFPasswordIncorrect("")'], name)
 
 
 if __name__ == "__main__":

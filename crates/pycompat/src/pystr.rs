@@ -340,6 +340,28 @@ impl PyStr {
         n.is_empty() || h.windows(n.len()).any(|w| w == n)
     }
 
+    /// `s.replace(old, new)` for a non-empty `old`: every occurrence, left
+    /// to right, without overlaps (the UTF-8 bytes of whole code points
+    /// match only at code point boundaries).
+    pub fn replace(&self, old: &PyStr, new: &PyStr) -> PyStr {
+        let (h, n) = (&self.0[..], &old.0[..]);
+        if n.is_empty() {
+            return self.clone();
+        }
+        let mut out = Vec::with_capacity(h.len());
+        let mut i = 0;
+        while i < h.len() {
+            if h[i..].starts_with(n) {
+                out.extend_from_slice(&new.0);
+                i += n.len();
+            } else {
+                out.push(h[i]);
+                i += 1;
+            }
+        }
+        PyStr(Rc::from(out))
+    }
+
     /// `s.isspace()`: not empty and only whitespace (`Py_UNICODE_ISSPACE`).
     pub fn isspace(&self) -> bool {
         !self.is_empty() && self.code_points().all(str_isspace_cp)

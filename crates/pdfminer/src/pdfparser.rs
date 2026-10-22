@@ -194,6 +194,10 @@ impl PSStackParser<PDFParserExt> {
     /// error of the file object for a position it refuses, raised where
     /// `self.fp.seek(pos)` raises it.
     pub fn seek_int(&mut self, pos: &PyInt) -> PyResult<()> {
+        // a closed file refuses any position, before converting it
+        if let Some(e) = self.fp.as_ref().and_then(BytesIO::seek_closed_error) {
+            return self.seek_error(e);
+        }
         match self.ext.file.seek_pos(pos) {
             Ok(pos) => self.seek(pos),
             Err(e) => self.seek_error(e),

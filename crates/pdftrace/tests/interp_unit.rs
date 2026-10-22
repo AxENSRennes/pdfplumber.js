@@ -112,6 +112,7 @@ fn stage_traces() {
         if only.as_ref().is_some_and(|o| !o.split(',').any(|s| name.contains(s))) {
             continue;
         }
+        let password_given = matches!(password, Value::Str(_));
         let password = match password {
             Value::Str(p) => p.as_str().expect("a password").to_owned(),
             _ => String::new(),
@@ -121,7 +122,13 @@ fn stage_traces() {
         let Value::Str(expected) = &expected else { panic!("bad output") };
         let expected = expected.as_str().expect("ASCII");
         let stage = stages::lookup(what).expect("a stage");
-        let input = StageInput { pdf, password: &password, max_pages, oracle: stage.oracle_input.then_some(expected) };
+        let input = StageInput {
+            pdf,
+            password: &password,
+            password_given,
+            max_pages,
+            oracle: stage.oracle_input.then_some(expected),
+        };
         let run = stage.run.expect("an implemented stage");
         let mut out = Vec::new();
         match entry {
@@ -177,12 +184,13 @@ fn deep_sweeps() {
         let Value::List(out) = &expected else { panic!("bad output") };
         let [Value::Str(first), Value::List(digests)] = &out[..] else { panic!("bad output {out:?}") };
         let first = first.as_str().expect("ASCII");
+        let password_given = matches!(password, Value::Str(_));
         let password = match password {
             Value::Str(p) => p.as_str().expect("a password").to_owned(),
             _ => String::new(),
         };
         let descent = u32::try_from(descent.as_i64().expect("small")).expect("a descent");
-        let input = StageInput { pdf, password: &password, max_pages: Some(20), oracle: None };
+        let input = StageInput { pdf, password: &password, password_given, max_pages: Some(20), oracle: None };
         assert_eq!(frames.len(), digests.len(), "{name}: one digest per depth");
         files += 1;
         for (i, (n, digest)) in frames.iter().zip(digests).enumerate() {

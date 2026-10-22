@@ -294,31 +294,69 @@ Lecture :
   - Temps (étape `layout`, 20 premières pages de `all`) : `pdftrace` 54 ms
     par page contre 288 ms pour Python hors démarrage (5,3 fois), dont
     l'essentiel à écrire la trace.
+- **Vague 4** (en cours) : base `wave4/base` (`architecture.md`,
+  « Vague 4 ») : spécification Python des étapes `plumber_objects`,
+  `plumber_text`, `plumber_tables`, `plumber_doc` (mesurée sur `quick`),
+  interfaces Rust de `pdf`, `page`, `container`, `convert`, `structure`,
+  `utils/exceptions` (squelettes qui compilent), contrat des chantiers
+  PAGE et DOC, `oracle.verify` qui passe le fournisseur de CMaps.
+  Chantier DOC (`wave4/doc`, `architecture.md`, « Chantier DOC ») :
+  `structure.py` porté, métadonnées décodées en place
+  (`PDFObject::Str`), `Page.annots`/`hyperlinks`/`structure_tree`,
+  fichier fermé par `PDF.close`, étape `plumber_doc` identique sur `all`
+  et sur `adv-structure` (441 PDF, avec `plumber_objects`), rejouée par
+  `structure_unit`. Chantier PAGE (`wave4/page`, `architecture.md`,
+  « Réalisation (branche `wave4/page`) ») : `pdf.py`, `page.py`,
+  `container.py`, `convert.py`, le reste de `utils/pdfinternals.py` ;
+  étapes `plumber_objects` (1 852/1 853 sur `all` : un fichier aux boîtes
+  de texte en double, limite documentée du rang des `id()`),
+  `plumber_text` et `plumber_tables` (1 853/1 853), les quatre étapes
+  identiques sur `adv-plumber` (131), rejouées par `plumber_unit` ;
+  balayages de profondeur de la couche page (`plumber_sweep`), qui ont
+  fait compter les annotations des fonctions imbriquées
+  (`pycompat::typing_cache`), `pathlib.Path` et les cadres de `table.py`
+  au-dessus des propriétés de la page. Jonction (`wave4/join`,
+  `architecture.md`, « Réalisation de la jonction ») : la fusion est vide
+  (`wave4/page` contenait `wave4/doc`) ; les chargements de propriétés
+  tiennent les unités C de l'appel du getter depuis le C jusqu'à leur
+  spécialisation (`pycompat::specialize::AttrSite`, trouvé par les
+  fenêtres `climit-*` d'`adv-interp` passées aux étapes `plumber_*`) ; la
+  frontière Wasm garde le `PDF` de pdfplumber et ses pages
+  (`crates/wasm/src/pages.rs`), chaque opération étant l'instruction d'un
+  script Python (`oracle/unit/js_pages_run.py`), un appel nul rejouant
+  l'historique des documents qu'il a atteints ; le test JS CJK passe par
+  `pdf.pages`.
 - **Vagues suivantes**, dans l'ordre des dépendances :
   1. **Vague 4** : pdfplumber `page`, `pdf`, `container`, `structure`,
      `convert` : étapes `plumber_objects`, `plumber_text`,
      `plumber_tables`, `plumber_doc`, en réutilisant `text`/`table` déjà
      portés et le pilotage de la vague 3 (`Page.layout` fera ce que fait
      `stages::common::page_layout` de `pdftrace`, à déplacer dans
-     `crates/pdfplumber`). À reprendre :
-     - le `PDF` de pdfplumber dans `Document::state` (`crates/wasm`), avec
-       le `PDFResourceManager` du document, jeté par un appel nul des
-       CMaps paresseuses (l'état du processus est déjà remis) ; une
-       opération Wasm qui interprète une page ;
-     - `laparams` : une étape `plumber_*` qui analyse (`laparams` donné)
-       compare avec le rang des `id()` de la trace Python, comme `layout` ;
-     - `structure.py` (`decode_text`, `str(s)` d'un `/ID` profond) : un
-       site d'appel de `pycompat::specialize` ;
+     `crates/pdfplumber`). Fait (jonction ci-dessus). Reste :
      - les constructeurs des vagues 0 à 2 comptent un appel de classe pour
        deux unités C, ceux de `pdfinterp` et du layout pour trois (sans
        effet observable aujourd'hui) : à unifier si une étape approche la
        limite C ;
-     - le nom des images en ligne (`"inline-<k>"`) dans `page.images` et
-       le test JS CJK marqué *todo* (`documents.jsonl`), qui attend
-       `pdf.pages`.
-  2. L'API JS publique sur la couche page (`pdf.pages`, objets, texte,
-     tables), sur l'infrastructure Wasm/JS déjà en place (`CreationOrder`
-     par défaut).
+     - la clé de contenu des `id()` de `plumber_objects` ne distingue pas
+       deux boîtes identiques (`pdfjs-issue19624-text.pdf`, où Python
+       lui-même change de trace d'une exécution à l'autre).
+  2. **Vague 5** : l'API JS publique (`PDFPlumberDocument`,
+     `PDFPlumberPage`) sur les opérations de la frontière
+     (`js-runtime.md`, « Documents et pages » : `pdf.pages` par
+     `doc_pages`, la recherche en deux appels, `filter` par un masque),
+     `CreationOrder` par défaut ; préchargement possible des CMaps d'un
+     document (le rejeu d'un appel nul refait le travail des appels
+     précédents). Le contrat est fixé par les types (`public-api.md`,
+     « Asynchrony », correctifs de la revue de la vague 4) : `pdf.pages`
+     et `pdf.metadata` sont des promesses (pages paresseuses, comme
+     pdfplumber), les pages dérivées aussi ; une `Page` dans un résultat
+     est un `PageRef` (son handle). Restent ouverts, notés dans
+     `public-api.md` : les flux d'images copiés entiers dans chaque
+     résultat (`rawdata`/`data` : une référence et une opération pour les
+     octets seraient moins coûteuses), le texte des `log.*` de pdfminer
+     (seuls leurs cadres sont comptés), la copie profonde d'un document lu
+     depuis des octets par `structure_tree` (`copy.deepcopy` de tout le
+     `PDFDocument`, non modélisée).
   Les questions ouvertes sont notées dans les en-têtes des modules, dans
   `architecture.md` et dans `js-runtime.md` (`search` suit la sémantique
   `RegExp` de JS, choix documenté ; `atan2` et le fournisseur de CMaps sont

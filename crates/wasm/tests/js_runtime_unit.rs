@@ -221,7 +221,7 @@ fn a_void_call_leaves_no_state_and_its_rerun_matches_pdfminer() {
     on_thread(64 << 20, move || {
         let mut core = Core::new();
         ok(call(&mut core, "cmap_configure", 0, list(names.iter().map(|n| PyValue::str(n)).collect()), None));
-        let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(b"%PDF".to_vec()))) else {
+        let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(tiny_pdf(b"")))) else {
             panic!("a handle")
         };
         let doc = PyValue::from(doc as i64);
@@ -297,7 +297,7 @@ fn a_void_call_puts_the_process_state_back() {
         use pdfminer::cmapdb::CMapDB;
         let mut core = Core::new();
         ok(call(&mut core, "cmap_configure", 0, list(names.iter().map(|n| PyValue::str(n)).collect()), None));
-        let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(b"%PDF".to_vec()))) else {
+        let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(tiny_pdf(b"")))) else {
             panic!("a handle")
         };
         let doc = PyValue::from(doc as i64);
@@ -504,4 +504,414 @@ fn text_words_tables_over_objects_match_pdfplumber() {
         let checked = on_thread(256 << 20, move || replay_text(format));
         assert!(checked > 150, "{format}: {checked} operations");
     }
+}
+
+// ------------------------------------------------------------------------ pages
+
+/// `d[key]` of a typed dict value.
+fn item<'a>(v: &'a Value, key: &str) -> &'a Value {
+    let Value::Dict(items) = v else { panic!("a dict: {v:?}") };
+    items.iter().find(|(k, _)| k.as_str() == Some(key)).map(|(_, v)| v).unwrap_or_else(|| panic!("no {key}"))
+}
+
+/// The objects a session made, in order: `"#k"` in the oracle's results is
+/// `objs[k]`.
+#[derive(Default)]
+struct Objs(Vec<u32>);
+
+impl Objs {
+    /// The handle a case's target names.
+    fn target(&self, v: &Value) -> u32 {
+        match v {
+            Value::None => 0,
+            Value::Int(i) => self.0[i.as_i64().unwrap() as usize],
+            other => panic!("a target: {other:?}"),
+        }
+    }
+
+    /// `"#k"` for a handle the response gives, which it records.
+    fn label(&mut self, h: &Js) -> Js {
+        let Js::Num(h) = h else { panic!("a handle: {h:?}") };
+        self.0.push(*h as u32);
+        s(&format!("#{}", self.0.len() - 1))
+    }
+
+    /// The response of an operation that makes objects, its handles as
+    /// labels (an int; dicts with a `handle`, alone or in a list).
+    fn relabel(&mut self, v: Js) -> Js {
+        let key: Vec<u16> = "handle".encode_utf16().collect();
+        match v {
+            Js::Num(_) => self.label(&v),
+            Js::Obj(mut items) => {
+                if let Some((_, h)) = items.iter_mut().find(|(k, _)| *k == key) {
+                    *h = self.label(h);
+                }
+                Js::Obj(items)
+            }
+            Js::Arr(items) => Js::Arr(items.into_iter().map(|x| self.relabel(x)).collect()),
+            other => other,
+        }
+    }
+
+    /// The handles of the pages a response holds (`annot["data"]["P"]`,
+    /// `getattr(pdf, "pages")`) as labels, in the order they are written: a
+    /// handle labelled before keeps its label, a new one is recorded.
+    fn relabel_pages(&mut self, v: Js) -> Js {
+        match v {
+            Js::Page(h, n) => {
+                let Js::Num(h) = *h else { panic!("a page handle: {h:?}") };
+                let h = h as u32;
+                let k = match self.0.iter().position(|&o| o == h) {
+                    Some(k) => k,
+                    None => {
+                        self.0.push(h);
+                        self.0.len() - 1
+                    }
+                };
+                Js::Page(Box::new(s(&format!("#{k}"))), n)
+            }
+            Js::Arr(items) => Js::Arr(items.into_iter().map(|x| self.relabel_pages(x)).collect()),
+            Js::Obj(items) => Js::Obj(items.into_iter().map(|(k, x)| (k, self.relabel_pages(x))).collect()),
+            other => other,
+        }
+    }
+}
+
+/// Runs a request, handing over the CMaps it misses (each once), as
+/// `WasmCore.call` does: the call is void, the core rebuilds the documents
+/// it reached, and the same request runs again.
+fn call_cmaps(core: &mut Core, op: &str, h: u32, args: PyValue, data: Option<Vec<u8>>, dir: &std::path::Path) -> Js {
+    for _ in 0..16 {
+        let r = call(core, op, h, args.clone(), data.clone());
+        if r.status != 2 {
+            return result(r);
+        }
+        let Js::Arr(names) = r.value else { panic!("missing names") };
+        for n in names {
+            let Js::Str(n) = n else { panic!() };
+            let name = String::from_utf16(&n).unwrap();
+            let raw = fs::read(dir.join(format!("{name}.pdfcmap"))).unwrap();
+            assert_eq!(ok(call(core, "cmap_add", 0, PyValue::str(&name), Some(raw))), Js::Null);
+        }
+    }
+    panic!("{op}: still missing CMaps")
+}
+
+/// The search options `Page.search` takes itself (the rest are the text
+/// map's).
+const SEARCH_ARGS: [&str; 5] = ["regex", "case", "main_group", "return_chars", "return_groups"];
+
+/// Replays one session of `pages.jsonl` (`oracle/unit/js_pages_run.py`):
+/// its cases in order through one core; returns the number checked.
+fn replay_session(format: &str, name: &str, cases: &[Value], out: &Value) -> usize {
+    // a new Python process, as the script's (the thread is a new one
+    // natively, not under WebAssembly)
+    use pdftrace::stages::py_process;
+    py_process::set(py_process::PyProcess::new(&pdfminer::psparser_symbols::IMPORT_PDFPLUMBER));
+    py_process::start();
+    pycompat::logging::disable();
+    let dir = cmap_dir();
+    let names: Vec<PyValue> = fs::read_to_string(dir.join("names.txt")).unwrap().lines().map(PyValue::str).collect();
+    let mut core = Core::new();
+    ok(call(&mut core, "set_format", 0, PyValue::str(format), None));
+    ok(call(&mut core, "cmap_configure", 0, list(names), None));
+    // the depth of the script's top level is the boundary's
+    let depth = item(out, "depth");
+    let (Value::Int(py_frames), Value::Int(c_left)) = (item(depth, "py"), item(depth, "c_left")) else { panic!() };
+    let entry = pdfplumber_wasm::ops::ENTRY_DEPTH;
+    assert_eq!(
+        (py_frames.as_i64().unwrap(), c_left.as_i64().unwrap()),
+        (i64::from(entry.py), i64::from(pycompat::recursion::C_RECURSION_LIMIT - entry.c))
+    );
+    let Value::List(results) = item(out, "results") else { panic!("results") };
+    assert_eq!(results.len(), cases.len());
+    let root = PathBuf::from(std::env::var("PDFPLUMBER_ROOT").expect("PDFPLUMBER_ROOT"));
+    let mut objs = Objs::default();
+    let mut checked = 0;
+    for (case, expected) in cases.iter().zip(results) {
+        let (Value::List(case), Value::List(expected)) = (case, expected) else { panic!() };
+        let op = case[0].as_str().unwrap();
+        let h = objs.target(&case[1]);
+        let Value::List(args) = &case[2] else { panic!("args") };
+        let (want, extra) = (value_view(&expected[0]), &expected[1]);
+        let where_ = format!("{format} {name} {op} {:?}", case[2]);
+        let got = match op {
+            "doc_open" => {
+                let data = match &case[3] {
+                    Value::Str(rel) => fs::read(root.join(rel.as_str().unwrap())).unwrap(),
+                    Value::Bytes(b) => b.clone(),
+                    other => panic!("a PDF: {other:?}"),
+                };
+                let r = call_cmaps(&mut core, op, 0, py(&args[0]), Some(data), &dir);
+                if matches!(r, Js::Num(_)) {
+                    objs.relabel(r)
+                } else {
+                    r
+                }
+            }
+            "search" => {
+                let Value::Dict(options) = &args[1] else { panic!("options") };
+                let mut textmap = Vec::new();
+                let mut search = std::collections::HashMap::new();
+                for (k, v) in options {
+                    let k = k.as_str().unwrap();
+                    if SEARCH_ARGS.contains(&k) {
+                        search.insert(k, py(v));
+                    } else {
+                        textmap.push((k, py(v)));
+                    }
+                }
+                let kw = PyValue::Dict(pdfplumber::obj::Obj::from_pairs(textmap));
+                let text = call_cmaps(&mut core, "page_search_text", h, list(vec![kw.clone()]), None, &dir);
+                if let Js::Obj(_) = text {
+                    text // an exception
+                } else {
+                    assert_eq!(text, value_view(item(extra, "text")), "{where_}: the text");
+                    let args = list(vec![
+                        kw,
+                        py(item(extra, "spans")),
+                        search.remove("return_groups").unwrap_or(PyValue::Bool(true)),
+                        search.remove("return_chars").unwrap_or(PyValue::Bool(true)),
+                        search.remove("main_group").unwrap_or(PyValue::from(0_i64)),
+                        py(item(extra, "named")),
+                    ]);
+                    call_cmaps(&mut core, "page_search", h, args, None, &dir)
+                }
+            }
+            "page_filter" => {
+                let r = call_cmaps(&mut core, op, h, list(vec![py(extra)]), None, &dir);
+                objs.relabel(r)
+            }
+            _ => {
+                let r = call_cmaps(&mut core, op, h, list(args.iter().map(py).collect()), None, &dir);
+                match op {
+                    "doc_pages" | "page_crop" | "page_within_bbox" | "page_outside_bbox" | "page_dedupe_chars"
+                    | "page_find_tables" | "page_find_table" => objs.relabel(r),
+                    _ => r,
+                }
+            }
+        };
+        let got = objs.relabel_pages(got);
+        assert_eq!(got, want, "{where_}");
+        checked += 1;
+    }
+    checked
+}
+
+/// The sessions of `pages.jsonl` (`oracle/unit/js_pages_run.py`): every
+/// operation of documents, pages and tables, CJK documents through the
+/// lazy CMaps (void calls, the documents rebuilt by their history), and the
+/// windows around the first nesting at which an operation raises
+/// `RecursionError` from the boundary's entry depth.
+#[test]
+#[cfg_attr(target_family = "wasm", ignore = "loads CMaps: run alone, one process per test, by scripts/check.sh")]
+fn page_operations_match_pdfplumber_through_the_boundary() {
+    let sessions = data().cases("pages");
+    assert!(sessions.len() >= 10, "{} sessions", sessions.len());
+    for &format in FORMATS {
+        let mut checked = 0;
+        for (input, out) in &sessions {
+            let (input, out) = (input.clone(), out.clone());
+            checked += on_thread(1 << 30, move || {
+                let name = input[0].as_str().unwrap();
+                let Value::List(cases) = &input[1] else { panic!("cases") };
+                replay_session(format, name, cases, &out)
+            });
+        }
+        assert!(checked > 250, "{format}: {checked} operations");
+    }
+}
+
+/// The diagnostics of a few runs are those Python shows (`diagnostics.jsonl`
+/// of `oracle/unit/js_runtime.py`): a `warnings.warn` once per text
+/// (Python's default filters and registry, `pycompat::warnings`), each of
+/// pdfplumber's log records, in order, across the calls of a new process.
+#[test]
+fn diagnostics_are_the_warnings_and_records_python_shows() {
+    for (input, out) in data().cases("diagnostics") {
+        let got = on_thread(1 << 28, move || {
+            pycompat::warnings::reset();
+            let name = input[0].as_str().unwrap().to_owned();
+            let Value::Bytes(pdf) = &input[1] else { panic!("the PDF") };
+            let Value::List(ops) = &input[3] else { panic!("ops") };
+            let mut core = Core::new();
+            let mut shown = Vec::new();
+            let mut run = |core: &mut Core, op: &str, h: u32, args: PyValue, data: Option<Vec<u8>>| {
+                let r = call_level(core, op, h, args, data, 30);
+                assert_eq!(r.status, 0, "{name} {op}: {:?}", r.value);
+                let Js::Obj(d) = r.diagnostics else { panic!("diagnostics") };
+                let Js::Arr(entries) = &d[0].1 else { panic!("entries") };
+                shown.extend(entries.iter().cloned());
+                r.value
+            };
+            let Js::Num(doc) = run(&mut core, "doc_open", 0, py(&input[2]), Some(pdf.clone())) else { panic!() };
+            let doc = doc as u32;
+            for op in ops {
+                match op.as_str().unwrap() {
+                    "page_annots" => {
+                        let Js::Arr(pages) = run(&mut core, "doc_pages", doc, list(vec![]), None) else { panic!() };
+                        for p in pages {
+                            let Js::Obj(items) = p else { panic!() };
+                            let Js::Num(h) = items[0].1 else { panic!() };
+                            run(&mut core, "page_attr", h as u32, list(vec![PyValue::str("annots")]), None);
+                        }
+                    }
+                    other => {
+                        run(&mut core, other, doc, list(vec![]), None);
+                    }
+                }
+            }
+            shown
+        });
+        assert_eq!(
+            got,
+            match value_view(&out) {
+                Js::Arr(entries) => entries,
+                other => panic!("{other:?}"),
+            }
+        );
+    }
+}
+
+/// The operations of a scenario on a CJK document, in a new core: handles
+/// relabeled, results in order.
+fn cjk_scenario(preload: &[String]) -> (Vec<Js>, Vec<String>, Js) {
+    let dir = cmap_dir();
+    let names: Vec<PyValue> = fs::read_to_string(dir.join("names.txt")).unwrap().lines().map(PyValue::str).collect();
+    let mut core = Core::new();
+    ok(call(&mut core, "cmap_configure", 0, list(names), None));
+    for name in preload {
+        let raw = fs::read(dir.join(format!("{name}.pdfcmap"))).unwrap();
+        ok(call(&mut core, "cmap_add", 0, PyValue::str(name), Some(raw)));
+    }
+    let root = PathBuf::from(std::env::var("PDFPLUMBER_ROOT").expect("PDFPLUMBER_ROOT"));
+    let data = fs::read(root.join("upstream/pdfplumber-python/tests/pdfs/pr-136-example.pdf")).unwrap();
+    let mut loaded = Vec::new();
+    let mut run = |core: &mut Core, op: &str, h: u32, args: PyValue, data: Option<Vec<u8>>| {
+        for _ in 0..16 {
+            let r = call(core, op, h, args.clone(), data.clone());
+            if r.status != 2 {
+                return result(r);
+            }
+            let Js::Arr(missing) = r.value else { panic!() };
+            for n in missing {
+                let Js::Str(n) = n else { panic!() };
+                let name = String::from_utf16(&n).unwrap();
+                let raw = fs::read(dir.join(format!("{name}.pdfcmap"))).unwrap();
+                ok(call(core, "cmap_add", 0, PyValue::str(&name), Some(raw)));
+                loaded.push(name);
+            }
+        }
+        panic!("{op}: still missing CMaps")
+    };
+    let num = |j: &Js| match j {
+        Js::Num(h) => *h as u32,
+        other => panic!("a handle: {other:?}"),
+    };
+    let field = |j: &Js, k: &str| match j {
+        Js::Obj(items) => items.iter().find(|(kk, _)| *kk == k.encode_utf16().collect::<Vec<_>>()).unwrap().1.clone(),
+        other => panic!("a dict: {other:?}"),
+    };
+    let empty = || PyValue::Dict(pdfplumber::obj::Obj::new());
+    let info = |core: &mut Core, key: usize| {
+        let Js::Obj(info) = ok(call(core, "info", 0, PyValue::None, None)) else { panic!() };
+        info[key].1.clone()
+    };
+    let mut out = Vec::new();
+    // another document first: the CJK document's handle is not 1
+    let other = fs::read(root.join("corpus/micro/text-operators.pdf")).unwrap();
+    let other = num(&run(&mut core, "doc_open", 0, PyValue::None, Some(other)));
+    let Js::Arr(other_pages) = run(&mut core, "doc_pages", other, list(vec![]), None) else { panic!() };
+    let other_page = num(&field(&other_pages[0], "handle"));
+    let doc = run(&mut core, "doc_open", 0, PyValue::None, Some(data));
+    let doc = num(&doc);
+    let Js::Arr(pages) = run(&mut core, "doc_pages", doc, list(vec![]), None) else { panic!() };
+    let (first, last) = (num(&field(&pages[0], "handle")), num(&field(pages.last().unwrap(), "handle")));
+    // state the replays must rebuild: a derived page of a derived page, a
+    // page and a table freed (tombstones the replays refill), a live table,
+    // a page's text map cache
+    let crop = run(&mut core, "page_crop", first, list(vec![PyValue::list([0, 0, 400, 400].map(PyValue::from))]), None);
+    let crop = num(&field(&crop, "handle"));
+    let inner = run(
+        &mut core,
+        "page_crop",
+        crop,
+        list(vec![
+            PyValue::list([10, 10, 200, 200].map(PyValue::from)),
+            PyValue::Dict(pdfplumber::obj::Obj::from_pairs([("relative", PyValue::Bool(true))])),
+        ]),
+        None,
+    );
+    let inner = num(&field(&inner, "handle"));
+    out.push(run(&mut core, "page_info", inner, list(vec![]), None));
+    assert_eq!(ok(call(&mut core, "free", crop, PyValue::None, None)), Js::Null);
+    // explicit lines: the tables are found without interpreting the page
+    let explicit = PyValue::Dict(pdfplumber::obj::Obj::from_pairs([
+        ("vertical_strategy", PyValue::str("explicit")),
+        ("horizontal_strategy", PyValue::str("explicit")),
+        ("explicit_vertical_lines", PyValue::list([50, 300, 550].map(PyValue::from))),
+        ("explicit_horizontal_lines", PyValue::list([50, 400, 800].map(PyValue::from))),
+    ]));
+    let mut tables = Vec::new();
+    for _ in 0..2 {
+        let Js::Arr(t) = run(&mut core, "page_find_tables", first, list(vec![explicit.clone()]), None) else {
+            panic!()
+        };
+        tables.push(num(&field(&t[0], "handle")));
+    }
+    let (freed_table, live_table) = (tables[0], tables[1]);
+    assert_eq!(ok(call(&mut core, "free", freed_table, PyValue::None, None)), Js::Null);
+    // a document opened and freed: its history goes, not the others'
+    let spare = fs::read(root.join("corpus/micro/text-operators.pdf")).unwrap();
+    let spare = num(&run(&mut core, "doc_open", 0, PyValue::None, Some(spare)));
+    run(&mut core, "doc_pages", spare, list(vec![]), None);
+    assert_eq!(ok(call(&mut core, "free", spare, PyValue::None, None)), Js::Null);
+    // a sequence: its operations are recorded one by one, and replayed
+    // without being recorded again
+    let info_of = |h: u32| list(vec![PyValue::str("page_info"), PyValue::from(i64::from(h)), list(vec![])]);
+    out.push(run(&mut core, "sequence", 0, list(vec![info_of(first), info_of(inner)]), None));
+    // the first interpretation: void calls (the CMaps), the document rebuilt
+    out.push(run(&mut core, "page_extract_text", inner, list(vec![empty()]), None));
+    out.push(run(&mut core, "page_attr", first, list(vec![PyValue::str("chars")]), None));
+    out.push(run(&mut core, "page_extract_text", last, list(vec![empty()]), None));
+    out.push(run(&mut core, "page_objects", inner, list(vec![]), None));
+    out.push(run(&mut core, "table_extract", live_table, list(vec![empty()]), None));
+    out.push(run(&mut core, "page_extract_text", other_page, list(vec![empty()]), None));
+    // freed handles are refused
+    let freed = result(call(&mut core, "page_info", crop, list(vec![]), None));
+    assert_eq!(result(call(&mut core, "table_extract", freed_table, list(vec![empty()]), None)), freed);
+    out.push(info(&mut core, 3)); // handles
+    out.push(info(&mut core, 4)); // history
+                                  // the document goes with its pages, tables and history
+    ok(call(&mut core, "free", doc, PyValue::None, None));
+    out.push(info(&mut core, 3));
+    out.push(result(call(&mut core, "page_info", first, list(vec![]), None)));
+    (out, loaded, freed)
+}
+
+/// A void call rebuilds the documents it reached by replaying their
+/// history (`crates/wasm/src/ops.rs`, "Void calls"): the results are those
+/// of a core that had every CMap from the start, whose calls are never
+/// void, with derived pages, a freed page (a tombstone) and caches built
+/// before the void calls.
+#[test]
+#[cfg_attr(target_family = "wasm", ignore = "loads CMaps: run alone, one process per test, by scripts/check.sh")]
+fn a_void_call_rebuilds_its_document_by_replaying_its_history() {
+    let (lazy, loaded, freed) = on_thread(1 << 30, || cjk_scenario(&[]));
+    assert!(loaded.len() >= 2, "CMaps loaded lazily: {loaded:?}");
+    let preloaded = loaded.clone();
+    let (eager, none, _) = on_thread(1 << 30, move || cjk_scenario(&preloaded));
+    assert!(none.is_empty(), "no void call with every CMap handed over: {none:?}");
+    assert_eq!(lazy, eager);
+    assert_eq!(freed, exc("ValueError", "invalid handle"));
+    // the live table's rows
+    assert!(matches!(&lazy[6], Js::Arr(rows) if rows.len() == 2), "{:?}", lazy[6]);
+    // the handles left: two documents, their pages, the crops and the
+    // tables (the freed ones tombstones), then the other document's once
+    // this one is freed; the history (lazy = eager: a void call's own
+    // entries go, a replay records nothing)
+    assert!(matches!(lazy[8], Js::Num(n) if n >= 8.0), "{:?}", lazy[8]);
+    assert!(matches!(lazy[9], Js::Num(n) if n >= 12.0), "{:?}", lazy[9]);
+    assert_eq!(lazy[10], Js::Num(2.0));
+    assert_eq!(lazy[11], exc("ValueError", "invalid handle"));
 }

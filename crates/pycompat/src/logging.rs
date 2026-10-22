@@ -55,7 +55,7 @@ pub fn disable() {
 
 /// The cache of every logger: a snapshot of the state, to put back with
 /// [`restore`].
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LoggerCaches(Vec<(&'static str, u8)>);
 
 /// A snapshot of the logger caches.

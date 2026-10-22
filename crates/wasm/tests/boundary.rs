@@ -189,6 +189,27 @@ fn json_view(v: &PyValue) -> Js {
     decode_json(&text, fixup)
 }
 
+/// A pdfplumber `Page` value crosses as its handle and `page_number`
+/// (`PageRef` in JavaScript), in a table's cells too; one the core did not
+/// label is an error, not a dict.
+#[test]
+fn page_values_cross_as_their_handles() {
+    let page = pdfplumber::obj::PageRef::new(PyInt::from(3));
+    let annot = |p: &pdfplumber::obj::PageRef| {
+        PyValue::Dict(Obj::from_pairs([("x", PyValue::from(1_i64)), ("P", PyValue::Page(p.clone()))]))
+    };
+    let v = PyValue::list([annot(&page), annot(&page), PyValue::Page(page.clone())]);
+    let mut handles = rustc_hash::FxHashMap::default();
+    handles.insert(page.id(), 7);
+    let want = Js::Page(Box::new(Js::Num(7.0)), Box::new(Js::Num(3.0)));
+    let cell = obj(vec![("x", Js::Num(1.0)), ("P", want.clone())]);
+    let expected = Js::Arr(vec![cell.clone(), cell, want]);
+    let (b, j) = pdfplumber_wasm::wire::with_page_handles(handles, || (binary_view(&v), json_view(&v)));
+    assert_eq!(b, expected);
+    assert_eq!(j, expected);
+    assert!(binary::encode(&v).is_err(), "a page without a handle");
+}
+
 #[test]
 fn random_values_decode_to_what_javascript_must_see() {
     let mut r = Rng(0x9e37_79b9_7f4a_7c15);
@@ -721,7 +742,7 @@ fn big_stack(f: impl FnOnce() + Send + 'static) {
 fn doc_cmap_decode_falls_back_to_an_empty_cmap_on_cmap_not_found_only() {
     let mut core = Core::new();
     ok(call(&mut core, "cmap_configure", 0, list(vec![PyValue::str("X-Bad")]), None));
-    let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(b"%PDF".to_vec()))) else { panic!() };
+    let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(tiny_pdf(b"")))) else { panic!() };
     let doc = PyValue::from(doc as i64);
     let decode = |core: &mut Core, doc: &PyValue, name: &str, code: PyValue| {
         call(core, "doc_cmap_decode", 0, list(vec![doc.clone(), PyValue::str(name), code]), None)
@@ -900,12 +921,12 @@ fn documents_handles_formats_and_the_benchmark() {
 fn documents_handles_formats_and_the_benchmark_body() {
     let mut core = Core::new();
     let opts = PyValue::Dict(Obj::from_pairs([("password", PyValue::str("pw"))]));
-    let Js::Num(h) = ok(call(&mut core, "doc_open", 0, opts, Some(b"%PDF-1.4".to_vec()))) else { panic!("a handle") };
+    let Js::Num(h) = ok(call(&mut core, "doc_open", 0, opts, Some(tiny_pdf(b"")))) else { panic!("a handle") };
     let h = h as u32;
     assert_ne!(h, 0);
     assert_eq!(
         ok(call(&mut core, "doc_info", h, PyValue::None, None)),
-        obj(vec![("size", Js::Num(8.0)), ("options", obj(vec![("password", s("pw"))]))])
+        obj(vec![("size", Js::Num(tiny_pdf(b"").len() as f64)), ("options", obj(vec![("password", s("pw"))]))])
     );
     let info = ok(call(&mut core, "info", 0, PyValue::None, None));
     let expected = obj(vec![
@@ -913,6 +934,7 @@ fn documents_handles_formats_and_the_benchmark_body() {
         ("pdfminer", s("20260107")),
         ("pdfplumber", s("0.11.9")),
         ("handles", Js::Num(1.0)),
+        ("history", Js::Num(1.0)),
     ]);
     assert_eq!(info, expected);
     assert_eq!(ok(call(&mut core, "free", h, PyValue::None, None)), Js::Null);
@@ -1010,5 +1032,209 @@ fn the_response_envelope_aligns_its_parts() {
         assert!(r[24 + n..u(16)].iter().all(|&b| b == 0));
         let r = pdfplumber_wasm::ops::response(0, 0, false, &payload, &c);
         assert_eq!(&r[4..8], &[0, 0, 0, 0]);
+    }
+}
+
+/// Handles of pages and tables: a freed one is refused and its slot is
+/// free (the replays make its object again, out of the table), freeing a
+/// document frees its pages and tables, `free` cannot run in a `sequence`
+/// (a void call would not undo it), and an operation reaches one document.
+#[test]
+fn page_and_table_handles_are_freed() {
+    let mut core = Core::new();
+    // a ruled 2 x 2 grid: one table
+    let grid: &[u8] = b"10 10 m 110 10 l 10 60 m 110 60 l 10 110 m 110 110 l \
+        10 10 m 10 110 l 60 10 m 60 110 l 110 10 m 110 110 l S";
+    let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(tiny_pdf(grid)))) else { panic!() };
+    let Js::Num(other) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(tiny_pdf(b"")))) else { panic!() };
+    let handle_of = |v: &Js| match v {
+        Js::Obj(items) => match &items[0].1 {
+            Js::Num(h) => *h as u32,
+            x => panic!("a handle: {x:?}"),
+        },
+        x => panic!("a dict: {x:?}"),
+    };
+    let Js::Arr(pages) = ok(call(&mut core, "doc_pages", doc as u32, list(vec![]), None)) else { panic!() };
+    let Js::Arr(others) = ok(call(&mut core, "doc_pages", other as u32, list(vec![]), None)) else { panic!() };
+    let (page, other_page) = (handle_of(&pages[0]), handle_of(&others[0]));
+    let Js::Arr(tables) = ok(call(&mut core, "page_find_tables", page, list(vec![]), None)) else { panic!() };
+    assert_eq!(tables.len(), 1);
+    let table = handle_of(&tables[0]);
+    let rows = ok(call(&mut core, "table_extract", table, list(vec![PyValue::Dict(Obj::new())]), None));
+    assert!(matches!(rows, Js::Arr(ref r) if r.len() == 2), "{rows:?}");
+    // one operation, one document: a sequence may reach two
+    let info = |h: u32| list(vec![PyValue::str("page_info"), PyValue::from(i64::from(h)), list(vec![])]);
+    let Js::Arr(both) = ok(call(&mut core, "sequence", 0, list(vec![info(page), info(other_page)]), None)) else {
+        panic!()
+    };
+    assert_eq!(both.len(), 2);
+    let free_table = list(vec![PyValue::str("free"), PyValue::from(i64::from(table)), PyValue::None]);
+    let pair = |a: &str, b: &str| (a.to_owned(), b.to_owned());
+    assert_eq!(
+        err(&mut core, "sequence", 0, list(vec![free_table])),
+        pair("ValueError", "free cannot run in a sequence")
+    );
+    for h in [table, page] {
+        assert_eq!(ok(call(&mut core, "free", h, PyValue::None, None)), Js::Null);
+        assert_eq!(err(&mut core, "free", h, PyValue::None).1, "invalid handle");
+    }
+    assert_eq!(err(&mut core, "table_extract", table, list(vec![PyValue::Dict(Obj::new())])).1, "invalid handle");
+    assert_eq!(err(&mut core, "page_info", page, list(vec![])).1, "invalid handle");
+    let count = |core: &mut Core| {
+        let Js::Obj(info) = ok(call(core, "info", 0, PyValue::None, None)) else { panic!() };
+        info[3].1.clone()
+    };
+    // two documents and the other page: the freed handles are free
+    assert_eq!(count(&mut core), Js::Num(3.0));
+    // a crop made and freed again and again holds no handle (the table
+    // has room for 2^20 - 1: it used to fill up with tombstones)
+    let Js::Arr(pages) = ok(call(&mut core, "doc_pages", other as u32, list(vec![]), None)) else { panic!() };
+    let page = handle_of(&pages[0]);
+    let bbox = list(vec![0, 0, 50, 50].into_iter().map(PyValue::from).collect());
+    let mut handles = std::collections::BTreeSet::new();
+    for _ in 0..2000 {
+        let crop = ok(call(&mut core, "page_crop", page, list(vec![bbox.clone()]), None));
+        let crop = handle_of(&crop);
+        handles.insert(crop & 0xf_ffff);
+        assert_eq!(ok(call(&mut core, "free", crop, PyValue::None, None)), Js::Null);
+    }
+    assert_eq!(handles.len(), 1, "one slot reused");
+    assert_eq!(count(&mut core), Js::Num(4.0));
+    assert_eq!(ok(call(&mut core, "free", doc as u32, PyValue::None, None)), Js::Null);
+    assert_eq!(count(&mut core), Js::Num(3.0));
+    assert!(matches!(ok(call(&mut core, "page_info", other_page, list(vec![]), None)), Js::Obj(_)));
+}
+
+/// The documented deviations of `pdfplumber.open` reach JavaScript as
+/// `NotPorted`, not wrapped in `PdfminerException`: `repair=True`
+/// (Ghostscript), a password that is not a `str` for an encrypted document
+/// (an unencrypted one never reads it: `js_runtime.py` `open.jsonl`).
+/// `doc_attr`/`page_attr` are the `getattr` of `to_dict` and `to_csv`:
+/// a name they cannot build (not ending with `s`) is not modelled, though
+/// Python has the attribute.
+#[test]
+fn attributes_outside_to_dict_and_to_csv_are_not_ported() {
+    let mut core = Core::new();
+    let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(tiny_pdf(b"0 0 m 10 10 l S")))) else {
+        panic!()
+    };
+    let Js::Arr(pages) = ok(call(&mut core, "doc_pages", doc as u32, list(vec![]), None)) else { panic!() };
+    let page = match &pages[0] {
+        Js::Obj(items) => match &items[0].1 {
+            Js::Num(h) => *h as u32,
+            x => panic!("a handle: {x:?}"),
+        },
+        x => panic!("a dict: {x:?}"),
+    };
+    for name in ["width", "height", "layout", "bbox", "structure_tree"] {
+        let r = call(&mut core, "page_attr", page, list(vec![PyValue::str(name)]), None);
+        assert_eq!(error_name(&r).0, "NotPorted", "page {name}");
+        let r = call(&mut core, "doc_attr", doc as u32, list(vec![PyValue::str(name)]), None);
+        assert_eq!(error_name(&r).0, "NotPorted", "doc {name}");
+    }
+    let r = call(&mut core, "page_attr", page, list(vec![PyValue::str("lines")]), None);
+    assert_eq!(r.status, 0);
+}
+
+#[test]
+fn open_reports_what_is_not_modelled_as_not_ported() {
+    let root = std::path::PathBuf::from(std::env::var("PDFPLUMBER_ROOT").expect("PDFPLUMBER_ROOT"));
+    let encrypted = std::fs::read(root.join("upstream/pdfplumber-python/tests/pdfs/password-example.pdf")).unwrap();
+    let mut core = Core::new();
+    let open = |core: &mut Core, key: &str, value: PyValue, data: Vec<u8>| {
+        let r = call(core, "doc_open", 0, PyValue::Dict(Obj::from_pairs([(key, value)])), Some(data));
+        error_name(&r).0
+    };
+    assert_eq!(open(&mut core, "password", PyValue::Bytes(Rc::from(&b"test"[..])), encrypted.clone()), "NotPorted");
+    assert_eq!(open(&mut core, "repair", PyValue::Bool(true), tiny_pdf(b"")), "NotPorted");
+    assert_eq!(open(&mut core, "password", PyValue::str("wrong"), encrypted.clone()), "PdfminerException");
+    let ok_open = call(
+        &mut core,
+        "doc_open",
+        0,
+        PyValue::Dict(Obj::from_pairs([("password", PyValue::str("test"))])),
+        Some(encrypted),
+    );
+    assert_eq!(ok_open.status, 0);
+}
+
+/// The library's methods bind their keyword arguments as the boundary's
+/// statements do (`self` is bound already): called directly with the same
+/// keywords, each raises the `TypeError` the boundary raises (which the
+/// `documents` session of `js_runtime_unit` compares with Python's).
+#[test]
+fn library_methods_bind_self_as_the_boundary_does() {
+    use pdfplumber::pdf::{OpenOptions, Source, PDF};
+    let mut core = Core::new();
+    let grid: &[u8] = b"BT /F1 10 Tf 20 20 Td (a) Tj ET 10 10 m 110 10 l 10 60 m 110 60 l 10 110 m 110 110 l \
+        10 10 m 10 110 l 60 10 m 60 110 l 110 10 m 110 110 l S";
+    let pdf_bytes = tiny_pdf(grid);
+    let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(pdf_bytes.clone()))) else { panic!() };
+    let Js::Arr(pages) = ok(call(&mut core, "doc_pages", doc as u32, list(vec![]), None)) else { panic!() };
+    let Js::Obj(items) = &pages[0] else { panic!() };
+    let Js::Num(page_handle) = items[0].1 else { panic!() };
+    let Js::Arr(tables) = ok(call(&mut core, "page_find_tables", page_handle as u32, list(vec![]), None)) else {
+        panic!()
+    };
+    let Js::Obj(items) = &tables[0] else { panic!() };
+    let Js::Num(table_handle) = items[0].1 else { panic!() };
+    let selfish = || Obj::from_pairs([("self", PyValue::from(1_i64))]);
+    let boundary =
+        |core: &mut Core, op: &str, h: f64, args: Vec<PyValue>| error_name(&call(core, op, h as u32, list(args), None));
+    let data: Rc<[u8]> = Rc::from(pdf_bytes);
+    let kind = pdfminer::pdfparser::FileKind::BytesIO;
+    let pdf = PDF::open(Source::Stream { data, kind }, OpenOptions::new()).unwrap();
+    let page = pdf.pages().unwrap()[0].clone();
+    let lib = |r: pycompat::PyResult<()>| {
+        let e = r.expect_err("a TypeError");
+        (e.kind.trace_name(), e.message.clone())
+    };
+    let kw = PyValue::Dict(selfish());
+    let cases: Vec<(&str, f64, Vec<PyValue>, pycompat::PyResult<()>)> = vec![
+        ("page_extract_text", page_handle, vec![kw.clone()], page.extract_text(&selfish()).map(drop)),
+        ("page_extract_text_simple", page_handle, vec![kw.clone()], page.extract_text_simple(&selfish()).map(drop)),
+        ("page_extract_words", page_handle, vec![kw.clone()], page.extract_words(&selfish()).map(drop)),
+        ("page_dedupe_chars", page_handle, vec![kw.clone()], page.dedupe_chars(&selfish()).map(drop)),
+        ("page_search_text", page_handle, vec![kw.clone()], page.search_text(&selfish()).map(drop)),
+        (
+            "page_extract_text_lines",
+            page_handle,
+            vec![PyValue::Bool(true), PyValue::Bool(true), kw.clone()],
+            page.extract_text_lines(true, true, &selfish()).map(drop),
+        ),
+        ("table_extract", table_handle, vec![kw.clone()], {
+            let tables = page.find_tables(&PyValue::None).unwrap();
+            tables[0].extract(&*page, &selfish()).map(drop)
+        }),
+    ];
+    for (op, h, args, direct) in cases {
+        assert_eq!(lib(direct), boundary(&mut core, op, h, args), "{op}");
+    }
+}
+
+/// A chain of derived pages, each the crop of the previous one, is freed
+/// without recursion (`Drop for Page`), as CPython frees it: a recursive
+/// drop overflowed the native stack after about 12 000 pages under
+/// WebAssembly (an 8 MiB stack), and here on a 256 KiB thread.
+#[test]
+fn a_long_chain_of_derived_pages_drops_without_recursion() {
+    use pdfplumber::page::CropFn;
+    use pdfplumber::pdf::{OpenOptions, Source, PDF};
+    let run = || {
+        let data: Rc<[u8]> = Rc::from(tiny_pdf(b"BT /F1 10 Tf (a) Tj ET"));
+        let kind = pdfminer::pdfparser::FileKind::BytesIO;
+        let pdf = PDF::open(Source::Stream { data, kind }, OpenOptions::new()).unwrap();
+        let mut page = pdf.pages().unwrap()[0].clone();
+        let bbox = page.bbox.clone();
+        for _ in 0..100_000 {
+            page = page.crop(bbox.clone(), CropFn::CropToBbox, false, true).unwrap();
+        }
+        drop(pdf);
+        drop(page);
+    };
+    if cfg!(target_family = "wasm") {
+        run();
+    } else {
+        std::thread::Builder::new().stack_size(256 << 10).spawn(run).unwrap().join().unwrap();
     }
 }

@@ -2,8 +2,13 @@
 
 Same command line as the real binary::
 
-    fake_pdftrace.py --stage S [--password P] [--max-pages N] [--oracle-dir C] --out DIR F1.pdf ...
+    fake_pdftrace.py --stage S [--password P] [--max-pages N] [--cmap-dir M] [--oracle-dir C] --out DIR F1.pdf ...
     fake_pdftrace.py --list-stages
+
+It requires ``--cmap-dir``, a directory with ``names.txt`` (the provider of
+predefined CMaps, which ``verify`` must always pass: the real binary,
+without one, writes ``RuntimeError("no CMap provider installed ...")``
+traces for fonts with predefined CMaps), and exits 1 otherwise.
 
 It requires ``--oracle-dir`` for a stage whose module sets
 ``ORACLE_INPUT`` (the real binary runs without it, with the library's
@@ -56,8 +61,12 @@ def main() -> int:
     ap.add_argument("--max-pages", type=int, default=20)
     ap.add_argument("--out", required=True)
     ap.add_argument("--oracle-dir")
+    ap.add_argument("--cmap-dir")
     ap.add_argument("files", nargs="+")
     args = ap.parse_args()
+    if args.cmap_dir is None or not (Path(args.cmap_dir) / "names.txt").is_file():
+        print(f"pdftrace: no CMap provider installed (--cmap-dir {args.cmap_dir})", file=sys.stderr)
+        return 1
     if bool(getattr(get_stage(args.stage), "ORACLE_INPUT", False)) != (args.oracle_dir is not None):
         print(f"pdftrace: --oracle-dir is required for, and only for, the stages that read the oracle ({args.stage})", file=sys.stderr)
         return 1

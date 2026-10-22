@@ -9,10 +9,14 @@ the same `open()` entry point in Node and browsers. How the runtime works
 [`js-runtime.md`](js-runtime.md).
 
 > **Status.** The runtime, the errors, the warnings channel and the document
-> handle are in place. The page layer of the Rust port (`pdfplumber.page`,
-> `pdf`, the interpreter) has not landed yet: `pdf.pages`, `pdf.metadata` and
-> every page-level feature below throw `NotImplemented` until it does. Their
-> names, options and result types are fixed here and in the TypeScript types.
+> handle are in place, and the page layer of the Rust port (`pdfplumber.pdf`,
+> `page`, `container`, `structure`, the interpreter) is reachable through the
+> operations of the WebAssembly core (`js-runtime.md`, "Documents et pages"),
+> verified against Python by the tests. The public classes are wave 5: until
+> then `pdf.pages`, `pdf.metadata` and every page-level feature below throw
+> `NotImplemented`. Their names, options and result types are fixed here and
+> in the TypeScript types. `open()` already runs `pdfplumber.open`: it
+> rejects as Python raises (a wrong password, a file that is not a PDF).
 
 ## Entrypoint
 
@@ -21,7 +25,7 @@ import { open } from "pdfplumber-js";
 
 const pdf = await open(input, options);
 try {
-  const page = pdf.pages[0];
+  const page = (await pdf.pages)[0];
   console.log(await page.extractText());
 } finally {
   await pdf.close();
@@ -38,7 +42,8 @@ Supported inputs (`PDFInput`):
 Supported `open()` options (`OpenOptions`), with pdfplumber's names:
 
 - `pages`: one-based page numbers to load.
-- `password`: password for encrypted PDFs (a string or bytes).
+- `password`: password for encrypted PDFs (a string; an unencrypted
+  document never reads it).
 - `laparams`: `LAParams` keyword arguments (layout analysis), or `null`.
 - `unicode_norm`: one of `NFC`, `NFKC`, `NFD`, or `NFKD`.
 - `raise_unicode_errors`, `strict_metadata`: as in pdfplumber.
@@ -53,11 +58,17 @@ that is not a list of numbers when the pages load...).
   each diagnostic at warning level and above (every level with
   `logLevel: "debug"`).
 
-Diagnostics are the text of pdfminer's `logging` calls (`source` is the
-logger name, such as `pdfminer.pdfdocument`) and of pdfplumber's
-`warnings.warn` (`source` is the warning category). They never change a
-result. Python prints warnings to stderr by default; the JavaScript API is
-silent by default.
+Diagnostics are the text of pdfplumber's `logging` calls (`source` is the
+logger name: `pdfplumber.pdf` for a metadata value that cannot be
+decoded, `pdfplumber.structure` for an unknown attribute class) and of
+its `warnings.warn` (`source` is the warning category: `UserWarning` for
+an annotation text that cannot be decoded), shown as Python's default
+filters show them: a warning once per text for the whole runtime (the
+filters' registry). pdfminer's own `logging` calls (malformed operators,
+fonts, xref entries...) are not forwarded yet: the core counts their
+Python frames but drops their text. Diagnostics never change a result.
+Python prints warnings to stderr by default; the JavaScript API is silent
+by default.
 
 Runtime settings, before the first `open()` (`configure(options)`,
 `RuntimeOptions`): where the WebAssembly module is (`wasm`: URL, path,
@@ -73,17 +84,29 @@ The package also exports TypeScript types for the documented surface:
 `TextDirection`, `CropOptions`, `DedupeOptions`, `TableOptions`,
 `TableStrategy`, `ExplicitTableLine`, `Table`, `TableAxisGroup`, `Bbox`,
 `LAParams`, and the classes `PDFPlumberError`, `NotImplemented`,
-`CoreCrash`, `PSLiteral`, `PSKeyword`, `PDFObjRef`, `PDFStream`, `PyFloat`,
-`PyTuple`.
+`CoreCrash`, `PSLiteral`, `PSKeyword`, `PDFObjRef`, `PDFStream`, `PageRef`,
+`PyFloat`, `PyTuple`.
 
 ## Asynchrony
 
 The core is synchronous, but predefined CMaps (CJK fonts) are fetched lazily
 and a browser can only fetch asynchronously; worker mode is asynchronous too.
-So everything that extracts data returns a `Promise`: page object getters
-(`await page.chars`), `extractText()`, `search()`, tables... `pdf.pages`,
-`pdf.metadata` and page geometry are plain properties, known when `open()`
-resolves.
+So everything that runs the core after `open()` returns a `Promise`: page
+object getters (`await page.chars`), `extractText()`, `search()`, tables,
+and `pdf.pages` and `pdf.metadata` themselves. pdfplumber makes its pages
+lazily, at the first read of `pdf.pages` (an error of the page tree or of
+a page's boxes is raised there, not by `pdfplumber.open`), and so does
+`await pdf.pages`: `open()` resolves for a document whose pages Python
+cannot make. The pages that derive a page (`crop`, `withinBbox`,
+`outsideBbox`, `filter`, `dedupeChars`) are asynchronous too:
+`dedupe_chars` computes the parent's objects at once (a CJK page may need
+a CMap), and each runs in the core where Python runs it, in call order;
+an error Python raises at the call (a crop box outside the page) rejects
+its promise. A page's geometry (`page_number`, `bbox`, `width`, `height`,
+the boxes) is known when its promise resolves (read in the same core
+statement); a geometry Python cannot compute (a crop box kept as given
+with `strict: false`) throws when `width` or `height` is read, as
+`page.width` raises in Python.
 
 ## Values
 
@@ -97,6 +120,12 @@ map as follows (details in [`js-runtime.md`](js-runtime.md#valeurs)):
   the same number.
 - pdfminer objects: `PSLiteral` (`name`), `PSKeyword`, `PDFObjRef`
   (`objid`), `PDFStream` (`objid`, `genno`, `attrs`, `rawdata`, `data`).
+  A `PDFStream` carries its bytes: a result that holds images (`objects`,
+  `images`, `to_dict`) copies each image's raw (and, once decoded, decoded)
+  data out of the core every time.
+- a pdfplumber `Page` held as a value (an annotation's `data.P`, a page of
+  `getattr(pdf, "pages")`): `PageRef` (`handle`: the page in the core,
+  the first live handle of that page, else a new one; `page_number`).
 - Integer-like keys (`"1"`) come first in a JavaScript object's key order,
   whatever their position in the Python dict.
 
@@ -196,6 +225,14 @@ Pages can derive filtered page views, kept by the core:
 Crop options support `relative` and `strict`. Dedupe options include
 `tolerance` and `extra_attrs`.
 
+`filter(testFunction)` runs the function on the parent page's objects, which
+it computes first, and hands the core the truth of each result; the derived
+page's test function looks each object up there. Python calls the function
+later, when the derived page's objects are computed, on the same objects:
+the results are the same, unless the parent's cache is flushed in between
+(`close()`), which the core reports as `NotImplemented` (its objects are new
+ones).
+
 ## Tables
 
 Table APIs expose pdfplumber-style table inputs and outputs:
@@ -215,6 +252,88 @@ and `text_*` options forwarded to cell text extraction.
 `cells`, `rows` and `columns` (`TableAxisGroup`: `bbox` and `cells`, `null`
 where a row or column has no cell), and `extract()`. `extractTable()` and
 `extractTables()` return arrays of cell strings or `null` values.
+
+## Not Ported
+
+These parts of pdfplumber 0.11.9 are out of scope (`docs/architecture.md`,
+"Règles de port"):
+
+- `Page.to_image` and `pdfplumber/display.py` (rendering through pypdfium2
+  and PIL).
+- `pdfplumber.open(..., repair=True)`, `gs_path`, `repair_setting` and
+  `pdfplumber/repair.py` (Ghostscript run in a subprocess): the core raises
+  `NotPorted`.
+- The command line (`pdfplumber/cli.py`).
+
+Every other `pdfplumber.open` option is ported (`pages`, `laparams`,
+`password`, `strict_metadata`, `unicode_norm`, `raise_unicode_errors`).
+
+Inline images: pdfminer names an inline image `str(id(stream))`, a memory
+address; the port names it `inline-<k>` (`k`: its rank among the page's
+inline images). This name is the `name` of the image in `page.images` and,
+with `laparams`, of its figure. It is unique within one interpretation of
+one page only: every page (and a page interpreted again after `close()`)
+starts again at `inline-0`, so `pdf.images` and `pdf.objects` repeat names
+across pages, where Python's addresses differ for images alive at the
+same time. An image XObject that a PDF names `inline-0` gets the same
+name as the page's first inline image.
+
+Not modelled (the core raises `NotPorted` where Python would go on):
+
+- a `laparams` margin (`line_overlap`, `char_margin`, `line_margin`,
+  `word_margin`) that is not a number: Python stores any value and fails
+  at its first use in the layout analysis;
+- a `password` that is neither `null` nor a string, given for an
+  encrypted document (an unencrypted one never reads it, in Python as in
+  the port);
+- `to_dict`/`to_csv` with an `object_types` entry that names a method
+  (`"extract_word"` gives `extract_words`): Python serializes the bound
+  method's `str()`;
+- `to_json`/`to_csv` into a stream: `stream: null` (Python's default)
+  returns the text, as Python does; any other stream is not modelled.
+
+After `close()`, a document opened from a path (`Source::Path` in Rust)
+raises `ValueError: seek of closed file` when an object not read before
+is needed, as in Python (a document read from bytes is the caller's
+stream, which `close()` leaves open).
+
+Depth: each operation of the core runs as one statement at the top level of
+a Python script (`oracle/unit/js_pages_run.py`: a property read at a site of
+its own, a method called with `**options`), so a `RecursionError` (a PDF
+nested near Python's limits) happens where it happens in that script. A
+statement written otherwise in Python (explicit keyword arguments instead of
+`**options`, a property read at a new site) takes up to two C recursion units
+more or less: it shows only at the C recursion limit (`js-runtime.md`,
+"Documents et pages").
+
+Not modelled either, without an error: the order Python gives a NaN coordinate in the sets of
+`cluster_objects` (words, lines, table edges) follows its memory address,
+which the port cannot reproduce (it puts NaN values last).
+
+Structure tree, metadata and annotations (`docs/architecture.md`,
+"Vague 4", workstream DOC):
+
+- a cycle among the structure elements that a page's parent tree reaches
+  makes pdfplumber's `PDFStructTree(pdf, page)` (and `page.structure_tree`)
+  loop until memory runs out; the core raises `MemoryError` once the walk
+  only repeats itself;
+- `structure_tree` deep-copies the attribute values of the elements
+  (`dataclasses.asdict`): for a document read from bytes (`io.BytesIO`,
+  what JavaScript gives), a reference among them copies the whole document
+  in Python, which the core does not do (it keeps the reference, an equal
+  value) nor count in the recursion depth; for a document opened from a
+  path, Python and the core raise the same `TypeError` (the file object
+  cannot be copied). What it changes, from JavaScript: with a reference
+  among an element's attributes, Python raises `RecursionError` where the
+  core returns the tree, for a chain of elements some 320 levels deep
+  (instead of the deeper limit of `asdict` alone), and even for a shallow
+  tree when the document holds a direct object nested a few hundred levels
+  deep (the catalog, `/Info`, a cross-reference trailer, any object read
+  so far: the copy walks them all);
+- pdfplumber decodes the metadata in place, in the document's own
+  dictionaries: whatever an `/Info` value reaches (the catalog, a page, an
+  annotation, a structure element) is read decoded afterwards, by the
+  pages, the structure tree and the annotations. The core does the same.
 
 ## Runtime Contract
 

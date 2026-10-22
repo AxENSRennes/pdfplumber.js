@@ -217,6 +217,10 @@ pub struct PyErrInfo {
     /// it holds a lone surrogate; `None` otherwise. Bytes rather than a
     /// `PyStr` keep a `PyErr` `Send`.
     pub surrogate_message: Option<Box<[u8]>>,
+    /// The exception this one was raised with as its single argument
+    /// (`PdfminerException(e)`, `MalformedPDFException(e)`: `e.args[0]`),
+    /// whose `str` is this one's ([`PyErr::wrapping`]).
+    pub cause: Option<PyErr>,
 }
 
 /// A raised Python exception: its class and `str(e)` (`err.kind`,
@@ -237,7 +241,24 @@ impl std::ops::Deref for PyErr {
 
 impl PyErr {
     pub fn new(kind: ExcKind, message: impl Into<String>) -> PyErr {
-        PyErr(Box::new(PyErrInfo { kind, message: message.into(), surrogate_message: None }))
+        PyErr(Box::new(PyErrInfo { kind, message: message.into(), surrogate_message: None, cause: None }))
+    }
+
+    /// `kind(e)`: an exception raised with the exception `e` as its single
+    /// argument, whose `str()` is `str(e)` (`Exception.__str__` of one
+    /// argument); `e` is kept as [`PyErr::cause`].
+    pub fn wrapping(kind: ExcKind, e: PyErr) -> PyErr {
+        PyErr(Box::new(PyErrInfo {
+            kind,
+            message: e.message.clone(),
+            surrogate_message: e.surrogate_message.clone(),
+            cause: Some(e),
+        }))
+    }
+
+    /// The exception this one wraps ([`PyErr::wrapping`]), if any.
+    pub fn cause(&self) -> Option<&PyErr> {
+        self.0.cause.as_ref()
     }
 
     /// An error whose `str(e)` is a Python `str` (it may hold a lone
@@ -249,6 +270,7 @@ impl PyErr {
                 kind,
                 message: message.to_string_lossy(),
                 surrogate_message: Some(Box::from(message.as_bytes())),
+                cause: None,
             })),
         }
     }

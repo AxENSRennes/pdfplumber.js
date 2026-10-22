@@ -310,6 +310,56 @@ pub enum PyValue {
     /// (`PSLiteral`, `PSKeyword`, `PDFStream`, `PDFObjRef`, and the `list`
     /// and `dict` objects of a PDF structure, which keep their identity).
     Pdf(PDFObject),
+    /// A pdfplumber `Page` held as a value (see [`PageRef`]).
+    Page(PageRef),
+}
+
+/// A pdfplumber `Page` as a value: pdfplumber/page.py:273 `Page.annots`
+/// replaces the `/P` of each annotation's `data` by the page itself
+/// (`annot["P"] = self`). What a value sees of it: its type (`Page`), its
+/// `repr()`/`str()` (pdfplumber/page.py:636 `Page.__repr__`: `<Page:n>`),
+/// equality and hashing by identity (the default `__eq__`/`__hash__`); it
+/// is not iterable, not subscriptable, not ordered. A page makes one
+/// `PageRef` and hands out clones of it (`crate::page::Page::as_value`),
+/// so that the values of one page are the same object.
+#[derive(Clone)]
+pub struct PageRef(Rc<PageRefData>);
+
+struct PageRefData {
+    page_number: PyInt,
+}
+
+impl PageRef {
+    /// A new page object (a new identity).
+    pub fn new(page_number: PyInt) -> PageRef {
+        PageRef(Rc::new(PageRefData { page_number }))
+    }
+
+    /// `page.page_number`
+    pub fn page_number(&self) -> &PyInt {
+        &self.0.page_number
+    }
+
+    /// `a is b`
+    pub fn ptr_eq(&self, other: &PageRef) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+
+    /// `id(page)`: the identity of the page while it lives.
+    pub fn id(&self) -> usize {
+        Rc::as_ptr(&self.0) as usize
+    }
+
+    /// `repr(page)`: `<Page:n>`
+    pub fn repr(&self) -> String {
+        format!("<Page:{}>", self.0.page_number)
+    }
+}
+
+impl std::fmt::Debug for PageRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.repr())
+    }
 }
 
 /// The value of a Python `float` object. A NaN carries its object's
@@ -536,6 +586,7 @@ impl PyValue {
             PDFObject::Int(i) => PyValue::Int(i),
             PDFObject::Float(x) => PyValue::float(x),
             PDFObject::Bytes(b) => PyValue::Bytes(b),
+            PDFObject::Str(s) => PyValue::Str(s),
             other => PyValue::Pdf(other),
         }
     }
@@ -583,6 +634,7 @@ impl PyValue {
                 PDFObject::Ref(_) => "PDFObjRef",
                 _ => self.as_python().expect("a Python value").type_name(),
             },
+            PyValue::Page(_) => "Page",
         }
     }
 
@@ -599,6 +651,7 @@ impl PyValue {
             PyValue::Dict(d) => !d.is_empty(),
             // names, keywords, streams and references are always true
             PyValue::Pdf(_) => self.as_python().is_none_or(|v| v.truthy()),
+            PyValue::Page(_) => true,
         }
     }
 
@@ -699,6 +752,7 @@ impl PyValue {
                 Ok(text) => out.push_str(&text),
                 Err(_) => out.push_str("<?>"),
             },
+            PyValue::Page(p) => out.push_str(&p.repr()),
         }
     }
 
@@ -707,6 +761,29 @@ impl PyValue {
         match self {
             PyValue::Str(s) => s.clone(),
             other => PyStr::from(other.repr()),
+        }
+    }
+
+    /// `repr(v)` as `PyObject_Repr` runs it (the `!r` of an f-string):
+    /// one C recursion unit per value written (`Py_EnterRecursiveCall("
+    /// while getting the repr of an object")`), the PDF objects inside
+    /// through [`PDFObject::repr`], which counts its own, a `Page` through
+    /// its `__repr__` (a Python method run by C). `ValueError` for an int
+    /// past the 4 300 digits of `str()`. Iterative: the depth of a value
+    /// only costs the units it costs CPython.
+    pub fn repr_counted(&self) -> PyResult<String> {
+        render_counted(self, false)
+    }
+
+    /// `str(v)` as `PyObject_Str` runs it: a `str` is itself (no unit:
+    /// `PyUnicode_CheckExact` comes first), anything else one unit (`"
+    /// while getting the str of an object"`) and its `repr`, whose items
+    /// take theirs ([`Self::repr_counted`]).
+    pub fn str_counted(&self) -> PyResult<PyStr> {
+        match self {
+            PyValue::Str(s) => Ok(s.clone()),
+            PyValue::Pdf(o) => Ok(PyStr::from(o.py_str()?)),
+            other => Ok(PyStr::from(render_counted(other, true)?)),
         }
     }
 
@@ -744,6 +821,7 @@ impl PyValue {
             }
             (PyValue::Dict(a), PyValue::Dict(b)) => a.py_eq(b),
             (PyValue::Pdf(a), PyValue::Pdf(b)) => a == b,
+            (PyValue::Page(a), PyValue::Page(b)) => a.ptr_eq(b),
             _ => false,
         }
     }
@@ -1018,6 +1096,112 @@ impl PyValue {
             ))),
         }
     }
+}
+
+const WHILE_REPR: &str = " while getting the repr of an object";
+const WHILE_STR: &str = " while getting the str of an object";
+
+/// A step of [`render_counted`].
+enum ReprTask<'a> {
+    Visit(&'a PyValue),
+    Text(&'static str),
+    Owned(String),
+    Leave(pycompat::recursion::Guard),
+}
+
+/// `repr(v)` (or `str(v)` with `as_str`, for `v` that is not a `str`),
+/// iterative, with CPython's C units: one for `PyObject_Repr`
+/// (`PyObject_Str`) of each value, held while it is written; the keys of a
+/// dict are `str`, whose repr takes its unit and returns.
+fn render_counted(v: &PyValue, as_str: bool) -> PyResult<String> {
+    use pycompat::recursion::{c_call, eval_entry, py_frame};
+    let mut out = String::new();
+    let mut tasks = vec![ReprTask::Visit(v)];
+    let mut first = true;
+    while let Some(task) = tasks.pop() {
+        let v = match task {
+            ReprTask::Visit(v) => v,
+            ReprTask::Text(t) => {
+                out.push_str(t);
+                continue;
+            }
+            ReprTask::Owned(t) => {
+                out.push_str(&t);
+                continue;
+            }
+            ReprTask::Leave(g) => {
+                drop(g);
+                continue;
+            }
+        };
+        if let PyValue::Pdf(o) = v {
+            out.push_str(&if first && as_str { o.py_str()? } else { o.repr()? });
+            first = false;
+            continue;
+        }
+        let unit = c_call(if first && as_str { WHILE_STR } else { WHILE_REPR })?;
+        first = false;
+        match v {
+            PyValue::None => out.push_str("None"),
+            PyValue::Bool(b) => out.push_str(if *b { "True" } else { "False" }),
+            PyValue::Int(i) => out.push_str(&i.py_str()?),
+            PyValue::Float(PyFloat(x)) => out.push_str(&float_repr(*x)),
+            PyValue::Str(s) => out.push_str(&s.repr()),
+            PyValue::Bytes(b) => out.push_str(&bytes_repr(b)),
+            PyValue::Tuple(t) | PyValue::List(t) => {
+                let (open, close) = if matches!(v, PyValue::Tuple(_)) { ("(", ")") } else { ("[", "]") };
+                if t.is_empty() {
+                    out.push_str(open);
+                    out.push_str(close);
+                } else {
+                    out.push_str(open);
+                    tasks.push(ReprTask::Leave(unit));
+                    tasks.push(ReprTask::Text(close));
+                    if t.len() == 1 && open == "(" {
+                        tasks.push(ReprTask::Text(","));
+                    }
+                    for (i, x) in t.iter().enumerate().rev() {
+                        tasks.push(ReprTask::Visit(x));
+                        if i > 0 {
+                            tasks.push(ReprTask::Text(", "));
+                        }
+                    }
+                    continue;
+                }
+            }
+            PyValue::Dict(d) => {
+                if d.is_empty() {
+                    out.push_str("{}");
+                } else {
+                    out.push('{');
+                    tasks.push(ReprTask::Leave(unit));
+                    tasks.push(ReprTask::Text("}"));
+                    for (i, (k, x)) in d.items().iter().enumerate().rev() {
+                        tasks.push(ReprTask::Visit(x));
+                        tasks.push(ReprTask::Owned(format!("{}: ", k.repr())));
+                        if i > 0 {
+                            tasks.push(ReprTask::Text(", "));
+                        }
+                    }
+                    // the repr of a key (a str): a unit, at the depth of the
+                    // values; the first key's comes before any value
+                    drop(c_call(WHILE_REPR)?);
+                    continue;
+                }
+            }
+            // pdfplumber/page.py:636 Page.__repr__: f"<Page:{self.page_number}>",
+            // a Python method run by C, whose format() of an int is str()
+            PyValue::Page(p) => {
+                let _entry = eval_entry()?;
+                let _frame = py_frame()?;
+                let _format = c_call(WHILE_STR)?;
+                out.push_str(&p.repr());
+            }
+            PyValue::Pdf(_) => unreachable!("written above"),
+        }
+        drop(unit);
+    }
+    Ok(out)
 }
 
 /// `min(items)` (first of equal items wins).
@@ -1339,6 +1523,12 @@ impl Obj {
     /// Same dict object (`a is b`).
     pub fn ptr_eq(&self, other: &Obj) -> bool {
         Rc::ptr_eq(&self.0, &other.0)
+    }
+
+    /// The identity of the dict (`id(obj)`, for a table of objects by
+    /// identity: the masks of `Page.filter` at the JavaScript boundary).
+    pub fn id(&self) -> usize {
+        Rc::as_ptr(&self.0) as usize
     }
 
     pub fn len(&self) -> usize {

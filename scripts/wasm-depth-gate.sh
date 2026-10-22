@@ -8,9 +8,9 @@
 # Builds `pdftrace` natively (`release`) and for wasm32-wasip1 (`dist`), runs
 # both on the depth windows of the adversarial corpora (chains of nested Form
 # XObjects around Python's first failing level, `adv-interp`; page trees,
-# `/Prev` and `/Length` chains, `adv-pages`, `adv-objects`) and requires the
-# same traces. A stack overflow traps (`memory access out of bounds`) and
-# fails.
+# `/Prev` and `/Length` chains, `adv-pages`, `adv-objects`; the page layer's
+# windows, `adv-plumber` and `adv-structure`) and requires the same
+# traces. A stack overflow traps (`memory access out of bounds`) and fails.
 #
 # For `interp`, `fonts`, `pages` and `objects`, the native traces are those
 # `oracle.verify` checks against Python. Not by construction for `layout`:
@@ -87,4 +87,24 @@ for stage in layout interp fonts; do
 done
 gate pages adv-pages "$CACHE"/corpus/adv-pages/*depth*.pdf
 gate objects adv-objects "$CACHE"/corpus/adv-objects/*depth*.pdf
+# the page layer (wave 4): the windows of adv-plumber (nested figures,
+# colorspaces, MCIDs: plumber_objects and plumber_text; dash arrays through
+# the Serializer: plumber_doc) and of adv-structure (to_dict, prune, repr,
+# metadata, the C-unit windows of decode_text and repr: plumber_doc and
+# plumber_objects). Without --oracle-dir both builds rank the analysis'
+# boxes in creation order and search no span: the same inputs, a check of
+# the stack (the Python parity of these windows is oracle.verify's); the
+# C-limit windows of adv-plumber (a Tf operand nested ten thousand deep)
+# for the four stages.
+plumber=("$CACHE"/corpus/adv-plumber/*-depth-*.pdf)
+climit=("$CACHE"/corpus/adv-plumber/*-climit-*.pdf)
+for stage in plumber_objects plumber_text; do
+  gate "$stage" adv-plumber "${plumber[@]}" "${climit[@]}"
+done
+gate plumber_doc adv-plumber "$CACHE"/corpus/adv-plumber/*-depth-dash-*.pdf "${climit[@]}"
+gate plumber_tables adv-plumber "${climit[@]}"
+structure=("$CACHE"/corpus/adv-structure/*-depth-*.pdf)
+for stage in plumber_doc plumber_objects; do
+  gate "$stage" adv-structure "${structure[@]}"
+done
 exit "$status"

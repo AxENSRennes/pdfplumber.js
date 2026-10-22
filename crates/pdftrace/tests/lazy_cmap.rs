@@ -182,7 +182,7 @@ fn two_pages(forms: usize, deepest: &Deepest, page2: &[u8]) -> Vec<u8> {
 /// each run of a stage makes), in the current process.
 fn run_once(stage: &str, pdf: &[u8], provider: Rc<dyn CMapProvider>) -> String {
     CMapDB::set_provider(Some(provider));
-    let input = StageInput { pdf, password: "", max_pages: Some(20), oracle: None };
+    let input = StageInput { pdf, password: "", password_given: false, max_pages: Some(20), oracle: None };
     let run = stages::lookup(stage).and_then(|s| s.run).expect("an implemented stage");
     let mut out = Vec::new();
     run(&input, &mut out).expect("write to memory");

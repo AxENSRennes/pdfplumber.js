@@ -51,6 +51,7 @@ pub const TAG_REF: u8 = 0x0e;
 pub const TAG_STREAM: u8 = 0x0f;
 pub const TAG_TABLE: u8 = 0x10;
 pub const TAG_INLINE_STR: u8 = 0x11;
+pub const TAG_PAGE: u8 = 0x12;
 
 pub const COL_GENERIC: u8 = 0;
 pub const COL_F64: u8 = 1;
@@ -398,6 +399,10 @@ impl Writer for BinWriter {
 
     fn stream(&mut self) {
         self.buf.push(TAG_STREAM);
+    }
+
+    fn page(&mut self) {
+        self.buf.push(TAG_PAGE);
     }
 
     fn table(&mut self, rows: &[PyValue], shapes: &Shapes<'_>) -> PyResult<bool> {

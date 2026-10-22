@@ -368,9 +368,93 @@ thread_local! {
     /// The symbols the Python process has interned so far (addresses of
     /// their names): see [`py_intern`]. A thread starts as the process of
     /// a pdfplumber user, after `import pdfplumber`.
-    static PY_INTERNED: RefCell<rustc_hash::FxHashSet<usize>> = RefCell::new(
-        crate::psparser_symbols::IMPORT_PDFPLUMBER.symbols().map(Symbol::address).collect(),
-    );
+    static PY_INTERNED: RefCell<Interned> =
+        RefCell::new(Interned::new(crate::psparser_symbols::IMPORT_PDFPLUMBER.symbols()));
+}
+
+/// One interning of the process: the symbol's address, the interning
+/// before it (`None`: the first), and how many there are up to it. A
+/// state of the process is the last interning so far: snapshots share
+/// what they have in common, so that the JavaScript boundary can keep the
+/// state each of its calls started from (`crates/wasm/src/ops.rs`, "Void
+/// calls") at a constant cost per call.
+struct InternNode {
+    address: usize,
+    count: usize,
+    previous: Option<Rc<InternNode>>,
+}
+
+impl Drop for InternNode {
+    /// Frees a long chain without recursion.
+    fn drop(&mut self) {
+        let mut next = self.previous.take();
+        while let Some(node) = next {
+            next = match Rc::try_unwrap(node) {
+                Ok(mut node) => node.previous.take(),
+                Err(_) => None,
+            };
+        }
+    }
+}
+
+fn intern_count(node: &Option<Rc<InternNode>>) -> usize {
+    node.as_ref().map_or(0, |n| n.count)
+}
+
+/// The interned symbols: the set, and the chain of internings that made
+/// it (see [`InternNode`]).
+struct Interned {
+    set: rustc_hash::FxHashSet<usize>,
+    last: Option<Rc<InternNode>>,
+}
+
+impl Interned {
+    fn new(symbols: impl IntoIterator<Item = Symbol>) -> Interned {
+        let mut interned = Interned { set: rustc_hash::FxHashSet::default(), last: None };
+        for symbol in symbols {
+            interned.insert(symbol.address());
+        }
+        interned
+    }
+
+    fn insert(&mut self, address: usize) {
+        if self.set.insert(address) {
+            let previous = self.last.take();
+            let count = intern_count(&previous) + 1;
+            self.last = Some(Rc::new(InternNode { address, count, previous }));
+        }
+    }
+
+    /// Goes to the state `target`: back along the current chain to the
+    /// interning both share, then forward along `target`'s.
+    fn restore(&mut self, target: Option<Rc<InternNode>>) {
+        let mut here = self.last.clone();
+        let mut there = target.clone();
+        let mut forward = Vec::new();
+        loop {
+            let same = match (&here, &there) {
+                (Some(a), Some(b)) => Rc::ptr_eq(a, b),
+                (None, None) => true,
+                _ => false,
+            };
+            if same {
+                break;
+            }
+            if intern_count(&here) >= intern_count(&there) {
+                let node = here.expect("a count above zero is a node");
+                self.set.remove(&node.address);
+                here = node.previous.clone();
+            } else {
+                let node = there.expect("a count above zero is a node");
+                forward.push(node.address);
+                there = node.previous.clone();
+            }
+        }
+        // (an address appears once on a chain, maybe on both branches:
+        // the removals are done first)
+        self.set.extend(forward);
+        self.last = target;
+    }
 }
 
 /// A symbol as [`py_intern`] identifies it.
@@ -393,28 +477,43 @@ impl Symbol {
 
 /// The symbols the process has interned so far ([`py_intern`]): a
 /// snapshot to put back with [`py_symbols_restore`].
-#[derive(Clone, Debug)]
-pub struct PyInterned(rustc_hash::FxHashSet<usize>);
+/// It costs a reference count: snapshots share their internings.
+#[derive(Clone)]
+pub struct PyInterned(Option<Rc<InternNode>>);
+
+impl PyInterned {
+    /// How many symbols are interned in this state.
+    pub fn len(&self) -> usize {
+        intern_count(&self.0)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl fmt::Debug for PyInterned {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "PyInterned({} symbols)", self.len())
+    }
+}
 
 /// A snapshot of the interned symbols.
 pub fn py_symbols_snapshot() -> PyInterned {
-    PY_INTERNED.with(|s| PyInterned(s.borrow().clone()))
+    PY_INTERNED.with(|s| PyInterned(s.borrow().last.clone()))
 }
 
-/// Puts back a [`py_symbols_snapshot`].
+/// Puts back a [`py_symbols_snapshot`] (the work is the number of
+/// internings between the two states).
 pub fn py_symbols_restore(interned: PyInterned) {
-    PY_INTERNED.with(|s| *s.borrow_mut() = interned.0);
+    PY_INTERNED.with(|s| s.borrow_mut().restore(interned.0));
 }
 
 /// Starts a new run of the Python process, in which exactly `symbols` are
 /// interned (those its imported modules intern at import time): the
 /// harness calls it where the oracle starts a process.
 pub fn py_symbols_reset(symbols: impl IntoIterator<Item = Symbol>) {
-    PY_INTERNED.with(|s| {
-        let mut s = s.borrow_mut();
-        s.clear();
-        s.extend(symbols.into_iter().map(Symbol::address));
-    });
+    PY_INTERNED.with(|s| *s.borrow_mut() = Interned::new(symbols));
 }
 
 // pdfminer/psparser.py:87 PSSymbolTable.intern
@@ -426,7 +525,7 @@ pub fn py_symbols_reset(symbols: impl IntoIterator<Item = Symbol>) {
 pub fn py_intern(symbol: Symbol) -> PyResult<()> {
     let address = symbol.address();
     let _intern = py_frame()?;
-    if !PY_INTERNED.with(|s| s.borrow().contains(&address)) {
+    if !PY_INTERNED.with(|s| s.borrow().set.contains(&address)) {
         c_called_leaf()?;
         PY_INTERNED.with(|s| s.borrow_mut().insert(address));
     }
@@ -1187,7 +1286,13 @@ impl<X: PSStackParserExt> PSStackParser<X> {
 
     /// `self.fp`, which Python would dereference.
     pub fn fp_mut(&mut self, attr: &str) -> PyResult<&mut BytesIO> {
-        self.fp.as_mut().ok_or_else(|| exc::AttributeError(format!("'NoneType' object has no attribute '{attr}'")))
+        let fp = self
+            .fp
+            .as_mut()
+            .ok_or_else(|| exc::AttributeError(format!("'NoneType' object has no attribute '{attr}'")))?;
+        // a file the PDF closed (pdfplumber/pdf.py:124 PDF.close)
+        fp.check_open(attr)?;
+        Ok(fp)
     }
 
     /// `self.seek(pos)`, dispatched to the subclass.
@@ -1672,5 +1777,55 @@ mod tests {
         });
         py_symbols_reset([]);
         with_depth(last, || assert!(py_intern(Symbol::Keyword(KWD(b"endobj"))).is_err(), "a new process"));
+    }
+
+    /// Snapshots are states of a tree of internings: any of them can be
+    /// put back from any other, backwards, forwards or across branches,
+    /// a name interned on both branches included.
+    #[test]
+    fn interned_snapshots_restore_across_branches() {
+        let names = ["ZqBranchA", "ZqBranchB", "ZqBranchC", "ZqBranchD"].map(|n| Symbol::Literal(LIT(n)));
+        let interned = |s: Symbol| PY_INTERNED.with(|i| i.borrow().set.contains(&s.address()));
+        let state = || names.map(interned);
+        py_symbols_reset([names[0]]);
+        let root = py_symbols_snapshot();
+        assert_eq!(root.len(), 1);
+        assert!(!root.is_empty());
+        py_intern(names[1]).unwrap();
+        py_intern(names[2]).unwrap();
+        let left = py_symbols_snapshot();
+        py_symbols_restore(root.clone());
+        assert_eq!(state(), [true, false, false, false]);
+        py_intern(names[2]).unwrap();
+        py_intern(names[3]).unwrap();
+        let right = py_symbols_snapshot();
+        assert_eq!(right.len(), 3);
+        py_symbols_restore(left.clone());
+        assert_eq!(state(), [true, true, true, false]);
+        py_symbols_restore(right);
+        assert_eq!(state(), [true, false, true, true]);
+        py_symbols_restore(root);
+        assert_eq!(state(), [true, false, false, false]);
+        py_symbols_restore(left.clone());
+        assert_eq!(state(), [true, true, true, false]);
+        // across a new process (a chain that shares nothing), and from the
+        // empty state to itself
+        py_symbols_reset([]);
+        assert_eq!(state(), [false; 4]);
+        py_symbols_restore(left);
+        assert_eq!(state(), [true, true, true, false]);
+        py_symbols_reset([]);
+        assert!(py_symbols_snapshot().is_empty());
+        py_symbols_restore(py_symbols_snapshot());
+        assert_eq!(state(), [false; 4]);
+        // a chain of 10^6 internings (addresses no symbol has) frees
+        // without recursion
+        PY_INTERNED.with(|i| {
+            let mut i = i.borrow_mut();
+            for address in 1..=1_000_000 {
+                i.insert(address);
+            }
+        });
+        py_symbols_reset([]);
     }
 }

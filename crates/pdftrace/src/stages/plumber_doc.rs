@@ -1,8 +1,631 @@
-//! Stage `plumber_doc`: metadata, annotations, links, structure tree, `crop`/`within_bbox`/`outside_bbox`.
-//!
-//! Not implemented yet. The line format is documented in
+//! Stage `plumber_doc`: metadata (`strict_metadata` both ways), the
+//! structure tree (document and pages: `to_dict`, `find_all`, `find`,
+//! `all_mcids`, `element_bbox`, `repr`), derived pages (`crop`,
+//! `within_bbox`, `outside_bbox`, strict or not, relative or not,
+//! `filter`, `dedupe_chars`: boxes, objects, annotations), serialization
+//! (`to_dict`, `to_json`, `to_csv`), `close`, the `open` options
+//! (`unicode_norm`, `raise_unicode_errors`, `pages`) and passwords. The
+//! traversal and the line format are those of
 //! `oracle/stages/plumber_doc.py`.
+//!
+//! # Depth
+//!
+//! The Python stage is a generator that delegates to others (`yield from
+//! tree_lines(...)`, `page_lines`, `option_lines`): each is a frame above
+//! the stage body, and the lambdas it is given (`lambda:
+//! pdf.structure_tree`) one more. `SEND` runs a generator inline (no C
+//! unit), as a call of a Python function does; the `LOAD_ATTR` of a
+//! property does not the first time its instruction runs in the process
+//! (the getter is called from C, two units: [`PDF_STRUCTURE_TREE`],
+//! [`PAGE_STRUCTURE_TREE`]). The structure trees are the only deep paths of
+//! the stage that depend on it (`adv-structure`, "depth" windows).
 
-use super::Stage;
+use std::io::{self, Write};
+use std::rc::Rc;
 
-pub const STAGE: Stage = Stage { name: "plumber_doc", run: None, oracle_input: false };
+use pdfplumber::container::{Container, SerializeOptions};
+use pdfplumber::obj::{Obj, PyValue};
+use pdfplumber::page::Page;
+use pdfplumber::pdf::{OpenOptions, Source, PDF};
+use pdfplumber::structure::{Matcher, PDFStructElement, PDFStructTree, Scope};
+use pycompat::recursion::{c_call, eval_entry, leaf, py_frame};
+use pycompat::specialize::{AttrSite, CallSite};
+use pycompat::{exc, PyErr, PyInt, PyResult, PyStr};
+
+use super::common::{terminated, Lines};
+use super::plumber_common::{digest, exc as exc_line, open_pdf, select, table, Names};
+use super::plumber_objects::annot_value;
+use super::plumber_ops::{
+    DOC_DERIVED, DOC_DERIVED_BASE, DOC_DERIVED_PER_PAGE, DOC_MAX_ELEMENTS, DOC_MAX_FOUND, DOC_MAX_PROBED,
+    DOC_NORM_PAGES, DOC_OPEN_OPTIONS, DOC_SERIALIZE, DOC_SERIALIZE_PER_PAGE, DOC_WRONG_PASSWORD, OUT_LIMIT,
+};
+use super::plumber_text::derive;
+use super::{Stage, StageInput};
+use crate::canon::{canon, sha256_hex};
+use crate::plumber::{from_value, to_value};
+use crate::typed_json;
+use crate::value::{self, Value};
+
+pub const STAGE: Stage = Stage { name: "plumber_doc", run: Some(run), oracle_input: false };
+
+// The stage's loads of properties whose getter can run deep code
+// (`pycompat::specialize::AttrSite`): the structure trees, the pages, the
+// objects (the interpretation runs again under each when it raised
+// before), the annotations; its calls of builtins and of bound methods with
+// `**kwargs` (`CALL_FUNCTION_EX`: the method from C). Not modelled: the
+// loads of `d.width` and `d.height` (cheap getters).
+/// `lambda: pdf.structure_tree` of `run`: the property's `LOAD_ATTR`.
+pub static PDF_STRUCTURE_TREE: AttrSite = AttrSite::new("plumber_doc run pdf.structure_tree");
+/// `lambda: page.structure_tree` of `page_lines`.
+pub static PAGE_STRUCTURE_TREE: AttrSite = AttrSite::new("plumber_doc page_lines page.structure_tree");
+static OBJECTS_DIGEST_OBJECTS: AttrSite = AttrSite::new("plumber_doc objects_digest page.objects");
+static DERIVED_ANNOTS: AttrSite = AttrSite::new("plumber_doc derived_lines d.annots");
+static SERIALIZE_GETATTR: CallSite = CallSite::new("plumber_doc serialize_lines getattr(page, method)");
+static OPTION_SELECTED_PAGES: AttrSite = AttrSite::new("plumber_doc option_lines selected pdf.pages");
+static OPTION_PAGES: AttrSite = AttrSite::new("plumber_doc option_lines pages = pdf.pages");
+static OPTION_CHARS: AttrSite = AttrSite::new("plumber_doc option_lines page.chars");
+static OPTION_ANNOTS: AttrSite = AttrSite::new("plumber_doc option_lines page.annots");
+static RUN_PAGES: AttrSite = AttrSite::new("plumber_doc run pages = pdf.pages");
+static RUN_ZIP_PAGES: AttrSite = AttrSite::new("plumber_doc run zip(pdf.pages, ...)");
+static RUN_REOPENED_PAGES: AttrSite = AttrSite::new("plumber_doc run reopened = pdf.pages");
+
+const WHILE_CALLING: &str = " while calling a Python object";
+
+fn s(text: &str) -> Value {
+    Value::Str(value::PyStr::Text(text.to_owned()))
+}
+
+/// `canon(x)` of a pdfplumber value.
+fn canon_py(v: &PyValue) -> String {
+    canon(&to_value(v))
+}
+
+/// `exc(e)` of `plumber_objects.py`.
+fn exc_text(e: &PyErr) -> String {
+    exc_line(e)
+}
+
+/// `bounded(label, value)` of `plumber_doc.py`: `label text`, or `labeld
+/// length digest` beyond `OUT_LIMIT` characters.
+fn bounded(label: &str, value: &Value) -> String {
+    let text = canon(value);
+    if text.len() > OUT_LIMIT {
+        format!("{label}d {} {}", text.len(), &sha256_hex(text.as_bytes())[..16])
+    } else {
+        format!("{label} {text}")
+    }
+}
+
+// ------------------------------------------------------------------------------ names
+
+/// `page_names(page)`: the `Names` of a page's objects (none when
+/// `page.objects` raises).
+fn page_names(page: &Page) -> PyResult<Names> {
+    // a Python function: its frame, then `Names()` (a class call and its
+    // __init__), then `page.objects` in a try block
+    let _frame = py_frame()?;
+    pycompat::recursion::class_call_leaf()?;
+    let mut names = Names::default();
+    if let Ok(objects) = super::plumber_common::PAGE_NAMES_OBJECTS.get(page.class_name(), || page.objects()) {
+        names.learn(&objects);
+    }
+    Ok(names)
+}
+
+/// `objects_digest(page)`: `[kind, n, digest]` of each kind.
+fn objects_digest(page: &Page) -> PyResult<Value> {
+    let _frame = py_frame()?;
+    let mut names = Names::default();
+    let objects = OBJECTS_DIGEST_OBJECTS.get(page.class_name(), || page.objects())?;
+    names.learn(&objects);
+    let mut out = Vec::new();
+    for (kind, objs) in objects.iter() {
+        let values = Value::List(objs.iter().map(|o| names.obj(o)).collect());
+        out.push(Value::List(vec![
+            Value::py_str(kind),
+            Value::Int(PyInt::from(objs.len() as i64)),
+            s(&digest(&values)),
+        ]));
+    }
+    Ok(Value::List(out))
+}
+
+/// `[annot_value(a, names) for a in annots]`, digested.
+fn annots_digest(annots: &[Obj]) -> PyResult<String> {
+    let names = Names::default();
+    let values = annots.iter().map(|a| annot_value(a, &names)).collect::<PyResult<Vec<_>>>()?;
+    Ok(digest(&Value::List(values)))
+}
+
+// ---------------------------------------------------------------------------- opening
+
+/// `pdfplumber.open(path, password=password, **options)` (no `open_pdf`
+/// frame, no `pages=` but the options').
+fn open_with(input: &StageInput<'_>, options: OpenOptions) -> PyResult<PDF> {
+    let mut o = options;
+    o.password = if input.password.is_empty() { None } else { Some(PyValue::str(input.password)) };
+    PDF::open(Source::Path { data: Rc::from(input.pdf), path: PyStr::new("") }, o)
+}
+
+/// Sets the options of a dict of keyword arguments (`OPEN_OPTIONS`).
+fn set_options(out: &mut OpenOptions, options: &Value) {
+    let Value::Dict(items) = options else { panic!("an options dict") };
+    for (k, v) in items {
+        let v = from_value(v).expect("an option value");
+        match k.as_str().expect("an option name") {
+            "strict_metadata" => out.strict_metadata = v.truthy(),
+            "unicode_norm" => out.unicode_norm = Some(v),
+            "raise_unicode_errors" => out.raise_unicode_errors = v.truthy(),
+            "pages" => out.pages = Some(v),
+            other => panic!("an option the table does not have: {other}"),
+        }
+    }
+}
+
+fn has_option(options: &Value, name: &str) -> bool {
+    let Value::Dict(items) = options else { return false };
+    items.iter().any(|(k, _)| k.as_str() == Some(name))
+}
+
+// ------------------------------------------------------------------------- structure
+
+/// The first `DOC_MAX_PROBED` elements under `children`, depth-first, with
+/// their paths (`_paths`, no recursion).
+fn paths(children: &[Rc<PDFStructElement>]) -> Vec<(Vec<usize>, Rc<PDFStructElement>)> {
+    let mut out = Vec::new();
+    let mut stack: Vec<(Vec<usize>, Rc<PDFStructElement>)> =
+        children.iter().enumerate().rev().map(|(i, el)| (vec![i], el.clone())).collect();
+    while let Some((path, el)) = stack.pop() {
+        if out.len() >= DOC_MAX_PROBED {
+            break;
+        }
+        let kids = el.children.borrow().clone();
+        for (j, c) in kids.iter().enumerate().rev() {
+            let mut p = path.clone();
+            p.push(j);
+            stack.push((p, c.clone()));
+        }
+        out.push((path, el));
+    }
+    out
+}
+
+/// `tree_lines(label, get_list, make_tree)`: the generator's frame, the
+/// lambdas' frames, then the lines.
+fn tree_lines(
+    lines: &mut Lines,
+    label: &str,
+    get_list: impl FnOnce() -> PyResult<Vec<PyValue>>,
+    make_tree: impl FnOnce() -> PyResult<PDFStructTree>,
+) -> PyResult<()> {
+    let _generator = py_frame()?;
+    let elements = {
+        let _lambda = py_frame()?;
+        get_list()
+    };
+    match elements {
+        Err(e) => lines.push(format!("{label} {}", exc_text(&e))),
+        Ok(elements) => {
+            let values = Value::List(elements.iter().map(to_value).collect());
+            lines.push(format!("{label} {} {}", elements.len(), digest(&values)));
+            for (i, el) in elements.iter().take(DOC_MAX_ELEMENTS).enumerate() {
+                lines.push(bounded(&format!("struct {i}"), &to_value(el)));
+            }
+        }
+    }
+    let tree = {
+        let _lambda = py_frame()?;
+        make_tree()
+    };
+    let tree = match tree {
+        Ok(tree) => tree,
+        Err(e) => {
+            lines.push(format!("tree {}", exc_text(&e)));
+            return Ok(());
+        }
+    };
+    // _first_type(tree.children)
+    leaf(1)?;
+    let tag = match tree.children.first() {
+        Some(el) => el.r#type.clone(),
+        None => PyStr::new("P"),
+    };
+    let span = PyStr::new("Span");
+    let starts_with_h = |el: &PDFStructElement| -> PyResult<bool> {
+        // lambda el: el.type.startswith("H")
+        leaf(1)?;
+        Ok(el.r#type.as_bytes().starts_with(b"H"))
+    };
+    let matchers: [(Value, Matcher<'_>, Matcher<'_>); 3] = [
+        (Value::List(vec![s("tag"), Value::py_str(&tag)]), Matcher::Tag(&tag), Matcher::Tag(&tag)),
+        (Value::List(vec![s("tag"), s("Span")]), Matcher::Tag(&span), Matcher::Tag(&span)),
+        (
+            Value::List(vec![s("function"), s("starts-with-H")]),
+            Matcher::Func(&starts_with_h),
+            Matcher::Func(&starts_with_h),
+        ),
+    ];
+    for (desc, for_all, for_find) in matchers {
+        let desc = canon(&desc);
+        let found = (|| -> PyResult<Vec<Value>> {
+            let mut found = Vec::new();
+            for el in tree.find_all(for_all)? {
+                let el = el?;
+                if found.len() == DOC_MAX_FOUND {
+                    found.push(s("..."));
+                    break;
+                }
+                found.push(Value::py_str(&el.r#type));
+            }
+            Ok(found)
+        })();
+        match found {
+            Ok(found) => lines.push(format!("find_all {desc} {}", canon(&Value::List(found)))),
+            Err(e) => lines.push(format!("find_all {desc} {}", exc_text(&e))),
+        }
+        match tree.find(for_find) {
+            Ok(el) => {
+                let v = el.map_or(Value::None, |el| Value::py_str(&el.r#type));
+                lines.push(format!("find {desc} {}", canon(&v)));
+            }
+            Err(e) => lines.push(format!("find {desc} {}", exc_text(&e))),
+        }
+    }
+    // _paths(tree.children): a function
+    let probed = {
+        let _frame = py_frame()?;
+        paths(&tree.children)
+    };
+    for (path, el) in probed {
+        let path = canon(&Value::Tuple(path.iter().map(|&i| Value::Int(PyInt::from(i as i64))).collect()));
+        match el.all_mcids() {
+            Ok(mcids) => {
+                let v = Value::List(
+                    mcids
+                        .iter()
+                        .map(|(n, m)| Value::Tuple(vec![n.clone().map_or(Value::None, Value::Int), to_value(m)]))
+                        .collect(),
+                );
+                lines.push(format!("mcids {path} {}", canon(&v)));
+            }
+            Err(e) => lines.push(format!("mcids {path} {}", exc_text(&e))),
+        }
+        match tree.element_bbox(&el) {
+            Ok(bbox) => {
+                lines.push(format!("element_bbox {path} {}", canon(&Value::Tuple(bbox.iter().map(to_value).collect()))))
+            }
+            Err(e) => lines.push(format!("element_bbox {path} {}", exc_text(&e))),
+        }
+    }
+    if let Some(first) = tree.children.first() {
+        // repr(tree.children[0]): the builtin's unit, then PyObject_Repr
+        let text = {
+            let _call = c_call(WHILE_CALLING)?;
+            first.repr()
+        };
+        match text {
+            Ok(text) => lines.push(format!("element_repr {} {}", text.len(), &sha256_hex(text.as_bytes())[..16])),
+            Err(e) => lines.push(format!("element_repr {}", exc_text(&e))),
+        }
+    }
+    Ok(())
+}
+
+// ------------------------------------------------------------------------------ pages
+
+/// `derived_lines(page, steps)`.
+fn derived_lines(lines: &mut Lines, page: &Rc<Page>, steps: &Value) -> PyResult<()> {
+    let _generator = py_frame()?;
+    lines.push(format!("derived {}", canon(steps)));
+    let d = match derive(page, steps) {
+        Ok(d) => d,
+        Err(e) => {
+            lines.push(format!("derive {}", exc_text(&e)));
+            return Ok(());
+        }
+    };
+    let width = d.width()?;
+    let height = d.height()?;
+    lines.push(format!(
+        "dbox {} {} {} {}",
+        canon_py(&d.bbox),
+        canon_py(&width),
+        canon_py(&height),
+        canon(&s(&d.repr()))
+    ));
+    match objects_digest(&d) {
+        Ok(v) => lines.push(format!("dobjects {}", canon(&v))),
+        Err(e) => lines.push(format!("dobjects {}", exc_text(&e))),
+    }
+    match DERIVED_ANNOTS.get(d.class_name(), || d.annots()) {
+        Ok(annots) => lines.push(format!("dannots {} {}", annots.len(), annots_digest(&annots)?)),
+        Err(e) => lines.push(format!("dannots {}", exc_text(&e))),
+    }
+    Ok(())
+}
+
+/// The string list of a keyword argument.
+/// `page_dict(value, names)`: a `to_dict` value as written.
+fn page_dict(value: &Obj, names: &Names) -> PyResult<Value> {
+    let mut items = Vec::new();
+    for (k, v) in value.items() {
+        let v = match v {
+            PyValue::List(objs) => {
+                let annots = k.as_str() == Some("annots");
+                Value::List(
+                    objs.iter()
+                        .map(|a| match (annots, a) {
+                            (true, PyValue::Dict(a)) => annot_value(a, names),
+                            (false, PyValue::Dict(a)) => Ok(names.obj(a)),
+                            (_, other) => Err(exc::AttributeError(format!(
+                                "'{}' object has no attribute 'items'",
+                                other.type_name()
+                            ))),
+                        })
+                        .collect::<PyResult<_>>()?,
+                )
+            }
+            other => to_value(other),
+        };
+        items.push((Value::py_str(k), v));
+    }
+    Ok(Value::Dict(items))
+}
+
+/// `serialize_lines(page, op)`.
+fn serialize_lines(lines: &mut Lines, page: &Rc<Page>, op: &Value) -> PyResult<()> {
+    let _generator = py_frame()?;
+    let Value::List(parts) = op else { panic!("an op") };
+    let method = parts[0].as_str().expect("a method");
+    let kwargs = crate::plumber::obj_from_value(&parts[1]).expect("a kwargs dict");
+    let label = format!("serialize {}", canon(op));
+    let none = PyValue::None;
+    let options = SerializeOptions {
+        object_types: kwargs.get("object_types").unwrap_or(&none).clone(),
+        include_attrs: kwargs.get("include_attrs").unwrap_or(&none).clone(),
+        exclude_attrs: kwargs.get("exclude_attrs").unwrap_or(&none).clone(),
+        precision: kwargs.get("precision").cloned(),
+        indent: kwargs.get("indent").cloned(),
+    };
+    let names = |page: &Page| page_names(page);
+    // getattr(page, method)(**kwargs): the builtin's call, then the bound
+    // method's from C
+    let called = (|| -> PyResult<()> {
+        drop(SERIALIZE_GETATTR.builtin_call()?);
+        Ok(())
+    })();
+    let value = match called {
+        Err(e) => Err(e),
+        Ok(()) => {
+            let entry = eval_entry();
+            match entry {
+                Err(e) => Err(e),
+                Ok(entry) => {
+                    let value = match method {
+                        "to_dict" => page.to_dict(&options.object_types).map(PyValue::Dict),
+                        "to_json" => page.to_json(&options).map(PyValue::Str),
+                        "to_csv" => page.to_csv(&options).map(PyValue::Str),
+                        other => panic!("no method {other}"),
+                    };
+                    drop(entry);
+                    value.map(|v| match &v {
+                        PyValue::Dict(d) => names(page).and_then(|names| page_dict(d, &names)),
+                        PyValue::Str(t) => names(page).map(|n| Value::py_str(&n.text(t))),
+                        _ => unreachable!("a dict or a str"),
+                    })
+                }
+            }
+        }
+    };
+    let value = match value {
+        Ok(v) => v?,
+        Err(e) => {
+            lines.push(format!("{label} {}", exc_text(&e)));
+            return Ok(());
+        }
+    };
+    let text = canon(&value);
+    if text.len() > OUT_LIMIT {
+        lines.push(format!("serialized {} {} {}", canon(op), text.len(), &sha256_hex(text.as_bytes())[..16]));
+    } else {
+        lines.push(format!("{label} {text}"));
+    }
+    Ok(())
+}
+
+/// `page_lines(pdf, page, sha, index)`.
+fn page_lines(lines: &mut Lines, pdf: &PDF, page: &Rc<Page>, sha: &str, index: usize) -> PyResult<()> {
+    let _generator = py_frame()?;
+    lines.push(format!("page {} {}", page.page_number, canon(&s(&page.repr()))));
+    tree_lines(
+        lines,
+        "page_structure_tree",
+        || PAGE_STRUCTURE_TREE.get(page.class_name(), || page.structure_tree()),
+        || PDFStructTree::new(&pdf.core.doc, Scope::Page(page)),
+    )?;
+    let base = table(DOC_DERIVED_BASE);
+    let derived = table(DOC_DERIVED);
+    let mut all: Vec<&Value> = base.iter().collect();
+    all.extend(select(sha, index, &derived, DOC_DERIVED_PER_PAGE));
+    for steps in all {
+        derived_lines(lines, page, steps)?;
+    }
+    let serialize = table(DOC_SERIALIZE);
+    for op in select(sha, index, &serialize, DOC_SERIALIZE_PER_PAGE) {
+        serialize_lines(lines, page, op)?;
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------- options
+
+/// `option_lines(path, password, max_pages, options)`.
+fn option_lines(lines: &mut Lines, input: &StageInput<'_>, options: &Value) -> PyResult<()> {
+    let _generator = py_frame()?;
+    lines.push(format!("options {}", canon(options)));
+    if has_option(options, "pages") {
+        let mut opts = OpenOptions::new();
+        set_options(&mut opts, options);
+        let pdf = match open_with(input, opts) {
+            Ok(pdf) => pdf,
+            Err(e) => {
+                lines.push(format!("open {}", exc_text(&e)));
+                return Ok(());
+            }
+        };
+        let selected = OPTION_SELECTED_PAGES.get("PDF", || pdf.pages()).map(|pages| {
+            Value::List(
+                pages
+                    .iter()
+                    .map(|p| Value::Tuple(vec![Value::Int(p.page_number.clone()), to_value(&p.initial_doctop)]))
+                    .collect(),
+            )
+        });
+        match selected {
+            Ok(v) => lines.push(format!("selected {}", canon(&v))),
+            Err(e) => lines.push(format!("selected {}", exc_text(&e))),
+        }
+        return Ok(());
+    }
+    let pdf = match open_pdf(input, |o| set_options(o, options)) {
+        Ok(pdf) => pdf,
+        Err(e) => {
+            lines.push(format!("open {}", exc_text(&e)));
+            return Ok(());
+        }
+    };
+    if has_option(options, "strict_metadata") {
+        lines.push(format!("metadata {}", canon(&crate::plumber::obj_value(&pdf.metadata))));
+        return Ok(());
+    }
+    let pages = match OPTION_PAGES.get("PDF", || pdf.pages()) {
+        Ok(pages) => pages,
+        Err(e) => {
+            lines.push(format!("pages {}", exc_text(&e)));
+            return Ok(());
+        }
+    };
+    if has_option(options, "unicode_norm") {
+        for page in pages.iter().take(DOC_NORM_PAGES) {
+            let texts = OPTION_CHARS
+                .get(page.class_name(), || page.chars())
+                .and_then(|chars| chars.iter().map(|c| c.item("text").map(to_value)).collect::<PyResult<Vec<_>>>());
+            match texts {
+                Ok(texts) => lines.push(bounded(&format!("texts {}", page.page_number), &Value::List(texts))),
+                Err(e) => lines.push(format!("texts {} {}", page.page_number, exc_text(&e))),
+            }
+        }
+        return Ok(());
+    }
+    for page in &pages {
+        match OPTION_ANNOTS.get(page.class_name(), || page.annots()) {
+            Ok(annots) => {
+                lines.push(format!("annots {} {} {}", page.page_number, annots.len(), annots_digest(&annots)?))
+            }
+            Err(e) => lines.push(format!("annots {} {}", page.page_number, exc_text(&e))),
+        }
+    }
+    Ok(())
+}
+
+/// `password_lines(path, password, max_pages)`.
+fn password_lines(lines: &mut Lines, input: &StageInput<'_>) -> PyResult<()> {
+    let _generator = py_frame()?;
+    let wrong = match typed_json::parse(DOC_WRONG_PASSWORD) {
+        Ok(Value::Str(ref p)) => p.as_str().expect("a password without surrogates").to_owned(),
+        other => panic!("a password: {other:?}"),
+    };
+    let mut others: Vec<Option<&str>> = Vec::new();
+    if input.password_given {
+        others.push(None);
+    }
+    others.push(Some(&wrong));
+    for other in others {
+        let label = canon(&other.map_or(Value::None, s));
+        match open_pdf(input, |o| o.password = other.map(PyValue::str)) {
+            Ok(_) => lines.push(format!("password {label} ok")),
+            Err(e) => lines.push(format!("password {label} {}", exc_text(&e))),
+        }
+    }
+    Ok(())
+}
+
+// ------------------------------------------------------------------------------ stage
+
+fn run(input: &StageInput<'_>, out: &mut dyn Write) -> io::Result<()> {
+    terminated(out, |lines| body(input, lines))
+}
+
+fn body(input: &StageInput<'_>, lines: &mut Lines) -> PyResult<()> {
+    // file_sha256(path): a function
+    let sha = {
+        leaf(1)?;
+        sha256_hex(input.pdf)
+    };
+    let pdf = match open_pdf(input, |_| {}) {
+        Ok(pdf) => pdf,
+        Err(e) => {
+            lines.push(format!("open {}", exc_text(&e)));
+            return Ok(());
+        }
+    };
+    lines.push(format!("metadata {}", canon(&crate::plumber::obj_value(&pdf.metadata))));
+    tree_lines(
+        lines,
+        "structure_tree",
+        || PDF_STRUCTURE_TREE.get("PDF", || pdf.structure_tree()),
+        || PDFStructTree::new(&pdf.core.doc, Scope::Document(&pdf)),
+    )?;
+    let pages = match RUN_PAGES.get("PDF", || pdf.pages()) {
+        Ok(pages) => pages,
+        Err(e) => {
+            lines.push(format!("pages {}", exc_text(&e)));
+            Vec::new()
+        }
+    };
+    for (index, page) in pages.iter().enumerate() {
+        page_lines(lines, &pdf, page, &sha, index)?;
+    }
+    let to_dict = (|| -> PyResult<Value> {
+        let object_types = PyValue::list(["char", "rect", "line", "curve", "image"].iter().map(|t| PyValue::str(t)));
+        let value = pdf.to_dict(&object_types)?;
+        let pages = RUN_ZIP_PAGES.get("PDF", || pdf.pages())?;
+        let mut items = Vec::new();
+        for (k, v) in value.items() {
+            if k.as_str() == Some("pages") {
+                let dicts = v.as_seq().expect("a list of page dicts");
+                let mut out = Vec::new();
+                // zip(pdf.pages, value["pages"])
+                for (p, d) in pages.iter().zip(dicts) {
+                    let PyValue::Dict(d) = d else { panic!("a page dict") };
+                    out.push(page_dict(d, &page_names(p)?)?);
+                }
+                items.push((Value::py_str(k), Value::List(out)));
+            } else {
+                items.push((Value::py_str(k), to_value(v)));
+            }
+        }
+        Ok(Value::Dict(items))
+    })();
+    match to_dict {
+        Ok(v) => lines.push(format!("pdf_to_dict {}", digest(&v))),
+        Err(e) => lines.push(format!("pdf_to_dict {}", exc_text(&e))),
+    }
+    match pdf.close() {
+        Ok(()) => lines.push("close ok"),
+        Err(e) => lines.push(format!("close {}", exc_text(&e))),
+    }
+    match RUN_REOPENED_PAGES
+        .get("PDF", || pdf.pages())
+        .and_then(|reopened| reopened.first().map(|p| objects_digest(p)).transpose())
+    {
+        Ok(Some(v)) => lines.push(format!("closed_objects {}", canon(&v))),
+        Ok(None) => {}
+        Err(e) => lines.push(format!("closed_objects {}", exc_text(&e))),
+    }
+    for options in table(DOC_OPEN_OPTIONS).iter() {
+        option_lines(lines, input, options)?;
+    }
+    password_lines(lines, input)?;
+    Ok(())
+}

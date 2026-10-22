@@ -50,13 +50,17 @@ $PY -m oracle.trace --stage pages --max-pages 0 some.pdf    # 0 = every page
 ```
 
 Stages today: `psparser`, `objects`, `streams`, `pages`, `fonts`, `interp`,
-`layout`, `fonts_text`, `interp_text` (the list is `oracle/stages/`; the
-last five drive the pages as pdfplumber does, see `docs/architecture.md`,
-"Vague 3"; `fonts_text` and `interp_text` on pdfminer's `PDFTextDevice`
-instead of pdfplumber's device, to check the interpreter without the
-converter). Stages that load predefined CMaps need the provider on the
-Rust side: export `PDFPLUMBER_CMAP_DIR=<cache>/cmap/<fingerprint>` (the
-`cmap_dir` of the `cmaps` or `fonts` unit data) before `oracle.verify`. Paged stages stop after `--max-pages` pages (default 20).
+`layout`, `fonts_text`, `interp_text`, `plumber_objects`, `plumber_text`,
+`plumber_tables`, `plumber_doc` (the list is `oracle/stages/`; `fonts` to
+`interp_text` drive the pages as pdfplumber does, see
+`docs/architecture.md`, "Vague 3"; `fonts_text` and `interp_text` on
+pdfminer's `PDFTextDevice` instead of pdfplumber's device, to check the
+interpreter without the converter; the `plumber_*` stages, wave 4, call
+`pdfplumber.open` as a user does). Stages that load predefined CMaps need
+the provider on the Rust side: `oracle.verify` passes it
+(`--cmap-dir`, by default the directory of `oracle/codegen/cmaps.py` under
+the cache, written when missing); a direct `pdftrace` run takes
+`--cmap-dir` or `PDFPLUMBER_CMAP_DIR=<cache>/cmap/<fingerprint>`. Paged stages stop after `--max-pages` pages (default 20).
 The output is ASCII; it ends with `!end`, or with the exception that stopped
 the stage (`!PDFPasswordIncorrect("")`). Exit status 0 whenever a trace was
 written.
@@ -84,9 +88,11 @@ $PY -m oracle.verify --stage objects --set all -j 3 --json > objects.json
 $PY -m oracle.verify --stage pages --files a.pdf b.pdf --pdftrace target/debug/pdftrace
 ```
 
-For a stage whose module sets `ORACLE_INPUT` (`layout`: Python's `id()`
-order of its analysis), `verify` also passes `--oracle-dir <the stage's
-cache directory>`, where `pdftrace` reads the oracle's trace of each file.
+For a stage whose module sets `ORACLE_INPUT` (`layout` and
+`plumber_objects`: Python's `id()` order of their analysis;
+`plumber_text`: the matches of Python's `re` for `search`), `verify` also
+passes `--oracle-dir <the stage's cache directory>`, where `pdftrace` reads
+the oracle's trace of each file.
 
 `verify` builds the missing oracle traces (`-j` processes, default 3;
 `--timeout` 120 s per file, recorded as `!Timeout <limit>`), runs
