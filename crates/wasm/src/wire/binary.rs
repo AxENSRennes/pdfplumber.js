@@ -252,7 +252,7 @@ impl BinWriter {
                 }
                 self.align(8);
                 let out = self.extend_zeroed(8 * cells.len());
-                for (b, v) in out.chunks_exact_mut(8).zip(cells) {
+                for (b, v) in out.as_chunks_mut::<8>().0.iter_mut().zip(cells) {
                     let x = match v {
                         Cell::Num(x) => *x,
                         // a None of an optional column
@@ -284,7 +284,7 @@ impl BinWriter {
                 }
                 self.align(8);
                 let total = cells.iter().map(|v| if let Cell::Seq(items) = v { items.len() } else { 0 }).sum::<usize>();
-                let mut out = self.extend_zeroed(8 * total).chunks_exact_mut(8);
+                let mut out = self.extend_zeroed(8 * total).as_chunks_mut::<8>().0.iter_mut();
                 for v in cells {
                     if let Cell::Seq(items) = v {
                         for x in *items {
