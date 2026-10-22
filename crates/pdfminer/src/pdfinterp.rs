@@ -775,6 +775,23 @@ enum Op {
     Do,
 }
 
+/// The operator of a keyword in `execute`: `name =
+/// keyword_name(obj)` (the bytes decoded as UTF-8, invalid sequences
+/// ignored), `method = name.replace("*", "_a").replace('"',
+/// "_w").replace("'", "_q")`, then `hasattr(self, "do_" + method)`.
+/// Performance: a name that is UTF-8 without those three characters (every
+/// operator but `b*`, `B*`, `f*`, `W*`, `T*`, `'` and `"`) is its own
+/// method name, looked up without making the strings.
+fn keyword_op(name: &[u8]) -> Option<Op> {
+    match std::str::from_utf8(name) {
+        Ok(s) if !s.contains(['*', '"', '\'']) => Op::from_method(s),
+        _ => {
+            let name = decode_utf8_ignore(name);
+            Op::from_method(&name.replace('*', "_a").replace('"', "_w").replace('\'', "_q"))
+        }
+    }
+}
+
 impl Op {
     /// `hasattr(self, "do_" + method)`: the operator whose method is
     /// `do_<method>`.
@@ -1316,14 +1333,20 @@ impl PDFPageInterpreter {
     /// `do_m`, `do_l`, `do_c`, `do_v`, `do_y`: the operands as floats
     /// appended as the segment `(op, ...)`, or a warning.
     fn path_segment(&mut self, op: char, operands: &[&PDFStackT]) -> PyResult<()> {
+        // every operand converted, then the segment if all are floats (one
+        // vector: performance)
         let mut coords = Vec::with_capacity(operands.len());
+        let mut all = true;
         for x in operands {
-            coords.push(safe_float_counted(x)?);
+            match safe_float_counted(x)? {
+                Some(v) => coords.push(Num::Float(v)),
+                None => all = false,
+            }
         }
-        match coords.into_iter().collect::<Option<Vec<f64>>>() {
+        match all.then_some(coords) {
             // log.warning("Cannot ... because not all values in %r can be parsed as floats", point)
             None => LOG.warning()?,
-            Some(coords) => self.curpath.push(segment(op, &coords)),
+            Some(coords) => self.curpath.push((op, coords)),
         }
         Ok(())
     }
@@ -2288,11 +2311,9 @@ impl PDFPageInterpreter {
             };
             // keyword_name(obj): its frame
             leaf(1)?;
-            let name = decode_utf8_ignore(kwd.name());
-            let method = name.replace('*', "_a").replace('"', "_w").replace('\'', "_q");
             // hasattr(self, "do_" + method); elif settings.STRICT: raise
             // PDFInterpreterError(f"Unknown operator: {name!r}")
-            let Some(op) = Op::from_method(&method) else {
+            let Some(op) = keyword_op(kwd.name()) else {
                 continue;
             };
             let nargs = op.nargs();

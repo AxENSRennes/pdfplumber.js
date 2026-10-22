@@ -10,6 +10,10 @@
 //! ```sh
 //! cargo run --release -p pdftrace --example plumber_phases -- CMAP_DIR < list.tsv
 //! ```
+//!
+//! `PLUMBER_PHASES=1,2` runs only the phases listed (1 `layout`, 2
+//! `objects`, 3 text, 4 words, 5 tables; a later phase still computes
+//! what it needs), to count what a phase allocates.
 
 use std::io::BufRead;
 use std::rc::Rc;
@@ -30,6 +34,12 @@ fn main() {
 }
 
 fn run() {
+    // PLUMBER_PHASES=1,2 (say) runs only those phases (1 layout, 2 objects,
+    // 3 text, 4 words, 5 tables): the allocation counts of a phase
+    let phases: Vec<bool> = match std::env::var("PLUMBER_PHASES") {
+        Ok(v) => (0..6).map(|i| i == 0 || v.split(',').any(|p| p == i.to_string())).collect(),
+        Err(_) => vec![true; 6],
+    };
     for line in std::io::stdin().lock().lines() {
         let line = line.unwrap();
         let (path, password) = line.split_once('\t').unwrap_or((&line, ""));
@@ -53,6 +63,9 @@ fn run() {
         let kw = Obj::new();
         for p in &pages {
             let mut lap = |i: usize, f: &mut dyn FnMut()| {
+                if !phases.get(i).copied().unwrap_or(true) {
+                    return;
+                }
                 let s = Instant::now();
                 f();
                 t[i] += s.elapsed().as_secs_f64();
