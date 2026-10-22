@@ -1965,6 +1965,38 @@ tests/performances/Wasm), chaque constat revérifié :
   le mutant manuel du site y diffère (2 fenêtres sur 34 balisées).
 - **API JS** (types, `public-api.md`) : `pdf.pages` et `pdf.metadata`
   sont des promesses (pages paresseuses), les pages dérivées aussi.
+- **Vérification** : `plumber_*` identiques sur `adv-plumber` (199),
+  `adv-structure` (441), `adv-pages` (285), `adv-objects` (333) et sur
+  `all` (1 853, sauf `pdfjs-issue19624-text.pdf` pour `plumber_objects`,
+  limite connue du rang des `id()`) ; sur `adv-interp`, `plumber_objects`
+  et `plumber_doc` identiques, `plumber_text` (16) et `plumber_tables`
+  (12) diffèrent par l'ordre de coordonnées NaN dans `cluster_objects`
+  (écart documenté, `public-api.md`) ; étapes `psparser` à
+  `interp_text` identiques sur `quick` (150) ; rejeux de la frontière
+  (`js_runtime_unit`, 2 formats) identiques.
+- **Mutations** (lignes changées depuis `wave4/join`, `--in-diff`) :
+  frontière 62 mutants, 54 détectés, 6 non viables, 2 manqués (le bras
+  `strict_metadata` d'`open`, tué depuis par une session ; la garde de
+  `label_pages`, équivalente : la recherche du handle vivant retrouve
+  celui que la première occurrence a créé) ; pdfminer 44 mutants, 19
+  détectés, 23 manqués, tous dans le partage des instantanés
+  (`CMapDBCaches::same`, `Rest::same`, `capture`, `PyInterned::is_empty`),
+  tués depuis par des tests unitaires (repassés à la main dans une copie)
+  sauf trois équivalents : `same` → `false` et la garde de `capture` →
+  `false` (aucun partage : mémoire seulement ; le test qui exige le
+  partage tue les deux) et le bras `(Some, Some)` de `Interned::restore`
+  supprimé (le parcours remonte alors jusqu'à la racine : même ensemble,
+  plus lentement), `fmt` de `Debug for PyInterned` (texte de débogage) ;
+  pycompat et pdfplumber 24 mutants, 19 détectés, 4 non viables, 1 manqué
+  (`warnings::reset`, testé depuis). Passe `Ok(..)` : frontière 148
+  mutants, 131 détectés, 15 non viables, 1 délai (détecté), 1 manqué (la
+  garde de `label_pages`, ci-dessus) ; bibliothèque 47 mutants, 1 manqué
+  (`bind` des méthodes de `Page`, que la frontière précède : tué par un
+  test qui appelle la bibliothèque directement). À la main : les corps
+  `Ok(..)` sans `Default` d'`open` (options ignorées), `mask_filter`
+  (tout vrai), `get_attr_filter` (`AttrFilter::All`), le cadre de
+  `mask_of` (fenêtre `figures-filter`) et le site `MASK_OF_OBJECTS`
+  (fenêtre `climit-tf-list-filter`) : détectés.
 - **Laissés ouverts, documentés** (`public-api.md`, `port-strategy.md`) :
   les noms `inline-<k>` répétés d'une page à l'autre (décision de la
   vague 4 gardée), les flux d'images copiés entiers dans chaque résultat,

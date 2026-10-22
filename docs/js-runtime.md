@@ -403,7 +403,7 @@ et ses pages derrière des handles.
   d'une page à la limite des unités C puis le texte d'une page CJK, la
   même chose avec une police CJK sous la page profonde, `PDF.pages` qui
   lève à la limite des cadres puis un appel nul sur sa première page),
-  cherchée par dichotomie sur le script : 45 fenêtres de quatre
+  cherchée par dichotomie sur le script : 46 fenêtres de quatre
   profondeurs et 3 de huit. Les fenêtres de classe dichotomisent leur dernière
   opération, sur un second document : sur le premier, la seconde
   exécution (spécialisée, deux unités de moins) réussit à la profondeur où
