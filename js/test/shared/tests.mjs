@@ -192,11 +192,31 @@ async function replaySession(lib, input, out, readFile) {
       if (!(e instanceof lib.PDFPlumberError)) throw e;
       got = { exception: e.name, message: e.message };
     }
-    assertSame(got, want, where);
+    assertSame(inlineNames(got, lib), inlineNames(want, lib), where);
     checked++;
   }
   lib.dropCore();
   return checked;
+}
+
+/** `v` with the name of each inline image as `"<inline>"`: pdfminer names
+ * one `str(id(stream))`, the port `inline-<k>` (docs/public-api.md, "Not
+ * Ported"). */
+function inlineNames(v, lib) {
+  if (Array.isArray(v)) return v.map((x) => inlineNames(x, lib));
+  if (v === null || typeof v !== "object" || Object.getPrototypeOf(v) !== Object.prototype) return v;
+  const s = v.stream;
+  const inline = v.object_type === "image" && s && typeof s === "object" && s.objid === null;
+  const o = {};
+  for (const k of Object.keys(v)) {
+    Object.defineProperty(o, k, {
+      value: inline && k === "name" ? "<inline>" : inlineNames(v[k], lib),
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+  }
+  return o;
 }
 
 function assert(cond, message) {

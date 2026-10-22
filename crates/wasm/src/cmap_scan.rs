@@ -4,9 +4,11 @@
 //! (`crate::ops`, "Void calls") become rare.
 //!
 //! `doc_cmap_scan` (on a document handle) reads the document again, apart
-//! from its `PDF` (a new `PDFDocument` of the same bytes and password,
-//! every object of its cross-reference tables), and lists the names of
-//! the predefined CMaps its fonts name: the `/Encoding` of a `Type0` font
+//! from its `PDF` (a new `PDFDocument` of the same bytes and password, its
+//! page tree and the fonts of each node's resources: no content stream or
+//! XObject, whose data would be copied for nothing; a font used only in a
+//! Form XObject is loaded lazily), and lists the names of the predefined
+//! CMaps its fonts name: the `/Encoding` of a `Type0` font
 //! (or the `/UseCMap` of an embedded CMap), and the unicode map of a CID
 //! font's `/CIDSystemInfo` (`to-unicode-<Registry>-<Ordering>`, what
 //! `CMapDB.get_unicode_map` loads), among those JavaScript can provide
@@ -27,7 +29,7 @@ use std::rc::Rc;
 
 use pdfminer::pdfdocument::PDFDocument;
 use pdfminer::pdfparser::FileKind;
-use pdfminer::pdftypes::{ObjId, PDFDict, PDFObject};
+use pdfminer::pdftypes::{PDFDict, PDFObject};
 use pdfminer::process_state::ProcessState;
 use pdfminer::psparser::LiteralName;
 use pdfplumber::obj::PyValue;
@@ -35,7 +37,7 @@ use pycompat::diagnostics::{self, Level};
 use pycompat::PyResult;
 use rustc_hash::FxHashSet;
 
-/// The most objects a scan reads.
+/// The most nodes of the page tree a scan reads.
 pub const MAX_OBJECTS: usize = 1 << 20;
 
 /// The names of the predefined CMaps the fonts of the document `data`
@@ -64,20 +66,34 @@ fn password(options: &PyValue) -> String {
 
 fn scan_objects(data: &Rc<[u8]>, options: &PyValue, found: &mut BTreeSet<String>) -> PyResult<()> {
     let doc = PDFDocument::open(data.clone(), FileKind::BytesIO, &password(options))?;
-    let mut seen: FxHashSet<ObjId> = FxHashSet::default();
-    for xref in doc.xrefs() {
-        for objid in xref.get_objids() {
-            let objid = objid?;
-            if !seen.insert(objid.clone()) {
+    // the page tree, from the catalog: the fonts of each node's resources
+    // (no content stream, no XObject is read: their data would be copied
+    // for nothing)
+    let mut stack: Vec<PDFObject> = doc.catalog().get("Pages").into_iter().collect();
+    let mut seen: FxHashSet<String> = FxHashSet::default();
+    let mut nodes = 0;
+    while let Some(node) = stack.pop() {
+        if let PDFObject::Ref(r) = &node {
+            if !seen.insert(r.objid().to_string()) {
                 continue;
             }
-            if seen.len() > MAX_OBJECTS {
-                return Ok(());
+        }
+        nodes += 1;
+        if nodes > MAX_OBJECTS {
+            break;
+        }
+        let Some(d) = resolved(&node).as_ref().and_then(dict_of) else { continue };
+        if let Some(fonts) = d.get("Resources").as_ref().and_then(resolved).as_ref().and_then(dict_of) {
+            if let Some(fonts) = fonts.get("Font").as_ref().and_then(resolved).as_ref().and_then(dict_of) {
+                for (_, font) in fonts.items() {
+                    if let Some(font) = resolved(&font) {
+                        font_cmaps(&font, found);
+                    }
+                }
             }
-            // an object that cannot be read names nothing
-            if let Ok(obj) = doc.getobj(&objid) {
-                font_cmaps(&obj, found);
-            }
+        }
+        if let Some(PDFObject::List(kids)) = d.get("Kids").as_ref().and_then(resolved) {
+            stack.extend(kids.to_vec().into_iter().rev());
         }
     }
     Ok(())
