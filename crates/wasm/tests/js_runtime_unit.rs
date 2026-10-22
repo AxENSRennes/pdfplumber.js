@@ -802,7 +802,8 @@ fn replay_session(format: &str, name: &str, cases: &[Value], out: &Value) -> usi
             }
         };
         let got = objs.relabel_pages(got);
-        assert_eq!(got, want, "{where_}");
+        let (got, want) = (inline_names(got), inline_names(want));
+        assert!(got == want, "{where_}: {}", js_diff(&got, &want).unwrap_or_default());
         checked += 1;
     }
     checked
