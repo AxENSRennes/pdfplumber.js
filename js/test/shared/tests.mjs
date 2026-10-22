@@ -968,6 +968,18 @@ export const tests = [
       } finally {
         await t.setFormat("binary");
       }
+      // the same stream in a result of the core itself (no document): another
+      // object, read through the core
+      const viaCore = await t.call("page_attr", ["images"], page.handle);
+      assert(viaCore[0].stream !== s && viaCore[0].stream.handle === s.handle, "another owner, another object");
+      assertSame(await viaCore[0].stream.data, decoded, "read through the core");
+      if (t.core.run) {
+        // a response decoded outside its core: a stream that cannot be read
+        const view = t.core.run(lib.encodeRequest("page_attr", page.handle, ["images"], 0));
+        const outside = lib.decodeResponse(view).value;
+        t.core.release();
+        await rejects(outside[0].stream.rawdata, (e) => assert(/outside its core/.test(e.message), e.message), "outside");
+      }
       // PDF.close(): the stream keeps its bytes, as in Python
       await pdf.close();
       assertSame(await s.data, decoded, "after close()");
@@ -979,6 +991,10 @@ export const tests = [
       assertSame(snap.rawdata, new Uint8Array([1]), "a snapshot's rawdata");
       assertSame(await snap.getRawdata(), new Uint8Array([1]), "a snapshot's get_rawdata()");
       await rejects(snap.getData(), (e) => assert(e instanceof Error, e.name), "a snapshot not decoded");
+      // a typed stream (the harness's format) projected: its values kept
+      const projected = lib.project(new lib.PDFStream(1, 0, new lib.PyDict([]), new Uint8Array([2]), null));
+      assertSame(projected.rawdata, new Uint8Array([2]), "projected rawdata");
+      assertSame(projected.data, null, "projected data");
     },
   },
   {
