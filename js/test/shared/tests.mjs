@@ -896,6 +896,7 @@ export const tests = [
         assertSame(text, expected.text, rel);
         const want = [...expected.cmaps, ...expected.umaps.map((u) => `to-unicode-${u}`)].sort();
         assertSame([...loads].sort(), want, `${rel}: the CMaps fetched`);
+        assert(t.core.voidCalls > 0, `${rel}: the lazy loading made void calls`);
         await t.free(doc);
         checked++;
       }
@@ -939,6 +940,14 @@ export const tests = [
       assertSame(await s.rawdata, null, "rawdata once decoded");
       assertSame(await s.data, decoded, "data once decoded");
       assertSame(await s.get_data(), decoded, "get_data() again");
+      // the JSON results hold the same references
+      const t = await lib.internals();
+      await t.setFormat("json");
+      try {
+        assert((await page.images)[0].stream === s, "a reference in a JSON result");
+      } finally {
+        await t.setFormat("binary");
+      }
       // PDF.close(): the stream keeps its bytes, as in Python
       await pdf.close();
       assertSame(await s.data, decoded, "after close()");
