@@ -533,17 +533,21 @@ impl Core {
             }
             "page_search" => {
                 // [kwargs, matches, return_groups, return_chars, main_group,
-                // named], as `textmap_search` (crate::ops) takes them
+                // named, code_points], as `textmap_search` (crate::ops)
+                // takes them; `code_points` true (the harness of js/trace,
+                // which gives Python's matches): the offsets are Python's
+                // code point offsets, not JavaScript's UTF-16 ones
                 let a = a()?;
                 let page = self.page(h)?;
                 let raw_matches = seq(arg(a, 1)?)?;
                 let none = PyValue::None;
                 let named_arg = a.get(5).unwrap_or(&none);
+                let code_points = a.get(6).is_some_and(PyValue::truthy);
                 // the named groups of each match, read with the matches
                 // (inside `search`, before the main group of any of them)
                 let named = std::cell::RefCell::new(None::<Vec<NamedGroups>>);
                 let mut read = |text: &PyStr| -> PyResult<Vec<RegexMatch>> {
-                    let index = Utf16Index::new(text);
+                    let index = if code_points { Utf16Index::identity(text) } else { Utf16Index::new(text) };
                     let mut matches = Vec::with_capacity(raw_matches.len());
                     for m in raw_matches {
                         let spans = seq(m)?.iter().map(|s| index.span(s)).collect::<PyResult<Vec<_>>>()?;

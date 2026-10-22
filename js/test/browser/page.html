@@ -7,6 +7,7 @@
   // window.runTest(name, { worker }) for each one.
   import * as lib from "/dist/browser/internal.js";
   import { tests } from "/js/test/shared/tests.mjs";
+  import { replayApiSession } from "/js/test/shared/api-sessions.mjs";
 
   const lines = new Map();
   const ctx = {
@@ -39,6 +40,25 @@
     try {
       await t.run(ctx);
       return { ok: true };
+    } catch (e) {
+      return { ok: false, error: `${e && e.name}: ${e && e.message}\n${e && e.stack}` };
+    } finally {
+      lib.configure({});
+    }
+  };
+  // the sessions of the public API (oracle/unit/js_api.py): api.spec.ts
+  // calls window.runApiSession(name, { worker }) for each one
+  let apiLines;
+  window.runApiSession = async (name, { worker = false } = {}) => {
+    apiLines ??= (await (await fetch("/oracle-api/sessions.jsonl")).text())
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l));
+    const line = apiLines.find((l) => l.in[0].name === name);
+    lib.configure(worker ? { worker: true } : {});
+    try {
+      const checked = await replayApiSession(lib, line, ctx);
+      return { ok: true, checked };
     } catch (e) {
       return { ok: false, error: `${e && e.name}: ${e && e.message}\n${e && e.stack}` };
     } finally {

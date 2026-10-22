@@ -434,6 +434,12 @@ impl Utf16Index {
         Utf16Index { cp }
     }
 
+    /// Offsets that are already code point offsets of `s` (Python's own
+    /// matches, `page_search` with `code_points`).
+    pub(crate) fn identity(s: &PyStr) -> Utf16Index {
+        Utf16Index { cp: (0..=s.code_points().count()).map(Some).collect() }
+    }
+
     /// A JavaScript span (`[start, end]`, or `None`).
     pub(crate) fn span(&self, s: &PyValue) -> PyResult<Option<(usize, usize)>> {
         match s {

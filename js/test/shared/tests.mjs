@@ -395,7 +395,7 @@ export const tests = [
         const info = await t.info();
         assert(info.handles === 1 && !t.core.crashed, JSON.stringify(info));
       } finally {
-        await pdf.close();
+        await pdf.release();
       }
     },
   },
@@ -761,22 +761,30 @@ export const tests = [
     },
   },
   {
-    name: "open() reads every input kind; page features are not implemented yet",
+    name: "open() reads every input kind; the document is closed, then released",
     async run({ lib, readFile, fileInput, missingInput }) {
       const rel = "corpus/micro/text-operators.pdf";
       const bytes = await readFile(rel);
       const inputs = [bytes, bytes.slice().buffer, new Blob([bytes]), fileInput(rel)];
       if (typeof fileInput(rel) === "string") inputs.push(new URL(fileInput(rel), globalThis.location?.href ?? "file:///"));
+      let text;
       for (const input of inputs) {
         const pdf = await lib.open(input);
         try {
           // lazy, as pdfplumber's: open() resolves, the pages are a promise
-          await rejects(pdf.pages, (e) => assert(e instanceof lib.NotImplemented, e.name), "pages");
-          await rejects(pdf.annots, (e) => assert(e instanceof lib.NotImplemented, e.name), "annots");
+          const pages = await pdf.pages;
+          assert(pages.length === 1 && pages[0] === (await pdf.pages)[0], "the same pages");
+          const t = await pages[0].extractText();
+          assert(text === undefined || t === text, "the same text from every input");
+          text = t;
+          assert(Array.isArray(await pdf.annots), "annots");
         } finally {
           await pdf.close();
           await pdf.close();
+          await pdf.release();
+          await pdf.release();
         }
+        await rejects(pdf.pages, (e) => assert(e instanceof lib.DocumentReleased, e.name), "released");
       }
       await rejects(lib.open(missingInput()), (e) => assert(e instanceof Error && !(e instanceof lib.PDFPlumberError), e.name), "missing file");
       await rejects(lib.open(42), (e) => assert(e instanceof TypeError, e.name), "bad input");
@@ -792,7 +800,7 @@ export const tests = [
         const where = `open(${path}, ${JSON.stringify(fromTyped(optionsT, lib), (k, v) => (v instanceof Uint8Array ? [...v] : v))})`;
         assert(out === null, `${where}: Python raised; replayed once the page layer lands`);
         const pdf = await lib.open(await readFile(path), options);
-        await pdf.close();
+        await pdf.release();
         checked++;
       }
       assert(checked >= 9, `${checked} cases`);
@@ -807,7 +815,7 @@ export const tests = [
       const before = t.core.memoryBytes();
       const pdf = await lib.open(pdfWithStream(size));
       const grown = t.core.memoryBytes() - before;
-      await pdf.close();
+      await pdf.release();
       assert(grown < 1.5 * size, `memory grew by ${grown} bytes for ${size}`);
     },
   },

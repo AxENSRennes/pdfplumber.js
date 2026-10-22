@@ -81,6 +81,10 @@ GENERATORS: dict[str, tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]] = {
     # plumber_doc traces on it and on the quick files with structure trees,
     # metadata containers or annotations; codecs cases (minutes)
     "structure": (("meta.json",), ((),)),
+    # sessions of the public JavaScript API (wave 5): calls, the statements
+    # of js_pages_run.py they run, Python's results; reads adv-plumber
+    # (written by "plumber", run before; a minute)
+    "js_api": (("meta.json",), ((),)),
 }
 
 

@@ -23,8 +23,13 @@ process is a pdfplumber user's.
 A case is ``[op, target, args, path or bytes, ...]`` (the generator may
 append what the replays need): ``target`` the index of
 the object the operation applies to (a document, page or table this
-session made), ``args`` as ``pages.rs`` takes them, the PDF of a
-``doc_open`` as a path or its bytes. Two operations differ from the
+session made), or ``[c, i]``, the ``i``-th object case ``c`` made (the
+sessions of the public API, ``oracle/unit/js_api.py``), ``args`` as
+``pages.rs`` takes them, the PDF of a ``doc_open`` as a path or its bytes;
+``doc_open_file`` (``[path, options]``) opens the path itself
+(``pdfplumber.open(path)``: the ``PDF`` owns the file). ``OUT`` also
+gets, for each case, the exceptions its exception wraps (``causes``:
+``e.args[0]``, recursively), what a JavaScript error has as ``cause``. Two operations differ from the
 boundary's: ``search`` (``[pattern, options]``, the JavaScript pattern
 being the same: ``js_runtime.py`` picks patterns that match alike) is one
 statement, ``page.search(pattern, **options)``, written with the text it
@@ -206,10 +211,29 @@ if __name__ == "__main__":
         cases = decode(json.load(f))
     objs = OBJS
     results = []
+    #: the exception each exception wraps (``e.args[0]``, pdfplumber's
+    #: ``PdfminerException(e)``), as ``[[name, message], ...]``: what a
+    #: JavaScript error carries as ``cause``
+    causes = []
+    #: the objects each case made (their indices in ``objs``): a target
+    #: ``[c, i]`` is the ``i``-th object case ``c`` made
+    made = []
     top = depth()
     for case in cases:
         op, target, args, data = case[:4]
-        obj = None if target is None else objs[target]
+        if type(target) is list:
+            if target[1] >= len(made[target[0]]):
+                # the object was not made (the case that makes it raised, or
+                # made fewer): nothing runs, as the API makes no call on an
+                # object it does not have
+                results.append([encode({"$unresolved": True}), None])
+                causes.append([])
+                made.append([])
+                continue
+            obj = objs[made[target[0]][target[1]]]
+        else:
+            obj = None if target is None else objs[target]
+        first = len(objs)
         extra = None
         try:
             if op == "doc_open":
@@ -217,6 +241,10 @@ if __name__ == "__main__":
                     with open(data, "rb") as f:
                         data = f.read()
                 result = pdfplumber.open(io.BytesIO(data), **(args[0] or {}))
+                result = handle(objs, result)
+            elif op == "doc_open_file":
+                # pdfplumber.open(path, **options): the file opened by the PDF
+                result = pdfplumber.open(data, **(args[1] or {}))
                 result = handle(objs, result)
             elif op == "doc_metadata":
                 result = obj.metadata
@@ -277,6 +305,12 @@ if __name__ == "__main__":
                 result = obj.extract_text_lines(*args[:2], **args[2])
             elif op == "search":
                 pattern, options = args
+                if type(pattern) is dict:
+                    # {"$compiled": source}: a compiled pattern (a RegExp
+                    # of the API), compiled before the statement
+                    import re
+
+                    pattern = re.compile(pattern["$compiled"])
                 result = obj.search(pattern, **options)
             elif op == "page_crop":
                 derived = obj.crop(args[0], **args[1])
@@ -334,6 +368,8 @@ if __name__ == "__main__":
             import re
 
             pattern, options = args
+            if type(pattern) is dict:
+                pattern = pattern["$compiled"]
             kw = {k: v for k, v in options.items()
                   if k not in ("regex", "case", "main_group", "return_chars", "return_groups")}
             text = obj.get_textmap(**tuplify_list_kwargs(kw)).as_string
@@ -347,7 +383,13 @@ if __name__ == "__main__":
         # encoded with room, the limit put back before the next statement
         sys.setrecursionlimit(20000)
         results.append([encode(result), encode(extra)])
+        chain = []
+        while isinstance(result, BaseException) and len(result.args) == 1 and isinstance(result.args[0], BaseException):
+            result = result.args[0]
+            chain.append(encode(result))
+        causes.append(chain)
+        made.append(list(range(first, len(objs))))
         sys.setrecursionlimit(1000)
     sys.setrecursionlimit(20000)
     with open(sys.argv[2], "w") as f:
-        json.dump({"depth": top, "results": results}, f)
+        json.dump({"depth": top, "results": results, "causes": causes}, f)

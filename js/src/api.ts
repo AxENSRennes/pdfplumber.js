@@ -137,13 +137,19 @@ export function diagnosticsPolicy(options: OpenOptions, page?: number): Diagnost
   };
 }
 
-/** The keyword arguments of `pdfplumber.open` among the options, as they
- * are: pdfplumber checks none of them at `open()`, and the ported code
- * raises Python's errors where Python does (an `unicode_norm` it does not
- * know when the text is normalized, `pages` when the pages load...). */
+/** The keyword arguments of `pdfplumber.open`: every option but the API's
+ * own (`logLevel`, `onWarning`), as they are: pdfplumber checks none of
+ * them at `open()` but their names (an unknown one is Python's
+ * `TypeError`), and the ported code raises Python's errors where Python
+ * does (an `unicode_norm` it does not know when the text is normalized,
+ * `pages` when the pages load...). */
 function openKwargs(options: OpenOptions): Record<string, unknown> {
-  const { pages, password, laparams, unicode_norm, raise_unicode_errors, strict_metadata } = options;
-  return { pages, password, laparams, unicode_norm, raise_unicode_errors, strict_metadata };
+  const kwargs: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(options)) {
+    if (k === "logLevel" || k === "onWarning") continue;
+    Object.defineProperty(kwargs, k, { value: v, enumerable: true, writable: true, configurable: true });
+  }
+  return kwargs;
 }
 
 /** A document released (`release()`, `await using`) is no longer in the
@@ -479,18 +485,6 @@ interface TableValue {
  * go to the text map). */
 const SEARCH_ARGS = new Set(["regex", "case", "main_group", "return_chars", "return_groups"]);
 
-/** UTF-16 offset of each code point offset of `text`. */
-function utf16Offsets(text: string): number[] {
-  const out: number[] = [];
-  let u = 0;
-  for (const c of text) {
-    out.push(u);
-    u += c.length;
-  }
-  out.push(u);
-  return out;
-}
-
 /** A page (`pdfplumber.page.Page`), or a page derived from one (`crop`,
  * `filter`...). Coordinates follow pdfplumber (top-left origin).
  *
@@ -681,25 +675,25 @@ export class PDFPlumberPage {
     const kw: Record<string, unknown> = {};
     const own: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(options)) (SEARCH_ARGS.has(k) ? own : kw)[k] = v;
-    // the pattern is compiled first: its errors are the call's
-    const re = oracle ? undefined : compilePattern(pattern, { regex: own.regex as boolean, case: own.case as boolean });
     return this.pdf.job(async (call) => {
       const opts = this.pdf.callOptions(this.page_number);
+      // the text map first (`page.get_textmap(...)`), then the pattern:
+      // pdfplumber raises its errors (a RegExp with `regex: false`...) in
+      // `TextMap.search`, once the text map is computed
       const text = (await call("page_search_text", this.handle, [kw], opts)) as string;
       let spans: ([number, number] | null)[][];
       let named: Record<string, [number, number] | null>[] | null;
       if (oracle) {
-        const u = utf16Offsets(text);
-        const conv = (s: [number, number] | null): [number, number] | null => (s ? [u[s[0]], u[s[1]]] : null);
-        spans = oracle.spans.map((m) => m.map(conv));
-        named = oracle.named ? oracle.named.map((g) => Object.fromEntries(Object.entries(g).map(([k, s]) => [k, conv(s)]))) : null;
+        // Python's matches, in code points: the core takes them as they are
+        spans = oracle.spans;
+        named = oracle.named ?? null;
       } else {
-        ({ spans, named } = matchSpans(text, re!));
+        ({ spans, named } = matchSpans(text, compilePattern(pattern, { regex: own.regex as boolean, case: own.case as boolean })));
       }
       return (await call(
         "page_search",
         this.handle,
-        [kw, spans, own.return_groups ?? true, own.return_chars ?? true, own.main_group ?? 0, named],
+        [kw, spans, own.return_groups ?? true, own.return_chars ?? true, own.main_group ?? 0, named, oracle !== undefined],
         opts,
       )) as SearchResult[];
     });
