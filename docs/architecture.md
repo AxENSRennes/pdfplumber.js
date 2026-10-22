@@ -2195,6 +2195,16 @@ opérations en attente (`finder ...` de `debug_tablefinder` ; `tree`,
 `find_all`, `find`, `mcids`, `element_bbox`, `element_repr` de
 `PDFStructTree`).
 
+Vérification de la base (commit de fin de `wave5/base`, `heavy.sh`) :
+`scripts/check.sh` vert (42 min ; vitest : 123 tests, dont les 40 sessions
+sur les sources et sur `dist`, et `canon.mjs` contre les 6 292 cas
+d'`oracle/unit/canon.py` ; `plumber_objects` et `plumber_text` par l'API
+sur `micro` : 17/17) ; `scripts/check-browsers.sh` vert (345 tests en
+17 min : les tests du runtime et les 39 sessions qui ne sont pas
+`node_only`, dans Chromium, Firefox et WebKit, dans la page et en worker) ;
+`plumber_text` par l'API sur `quick` repassé après la correction des
+spans : 150/150.
+
 ### Chantiers et propriété des fichiers
 
 | Chemins | API | BOUNDARY | PERF |
