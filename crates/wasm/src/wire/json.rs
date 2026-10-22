@@ -323,6 +323,10 @@ impl Writer for JsonWriter {
     fn page(&mut self) {
         self.special_open("page", 2);
     }
+
+    fn stream_ref(&mut self) {
+        self.special_open("streamref", 4);
+    }
 }
 
 /// Encodes a value as JSON; the flag says whether it needs the fixup walk.

@@ -27,6 +27,8 @@ export const TAG = {
   TABLE: 0x10,
   INLINE_STR: 0x11,
   PAGE: 0x12,
+  /** A `PDFStream` by reference: handle, objid, genno, attrs (`streamRefs`). */
+  STREAM_REF: 0x13,
 } as const;
 
 export const COL = {
@@ -81,6 +83,7 @@ const enum K {
   REF,
   STREAM,
   PAGE,
+  STREAM_REF,
 }
 
 interface Frame {
@@ -319,6 +322,9 @@ class Reader {
         case TAG.PAGE:
           stack.push({ k: K.PAGE, arr: new Array(2), n: 2, i: 0 });
           continue;
+        case TAG.STREAM_REF:
+          stack.push({ k: K.STREAM_REF, arr: new Array(4), n: 4, i: 0 });
+          continue;
         case TAG.TABLE:
           if (this.typed) throw new WireError("a table in a typed block");
           value = this.table();
@@ -353,6 +359,10 @@ class Reader {
           top.arr![top.i++] = value;
           if (top.i < top.n) break;
           value = new PageRef(top.arr![0] as number, top.arr![1] as number | bigint);
+        } else if (top.k === K.STREAM_REF) {
+          top.arr![top.i++] = value;
+          if (top.i < top.n) break;
+          value = streamRef(top.arr!);
         } else {
           top.arr![top.i++] = value;
           if (top.i < top.n) break;
@@ -562,6 +572,37 @@ export function decodeBinary(u8: Uint8Array, offset = 0, typed = false): unknown
 }
 
 // ---------------------------------------------------------------------------
+// Streams by reference
+
+/** What makes the `PDFStream` of a stream reference (its handle, `objid`,
+ * `genno`, `attrs`): the core whose response is decoded
+ * (core/runtime.ts `StreamRefs`), which reads its data on demand and keeps
+ * one object per stream. */
+export type StreamRefMaker = (handle: number, objid: number | bigint | null, genno: number | bigint | null, attrs: Record<string, unknown>) => PDFStream;
+
+let streamRefMaker: StreamRefMaker | undefined;
+
+/** Runs `f` (the decoding of a response) with the maker of its stream
+ * references. */
+export function withStreamRefs<T>(maker: StreamRefMaker | undefined, f: () => T): T {
+  const previous = streamRefMaker;
+  streamRefMaker = maker;
+  try {
+    return f();
+  } finally {
+    streamRefMaker = previous;
+  }
+}
+
+/** A stream reference's `PDFStream`: from the maker, or, decoded outside
+ * a core (a response copied elsewhere), a stream whose data cannot be
+ * read. */
+function streamRef(fields: unknown[]): PDFStream {
+  const [handle, objid, genno, attrs] = fields as [number, number | bigint | null, number | bigint | null, Record<string, unknown>];
+  return streamRefMaker ? streamRefMaker(handle, objid, genno, attrs) : PDFStream.reference(objid, genno, attrs, handle, null);
+}
+
+// ---------------------------------------------------------------------------
 // JSON results
 
 const hexBytes = (hex: string): Uint8Array => {
@@ -644,6 +685,13 @@ function fixup(root: unknown): unknown {
                 x.data as Uint8Array,
               ),
           ]);
+          break;
+        }
+        case "streamref": {
+          const s = { handle: sp[1], objid: sp[2], genno: sp[3], attrs: sp[4] };
+          for (const f of ["handle", "objid", "genno", "attrs"]) stack.push([s as Record<string, unknown>, f]);
+          holder[key] = s;
+          pending.push([holder, key, (x: Record<string, unknown>) => streamRef([x.handle, x.objid, x.genno, x.attrs])]);
           break;
         }
         case "page": {

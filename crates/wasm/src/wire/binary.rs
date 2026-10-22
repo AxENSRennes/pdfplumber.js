@@ -52,6 +52,9 @@ pub const TAG_STREAM: u8 = 0x0f;
 pub const TAG_TABLE: u8 = 0x10;
 pub const TAG_INLINE_STR: u8 = 0x11;
 pub const TAG_PAGE: u8 = 0x12;
+/// A `PDFStream` by reference: its handle, `objid`, `genno`, `attrs`
+/// ([`Writer::stream_ref`]).
+pub const TAG_STREAM_REF: u8 = 0x13;
 
 pub const COL_GENERIC: u8 = 0;
 pub const COL_F64: u8 = 1;
@@ -399,6 +402,10 @@ impl Writer for BinWriter {
 
     fn stream(&mut self) {
         self.buf.push(TAG_STREAM);
+    }
+
+    fn stream_ref(&mut self) {
+        self.buf.push(TAG_STREAM_REF);
     }
 
     fn page(&mut self) {
