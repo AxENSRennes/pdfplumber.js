@@ -121,6 +121,46 @@ impl Logger {
     pub fn error(&self) -> PyResult<()> {
         self.call(Level::Error)
     }
+
+    /// `self.<level>(msg, *args)` with the text of its record: the frames
+    /// of the call ([`Logger::call`], logging disabled: the reference),
+    /// then `message()`, the record's `getMessage()` (`msg % args`), to the
+    /// diagnostics channel ([`crate::diagnostics::emit`], under the
+    /// logger's name), formatted only when someone collects it. A message
+    /// that cannot be formatted (a `repr` that raises) is not emitted, as
+    /// `logging` drops a record whose formatting raises
+    /// (`Handler.handleError`). The text never changes a result.
+    pub fn log(&self, level: Level, message: impl FnOnce() -> PyResult<String>) -> PyResult<()> {
+        self.call(level)?;
+        let lvl = match level {
+            Level::Debug => crate::diagnostics::Level::Debug,
+            Level::Info => crate::diagnostics::Level::Info,
+            Level::Warning => crate::diagnostics::Level::Warning,
+            Level::Error => crate::diagnostics::Level::Error,
+        };
+        if crate::diagnostics::enabled(lvl) {
+            let mut message = Some(message);
+            emit_record(self.name, lvl, &mut || message.take().map_or_else(|| Ok(String::new()), |m| m()));
+        }
+        Ok(())
+    }
+
+    /// `self.warning(msg, *args)` with its text ([`Logger::log`]).
+    pub fn warning_with(&self, message: impl FnOnce() -> PyResult<String>) -> PyResult<()> {
+        self.log(Level::Warning, message)
+    }
+}
+
+/// Formats and emits a record, out of line: the formatting of the many
+/// call sites (a `repr` of operands...) stays out of the stack frames of
+/// the ported functions, which recurse (a frame that grows lowers the
+/// deepest recursion a thread's stack holds).
+#[inline(never)]
+#[cold]
+fn emit_record(name: &str, level: crate::diagnostics::Level, message: &mut dyn FnMut() -> PyResult<String>) {
+    if let Ok(text) = message() {
+        crate::diagnostics::emit(name, level, || text);
+    }
 }
 
 #[cfg(test)]

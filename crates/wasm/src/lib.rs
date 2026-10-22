@@ -13,12 +13,14 @@
 //! - `wire`: the result encodings (binary `PJB1`, JSON) and the argument
 //!   decoding; `strings`: Python `str` (lone surrogates included) to UTF-16.
 //! - `errors`: a Python exception as JavaScript receives it.
-//! - `cmaps`: predefined CMaps handed over by JavaScript, loaded lazily.
+//! - `cmaps`: predefined CMaps handed over by JavaScript, loaded lazily;
+//!   `cmap_scan`: the ones a document will probably ask for (preloading).
 //!
 //! The crate is also an `rlib`, so its logic is tested natively
 //! (`cargo test -p pdfplumber-wasm`), and in every browser by `js/test`.
 
 pub mod abi;
+pub mod cmap_scan;
 pub mod cmaps;
 pub mod errors;
 pub mod handles;

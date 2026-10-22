@@ -192,11 +192,31 @@ async function replaySession(lib, input, out, readFile) {
       if (!(e instanceof lib.PDFPlumberError)) throw e;
       got = { exception: e.name, message: e.message };
     }
-    assertSame(got, want, where);
+    assertSame(inlineNames(got, lib), inlineNames(want, lib), where);
     checked++;
   }
   lib.dropCore();
   return checked;
+}
+
+/** `v` with the name of each inline image as `"<inline>"`: pdfminer names
+ * one `str(id(stream))`, the port `inline-<k>` (docs/public-api.md, "Not
+ * Ported"). */
+function inlineNames(v, lib) {
+  if (Array.isArray(v)) return v.map((x) => inlineNames(x, lib));
+  if (v === null || typeof v !== "object" || Object.getPrototypeOf(v) !== Object.prototype) return v;
+  const s = v.stream;
+  const inline = v.object_type === "image" && s && typeof s === "object" && s.objid === null;
+  const o = {};
+  for (const k of Object.keys(v)) {
+    Object.defineProperty(o, k, {
+      value: inline && k === "name" ? "<inline>" : inlineNames(v[k], lib),
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+  }
+  return o;
 }
 
 function assert(cond, message) {
@@ -894,7 +914,12 @@ export const tests = [
         const text = await t.call("page_extract_text", [{}], pages[number - 1].handle);
         assertSame(text, expected.text, rel);
         const want = [...expected.cmaps, ...expected.umaps.map((u) => `to-unicode-${u}`)].sort();
-        assertSame([...loads].sort(), want, `${rel}: the CMaps fetched`);
+        // those of the page (and those the document's other fonts name)
+        for (const n of want) assert(loads.includes(n), `${rel}: ${n} fetched (${loads})`);
+        assertSame([...new Set(loads)].length, loads.length, `${rel}: each CMap fetched once`);
+        // the first void call of the document asks for every CMap its fonts
+        // name (crates/wasm/src/cmap_scan.rs): one void call
+        assert(t.core.voidCalls === 1, `${rel}: ${t.core.voidCalls} void calls`);
         await t.free(doc);
         checked++;
       }
@@ -938,6 +963,26 @@ export const tests = [
       assertSame(await s.rawdata, null, "rawdata once decoded");
       assertSame(await s.data, decoded, "data once decoded");
       assertSame(await s.get_data(), decoded, "get_data() again");
+      // the JSON results hold the same references
+      const t = await lib.internals();
+      await t.setFormat("json");
+      try {
+        assert((await page.images)[0].stream === s, "a reference in a JSON result");
+      } finally {
+        await t.setFormat("binary");
+      }
+      // the same stream in a result of the core itself (no document): another
+      // object, read through the core
+      const viaCore = await t.call("page_attr", ["images"], page.handle);
+      assert(viaCore[0].stream !== s && viaCore[0].stream.handle === s.handle, "another owner, another object");
+      assertSame(await viaCore[0].stream.data, decoded, "read through the core");
+      if (t.core.run) {
+        // a response decoded outside its core: a stream that cannot be read
+        const view = t.core.run(lib.encodeRequest("page_attr", page.handle, ["images"], 0));
+        const outside = lib.decodeResponse(view).value;
+        t.core.release();
+        await rejects(outside[0].stream.rawdata, (e) => assert(/outside its core/.test(e.message), e.message), "outside");
+      }
       // PDF.close(): the stream keeps its bytes, as in Python
       await pdf.close();
       assertSame(await s.data, decoded, "after close()");
@@ -949,6 +994,70 @@ export const tests = [
       assertSame(snap.rawdata, new Uint8Array([1]), "a snapshot's rawdata");
       assertSame(await snap.getRawdata(), new Uint8Array([1]), "a snapshot's get_rawdata()");
       await rejects(snap.getData(), (e) => assert(e instanceof Error, e.name), "a snapshot not decoded");
+      // a typed stream (the harness's format) projected: its values kept
+      const projected = lib.project(new lib.PDFStream(1, 0, new lib.PyDict([]), new Uint8Array([2]), null));
+      assertSame(projected.rawdata, new Uint8Array([2]), "projected rawdata");
+      assertSame(projected.data, null, "projected data");
+    },
+  },
+  {
+    name: "pdfplumber's and pdfminer's records and warnings reach onWarning as Python shows them",
+    async run({ lib, oracle }) {
+      const LEVELS = { debug: 10, info: 20, warning: 30, error: 40, critical: 50 };
+      let checked = 0;
+      let entries = 0;
+      for (const { in: input, out } of await oracle("diagnostics")) {
+        const [nameT, pdfT, optionsT, opsT] = input;
+        const name = fromTyped(nameT, lib);
+        const expected = fromTyped(out, lib);
+        // a new core: a new Python process (the registry of warnings.warn)
+        lib.dropCore();
+        const shown = [];
+        const pdf = await lib.open(fromTyped(pdfT, lib), {
+          ...fromTyped(optionsT, lib, true),
+          onWarning: (w) => shown.push([w.source, LEVELS[w.level], w.message]),
+        });
+        const settle = (p) => Promise.resolve(p).catch(() => undefined);
+        for (const op of fromTyped(opsT, lib)) {
+          if (op === "page_annots" || op === "page_objects") {
+            const pages = await settle(pdf.pages);
+            for (const page of pages ?? []) await settle(op === "page_annots" ? page.annots : page.objects);
+          } else if (op === "pages") await settle(pdf.pages);
+          else if (op === "doc_annots") await settle(pdf.annots);
+          else if (op === "doc_structure_tree") await settle(pdf.structure_tree);
+          else throw new Error(`unknown operation ${op}`);
+        }
+        await pdf.release();
+        assertSame(shown, expected, name);
+        entries += expected.length;
+        checked++;
+      }
+      lib.dropCore();
+      assert(checked >= 9 && entries >= 40, `${checked} cases, ${entries} records`);
+    },
+  },
+  {
+    name: "a long history makes the runtime hand over every CMap, after which the history goes",
+    only: "direct",
+    async run({ lib, oracle, readFile, readCMap }) {
+      const [{ in: input, out }] = (await oracle("documents")).filter((l) => fromTyped(l.in[0], lib).endsWith("pr-136-example.pdf"));
+      const expected = fromTyped(out, lib);
+      lib.configure({ cmaps: { load: (name) => readCMap(name) } });
+      try {
+        const t = await lib.internals();
+        await t.call("set_history_limit", [2]);
+        const pdf = await lib.open(await readFile(fromTyped(input[0], lib)), { onWarning() {} });
+        const page = (await pdf.pages)[fromTyped(input[1], lib) - 1];
+        // the third entry: every CMap is handed over after this call
+        assertSame(await page.extractText(), expected.text, "the text");
+        await page.chars;
+        assert((await t.info()).history === 0, "the history went");
+        assertSame(await page.extractText(), expected.text, "the text again");
+        assert((await t.info()).history === 0, "nothing is recorded any more");
+        await pdf.release();
+      } finally {
+        lib.configure({});
+      }
     },
   },
   {

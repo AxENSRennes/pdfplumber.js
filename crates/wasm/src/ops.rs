@@ -92,8 +92,8 @@ use crate::errors::write_error;
 use crate::handles::Handles;
 use crate::pages::{PageObj, TableObj};
 use crate::streams::StreamObj;
-use crate::structs::TreeObj;
 use crate::strings::PyStrRef;
+use crate::structs::TreeObj;
 use crate::wire::binary::BinWriter;
 use crate::wire::json::JsonWriter;
 use crate::wire::{binary, write_value, Writer};
@@ -112,6 +112,14 @@ pub const FORMAT_TYPED: u8 = 2;
 
 /// The most diagnostics one call keeps (the others are counted).
 pub const MAX_DIAGNOSTICS: usize = 1000;
+
+/// Bit 1 of the flags of a response: the history of the documents is
+/// longer than [`Core::history_limit`] (see the module documentation,
+/// "Freed handles"): JavaScript bounds it by handing over every CMap.
+pub const FLAG_HISTORY_LONG: u8 = 2;
+
+/// The length of the history past which the core asks for every CMap.
+pub const HISTORY_LIMIT: usize = 4096;
 
 /// A result encoding.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -147,6 +155,12 @@ pub struct Document {
     pub data: Rc<[u8]>,
     pub options: PyValue,
     pub state: DocState,
+    /// Whether calls that reached it were not recorded (every CMap was
+    /// handed over: `cmaps::complete`): its history cannot rebuild it.
+    pub unrecorded: bool,
+    /// Whether the CMaps its fonts name were looked for (at its first void
+    /// call: `crate::cmap_scan`).
+    pub scanned: bool,
 }
 
 /// The state a document derives from its bytes.
@@ -300,6 +314,9 @@ pub struct Core {
     /// The handles of the streams the results of the running call hold by
     /// reference (`Rc::as_ptr` -> handle: `crate::wire::with_value_handles`).
     pub(crate) stream_values: FxHashMap<usize, u32>,
+    /// The length of the history past which responses ask for every CMap
+    /// ([`FLAG_HISTORY_LONG`]; `set_history_limit`, for the tests).
+    pub(crate) history_limit: usize,
 }
 
 impl Default for Core {
@@ -496,6 +513,7 @@ impl Core {
             page_values: FxHashMap::default(),
             stream_refs: false,
             stream_values: FxHashMap::default(),
+            history_limit: HISTORY_LIMIT,
         }
     }
 
@@ -603,6 +621,11 @@ impl Core {
                 self.format = Format::parse(args)?;
                 PyValue::None
             }
+            "set_history_limit" => {
+                // (the tests of the bounded history)
+                self.history_limit = usize::try_from(int(arg(a()?, 0)?)?).map_err(|_| exc::ValueError("a limit"))?;
+                PyValue::None
+            }
             "set_stream_refs" => {
                 // whether results hold their streams by reference
                 // (crate::streams); the typed format writes them by value
@@ -697,7 +720,13 @@ impl Core {
                     crate::pages::open(&data, args)?
                 };
                 let state = DocState { pdf: Some(Rc::new(pdf)), ..DocState::default() };
-                let h = self.insert(Object::Document(Document { data, options: args.clone(), state }))?;
+                let h = self.insert(Object::Document(Document {
+                    data,
+                    options: args.clone(),
+                    state,
+                    unrecorded: false,
+                    scanned: false,
+                }))?;
                 self.reach(handle(&h)?)?;
                 h
             }
@@ -712,7 +741,13 @@ impl Core {
                 };
                 let state = DocState { pdf: Some(Rc::new(pdf)), ..DocState::default() };
                 let options = a.get(1).cloned().unwrap_or(PyValue::None);
-                let h = self.insert(Object::Document(Document { data, options, state }))?;
+                let h = self.insert(Object::Document(Document {
+                    data,
+                    options,
+                    state,
+                    unrecorded: false,
+                    scanned: false,
+                }))?;
                 self.reach(handle(&h)?)?;
                 h
             }
@@ -923,7 +958,18 @@ impl Core {
         let target = self.oids.get(&h).map_or(Target::Handle(h), |&oid| Target::Object(oid));
         let process = ProcessState::capture();
         let result = self.op(name, h, args, data.clone());
-        if let Some(doc) = self.op_doc.take() {
+        // once every CMap was handed over, no call can be void: the
+        // history is not needed (see the module documentation)
+        let recorded = self.op_doc.take().filter(|&doc| {
+            let complete = cmaps::complete();
+            if complete {
+                if let Some(Object::Document(d)) = self.handles.get_mut(doc) {
+                    d.unrecorded = true;
+                }
+            }
+            !complete
+        });
+        if let Some(doc) = recorded {
             let created = self.created[start..].iter().filter_map(|h| self.oids.get(h).copied()).collect();
             let call = self.calls;
             let outcome = result.as_ref().map(|_| ()).map_err(PyErr::clone);
@@ -1019,14 +1065,18 @@ impl Core {
             .into_iter()
             .filter(|d| matches!(self.handles.get(*d), Some(Object::Document(_))))
             .collect();
+        // a document some calls of which were not recorded cannot be
+        // rebuilt (only reached when CMaps become known after every known
+        // one was handed over)
+        let unrecorded = docs.iter().any(|d| matches!(self.handles.get(*d), Some(Object::Document(x)) if x.unrecorded));
         for (k, o) in self.handles.iter_mut() {
             if o.document(k).is_some_and(|d| docs.contains(&d)) {
                 o.reset();
             }
         }
         let entries: Vec<Entry> = self.history.iter().filter(|e| docs.contains(&e.doc)).cloned().collect();
-        let mut failed = None;
-        for e in &entries {
+        let mut failed = unrecorded.then(|| "calls that reached it were not recorded".to_owned());
+        for e in entries.iter().filter(|_| !unrecorded) {
             if let Err(reason) = self.replay_entry(e) {
                 failed = Some(reason);
                 break;
@@ -1066,6 +1116,15 @@ impl Core {
         self.stream_values.clear();
         self.op_doc = None;
         self.calls += 1;
+        if cmaps::complete() && !self.history.is_empty() {
+            // no call can be void any more: the history goes
+            self.history = Vec::new();
+            for (_, o) in self.handles.iter_mut() {
+                if let Object::Document(d) = o {
+                    d.unrecorded = true;
+                }
+            }
+        }
         let process = ProcessState::capture();
         let (result, collected) = {
             let parsed = self.decode_request(request).and_then(|req| {
@@ -1090,15 +1149,30 @@ impl Core {
                 }
             }
         };
-        let missing = cmaps::take_missing();
+        let mut missing = cmaps::take_missing();
         if !missing.is_empty() {
             // the re-run emits its own diagnostics: Python's, once
             drop((result, collected));
+            // the first void call of a document asks for every CMap its
+            // fonts name too (crate::cmap_scan): one void call where each
+            // of its CMaps would make one
+            for doc in self.touched.clone() {
+                if let Some(Object::Document(d)) = self.handles.get_mut(doc) {
+                    if !d.scanned {
+                        d.scanned = true;
+                        let (data, options) = (d.data.clone(), d.options.clone());
+                        let known =
+                            |n: &str| cmaps::is_known(n) && !cmaps::is_loaded(n) && !missing.iter().any(|m| m == n);
+                        let found = crate::cmap_scan::scan(&data, &options, &known);
+                        missing.extend(found);
+                    }
+                }
+            }
             self.void(process);
             let none = diagnostics::Collected::default();
             return response(STATUS_NEED_CMAPS, FORMAT_BINARY, false, &encode_names(&missing), &none);
         }
-        match result {
+        let mut out = match result {
             Ok(out) => match crate::wire::with_value_handles(
                 std::mem::take(&mut self.page_values),
                 std::mem::take(&mut self.stream_values),
@@ -1108,7 +1182,11 @@ impl Core {
                 Err(e) => response(STATUS_ERROR, FORMAT_BINARY, false, &encode_error(&e), &collected),
             },
             Err(e) => response(STATUS_ERROR, FORMAT_BINARY, false, &encode_error(&e), &collected),
+        };
+        if self.history.len() > self.history_limit {
+            out[6] |= FLAG_HISTORY_LONG;
         }
+        out
     }
 
     /// The request block (`[op, handle, args, level]`), the objects of a
@@ -1128,9 +1206,11 @@ impl Core {
             .and_then(|h| handle(&h).ok())
             .and_then(|h| self.handles.get(h).and_then(|o| o.document(h)))
             .and_then(|d| match self.handles.get(d) {
-                Some(Object::Document(d)) => d.state.pdf.as_ref().map(|pdf| {
-                    Rc::downgrade(&pdf.core.doc) as std::rc::Weak<dyn pdfminer::pdftypes::PDFResolver>
-                }),
+                Some(Object::Document(d)) => d
+                    .state
+                    .pdf
+                    .as_ref()
+                    .map(|pdf| Rc::downgrade(&pdf.core.doc) as std::rc::Weak<dyn pdfminer::pdftypes::PDFResolver>),
                 _ => None,
             });
         binary::decode_args(request, &mut |o| self.object_arg(o, doc.clone(), &mut refs))

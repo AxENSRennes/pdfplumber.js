@@ -23,6 +23,7 @@ pub mod fontmetrics;
 pub mod glyphlist;
 pub mod latin_enc;
 pub mod layout;
+pub mod log_text;
 pub mod lzw;
 pub mod pdfcolor;
 pub mod pdfdevice;

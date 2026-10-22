@@ -48,9 +48,8 @@ use pycompat::specialize::{AttrSite, CallSite};
 use pycompat::{exc, ExcKind, PyErr, PyResult, PyStr};
 use rustc_hash::FxHashMap;
 
-use crate::errors::write_error;
+use crate::errors::error_value;
 use crate::ops::{arg, group_index, kwargs, list_of_objs, opt_bbox, seq, Core, NamedGroups, Object, Out, Utf16Index};
-use crate::wire::write_value;
 
 /// A page handle: the page of a document (`pdf.pages[i]`) or a page
 /// derived from one.
@@ -312,30 +311,15 @@ fn page_boxes(page: &Page) -> Obj {
 /// statement of its own (a property that may raise, as `page.width` does
 /// for a crop box kept as given): its value, or its exception under
 /// `width_error`/`height_error` (the dict of `crate::errors`).
-fn page_info(page: &Page) -> Out {
-    let boxes = page_boxes(page);
-    let mut read = Vec::new();
+fn page_info(page: &Page) -> PyValue {
+    let mut d = page_boxes(page);
     for (name, site) in [("width", &PAGE_INFO_WIDTH), ("height", &PAGE_INFO_HEIGHT)] {
-        read.push(match site.get(page.class_name(), || if name == "width" { page.width() } else { page.height() }) {
-            Ok(v) => (name.to_owned(), Ok(v)),
-            Err(e) => (format!("{name}_error"), Err(e)),
-        });
+        match site.get(page.class_name(), || if name == "width" { page.width() } else { page.height() }) {
+            Ok(v) => d.set(name, v),
+            Err(e) => d.set(&format!("{name}_error"), error_value(&e)),
+        }
     }
-    Out::Written(Box::new(move |w| {
-        w.dict(boxes.len() + read.len());
-        for (k, v) in boxes.items() {
-            crate::wire::write_str(w, k)?;
-            write_value(w, v)?;
-        }
-        for (k, v) in &read {
-            w.str(k);
-            match v {
-                Ok(v) => write_value(w, v)?,
-                Err(e) => write_error(w, e),
-            }
-        }
-        Ok(())
-    }))
+    PyValue::Dict(d)
 }
 
 /// A derived page as JavaScript receives it: its handle, `page_number`
@@ -543,7 +527,7 @@ impl Core {
                 PyValue::None
             }
             // pages (`h`: the page)
-            "page_info" => return Ok(Some(page_info(&*self.page(h)?))),
+            "page_info" => page_info(&*self.page(h)?),
             "page_objects" => {
                 let page = self.page(h)?;
                 objects_value(&*PAGE_OBJECTS.get(page.class_name(), || page.objects())?)
@@ -745,7 +729,10 @@ impl Core {
                 let intersections = finder.intersections.points.iter().map(|((x, top), v, h)| {
                     PyValue::list([
                         PyValue::tuple([x.clone(), top.clone()]),
-                        PyValue::Dict(Obj::from_pairs([("v", list_of_objs(v.clone())), ("h", list_of_objs(h.clone()))])),
+                        PyValue::Dict(Obj::from_pairs([
+                            ("v", list_of_objs(v.clone())),
+                            ("h", list_of_objs(h.clone())),
+                        ])),
                     ])
                 });
                 PyValue::Dict(Obj::from_pairs([

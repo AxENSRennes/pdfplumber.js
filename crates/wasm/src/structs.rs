@@ -186,8 +186,18 @@ impl Core {
                     PyValue::None => None,
                     p => {
                         let p = handle(p)?;
-                        if self.page_doc(p) != h {
-                            return Err(exc::ValueError("invalid handle: not a page of this document"));
+                        match self.handles.get(p) {
+                            Some(Object::Page(x)) if x.doc == h => {}
+                            // Python takes it (the tree of one document, the
+                            // page of another); an operation reaches one
+                            // document (crate::ops, "Void calls")
+                            Some(Object::Page(_)) => {
+                                return Err(PyErr::new(
+                                    ExcKind::NotPorted,
+                                    "not modelled: PDFStructTree(pdf, page) of a page of another document",
+                                ))
+                            }
+                            _ => return Err(exc::ValueError("invalid handle")),
                         }
                         Some(self.page(p)?)
                     }
@@ -268,9 +278,10 @@ impl Core {
                 };
                 let paths = paths(&tree)?;
                 let path_of = |el: &Rc<PDFStructElement>| {
-                    paths.get(&(Rc::as_ptr(el) as usize)).cloned().ok_or_else(|| {
-                        PyErr::new(ExcKind::RuntimeError, "an element found outside its tree")
-                    })
+                    paths
+                        .get(&(Rc::as_ptr(el) as usize))
+                        .cloned()
+                        .ok_or_else(|| PyErr::new(ExcKind::RuntimeError, "an element found outside its tree"))
                 };
                 if name == "struct_find" {
                     match found.first() {

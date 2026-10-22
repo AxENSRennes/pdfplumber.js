@@ -420,10 +420,10 @@ def neutral(v: Any) -> Any:
 
 def page_geometry(g: dict[str, Any]) -> dict[str, Any]:
     """The geometry of a page value (``doc_pages``, ``page_info``) in the
-    order of ``GEOMETRY``, without its handle; ``width`` and ``height`` the
-    ``Error`` they throw when ``page_info`` gives their exception
-    (``width_error``, ``height_error``: a crop box kept as given)."""
-    out = {}
+    order of ``GEOMETRY``, without its handle; ``page_info`` gives the
+    exception of ``width`` or ``height`` as ``width_error``/``height_error``
+    (each read in its own statement): an ``Error``."""
+    out: dict[str, Any] = {}
     for k in GEOMETRY:
         if k in g:
             out[k] = g[k]

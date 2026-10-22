@@ -628,7 +628,7 @@ pub fn response(r: &[u8]) -> Resp {
     let payload = &r[po..po + pl];
     let value = match r[5] {
         0 => {
-            assert_eq!(r[6], 0);
+            assert_eq!(r[6] & !pdfplumber_wasm::ops::FLAG_HISTORY_LONG, 0, "no fixup flag in a binary payload");
             decode_block(payload)
         }
         1 => decode_json(payload, r[6] & 1 != 0),
@@ -737,4 +737,70 @@ pub fn tiny_pdf(content: &[u8]) -> Vec<u8> {
         format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1).as_bytes(),
     );
     out
+}
+
+/// The path of the first difference between two values (`None`: equal).
+pub fn js_diff(a: &Js, b: &Js) -> Option<String> {
+    let mut stack = vec![(a, b, String::from("$"))];
+    while let Some((x, y, p)) = stack.pop() {
+        match (x, y) {
+            (Js::Arr(xs), Js::Arr(ys)) | (Js::Stream(xs), Js::Stream(ys)) => {
+                if xs.len() != ys.len() {
+                    return Some(format!("{p}: lengths {} != {}", xs.len(), ys.len()));
+                }
+                for (i, (u, v)) in xs.iter().zip(ys).enumerate().rev() {
+                    stack.push((u, v, format!("{p}[{i}]")));
+                }
+            }
+            (Js::Obj(xs), Js::Obj(ys)) => {
+                let kx: Vec<String> = xs.iter().map(|(k, _)| String::from_utf16_lossy(k)).collect();
+                let ky: Vec<String> = ys.iter().map(|(k, _)| String::from_utf16_lossy(k)).collect();
+                if kx != ky {
+                    return Some(format!("{p}: keys {kx:?} != {ky:?}"));
+                }
+                for ((k, u), (_, v)) in xs.iter().zip(ys).rev() {
+                    stack.push((u, v, format!("{p}.{}", String::from_utf16_lossy(k))));
+                }
+            }
+            (Js::StreamRef(h, xs), Js::StreamRef(g, ys)) => {
+                stack.push((h, g, format!("{p}.handle")));
+                for (i, (u, v)) in xs.iter().zip(ys).enumerate() {
+                    stack.push((u, v, format!("{p}.ref[{i}]")));
+                }
+            }
+            (Js::Page(h, n), Js::Page(g, m)) => {
+                stack.push((h, g, format!("{p}.page")));
+                stack.push((n, m, format!("{p}.page_number")));
+            }
+            (x, y) if x == y => {}
+            (x, y) => return Some(format!("{p}: {x:?} != {y:?}")),
+        }
+    }
+    None
+}
+
+/// `v` with the name of each inline image as `"<inline>"`: pdfminer names
+/// one `str(id(stream))`, a memory address, the port `inline-<k>`
+/// (`docs/public-api.md`, "Not Ported").
+pub fn inline_names(v: Js) -> Js {
+    let key = |k: &str| k.encode_utf16().collect::<Vec<u16>>();
+    match v {
+        Js::Arr(items) => Js::Arr(items.into_iter().map(inline_names).collect()),
+        Js::Obj(items) => {
+            let is_image = items.iter().any(|(k, x)| *k == key("object_type") && *x == s("image"));
+            let inline = is_image
+                && items.iter().any(|(k, x)| {
+                    *k == key("stream")
+                        && matches!(x, Js::Stream(f) if f[0] == Js::Null)
+                            | matches!(x, Js::StreamRef(_, f) if f[0] == Js::Null)
+                });
+            Js::Obj(
+                items
+                    .into_iter()
+                    .map(|(k, x)| if inline && k == key("name") { (k, s("<inline>")) } else { (k, inline_names(x)) })
+                    .collect(),
+            )
+        }
+        other => other,
+    }
 }

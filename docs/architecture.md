@@ -2280,6 +2280,69 @@ changer aucun résultat ni la récursion (une CMap présente dès le départ
 nuls (aujourd'hui il ne raccourcit qu'à la libération) ;
 `docs/js-runtime.md`.
 
+#### Réalisation BOUNDARY (branche `wave5/boundary`)
+
+Détails dans [`js-runtime.md`](js-runtime.md) (« Format des résultats »,
+« Valeurs », « Diagnostics », « CMaps », « Documents et pages »,
+« Tests »).
+
+- **Opérations** : `page_info` (largeur et hauteur lues chacune dans son
+  instruction : valeur ou `width_error`/`height_error`),
+  `page_debug_tablefinder`, `struct_tree`, `struct_find_all`,
+  `struct_find`, `struct_element_bbox`, `struct_all_mcids`,
+  `struct_element_repr` (`crates/wasm/src/structs.rs` ; éléments nommés par
+  leur chemin, matcher = type, `{"mask": [...]}` dans l'ordre de
+  `_find_all`, ou valeur appelée comme Python l'appelle),
+  `stream_rawdata`, `stream_data`, `stream_get_data`,
+  `stream_get_rawdata` (`streams.rs`), `set_stream_refs`,
+  `set_history_limit` (tests). Pas de `doc_cmap_scan` : l'analyse des
+  CMaps d'un document (`cmap_scan.rs`) se fait dans le cœur, à son premier
+  appel nul (une analyse à chaque ouverture coûtait jusqu'à 75 % de
+  l'ouverture d'un gros document qui n'en a pas besoin). Leurs instructions sont
+  dans `js_pages_run.py` (protocole 3), qui écrit aussi `made` (le nombre
+  d'objets de chaque cas), lie les arguments (`bind_args` : `{"$obj": k}`,
+  `PDFObjRef` liés au document de la cible) et rend `$unresolved` pour une
+  cible entière que la session n'a pas faite (fenêtres de profondeur).
+- **Fil (protocole 1, commit à part)** : étiquette PJB1 `0x13` /
+  JSON `"streamref"` (`Writer::stream_ref`) ; décodage des arguments
+  `PSLiteral`, `PSKeyword`, `PDFObjRef`, `PageRef`, `PDFStream` par
+  référence (`binary::decode_args`, nouveaux cas du décodeur ;
+  l'encodeur JS les écrit). Aucune étiquette existante ne change.
+- **`log.*` de pdfminer (protocole 2, un commit)** : chaque
+  `log.warning` porté donne son texte (`Logger::log`,
+  `pdfminer::log_text`, nouveau module) ; les cadres comptés ne changent
+  pas ; les `log.debug` ne sont pas transmis (cadres seulement).
+- **Préchargement des CMaps** et **historique borné** : voir
+  `js-runtime.md` ; aucun résultat ni aucune récursion ne change
+  (relecture à part, état du processus remis ; historique vidé seulement
+  quand plus aucun appel ne peut être nul).
+
+**Pour le chantier API et la jonction** (changements hors de la propriété
+de BOUNDARY, faits pour que la frontière soit vérifiable par l'API, raison
+documentée ici) :
+
+- `js/src/api.ts` : `callOptions()` donne `owner: this` (le document est
+  le propriétaire des flux de ses résultats : leurs lectures sont des jobs
+  du document, `DocumentReleased` après `release()`) ; `PDFPlumberPage`
+  lit `width_error`/`height_error` de `page_info` (une exception chacune,
+  `fromPython`) au lieu d'une erreur commune. À garder à la jonction.
+- `js/test/shared/typed.mjs` : la valeur nommée `StreamRef` des sessions
+  (`{ $streamref: "#k", objid, genno, attrs }`) ; `difference` compare
+  aussi l'instantané d'un `PDFStream` (`snapshot()`), ses données n'étant
+  plus des champs propres.
+- `PDFStream` (`pdfobjects.ts`) : un flux d'un résultat est une référence
+  (`rawdata`, `data`, `getData()`, `getRawdata()` : promesses) ; un flux
+  fait de ses valeurs (`new PDFStream(objid, genno, attrs, rawdata, data)`,
+  format typé, `typed-json.mjs`) est un instantané dont `rawdata` et
+  `data` sont les valeurs elles-mêmes : `canon.mjs` et les traces sont
+  inchangés. Le format typé écrit toujours les flux par valeur.
+- Reste à l'API : les membres `debugTablefinder`, `structTree`
+  (`PDFStructTree` et ses éléments ; un `RegExp` ou une fonction comme
+  masque calculé en JS sur les éléments dans l'ordre de `_find_all`), les
+  lignes du plan de `js_api.py` pour ces opérations et pour les flux
+  (lectures de `rawdata`/`data` après les appels), `public-api.md`
+  (statuts « pending » à retirer).
+
 **Chantier PERF** : chemins chauds de `crates/pdfplumber`,
 `crates/pdfminer`, `crates/pycompat` (`page.objects`/`process_object` :
 `resolve_all`, dicts d'attributs, conversions ; texte, mots, tables de la

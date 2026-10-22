@@ -31,6 +31,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 #[derive(Default)]
 struct State {
+    /// Whether [`configure`] ran.
+    configured: bool,
     /// The names JavaScript can provide.
     known: FxHashSet<String>,
     /// Inflated files, by name.
@@ -70,7 +72,22 @@ pub fn install() {
 /// Sets the names JavaScript can provide (an empty list: an installation
 /// without the CMaps, every name is `CMapNotFound`).
 pub fn configure(names: impl IntoIterator<Item = String>) {
-    STATE.with(|s| s.borrow_mut().known = names.into_iter().collect());
+    STATE.with(|s| {
+        let mut s = s.borrow_mut();
+        s.known = names.into_iter().collect();
+        s.configured = true;
+    });
+}
+
+/// Whether every name JavaScript can provide was handed over (none, for an
+/// installation without CMaps): then no call can miss one, and no call is
+/// ever void (`crate::ops`, "Void calls": the history of the documents is
+/// no longer needed).
+pub fn complete() -> bool {
+    STATE.with(|s| {
+        let s = s.borrow();
+        s.configured && s.known.iter().all(|n| s.loaded.contains_key(n))
+    })
 }
 
 /// The magic of an inflated compact CMap.
@@ -88,6 +105,11 @@ pub fn add(name: &str, data: &[u8]) -> PyResult<()> {
     }
     STATE.with(|s| s.borrow_mut().loaded.insert(name.to_owned(), Rc::from(inflated)));
     Ok(())
+}
+
+/// Whether JavaScript can provide `name` (`configure`).
+pub fn is_known(name: &str) -> bool {
+    STATE.with(|s| s.borrow().known.contains(name))
 }
 
 /// Whether the file of `name` was handed over.
@@ -120,8 +142,15 @@ mod tests {
         assert!(is_loaded("A") && !is_loaded("B"));
         assert_eq!(JsCMapProvider.load("A").as_deref(), Some(&b"PMCM\x01\x00"[..]));
         assert!(take_missing().is_empty());
+        assert!(!complete(), "B is missing");
+        add("B", b"PMCM\x01\x00").unwrap();
+        assert!(complete());
         configure([]);
-        assert!(JsCMapProvider.load("B").is_none());
-        assert!(take_missing().is_empty());
+        assert!(complete(), "no CMap at all");
+        assert!(JsCMapProvider.load("B").is_some(), "a file handed over stays");
+        configure(["Z".to_owned()]);
+        assert!(JsCMapProvider.load("Z").is_none());
+        assert!(!complete());
+        assert_eq!(take_missing(), ["Z"]);
     }
 }

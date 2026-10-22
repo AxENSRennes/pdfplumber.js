@@ -24,7 +24,7 @@
 use std::rc::Rc;
 
 use pdfminer::pdftypes::PDFObject;
-use pdfminer::psparser::{KWD, LIT, LIT_bytes};
+use pdfminer::psparser::{LIT_bytes, KWD, LIT};
 use pdfplumber::obj::{Obj, PyValue};
 use pycompat::{exc, PyErr, PyInt, PyResult, PyStr};
 use rustc_hash::FxHashMap;
@@ -720,7 +720,10 @@ pub fn decode_args(block: &[u8], object: &mut dyn FnMut(ObjectArg) -> PyResult<P
                             },
                             PyValue::Bytes(name) => PyValue::Pdf(PDFObject::Literal(LIT_bytes(name))),
                             other => {
-                                return Err(exc::TypeError(format!("a PSLiteral name is a str, not {}", other.type_name())))
+                                return Err(exc::TypeError(format!(
+                                    "a PSLiteral name is a str, not {}",
+                                    other.type_name()
+                                )))
                             }
                         },
                         TAG_REF => object(ObjectArg::Ref(next()))?,

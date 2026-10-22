@@ -134,6 +134,7 @@ export const STATUS_NEED_CMAPS = 2;
 /** The payload format of a typed result (crates/wasm/src/ops.rs). */
 export const FORMAT_TYPED = 2;
 
+
 interface Exports {
   memory: WebAssembly.Memory;
   pp_alloc(len: number): number;
@@ -157,6 +158,15 @@ export interface Response {
   dropped: number;
   /** Bytes of the payload (the benchmark). */
   payloadBytes: number;
+  /** The history of the core's documents is long (flags bit 1,
+   * crates/wasm/src/ops.rs `FLAG_HISTORY_LONG`): handing over every CMap
+   * bounds it (no call can be void any more). */
+  historyLong: boolean;
+}
+
+/** Whether a response asks for every CMap (`Response.historyLong`). */
+export function historyLong(u8: Uint8Array): boolean {
+  return (u8[6] & 2) !== 0;
 }
 
 /** The request block of an operation. */
@@ -194,6 +204,7 @@ export function decodeResponse(u8: Uint8Array): Response {
     diagnostics: diag.entries.map(([source, level, message]) => ({ source, level, message })),
     dropped: diag.dropped,
     payloadBytes: payloadLen,
+    historyLong: historyLong(u8),
   };
 }
 
@@ -317,6 +328,17 @@ export class WasmCore implements Core {
     await p;
   }
 
+  /** The calls that were void (a CMap missing), since the core started. */
+  voidCalls = 0;
+
+  /** Hands over every CMap not handed over yet: what a response whose
+   * history is long asks for (`Response.historyLong`). A file that cannot
+   * be fetched now is fetched again when a call asks for it. */
+  async loadAll(): Promise<void> {
+    if (!this.cmaps) return;
+    await Promise.all(this.cmaps.names.filter((n) => !this.added.has(n)).map((n) => this.addCMap(n).catch(() => undefined)));
+  }
+
   /** Loads the CMaps a void call missed; refuses a name already handed
    * over (the core would loop). */
   async loadMissing(names: string[]): Promise<void> {
@@ -335,10 +357,12 @@ export class WasmCore implements Core {
       if (responseStatus(view) !== STATUS_NEED_CMAPS) {
         const response = view.slice();
         this.release();
+        if (historyLong(response)) await this.loadAll();
         return response;
       }
       const r = decodeResponse(view);
       this.release();
+      this.voidCalls++;
       await this.loadMissing(r.value as string[]);
     }
   }
@@ -368,11 +392,13 @@ export class WasmCore implements Core {
     for (;;) {
       const r = this.callRaw(op, handle, args, options);
       if (r.status === STATUS_NEED_CMAPS) {
+        this.voidCalls++;
         await this.loadMissing(r.value as string[]);
         continue;
       }
       this.typedValue = r.typed;
       if (r.diagnostics.length || r.dropped) options.onDiagnostics?.(r.diagnostics, r.dropped);
+      if (r.historyLong) await this.loadAll();
       return responseValue(r, op);
     }
   }

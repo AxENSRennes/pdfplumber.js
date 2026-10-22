@@ -11,6 +11,8 @@
 
 use pycompat::{ExcKind, PyErr};
 
+use pdfplumber::obj::{Obj, PyValue};
+
 use crate::wire::Writer;
 
 /// `module.qualname` of a class (`"builtins.ValueError"`,
@@ -76,6 +78,23 @@ pub fn write_error<W: Writer + ?Sized>(w: &mut W, err: &PyErr) {
         Some(cause) => write_error(w, cause),
         None => w.none(),
     }
+}
+
+/// The dict of [`write_error`] as a value (an exception read as the value
+/// of a field: `page_info`'s `width_error`).
+pub fn error_value(err: &PyErr) -> PyValue {
+    let kind = err.kind;
+    let mro = mro(kind);
+    // `object` closes every Python MRO; NotPorted is not a Python class
+    let object = (kind != ExcKind::NotPorted).then(|| PyValue::str("builtins.object"));
+    PyValue::Dict(Obj::from_pairs([
+        ("name", PyValue::str(kind.name())),
+        ("module", PyValue::str(kind.module())),
+        ("qualname", PyValue::str(&kind.qualname())),
+        ("mro", PyValue::list(mro.into_iter().map(|k| PyValue::str(&qualified_name(k))).chain(object))),
+        ("message", PyValue::Str(err.py_message())),
+        ("cause", err.cause().map_or(PyValue::None, error_value)),
+    ]))
 }
 
 #[cfg(test)]
