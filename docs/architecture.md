@@ -2287,7 +2287,55 @@ optimisation ne change une trace.
 
 ### Référence PERF (base, `quick`)
 
-PERF_BASELINE_PLACEHOLDER
+Méthode : `quick` (150 fichiers, 20 premières pages, 302 pages),
+`scripts/heavy.sh` (un job à la fois, 5 Go), machine partagée de 8 cœurs ;
+les mêmes phases que la jonction de la vague 4 : `pdfplumber.open` et
+`pdf.pages` (« ouverture »), puis par page `page.layout`, `page.objects`,
+`extract_text()`, `extract_words()`, `find_tables()`. Natif :
+`target/release/examples/plumber_phases <cmap-dir> < liste` (médiane de
+3 passes) ; Python : `crates/pdftrace/examples/plumber_phases.py` (le
+jumeau, CPython 3.12, après les imports, 1 passe) ; Node :
+`js/bench/phases.mjs` sur le build `dist` (`wasm-opt -O3`), par l'API
+publique, valeurs décodées (médiane de 3 passes ; `page.objects` y contient
+`layout`, la phase n'est pas visible séparément) ; une seconde lecture de
+`page.objects` (objets en cache dans le cœur) mesure la frontière seule
+(encodage PJB1, copie, décodage). Liste : `path<TAB>mot de passe` de
+`oracle.corpus --set quick`. Mémoire : `/usr/bin/time -v` (RSS maximale),
+taille de la mémoire linéaire du module à la fin (elle ne rétrécit
+jamais). Taille : `node scripts/size.mjs`.
+
+| ms par page | ouverture | layout | objects | texte | mots | tables | total |
+|---|---|---|---|---|---|---|---|
+| Python 3.12 | 4,61 | 75,7 | 49,0 | 6,85 | 4,73 | 3,96 | 144,8 |
+| Rust natif | 0,34 | 6,26 | 13,2 | 2,52 | 1,90 | 2,24 | 26,4 |
+| Wasm, Node, API publique | 1,29 | (dans objects) | 26,7 | 2,70 | 2,30 | 2,07 | 35,1 |
+
+- Rapports : natif ×5,5 sur Python (×12 pour `layout`, ×3,7 pour
+  `objects`, ×2,7 pour le texte, ×2,5 les mots, ×1,8 les tables) ; l'API
+  dans Node ×4,1 sur Python, ×1,33 au-dessus du natif.
+- `page.objects` par l'API (26,7 ms) = frontière seule 4,9 ms (seconde
+  lecture : 1,47 s pour les 302 pages) + calcul dans le Wasm ≈ 21,8 ms,
+  contre 19,4 ms en natif (`layout` + `objects`) : le Wasm calcule à ×1,12
+  du natif ; la frontière coûte 18 % de la phase. Point chaud inchangé :
+  `page.objects` (`process_object`), la moitié du temps natif.
+- Fichiers les plus lents (les mêmes partout) : `pdfjs-issue5509.pdf`
+  (2,5 s natif, 3,0 s Node, 14,6 s Python), `highlights.pdf`,
+  `issue-71-duplicate-chars-2.pdf`, `target-2024-ar.pdf`.
+- Mémoire : RSS maximale 366 Mio en natif, 428 Mio pour Python, 520–550 Mio
+  pour Node (600 Mio avec la seconde lecture des objets) ; mémoire linéaire
+  du Wasm à la fin : 294 Mio (308 150 272 octets), atteinte par le plus gros
+  document (elle ne rétrécit pas).
+- Taille (`dist`, `wasm-opt -O3`) : `pdfplumber.wasm` 2 416 107 octets
+  bruts, 890 959 gzip, 628 778 brotli (budget brotli 1 Mo) ; JS navigateur
+  36 231 / 12 733 / 11 502 ; `dist/src` (Node) 100 404 / 30 539 / 26 792 ;
+  CMaps 2 976 819 (`UniJIS-UCS2-H` + `to-unicode-Adobe-Japan1` : 155 903).
+- Traces : écrire les traces par l'API (`--engine js-api`, `-j 3`) prend
+  98 s pour `plumber_objects` sur `quick`, 75 s `plumber_text`, 63 s
+  `plumber_tables`, 213 s `plumber_doc` (format typé, sans tables,
+  canon en JavaScript).
+- Mesures dans les navigateurs : à faire par PERF (`js/bench/browsers.mjs`
+  mesure l'encodage seul aujourd'hui) ; Firefox de Playwright (Nightly) n'est
+  pas une référence de vitesse (`port-strategy.md`).
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 

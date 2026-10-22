@@ -52,7 +52,8 @@ fn oracle_ids(v: &PyValue) -> PyResult<HashMap<i64, Vec<(String, u64)>>> {
             let pair = seq(pair)?;
             let key = str_arg(arg(pair, 0)?)?.to_owned();
             let PyValue::Int(rank) = arg(pair, 1)? else { return Err(exc::TypeError("ids: a rank")) };
-            let rank = rank.as_i64().and_then(|r| u64::try_from(r).ok()).ok_or_else(|| exc::ValueError("ids: a rank"))?;
+            let rank =
+                rank.as_i64().and_then(|r| u64::try_from(r).ok()).ok_or_else(|| exc::ValueError("ids: a rank"))?;
             items.push((key, rank));
         }
         out.insert(n, items);
@@ -68,7 +69,13 @@ fn py_value(v: &Value) -> PyResult<PyValue> {
 
 impl Core {
     /// The oracle operations; `None` for any other name.
-    pub(crate) fn oracle_op(&mut self, name: &str, h: u32, args: &PyValue, data: Option<Rc<[u8]>>) -> PyResult<Option<PyValue>> {
+    pub(crate) fn oracle_op(
+        &mut self,
+        name: &str,
+        h: u32,
+        args: &PyValue,
+        data: Option<Rc<[u8]>>,
+    ) -> PyResult<Option<PyValue>> {
         let a = || seq(args);
         Ok(Some(match name {
             "oracle_doc_open" => {
@@ -85,8 +92,7 @@ impl Core {
                     let _call = pycompat::recursion::eval_entry()?;
                     crate::pages::open_source(source, &options, Some(factory))?
                 };
-                let state =
-                    DocState { pdf: Some(Rc::new(pdf)), hooks: Some(Rc::new(registry)), ..DocState::default() };
+                let state = DocState { pdf: Some(Rc::new(pdf)), hooks: Some(Rc::new(registry)), ..DocState::default() };
                 let h = self.insert(Object::Document(Document { data, options, state }))?;
                 self.reach(handle(&h)?)?;
                 h
@@ -102,9 +108,9 @@ impl Core {
                     Some(Object::Document(d)) => d.state.hooks.clone(),
                     _ => None,
                 };
-                let registry = registry
-                    .and_then(|r| r.downcast::<IdsRegistry>().ok())
-                    .ok_or_else(|| exc::ValueError("oracle_page_ids: the document was not opened by oracle_doc_open"))?;
+                let registry = registry.and_then(|r| r.downcast::<IdsRegistry>().ok()).ok_or_else(|| {
+                    exc::ValueError("oracle_page_ids: the document was not opened by oracle_doc_open")
+                })?;
                 // content_ids(page.layout): the property, then the harness's
                 // function (no recursion in it)
                 let layout = PAGE_IDS_LAYOUT.get(page.class_name(), || page.layout())?;
