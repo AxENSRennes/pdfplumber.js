@@ -7,7 +7,8 @@
 //!   `wasm-bindgen`.
 //! - `ops`: requests, responses and operations; the handle table
 //!   (`handles`) of the objects JavaScript holds; `pages`: the operations
-//!   of documents and pages (pdfplumber's `PDF` and `Page`).
+//!   of documents and pages (pdfplumber's `PDF` and `Page`); `structs`:
+//!   structure trees (`PDFStructTree`).
 //! - `wire`: the result encodings (binary `PJB1`, JSON) and the argument
 //!   decoding; `strings`: Python `str` (lone surrogates included) to UTF-16.
 //! - `errors`: a Python exception as JavaScript receives it.
@@ -25,4 +26,5 @@ pub mod ops;
 pub mod oracle;
 pub mod pages;
 pub mod strings;
+pub mod structs;
 pub mod wire;

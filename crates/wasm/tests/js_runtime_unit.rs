@@ -134,6 +134,47 @@ fn zlib_stored(data: &[u8]) -> Vec<u8> {
     out
 }
 
+/// Whether an expected result is `{"$unresolved": True}` (the script ran
+/// nothing: the object of the case was not made).
+fn is_unresolved(v: &Value) -> bool {
+    matches!(v, Value::Dict(items) if items.len() == 1
+        && matches!(&items[0].0, Value::Str(k) if k.as_str() == Some("$unresolved")))
+}
+
+/// The object of the session an argument names (`{"$obj": k}`).
+fn object_arg(v: &Value) -> Option<usize> {
+    match v {
+        Value::Dict(items) if items.len() == 1 => match (&items[0].0, &items[0].1) {
+            (Value::Str(k), Value::Int(i)) if k.as_str() == Some("$obj") => Some(i.as_i64().unwrap() as usize),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// The exceptions a dict response holds as values (`page_info`'s
+/// `width_error`, `height_error`: the dicts of `errors.rs`) as the script
+/// writes them (`{exception, message}`).
+fn errors_as_exceptions(v: Js) -> Js {
+    let suffix: Vec<u16> = "_error".encode_utf16().collect();
+    match v {
+        Js::Obj(items) => Js::Obj(
+            items
+                .into_iter()
+                .map(|(k, x)| {
+                    if k.ends_with(&suffix) {
+                        let r = Resp { status: 1, value: x, diagnostics: Js::Null };
+                        (k, as_exception(&r))
+                    } else {
+                        (k, x)
+                    }
+                })
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
 /// Runs a request, handing over the CMaps it misses (each once), as
 /// `WasmCore.call` does; returns the result and the names loaded.
 fn call_with_cmaps(core: &mut Core, op: &str, args: PyValue, dir: &std::path::Path, loaded: &mut Vec<String>) -> Js {
@@ -555,6 +596,18 @@ impl Objs {
         }
     }
 
+    /// [`Objs::relabel`] of the field `key` of a dict response (the tables
+    /// of `debug_tablefinder`).
+    fn relabel_field(&mut self, v: Js, key: &str) -> Js {
+        let key: Vec<u16> = key.encode_utf16().collect();
+        match v {
+            Js::Obj(items) => Js::Obj(
+                items.into_iter().map(|(k, x)| if k == key { (k, self.relabel(x)) } else { (k, x) }).collect(),
+            ),
+            other => other,
+        }
+    }
+
     /// The handles of the pages a response holds (`annot["data"]["P"]`,
     /// `getattr(pdf, "pages")`) as labels, in the order they are written: a
     /// handle labelled before keeps its label, a new one is recorded.
@@ -633,6 +686,11 @@ fn replay_session(format: &str, name: &str, cases: &[Value], out: &Value) -> usi
     for (case, expected) in cases.iter().zip(results) {
         let (Value::List(case), Value::List(expected)) = (case, expected) else { panic!() };
         let op = case[0].as_str().unwrap();
+        if is_unresolved(&expected[0]) {
+            // the object of the operation was not made (an operation that
+            // raised made none): nothing runs
+            continue;
+        }
         let h = objs.target(&case[1]);
         let Value::List(args) = &case[2] else { panic!("args") };
         let (want, extra) = (value_view(&expected[0]), &expected[1]);
@@ -684,11 +742,30 @@ fn replay_session(format: &str, name: &str, cases: &[Value], out: &Value) -> usi
                 let r = call_cmaps(&mut core, op, h, list(vec![py(extra)]), None, &dir);
                 objs.relabel(r)
             }
+            "struct_tree" => {
+                // [page]: an object of the session ({"$obj": k}) or None
+                let page = match object_arg(&args[0]) {
+                    Some(k) => PyValue::from(i64::from(objs.0[k])),
+                    None => py(&args[0]),
+                };
+                let r = call_cmaps(&mut core, op, h, list(vec![page]), None, &dir);
+                objs.relabel(r)
+            }
+            "struct_find_all" | "struct_find" => {
+                // a predicate or a pattern: the mask the script computed
+                let matcher = match extra {
+                    Value::None => py(&args[1]),
+                    mask => PyValue::Dict(pdfplumber::obj::Obj::from_pairs([("mask", py(mask))])),
+                };
+                call_cmaps(&mut core, op, h, list(vec![py(&args[0]), matcher]), None, &dir)
+            }
             _ => {
                 let r = call_cmaps(&mut core, op, h, list(args.iter().map(py).collect()), None, &dir);
                 match op {
                     "doc_pages" | "page_crop" | "page_within_bbox" | "page_outside_bbox" | "page_dedupe_chars"
                     | "page_find_tables" | "page_find_table" => objs.relabel(r),
+                    "page_debug_tablefinder" => objs.relabel_field(r, "tables"),
+                    "page_info" => errors_as_exceptions(r),
                     _ => r,
                 }
             }

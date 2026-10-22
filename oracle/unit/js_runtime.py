@@ -55,6 +55,7 @@ Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.js
 from __future__ import annotations
 
 import importlib
+import io
 import json
 import pkgutil
 import random
@@ -68,6 +69,7 @@ from typing import Any
 
 import pdfplumber
 from pdfminer.cmapdb import CMapDB
+from pdfplumber.structure import PDFStructTree
 from pdfplumber.table import TableFinder, TableSettings
 from pdfplumber.utils import text as utext
 
@@ -373,10 +375,21 @@ def _text_ops(s: Session, page: int, searches: bool = True) -> None:
             s.add("search", page, pattern, options, js=js)
 
 
-def _table_ops(s: Session, page: int, tables: int, found: bool) -> None:
+def _table_ops(s: Session, page: int, tables: int, found: bool, finder: list[int] | None = None) -> None:
     """Table operations; ``tables``: how many ``find_tables`` finds, ``found``:
-    whether ``find_table`` (text strategies) finds one."""
+    whether ``find_table`` (text strategies) finds one; ``finder``: how many
+    tables ``debug_tablefinder`` finds with ``None``, then with the text
+    strategies (none: not run)."""
     text = {"vertical_strategy": "text", "horizontal_strategy": "text"}
+    if finder is not None:
+        first = s.add("page_debug_tablefinder", page, makes=finder[0])
+        for t in range(first, first + finder[0]):
+            s.add("table_extract", t, {})
+        s.add("page_debug_tablefinder", page, text, makes=finder[1])
+        s.add("page_debug_tablefinder", page, {"snap_x_tolerance": 1, "join_tolerance": 2, "intersection_y_tolerance": 4,
+                                               "text_x_tolerance": 2}, makes=finder[0])
+        s.add("page_debug_tablefinder", page, {"vertical_strategy": "nope"})
+        s.add("page_debug_tablefinder", page, None, None)
     first = s.add("page_find_tables", page, makes=tables)
     for t in range(first, first + tables):
         s.add("table_extract", t, {})
@@ -417,6 +430,11 @@ def documents_session() -> list[list[Any]]:
     crop2 = s.add("page_crop", crop, [5, 5, 50, 50], {"relative": True, "strict": False}, makes=1)
     s.add("page_info", crop2)
     s.add("page_extract_text", crop2, {})
+    # width and height each its value or its exception (a crop box kept
+    # as given)
+    for bbox in ([0, 0, None, 10], (0, 0, 10, "y"), [1, 2, 3], [0, None, 10, None]):
+        odd = s.add("page_crop", p, bbox, {"strict": False}, makes=1)
+        s.add("page_info", odd)
     filtered = s.add("page_filter", p, "upright", makes=1)
     s.add("page_extract_text", filtered, {})
     s.add("page_attr", filtered, "chars")
@@ -424,7 +442,7 @@ def documents_session() -> list[list[Any]]:
     s.add("page_attr", deduped, "chars")
     s.add("page_dedupe_chars", p, {"nope": 1})
     rel = "corpus/micro/text-operators.pdf"
-    _table_ops(s, p, tables=_tables(rel, 0), found=_found(rel, 0))
+    _table_ops(s, p, tables=_tables(rel, 0), found=_found(rel, 0), finder=_finder(rel, 0))
     s.add("page_to_json", p, {"object_types": ["char"], "precision": 2})
     s.add("page_to_json", p, {"object_types": ["rect", "line"], "indent": 1})
     s.add("page_to_csv", p, {"object_types": ["char", "rect"]})
@@ -489,7 +507,7 @@ def documents_session() -> list[list[Any]]:
     doc, pages = s.open(rel, pages=_page_count(rel))
     s.add("page_attr", pages[0], "edges")
     s.add("page_objects", pages[0])
-    _table_ops(s, pages[0], tables=_tables(rel, 0), found=_found(rel, 0))
+    _table_ops(s, pages[0], tables=_tables(rel, 0), found=_found(rel, 0), finder=_finder(rel, 0))
     # filters whose truth differs from object to object
     for predicate in ("not-rect", "small"):
         filtered = s.add("page_filter", pages[0], predicate, makes=1)
@@ -497,7 +515,7 @@ def documents_session() -> list[list[Any]]:
     # a ruled table
     rel = "upstream/pdfplumber-python/tests/pdfs/nics-background-checks-2015-11.pdf"
     doc, pages = s.open(rel, {"pages": [1]}, pages=1)
-    _table_ops(s, pages[0], tables=_tables(rel, 0), found=_found(rel, 0))
+    _table_ops(s, pages[0], tables=_tables(rel, 0), found=_found(rel, 0), finder=_finder(rel, 0))
     # text settings bound to Table.extract (self), to TableSettings (self)
     s.add("page_extract_tables", pages[0], {"text_self": 1})
     s.add("page_extract_table", pages[0], {"text_x_tolerance": 1, "text_self": 1})
@@ -586,9 +604,134 @@ def _tables(rel: str, index: int) -> int:
         return len(pdf.pages[index].find_tables())
 
 
+def _finder(rel: str, index: int) -> list[int]:
+    """How many tables ``debug_tablefinder`` finds, with ``None`` and with
+    the text strategies."""
+    with pdfplumber.open(corpus_root() / rel) as pdf:
+        page = pdf.pages[index]
+        text = {"vertical_strategy": "text", "horizontal_strategy": "text"}
+        return [len(page.debug_tablefinder().tables), len(page.debug_tablefinder(text).tables)]
+
+
 def _found(rel: str, index: int) -> bool:
     with pdfplumber.open(corpus_root() / rel) as pdf:
         return pdf.pages[index].find_table({"vertical_strategy": "text", "horizontal_strategy": "text"}) is not None
+
+
+#: The structure trees of the upstream tests.
+STRUCTURE_FILES = [f"upstream/pdfplumber-python/tests/pdfs/{n}_structure.pdf"
+                   for n in ("hello", "figure", "image", "pdf", "word365")]
+
+#: The matchers of ``find_all``/``find`` (``js_pages_run.matcher_of``),
+#: after the type of the tree's first element: a tag no element has,
+#: predicates (functions), patterns whose ``re.match`` and ``RegExp`` (at
+#: the start of the type) agree, values Python calls (``TypeError``).
+STRUCT_MATCHERS: list[Any] = ["Span", "Nope", {"predicate": "starts-with-H"}, {"predicate": "has-mcids"},
+                              {"regexp": "H[0-9]"}, {"regexp": "[A-Z][a-z]+"}, None, 5]
+
+
+def _tree_shape(data: Any, page: int | None, crop: bool = False) -> list[list[int]] | None:
+    """The paths of the elements of ``PDFStructTree(pdf, page)`` in
+    ``_find_all``'s order (``None``: it raises)."""
+    try:
+        with pdfplumber.open(corpus_root() / data if isinstance(data, str) else io.BytesIO(data)) as pdf:
+            target = None
+            if page is not None:
+                target = pdf.pages[page]
+                if crop:
+                    target = target.crop(_crop_box(target))
+            tree = PDFStructTree(pdf, target)
+            out: list[list[int]] = []
+            stack = [([i], el) for i, el in reversed(list(enumerate(tree.children)))]
+            while stack:
+                path, el = stack.pop()
+                out.append(path)
+                stack.extend(([*path, j], c) for j, c in reversed(list(enumerate(el.children))))
+            return out
+    except Exception:
+        return None
+
+
+def _crop_box(page: Any) -> list[float]:
+    """The crop of a page whose structure tree is read (its upper left
+    quarter)."""
+    x0, top, x1, bottom = page.bbox
+    return [x0, top, (x0 + x1) / 2, (top + bottom) / 2]
+
+
+def _pages_of(data: Any) -> int:
+    try:
+        with pdfplumber.open(corpus_root() / data if isinstance(data, str) else io.BytesIO(data)) as pdf:
+            return len(pdf.pages)
+    except Exception:
+        return 0
+
+
+def _tree_ops(s: Session, tree: int, paths: list[list[int]], full: bool) -> None:
+    """The operations of a tree: ``find_all``/``find`` with each matcher, on
+    the tree and on its first element, ``element_bbox``, ``all_mcids`` of
+    its first elements, ``repr`` of its first one, and paths no element
+    has."""
+    matchers = STRUCT_MATCHERS if full else STRUCT_MATCHERS[2:5]
+    for m in matchers:
+        s.add("struct_find_all", tree, None, m)
+        s.add("struct_find", tree, None, m)
+    if paths:
+        s.add("struct_find_all", tree, paths[0], {"predicate": "has-mcids"})
+        s.add("struct_find", tree, paths[0], "Span")
+    for path in paths[: 8 if full else 3]:
+        s.add("struct_element_bbox", tree, path)
+        s.add("struct_all_mcids", tree, path)
+    if paths:
+        s.add("struct_element_repr", tree, paths[0])
+    if full:
+        for bad in ([99], [], [0, 99], [-1], [True]):
+            s.add("struct_element_bbox", tree, bad)
+        s.add("struct_element_repr", tree, [99])
+        s.add("struct_find_all", tree, [99], "P")
+
+
+def structure_session() -> list[list[Any]]:
+    """Structure trees (``PDFStructTree(pdf, page)``, ``crates/wasm/src/structs.rs``):
+    of the document, of a page, of a cropped page; their ``find_all``,
+    ``find``, ``element_bbox``, ``all_mcids``, ``repr``; on the upstream
+    tagged files and the trees of ``adv-structure``."""
+    s = Session()
+    files: list[tuple[Any, bool]] = [(rel, True) for rel in STRUCTURE_FILES]
+    adversarial = [c for f in (adv_structure.cases_root, adv_structure.cases_children, adv_structure.cases_attributes,
+                                adv_structure.cases_texts, adv_structure.cases_parent_tree) for c in f()]
+    files += [(case[1], False) for case in adversarial[::2]]
+    # no structure: StructTreeMissing
+    doc, _ = s.open("corpus/micro/text-operators.pdf", pages=_page_count("corpus/micro/text-operators.pdf"))
+    s.add("struct_tree", doc, None)
+    for data, full in files:
+        n = _pages_of(data)
+        doc, pages = s.open(data, pages=n)
+        shape = _tree_shape(data, None)
+        tree = s.add("struct_tree", doc, None, makes=0 if shape is None else 1)
+        if shape is not None:
+            _tree_ops(s, tree, shape, full)
+        if pages:
+            shape = _tree_shape(data, 0)
+            tree = s.add("struct_tree", doc, {"$obj": pages[0]}, makes=0 if shape is None else 1)
+            if shape is not None:
+                _tree_ops(s, tree, shape, full)
+        if pages and full:
+            crop = s.add("page_crop", pages[0], _crop_box_of(data), {}, makes=1)
+            shape = _tree_shape(data, 0, crop=True)
+            tree = s.add("struct_tree", doc, {"$obj": crop}, makes=0 if shape is None else 1)
+            if shape is not None:
+                _tree_ops(s, tree, shape, False)
+        if full and shape is not None:
+            # the document closed (its pages made again) under a live tree
+            s.add("doc_close", doc)
+            s.add("struct_element_bbox", tree, shape[0])
+    return s.cases
+
+
+def _crop_box_of(data: Any) -> list[float]:
+    with pdfplumber.open(corpus_root() / data if isinstance(data, str) else io.BytesIO(data)) as pdf:
+        return _crop_box(pdf.pages[0])
 
 
 def cjk_session() -> list[list[Any]]:
@@ -827,9 +970,9 @@ def depth_session(make: Any, ops: list[tuple[str, tuple[Any, ...]]], n: int) -> 
         target = pages[0]
         if op.startswith("doc:"):
             op, target = op[4:], doc
-        elif op.startswith("table:") or op.startswith("crop:"):
+        elif op.startswith("table:") or op.startswith("crop:") or op.startswith("tree:"):
             op, target = op.split(":", 1)[1], s.count - 1
-        makes = 1 if op in ("page_find_tables", "page_find_table", "page_crop") else 0
+        makes = 1 if op in ("page_find_tables", "page_find_table", "page_crop", "struct_tree") else 0
         s.add(op, target, *args, js=args[0] if op == "search" else None, makes=makes)
     return s.cases
 
@@ -880,6 +1023,7 @@ def depth_windows() -> Iterator[tuple[str, list[list[Any]]]]:
         ("climit-tf-list-doc-edges", climit["tf-list"], [("doc:doc_attr", ("edges",))], 9000, 10100),
         ("climit-tf-list-json", climit["tf-list"], [("page_to_json", ({"object_types": ["char"]},))], 9000, 10100),
         ("climit-tf-list-find-table", climit["tf-list"], [("page_find_table", ())], 9000, 10100),
+        ("climit-tf-list-debug-finder", climit["tf-list"], [("page_debug_tablefinder", ())], 9000, 10100),
         ("climit-tf-list-extract-table", climit["tf-list"], [("page_extract_table", ())], 9000, 10100),
         ("climit-tf-list-vedges", climit["tf-list"], [("page_attr", ("vertical_edges",))], 9000, 10100),
         # the filter's mask_of computes the objects (a frame, a load)
@@ -891,6 +1035,15 @@ def depth_windows() -> Iterator[tuple[str, list[list[Any]]]]:
         ("struct-repr-doc", adv_structure.WINDOWS["k-nested-list-repr"][0], [("doc:doc_structure_tree", ())], 9000, 10100),
         ("struct-str-doc", adv_structure.WINDOWS["actualtext-str-first"][0], [("doc:doc_structure_tree", ())], 9000, 10100),
         ("struct-str-page", adv_structure.WINDOWS["actualtext-str-first"][0], [("page_structure_tree", ())], 9000, 10100),
+        # PDFStructTree(pdf, page) at the top level: prune's recursion (frames)
+        # and decode_text's str(s) (C units), then repr(el) (frames, C units)
+        ("struct-tree-prune", adv_structure.WINDOWS["chain-prune"][0], [("doc:struct_tree", (None,))], 2, 1200),
+        ("struct-tree-str", adv_structure.WINDOWS["actualtext-str-first"][0], [("doc:struct_tree", (None,))],
+         9000, 10100),
+        ("struct-repr-chain", adv_structure.WINDOWS["chain-repr"][0], [("doc:struct_tree", (None,)),
+                                                                       ("tree:struct_element_repr", ([0],))], 2, 900),
+        ("struct-repr-attribute", adv_structure.WINDOWS["attribute-repr"][0],
+         [("doc:struct_tree", (None,)), ("tree:struct_element_repr", ([0],))], 9000, 10100),
         # a site run for one class, specialized for it, then for another;
         # bisected on the last operation, on a second document (the first
         # document's page caches its objects when its second run, specialized,
@@ -938,7 +1091,7 @@ def page_cases() -> Iterator[tuple[list[Any], Any]]:
     """``pages.jsonl``: ``{"in": [name, cases], "out": {"depth": ...,
     "results": [[result, extra], ...]}}``, a session each (see
     ``js_pages_run.py``)."""
-    sessions = [("documents", documents_session()), ("cjk", cjk_session())]
+    sessions = [("documents", documents_session()), ("cjk", cjk_session()), ("structure", structure_session())]
     sessions += list(depth_windows())
     for name, cases in sessions:
         out = run_session(cases)

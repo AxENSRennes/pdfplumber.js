@@ -47,7 +47,7 @@ pub fn mro(kind: ExcKind) -> Vec<ExcKind> {
 
 /// Writes the error as the dict JavaScript reads (its cause as the same
 /// dict, nested: a chain is as long as pdfplumber's wrapping, two at most).
-pub fn write_error<W: Writer>(w: &mut W, err: &PyErr) {
+pub fn write_error<W: Writer + ?Sized>(w: &mut W, err: &PyErr) {
     let kind = err.kind;
     w.dict(6);
     w.str("name");

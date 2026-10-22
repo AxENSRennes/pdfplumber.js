@@ -41,6 +41,7 @@ the parent's objects is written with the result: the mask the boundary
 takes.
 """
 
+import dataclasses
 import io
 import json
 import logging
@@ -51,6 +52,7 @@ import pdfplumber
 from pdfminer.pdftypes import PDFObjRef, PDFStream
 from pdfminer.psparser import PSKeyword, PSLiteral
 from pdfplumber.page import Page, tuplify_list_kwargs
+from pdfplumber.structure import PDFStructElement, PDFStructTree
 
 _SHORT = ("builtins", "pdfminer", "pdfplumber", "oracle")
 
@@ -174,6 +176,100 @@ def span_of(text, m, g):
     return [u(m.start(g)), u(m.end(g))]
 
 
+def table_value(objs, t):
+    """A table as the boundary gives it (``find_tables``,
+    ``debug_tablefinder``): its handle, ``bbox``, ``cells``, ``rows``,
+    ``columns``."""
+    return {"handle": handle(objs, t), "bbox": t.bbox, "cells": t.cells,
+            "rows": [{"bbox": r.bbox, "cells": r.cells} for r in t.rows],
+            "columns": [{"bbox": c.bbox, "cells": c.cells} for c in t.columns]}
+
+
+def preorder(tree):
+    """The elements of a structure tree in ``_find_all``'s order (an element
+    reached twice listed twice)."""
+    out, stack = [], list(reversed(tree.children))
+    while stack:
+        el = stack.pop()
+        out.append(el)
+        stack.extend(reversed(el.children))
+    return out
+
+
+def elements_value(children):
+    """The elements as the boundary writes them: each dataclass field, in
+    order, ``children`` their values (no recursion; an element holding an
+    ancestor raises, as the boundary)."""
+    names = [f.name for f in dataclasses.fields(PDFStructElement)]
+    top = []
+    for root in children:
+        stack = [(root, list(reversed(root.children)), [])]
+        active = {id(root)}
+        while stack:
+            el, todo, done = stack[-1]
+            if todo:
+                child = todo.pop()
+                if id(child) in active:
+                    raise ValueError("Circular reference detected")
+                active.add(id(child))
+                stack.append((child, list(reversed(child.children)), []))
+                continue
+            stack.pop()
+            active.discard(id(el))
+            value = {n: getattr(el, n) for n in names if n != "children"}
+            value["children"] = done
+            (stack[-1][2] if stack else top).append(value)
+    return top
+
+
+def element_at(tree, path):
+    """The element of a path (indices from ``tree.children``)."""
+    if not path:
+        raise ValueError("an element's path is not empty")
+    children, el = tree.children, None
+    for i in path:
+        if type(i) is not int:
+            raise TypeError(f"expected an int, got {type(i).__name__}")
+        if i < 0:
+            raise IndexError("list index out of range")
+        el = children[i]
+        children = el.children
+    return el
+
+
+def element_paths(tree):
+    """The path of each element of a tree (its first one), by identity."""
+    paths = {}
+    stack = [([i], el) for i, el in reversed(list(enumerate(tree.children)))]
+    while stack:
+        path, el = stack.pop()
+        paths.setdefault(id(el), path)
+        stack.extend(([*path, j], c) for j, c in reversed(list(enumerate(el.children))))
+    return paths
+
+
+#: The predicates of the structure trees' ``find_all``/``find``
+#: (``oracle/stages/plumber_doc.py``), on elements.
+ELEMENT_PREDICATES = {"starts-with-H": lambda el: el.type.startswith("H"), "has-mcids": lambda el: bool(el.mcids)}
+
+
+def matcher_of(tree, m):
+    """The matcher of a case and the mask the boundary takes (the truth of
+    the matcher on each element, ``preorder``): ``{"predicate": name}`` (a
+    function), ``{"regexp": source}`` (``re.compile(source)``, whose
+    ``match`` decides, as a JavaScript ``RegExp`` at the start of the
+    type); anything else as it is (a tag, or a value Python calls)."""
+    import re
+
+    if type(m) is dict and set(m) == {"predicate"}:
+        f = ELEMENT_PREDICATES[m["predicate"]]
+        return f, [bool(f(el)) for el in preorder(tree)]
+    if type(m) is dict and set(m) == {"regexp"}:
+        pattern = re.compile(m["regexp"])
+        return pattern, [pattern.match(el.type) is not None for el in preorder(tree)]
+    return m, None
+
+
 def depth():
     """Frames and C units left here (``oracle/depth.py`` ``depth_here``)."""
     frame, py = sys._getframe(1), 0
@@ -219,6 +315,16 @@ if __name__ == "__main__":
     #: ``[c, i]`` is the ``i``-th object case ``c`` made
     made = []
     top = depth()
+
+    def arg_object(a):
+        """An object of the session given as an argument: ``{"$obj": k}``
+        (``k``: its index, or ``[c, i]``, the ``i``-th object case ``c``
+        made), else the value itself."""
+        if type(a) is dict and set(a) == {"$obj"}:
+            k = a["$obj"]
+            return objs[made[k[0]][k[1]]] if type(k) is list else objs[k]
+        return a
+
     for case in cases:
         op, target, args, data = case[:4]
         if type(target) is list:
@@ -231,6 +337,13 @@ if __name__ == "__main__":
                 made.append([])
                 continue
             obj = objs[made[target[0]][target[1]]]
+        elif type(target) is int and target >= len(objs):
+            # the object was not made (a depth window's operation on the
+            # object an operation that raised did not make): nothing runs
+            results.append([encode({"$unresolved": True}), None])
+            causes.append([])
+            made.append([])
+            continue
         else:
             obj = None if target is None else objs[target]
         first = len(objs)
@@ -286,8 +399,16 @@ if __name__ == "__main__":
                     if hasattr(obj, name):
                         d[name] = getattr(obj, name)
                 d["bbox"] = obj.bbox
-                d["width"] = obj.width
-                d["height"] = obj.height
+                # width and height each in its own statement: either may
+                # raise (a crop box kept as given)
+                try:
+                    d["width"] = obj.width
+                except Exception as e:
+                    d["width_error"] = e
+                try:
+                    d["height"] = obj.height
+                except Exception as e:
+                    d["height_error"] = e
                 result = d
             elif op == "page_objects":
                 result = obj.objects
@@ -334,13 +455,17 @@ if __name__ == "__main__":
                 else:
                     found = obj.find_table(*args)
                     tables = [] if found is None else [found]
-                result = []
-                for t in tables:
-                    result.append({"handle": handle(objs, t), "bbox": t.bbox, "cells": t.cells,
-                                   "rows": [{"bbox": r.bbox, "cells": r.cells} for r in t.rows],
-                                   "columns": [{"bbox": c.bbox, "cells": c.cells} for c in t.columns]})
+                result = [table_value(objs, t) for t in tables]
                 if op == "page_find_table":
                     result = result[0] if result else None
+            elif op == "page_debug_tablefinder":
+                finder = obj.debug_tablefinder(*args)
+                settings = finder.settings
+                result = {"edges": finder.edges,
+                          "intersections": [[pt, d] for pt, d in finder.intersections.items()],
+                          "cells": finder.cells,
+                          "tables": [table_value(objs, t) for t in finder.tables],
+                          "settings": {f.name: getattr(settings, f.name) for f in dataclasses.fields(settings)}}
             elif op == "page_extract_tables":
                 result = obj.extract_tables(*args)
             elif op == "page_extract_table":
@@ -355,6 +480,35 @@ if __name__ == "__main__":
                 result = obj.to_csv(**args[0])
             elif op == "page_close":
                 result = obj.close(*args)
+            elif op == "struct_tree":
+                # [page]: a page of the session ({"$obj": k}) or None
+                page = arg_object(args[0])
+                tree = PDFStructTree(obj, page)
+                children = elements_value(tree.children)
+                result = {"handle": handle(objs, tree), "children": children}
+            elif op in ("struct_find_all", "struct_find"):
+                # [path or None, matcher]: on the tree or on an element
+                path, m = args
+                x = obj if path is None else element_at(obj, path)
+                m, extra = matcher_of(obj, m)
+                if op == "struct_find_all":
+                    found = list(x.find_all(m))
+                else:
+                    found = x.find(m)
+                paths = element_paths(obj)
+                if op == "struct_find_all":
+                    result = [paths[id(el)] for el in found]
+                else:
+                    result = None if found is None else paths[id(found)]
+            elif op == "struct_element_bbox":
+                el = element_at(obj, args[0])
+                result = obj.element_bbox(el)
+            elif op == "struct_all_mcids":
+                el = element_at(obj, args[0])
+                result = list(el.all_mcids())
+            elif op == "struct_element_repr":
+                el = element_at(obj, args[0])
+                result = repr(el)
             elif op == "free":
                 FREED.add(target)
                 result = None

@@ -91,6 +91,7 @@ use crate::cmaps;
 use crate::errors::write_error;
 use crate::handles::Handles;
 use crate::pages::{PageObj, TableObj};
+use crate::structs::TreeObj;
 use crate::strings::PyStrRef;
 use crate::wire::binary::BinWriter;
 use crate::wire::json::JsonWriter;
@@ -183,6 +184,8 @@ pub enum Object {
     Page(PageObj),
     /// A table a page found (`Table.extract` runs on it).
     Table(TableObj),
+    /// A structure tree (`PDFStructTree(pdf, page)`, `crate::structs`).
+    StructTree(TreeObj),
     TextMap(TextMap),
     /// A value kept for the benchmark, or derived by a test operation.
     Value(PyValue),
@@ -195,6 +198,7 @@ impl Object {
             Object::Document(_) => Some(handle),
             Object::Page(p) => Some(p.doc),
             Object::Table(t) => Some(t.doc),
+            Object::StructTree(t) => Some(t.doc),
             Object::TextMap(_) | Object::Value(_) => None,
         }
     }
@@ -206,6 +210,7 @@ impl Object {
             Object::Document(d) => d.reset(),
             Object::Page(p) => p.page = None,
             Object::Table(t) => t.table = None,
+            Object::StructTree(t) => t.tree = None,
             // computed from the arguments of the call that made it, with
             // no CMap: nothing to drop
             Object::TextMap(_) => {}
@@ -863,6 +868,10 @@ impl Core {
             #[cfg(feature = "oracle-hooks")]
             _ if name.starts_with("oracle_") => match self.oracle_op(name, h, args, data)? {
                 Some(v) => v,
+                None => return Err(exc::ValueError(format!("unknown operation {name:?}"))),
+            },
+            _ if name.starts_with("struct_") => match self.struct_op(name, h, args)? {
+                Some(out) => return Ok(out),
                 None => return Err(exc::ValueError(format!("unknown operation {name:?}"))),
             },
             _ => match self.page_op(name, h, args)? {
