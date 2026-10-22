@@ -1232,7 +1232,12 @@ impl<'a> PSStackParser<CMapParserExt<'a>> {
         let _frame = recursion::py_frame()?;
         if !self.ext.warnings.iter().any(|w| w == msg) {
             self.ext.warnings.push(msg.to_owned());
-            LOG.warning()?;
+            LOG.warning_with(|| {
+                Ok(format!(
+                    "Ignoring (part of) ToUnicode map because the PDF data does not conform to the format. This could \
+                     result in (cid) values in the output. {msg}"
+                ))
+            })?;
         }
         Ok(())
     }

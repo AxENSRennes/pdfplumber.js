@@ -268,9 +268,10 @@ impl Core {
                 };
                 let paths = paths(&tree)?;
                 let path_of = |el: &Rc<PDFStructElement>| {
-                    paths.get(&(Rc::as_ptr(el) as usize)).cloned().ok_or_else(|| {
-                        PyErr::new(ExcKind::RuntimeError, "an element found outside its tree")
-                    })
+                    paths
+                        .get(&(Rc::as_ptr(el) as usize))
+                        .cloned()
+                        .ok_or_else(|| PyErr::new(ExcKind::RuntimeError, "an element found outside its tree"))
                 };
                 if name == "struct_find" {
                     match found.first() {

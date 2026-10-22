@@ -983,8 +983,7 @@ impl PageLabels {
             leaf(1)?; // format_int_alpha
             format_int_alpha(value)?
         } else {
-            // log.warning("Unknown page label style: %r", style)
-            LOG.warning()?;
+            LOG.warning_with(|| Ok(format!("Unknown page label style: {}", style.repr()?)))?;
             String::new()
         })
     }

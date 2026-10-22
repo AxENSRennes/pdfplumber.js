@@ -102,11 +102,7 @@ pub fn with_page_handles<T>(handles: FxHashMap<usize, u32>, f: impl FnOnce() -> 
 /// [`with_page_handles`], and the handles of the streams the result holds:
 /// a stream with a handle is written by reference ([`Writer::stream_ref`]),
 /// any other by value ([`Writer::stream`]).
-pub fn with_value_handles<T>(
-    pages: FxHashMap<usize, u32>,
-    streams: FxHashMap<usize, u32>,
-    f: impl FnOnce() -> T,
-) -> T {
+pub fn with_value_handles<T>(pages: FxHashMap<usize, u32>, streams: FxHashMap<usize, u32>, f: impl FnOnce() -> T) -> T {
     let previous = PAGE_HANDLES.with(|p| std::mem::replace(&mut *p.borrow_mut(), pages));
     let previous_streams = STREAM_HANDLES.with(|p| std::mem::replace(&mut *p.borrow_mut(), streams));
     let out = f();

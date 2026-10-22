@@ -80,6 +80,11 @@ pub fn log_frames(logger: Logger, level: Level) -> PyResult<()> {
     logger.logger().call(level)
 }
 
+/// [`log_frames`] with the text of the record (`pycompat::logging::Logger::log`).
+pub fn log_text(logger: Logger, level: Level, message: impl FnOnce() -> PyResult<String>) -> PyResult<()> {
+    logger.logger().log(level, message)
+}
+
 /// One Python frame for the duration of a call (a ported Python function,
 /// or a callee whose port does not count it).
 pub fn frame() -> PyResult<Guard> {

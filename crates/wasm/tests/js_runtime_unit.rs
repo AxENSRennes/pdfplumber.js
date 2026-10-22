@@ -170,9 +170,9 @@ fn object_args(core: &Core, objs: &Objs, v: &Value) -> PyValue {
     match v {
         Value::List(items) => list(items.iter().map(|x| object_args(core, objs, x)).collect()),
         Value::Tuple(items) => PyValue::tuple(items.iter().map(|x| object_args(core, objs, x))),
-        Value::Dict(items) => PyValue::Dict(pdfplumber::obj::Obj::from_pairs(items.iter().map(|(k, x)| {
-            (k.as_str().expect("a str key").to_owned(), object_args(core, objs, x))
-        }))),
+        Value::Dict(items) => PyValue::Dict(pdfplumber::obj::Obj::from_pairs(
+            items.iter().map(|(k, x)| (k.as_str().expect("a str key").to_owned(), object_args(core, objs, x))),
+        )),
         other => py(other),
     }
 }
@@ -626,9 +626,9 @@ impl Objs {
     fn relabel_field(&mut self, v: Js, key: &str) -> Js {
         let key: Vec<u16> = key.encode_utf16().collect();
         match v {
-            Js::Obj(items) => Js::Obj(
-                items.into_iter().map(|(k, x)| if k == key { (k, self.relabel(x)) } else { (k, x) }).collect(),
-            ),
+            Js::Obj(items) => {
+                Js::Obj(items.into_iter().map(|(k, x)| if k == key { (k, self.relabel(x)) } else { (k, x) }).collect())
+            }
             other => other,
         }
     }
@@ -850,25 +850,40 @@ fn diagnostics_are_the_warnings_and_records_python_shows() {
             let Value::List(ops) = &input[3] else { panic!("ops") };
             let mut core = Core::new();
             let mut shown = Vec::new();
+            // (the diagnostics of a call that raises are returned too: the
+            // script shows what an operation logged before it raised)
             let mut run = |core: &mut Core, op: &str, h: u32, args: PyValue, data: Option<Vec<u8>>| {
                 let r = call_level(core, op, h, args, data, 30);
-                assert_eq!(r.status, 0, "{name} {op}: {:?}", r.value);
+                assert_ne!(r.status, 2, "{name} {op}: no CMap is needed");
                 let Js::Obj(d) = r.diagnostics else { panic!("diagnostics") };
                 let Js::Arr(entries) = &d[0].1 else { panic!("entries") };
                 shown.extend(entries.iter().cloned());
-                r.value
+                if r.status == 0 {
+                    Some(r.value)
+                } else {
+                    None
+                }
             };
-            let Js::Num(doc) = run(&mut core, "doc_open", 0, py(&input[2]), Some(pdf.clone())) else { panic!() };
+            let Some(Js::Num(doc)) = run(&mut core, "doc_open", 0, py(&input[2]), Some(pdf.clone())) else { panic!() };
             let doc = doc as u32;
             for op in ops {
                 match op.as_str().unwrap() {
-                    "page_annots" => {
-                        let Js::Arr(pages) = run(&mut core, "doc_pages", doc, list(vec![]), None) else { panic!() };
+                    op @ ("page_annots" | "page_objects") => {
+                        let Some(Js::Arr(pages)) = run(&mut core, "doc_pages", doc, list(vec![]), None) else {
+                            continue;
+                        };
                         for p in pages {
                             let Js::Obj(items) = p else { panic!() };
                             let Js::Num(h) = items[0].1 else { panic!() };
-                            run(&mut core, "page_attr", h as u32, list(vec![PyValue::str("annots")]), None);
+                            if op == "page_annots" {
+                                run(&mut core, "page_attr", h as u32, list(vec![PyValue::str("annots")]), None);
+                            } else {
+                                run(&mut core, "page_objects", h as u32, list(vec![]), None);
+                            }
                         }
+                    }
+                    "pages" => {
+                        run(&mut core, "doc_pages", doc, list(vec![]), None);
                     }
                     other => {
                         run(&mut core, other, doc, list(vec![]), None);
@@ -884,7 +899,7 @@ fn diagnostics_are_the_warnings_and_records_python_shows() {
         entries += expected.len();
         assert_eq!(got, expected);
     }
-    assert!(checked >= 2 && entries >= 3, "{checked} cases, {entries} diagnostics");
+    assert!(checked >= 9 && entries >= 40, "{checked} cases, {entries} diagnostics");
 }
 
 /// The operations of a scenario on a CJK document, in a new core: handles

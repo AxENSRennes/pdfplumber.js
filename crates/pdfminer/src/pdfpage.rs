@@ -108,15 +108,15 @@ impl PDFPage {
     fn _parse_mediabox(value: &PDFObject) -> PyResult<FloatRect> {
         let _frame = py_frame()?;
         if matches!(value, PDFObject::Null) {
-            // log.warning("MediaBox missing from /Page (and not inherited), defaulting to US Letter")
-            LOG.warning()?;
+            LOG.warning_with(|| {
+                Ok("MediaBox missing from /Page (and not inherited), defaulting to US Letter".to_owned())
+            })?;
             return Ok(US_LETTER);
         }
         match parse_box(value) {
             Ok(rect) => Ok(rect),
             Err(e) if e.is_instance(ExcKind::PDFValueError) => {
-                // log.warning("Invalid MediaBox in /Page, defaulting to US Letter")
-                LOG.warning()?;
+                LOG.warning_with(|| Ok("Invalid MediaBox in /Page, defaulting to US Letter".to_owned()))?;
                 Ok(US_LETTER)
             }
             Err(e) => Err(e),
@@ -133,8 +133,7 @@ impl PDFPage {
         match parse_box(value) {
             Ok(rect) => Ok(rect),
             Err(e) if e.is_instance(ExcKind::PDFValueError) => {
-                // log.warning("Invalid CropBox in /Page, defaulting to MediaBox")
-                LOG.warning()?;
+                LOG.warning_with(|| Ok("Invalid CropBox in /Page, defaulting to MediaBox".to_owned()))?;
                 Ok(mediabox)
             }
             Err(e) => Err(e),
@@ -590,8 +589,14 @@ impl GetPages {
                 let error_msg = format!("Text extraction is not allowed: {}", args.fp_repr);
                 return Err(PyErr::new(ExcKind::PDFTextExtractionNotAllowed, error_msg));
             }
-            // log.warning(warning_msg)
-            LOG.warning()?;
+            LOG.warning_with(|| {
+                Ok(format!(
+                    "The PDF {} contains a metadata field indicating that it should not allow text extraction. \
+                     Ignoring this field and proceeding. Use the check_extractable if you want to raise an error in \
+                     this case",
+                    args.fp_repr
+                ))
+            })?;
         }
         // enumerate(cls.create_pages(doc)): the generator is created, then
         // enumerate() resumes it (from C)

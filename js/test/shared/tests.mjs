@@ -952,6 +952,42 @@ export const tests = [
     },
   },
   {
+    name: "pdfplumber's and pdfminer's records and warnings reach onWarning as Python shows them",
+    async run({ lib, oracle }) {
+      const LEVELS = { debug: 10, info: 20, warning: 30, error: 40, critical: 50 };
+      let checked = 0;
+      let entries = 0;
+      for (const { in: input, out } of await oracle("diagnostics")) {
+        const [nameT, pdfT, optionsT, opsT] = input;
+        const name = fromTyped(nameT, lib);
+        const expected = fromTyped(out, lib);
+        // a new core: a new Python process (the registry of warnings.warn)
+        lib.dropCore();
+        const shown = [];
+        const pdf = await lib.open(fromTyped(pdfT, lib), {
+          ...fromTyped(optionsT, lib, true),
+          onWarning: (w) => shown.push([w.source, LEVELS[w.level], w.message]),
+        });
+        const settle = (p) => Promise.resolve(p).catch(() => undefined);
+        for (const op of fromTyped(opsT, lib)) {
+          if (op === "page_annots" || op === "page_objects") {
+            const pages = await settle(pdf.pages);
+            for (const page of pages ?? []) await settle(op === "page_annots" ? page.annots : page.objects);
+          } else if (op === "pages") await settle(pdf.pages);
+          else if (op === "doc_annots") await settle(pdf.annots);
+          else if (op === "doc_structure_tree") await settle(pdf.structure_tree);
+          else throw new Error(`unknown operation ${op}`);
+        }
+        await pdf.release();
+        assertSame(shown, expected, name);
+        entries += expected.length;
+        checked++;
+      }
+      lib.dropCore();
+      assert(checked >= 9 && entries >= 40, `${checked} cases, ${entries} records`);
+    },
+  },
+  {
     name: "no buffer of the boundary leaks",
     only: "direct",
     async run({ lib }) {

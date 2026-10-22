@@ -1004,24 +1004,116 @@ warnings.showwarning = showwarning
 class Handler(logging.Handler):
     def emit(self, record):
         shown.append([record.name, record.levelno, record.getMessage()])
+# pdfplumber's and pdfminer's records at WARNING and above (the effective
+# level of their loggers, the root's default)
 logging.getLogger("pdfplumber").addHandler(Handler())
+logging.getLogger("pdfminer").addHandler(Handler())
 
 with open(sys.argv[1]) as f:
     data, options, ops = json.load(f)
 pdf = pdfplumber.open(io.BytesIO(bytes.fromhex(data)), **options)
 for op in ops:
-    if op == "page_annots":
-        for page in pdf.pages:
-            page.annots
-    elif op == "doc_annots":
-        pdf.annots
-    elif op == "doc_structure_tree":
-        pdf.structure_tree
-    else:
-        raise AssertionError(op)
+    # an operation that raises shows what it logged before (the boundary
+    # returns the diagnostics of a call that raises)
+    try:
+        if op == "page_annots":
+            for page in pdf.pages:
+                page.annots
+        elif op == "doc_annots":
+            pdf.annots
+        elif op == "doc_structure_tree":
+            pdf.structure_tree
+        elif op == "pages":
+            pdf.pages
+        elif op == "page_objects":
+            for page in pdf.pages:
+                try:
+                    page.objects
+                except Exception:
+                    pass
+        else:
+            raise AssertionError(op)
+    except AssertionError:
+        raise
+    except Exception:
+        pass
 with open(sys.argv[2], "w") as f:
     json.dump(shown, f)
 '''
+
+
+#: Operators whose operands pdfminer cannot use: each logs a warning.
+_BAD_OPERATORS = (
+    b"1 0 0 1 /a 0 cm /x w /a 0 m 0 /b l 1 2 3 4 5 /c c 1 2 3 /d v 1 2 3 /e y 1 2 /f 4 re "
+    b"/g G /h g 1 /i 0 RG 1 0 (j) rg 1 0 0 /k K 0 0 0 [1] k "
+    b"/DeviceGray CS /q SCN /DeviceRGB cs 1 /r 0 scn /DeviceCMYK cs 0 0 0 /s scn "
+    b"/DeviceGray cs 1 2 sc /Pattern CS 0.5 SCN /Pattern cs [1] scn "
+    b"1 MP (t) BMC 3 << >> DP [4] << >> BDC "
+    b"BT /F1 /s Tf /t Tc /u Tw /v Tz (w) TL /x Ts /y Tr 1 0 0 1 0 /z Tm "
+    b"[(a) /lit 3 [1]] TJ ET "
+)
+
+
+def _interp_warnings_pdf() -> bytes:
+    return adv_interp.one_page(_BAD_OPERATORS)
+
+
+def _page_boxes_pdfs() -> list[bytes]:
+    """Pages whose boxes pdfminer replaces (a MediaBox missing or invalid,
+    a CropBox invalid), one document each."""
+    out = []
+    for attrs in ({"MediaBox": None}, {"MediaBox": [0, 0, Name("a"), 10]}, {"CropBox": [0, b"x", 1, 1]}):
+        b = adv_interp.Builder()
+        font = b.obj(adv_interp.HELVETICA)
+        b.page(b"BT /F1 12 Tf 10 10 Td (a) Tj ET", {"Font": {"F1": font}}, **attrs)
+        out.append(b.build())
+    return out
+
+
+def _font_warnings_pdf() -> bytes:
+    """A font whose FontBBox is not four numbers, a CID font whose /W has
+    invalid entries, a ToUnicode map that does not conform."""
+    b = adv_interp.Builder()
+    desc = b.obj({"Type": Name("FontDescriptor"), "FontName": Name("X"), "Flags": 32,
+                  "FontBBox": [0, 0, Name("a"), 1], "ItalicAngle": 0, "Ascent": 700, "Descent": -200})
+    tounicode = b.stream(b"/CIDInit /ProcSet findresource begin 12 dict begin begincmap "
+                         b"2 beginbfrange /a <02> <0041> <03> <0004> <0042> endbfrange "
+                         b"1 begincidrange (a) <ff> 1 endcidrange endcmap end end")
+    simple = b.obj({"Type": Name("Font"), "Subtype": Name("Type1"), "BaseFont": Name("X"), "FirstChar": 32,
+                    "LastChar": 33, "Widths": [500, 600], "FontDescriptor": desc, "ToUnicode": tounicode})
+    cid = b.obj({"Type": Name("Font"), "Subtype": Name("CIDFontType2"), "BaseFont": Name("Y"),
+                 "CIDSystemInfo": {"Registry": b"Adobe", "Ordering": b"Identity", "Supplement": 0},
+                 "W": [1, [500], Name("x"), 2, 1.5, 2, 500, 7]})
+    t0 = b.obj({"Type": Name("Font"), "Subtype": Name("Type0"), "BaseFont": Name("Y"), "Encoding": Name("Identity-H"),
+                "DescendantFonts": [cid]})
+    b.page(b"BT /F1 12 Tf 10 10 Td (!) Tj /F2 12 Tf <0001> Tj ET", {"Font": {"F1": simple, "F2": t0}})
+    return b.build()
+
+
+def _xref_warning_pdf() -> bytes:
+    """A classic xref table whose entry of object 3 has a position that is
+    not an int."""
+    data = adv_interp.one_page(b"BT /F1 12 Tf 10 10 Td (a) Tj ET")
+    start = data.index(b"xref\n")
+    lines = data[start:].split(b"\n")
+    # xref, "0 n", the free entry 0, objects 1, 2, then 3
+    entry = lines[5]
+    bad = b"00000z" + entry[6:]
+    return data[:start] + data[start:].replace(entry, bad, 1)
+
+
+def _flate_corrupt_pdf() -> bytes:
+    """A page whose FlateDecode content stream has a wrong zlib
+    checksum: pdfminer decompresses it byte by byte."""
+    import zlib
+
+    content = b"BT /F1 12 Tf 10 10 Td (corrupted) Tj ET"
+    data = zlib.compress(content)
+    data = data[:-1] + bytes([data[-1] ^ 0xFF])
+    b = adv_interp.Builder()
+    font = b.obj(adv_interp.HELVETICA)
+    b.page(b.stream(data, Filter=Name("FlateDecode")), {"Font": {"F1": font}})
+    return b.build()
 
 
 def diagnostic_cases() -> Iterator[tuple[list[Any], Any]]:
@@ -1037,6 +1129,13 @@ def diagnostic_cases() -> Iterator[tuple[list[Any], Any]]:
     scenarios = [
         ("annots-unicode", unicode_issues, {"raise_unicode_errors": False}, ["page_annots", "page_annots", "doc_annots"]),
         ("structure-class-missing", class_missing, {}, ["doc_structure_tree", "doc_structure_tree"]),
+        # pdfminer's records (pdfminer/pdfinterp.py, pdfdevice.py,
+        # pdffont.py, cmapdb.py, pdfpage.py, pdfdocument.py, pdftypes.py)
+        ("interp-warnings", _interp_warnings_pdf(), {}, ["page_objects", "page_objects"]),
+        *[(f"page-boxes-{k}", pdf, {}, ["pages", "page_objects"]) for k, pdf in enumerate(_page_boxes_pdfs())],
+        ("font-warnings", _font_warnings_pdf(), {}, ["page_objects"]),
+        ("xref-warning", _xref_warning_pdf(), {}, ["pages", "page_objects"]),
+        ("flate-corrupt", _flate_corrupt_pdf(), {}, ["page_objects"]),
     ]
     for name, data, options, ops in scenarios:
         with tempfile.TemporaryDirectory() as d:
@@ -1058,8 +1157,15 @@ def run_session(cases: list[list[Any]]) -> dict[str, Any]:
         inp.write_text(json.dumps(typed_json.encode(runnable)))
         subprocess.run([sys.executable, "-I", js_pages_run.__file__, str(inp), str(out)], check=True, timeout=1200)
         raw = json.loads(out.read_text())
-    return {"depth": raw["depth"], "results": [[typed_json.decode(r), typed_json.decode(x)] for r, x in raw["results"]],
-            "made": raw["made"]}
+    # values as deep as the script's limit allows (a chain of structure
+    # elements): decoded with room, the limit put back after
+    limit = sys.getrecursionlimit()
+    sys.setrecursionlimit(max(limit, 20000))
+    try:
+        results = [[typed_json.decode(r), typed_json.decode(x)] for r, x in raw["results"]]
+    finally:
+        sys.setrecursionlimit(limit)
+    return {"depth": raw["depth"], "results": results, "made": raw["made"]}
 
 
 def _recursion(results: dict[str, Any], last: bool = False) -> bool:
@@ -1215,7 +1321,14 @@ def page_cases() -> Iterator[tuple[list[Any], Any]]:
     sessions += list(depth_windows())
     for name, cases in sessions:
         out = run_session(cases)
-        yield [name, cases], out
+        # written (write_cases) with room for the deepest values (a chain
+        # of structure elements), the limit put back after
+        limit = sys.getrecursionlimit()
+        sys.setrecursionlimit(max(limit, 20000))
+        try:
+            yield [name, cases], {"depth": out["depth"], "results": out["results"]}
+        finally:
+            sys.setrecursionlimit(limit)
 
 
 def main():

@@ -135,7 +135,8 @@ impl Core {
                                         let doc = self.op_doc.ok_or_else(|| {
                                             PyErr::new(ExcKind::RuntimeError, "a stream without a document")
                                         })?;
-                                        let h = self.insert(Object::Stream(StreamObj { doc, stream: Some(s.clone()) }))?;
+                                        let h =
+                                            self.insert(Object::Stream(StreamObj { doc, stream: Some(s.clone()) }))?;
                                         let h = crate::pages::int_handle(&h)?;
                                         let h = u32::try_from(h).map_err(|_| exc::ValueError("invalid handle"))?;
                                         live.insert(addr, h);

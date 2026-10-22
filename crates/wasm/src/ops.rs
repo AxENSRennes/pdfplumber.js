@@ -92,8 +92,8 @@ use crate::errors::write_error;
 use crate::handles::Handles;
 use crate::pages::{PageObj, TableObj};
 use crate::streams::StreamObj;
-use crate::structs::TreeObj;
 use crate::strings::PyStrRef;
+use crate::structs::TreeObj;
 use crate::wire::binary::BinWriter;
 use crate::wire::json::JsonWriter;
 use crate::wire::{binary, write_value, Writer};
@@ -1128,9 +1128,11 @@ impl Core {
             .and_then(|h| handle(&h).ok())
             .and_then(|h| self.handles.get(h).and_then(|o| o.document(h)))
             .and_then(|d| match self.handles.get(d) {
-                Some(Object::Document(d)) => d.state.pdf.as_ref().map(|pdf| {
-                    Rc::downgrade(&pdf.core.doc) as std::rc::Weak<dyn pdfminer::pdftypes::PDFResolver>
-                }),
+                Some(Object::Document(d)) => d
+                    .state
+                    .pdf
+                    .as_ref()
+                    .map(|pdf| Rc::downgrade(&pdf.core.doc) as std::rc::Weak<dyn pdfminer::pdftypes::PDFResolver>),
                 _ => None,
             });
         binary::decode_args(request, &mut |o| self.object_arg(o, doc.clone(), &mut refs))

@@ -1102,8 +1102,7 @@ pub fn decompress_corrupted(data: &[u8]) -> PyResult<Vec<u8>> {
                 if (i as i64) < data.len() as i64 - 3 {
                     return Err(e);
                 }
-                // logger.warning("Data-loss while decompressing corrupted data")
-                LOG.warning()?;
+                LOG.warning_with(|| Ok("Data-loss while decompressing corrupted data".to_owned()))?;
                 break;
             }
             Err(e) => return Err(e),

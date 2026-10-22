@@ -207,8 +207,14 @@ impl PDFXRef {
                         self.offsets
                             .insert(ObjId::int(objid.clone()), XRefPos { strmid: None, index: pos_i, genno: genno_i });
                     } else {
-                        // log.warning("Not adding object %s to xref ...")
-                        LOG.warning()?;
+                        LOG.warning_with(|| {
+                            Ok(format!(
+                                "Not adding object {objid} to xref because position {} or generation number {} \
+                                 cannot be parsed as an int",
+                                pycompat::repr::bytes_repr(pos_b),
+                                pycompat::repr::bytes_repr(genno_b)
+                            ))
+                        })?;
                     }
                 }
                 objid = objid.add(&PyInt::Small(1));

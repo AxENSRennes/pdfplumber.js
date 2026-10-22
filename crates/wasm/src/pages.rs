@@ -745,7 +745,10 @@ impl Core {
                 let intersections = finder.intersections.points.iter().map(|((x, top), v, h)| {
                     PyValue::list([
                         PyValue::tuple([x.clone(), top.clone()]),
-                        PyValue::Dict(Obj::from_pairs([("v", list_of_objs(v.clone())), ("h", list_of_objs(h.clone()))])),
+                        PyValue::Dict(Obj::from_pairs([
+                            ("v", list_of_objs(v.clone())),
+                            ("h", list_of_objs(h.clone())),
+                        ])),
                     ])
                 });
                 PyValue::Dict(Obj::from_pairs([
