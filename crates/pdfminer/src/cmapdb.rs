@@ -1460,3 +1460,37 @@ impl PSStackParserExt for CMapParserExt<'_> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod caches_tests {
+    use super::*;
+
+    /// `CMapDBCaches::same` (what lets two process states share their
+    /// caches): the same maps under the same names, nothing else.
+    #[test]
+    fn caches_are_the_same_only_with_the_same_maps_under_the_same_names() {
+        let cmap = || Rc::new(CMap::new(Attrs::default()));
+        let umap = || Rc::new(UnicodeMap::new(Attrs::default()));
+        let (x, y) = (cmap(), cmap());
+        let (h, v, w) = (umap(), umap(), umap());
+        type Umaps<'a> = [(&'a str, [&'a Rc<UnicodeMap>; 2])];
+        let caches = |cmaps: &[(&str, &Rc<CMap>)], umaps: &Umaps<'_>| CMapDBCaches {
+            cmaps: cmaps.iter().map(|(k, c)| (k.to_string(), Rc::clone(c))).collect(),
+            umaps: umaps.iter().map(|(k, [a, b])| (k.to_string(), [Rc::clone(a), Rc::clone(b)])).collect(),
+        };
+        let base = caches(&[("A", &x)], &[("J", [&h, &v])]);
+        assert!(base.same(&caches(&[("A", &x)], &[("J", [&h, &v])])));
+        let others = [
+            caches(&[], &[("J", [&h, &v])]),
+            caches(&[("A", &x)], &[]),
+            caches(&[("B", &x)], &[("J", [&h, &v])]),
+            caches(&[("A", &y)], &[("J", [&h, &v])]),
+            caches(&[("A", &x)], &[("J", [&w, &v])]),
+            caches(&[("A", &x)], &[("J", [&h, &w])]),
+            caches(&[("A", &x)], &[("K", [&h, &v])]),
+        ];
+        for (i, other) in others.iter().enumerate() {
+            assert!(!base.same(other) && !other.same(&base), "case {i}");
+        }
+    }
+}

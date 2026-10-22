@@ -1805,8 +1805,17 @@ mod tests {
         assert_eq!(state(), [true, false, true, true]);
         py_symbols_restore(root);
         assert_eq!(state(), [true, false, false, false]);
+        py_symbols_restore(left.clone());
+        assert_eq!(state(), [true, true, true, false]);
+        // across a new process (a chain that shares nothing), and from the
+        // empty state to itself
+        py_symbols_reset([]);
+        assert_eq!(state(), [false; 4]);
         py_symbols_restore(left);
         assert_eq!(state(), [true, true, true, false]);
+        py_symbols_reset([]);
+        py_symbols_restore(py_symbols_snapshot());
+        assert_eq!(state(), [false; 4]);
         // a chain of 10^6 internings (addresses no symbol has) frees
         // without recursion
         PY_INTERNED.with(|i| {

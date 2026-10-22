@@ -170,4 +170,32 @@ mod tests {
         assert_eq!(parts_done(symbol), [true; 6], "the state after them, every part");
         CMapDB::clear_provider();
     }
+
+    /// A snapshot shares the parts besides the interned symbols with the
+    /// previous one only when none of them changed: each part changed alone
+    /// makes a new one, which puts that part back (the warnings registry
+    /// included).
+    #[test]
+    fn snapshots_share_only_unchanged_parts() {
+        CMapDB::set_provider(Some(Rc::new(Empty)));
+        let changes: [(&str, &dyn Fn()); 6] = [
+            ("re", &|| pycompat::re_cache::set_compiled(PATTERN, true)),
+            ("typing", &|| drop(SUBSCRIPTION.eval())),
+            ("logging", &|| drop(LOG.warning())),
+            ("sites", &|| pycompat::specialize::set_executed("process_state.test site", true)),
+            ("cmaps", &|| drop(CMapDB::get_cmap("process_state shared"))),
+            ("warnings", &|| pycompat::warnings::warn("UserWarning", "process_state.rs", "w".to_owned())),
+        ];
+        for (name, change) in changes {
+            let before = ProcessState::capture();
+            assert!(Rc::ptr_eq(&before.rest, &ProcessState::capture().rest), "{name}: nothing changed");
+            change();
+            let after = ProcessState::capture();
+            assert!(!Rc::ptr_eq(&before.rest, &after.rest), "{name}: a new snapshot");
+            before.clone().restore();
+            assert!(ProcessState::capture().rest.same(&before.rest), "{name}: put back");
+        }
+        assert!(pycompat::warnings::snapshot().is_empty());
+        CMapDB::clear_provider();
+    }
 }
