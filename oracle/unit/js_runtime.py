@@ -1267,8 +1267,10 @@ def depth_windows() -> Iterator[tuple[str, list[list[Any]]]]:
          9000, 10100),
         ("struct-repr-chain", adv_structure.WINDOWS["chain-repr"][0], [("doc:struct_tree", (None,)),
                                                                        ("tree:struct_element_repr", ([0],))], 2, 900),
-        ("struct-repr-attribute", adv_structure.WINDOWS["attribute-repr"][0],
-         [("doc:struct_tree", (None,)), ("tree:struct_element_repr", ([0],))], 9000, 10100),
+        # (repr(el) at the C limit needs a value nested ~10 000 levels in
+        # the element, which the tree's own result holds: deeper than JSON
+        # can be read back; its C units are those of the stage traces'
+        # element_repr, plus the builtin call's)
         # a site run for one class, specialized for it, then for another;
         # bisected on the last operation, on a second document (the first
         # document's page caches its objects when its second run, specialized,
