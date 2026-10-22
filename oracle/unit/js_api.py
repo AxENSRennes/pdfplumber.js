@@ -188,8 +188,16 @@ def neutral(v: Any) -> Any:
 
 def page_geometry(g: dict[str, Any]) -> dict[str, Any]:
     """The geometry of a page value (``doc_pages``, ``page_info``) in the
-    order of ``GEOMETRY``, without its handle."""
-    return {k: g[k] for k in GEOMETRY if k in g}
+    order of ``GEOMETRY``, without its handle; ``page_info`` gives the
+    exception of ``width`` or ``height`` as ``width_error``/``height_error``
+    (each read in its own statement): an ``Error``."""
+    out: dict[str, Any] = {}
+    for k in GEOMETRY:
+        if k in g:
+            out[k] = g[k]
+        elif f"{k}_error" in g:
+            out[k] = error(g[f"{k}_error"])
+    return out
 
 
 def table_value(t: dict[str, Any]) -> Named:

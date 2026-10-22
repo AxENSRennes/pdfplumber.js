@@ -103,7 +103,9 @@ export function difference(a, b, path = "$") {
     }
     // a stream's data is not an own field (pdfobjects.ts PDFStream): the
     // values of a snapshot are compared too
-    if (typeof x.snapshot === "function") stack.push([x.snapshot(), y.snapshot(), `${p}.snapshot`]);
+    // (a stream by reference has no values here: they are read on demand)
+    if (typeof x.snapshot === "function" && x.handle === undefined && y.handle === undefined)
+      stack.push([x.snapshot(), y.snapshot(), `${p}.snapshot`]);
     const kx = Object.keys(x);
     const ky = Object.keys(y);
     if (kx.length !== ky.length || kx.some((k, i) => k !== ky[i]))
