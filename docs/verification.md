@@ -402,7 +402,7 @@ Les constantes mesurées sont aussi vérifiées par les cas de l'ensemble
 | `pdfjs` | `upstream/pdfjs/test/pdfs` (937 PDF, beaucoup de cas tordus) |
 | `quick` | tout `micro`, plus les fichiers de `all` dont le SHA-256 commence par un octet < 18 (~7 % ; 150 PDF en tout aujourd'hui) : l'appartenance ne dépend que du contenu du fichier, en ajouter n'en retire aucun |
 | `all` | tout ce qui précède (1 853 PDF distincts aujourd'hui) |
-| `adv-<étape>` | corpus adverse généré pour une étape (voir plus bas ; la vague 4 étend le nom à un générateur que plusieurs étapes vérifient, `adv-plumber`, `adv-structure` : `architecture.md`, « Vague 4 ») ; plusieurs étapes peuvent vérifier le même ; aujourd'hui `adv-objects` (333 PDF), `adv-pages` (285) et `adv-interp` (353), sur lesquels chaque étape implémentée est vérifiée à l'intégration d'une vague (`interp_text` et `fonts_text` : `adv-interp`) |
+| `adv-<étape>` | corpus adverse généré pour une étape (voir plus bas ; la vague 4 étend le nom à un générateur que plusieurs étapes vérifient, `adv-plumber`, `adv-structure` : `architecture.md`, « Vague 4 ») ; plusieurs étapes peuvent vérifier le même ; aujourd'hui `adv-objects` (333 PDF), `adv-pages` (285), `adv-interp` (353), `adv-plumber` (199) et `adv-structure` (441), sur lesquels chaque étape implémentée est vérifiée à l'intégration d'une vague (depuis la vague 4, les 13 étapes sur les cinq corpus et sur `all`) |
 
 Un fichier est tout `*.pdf` (casse ignorée) des dossiers, récursivement, en
 ordre de chemin relatif. Les fichiers identiques sont dédoublonnés par SHA-256
@@ -490,7 +490,7 @@ d'écrire ses cas) :
   spécialisé), `repr()` des entrées impaires d'une image en ligne et d'un
   dictionnaire au bas de chaînes de 0, 1, 50 et 300 Form XObjects (deux
   unités par niveau, celles de `func(*args)`).
-- `oracle/adversarial/plumber.py` → `adv-plumber` (vérifié par les quatre étapes `plumber_*`) : la couche page de pdfplumber, cas listés en tête du générateur (`architecture.md`, « Vague 4 », « Réalisation » du chantier PAGE) ; `cases_depth` : chaînes de Form XObjects (l'interpréteur puis `iter_layout_objects`), `/ColorSpace` d'image et `/MCID` imbriqués en tableaux ou par chaînes de références (`resolve_all`), tirets imbriqués (`Serializer` de `to_json`/`to_csv`, `plumber_doc`) ; `cases_climit` : un opérande de `Tf` imbriqué en tableaux avant la scène, sur une page et sur deux, à chaque profondeur de deux sous la première qui lève dans une étape `plumber_*` jusqu'à la limite des unités C (chaque opération qui interprète la page échoue à sa propre profondeur, fixée par les chargements de propriétés et les appels au-dessus d'elle, du pilote de l'étape à l'interpréteur). Pas de NaN dans les clés que `cluster_objects` met dans un `set` (leur ordre suit leur adresse en CPython).
+- `oracle/adversarial/plumber.py` → `adv-plumber` (199 PDF ; vérifié par les quatre étapes `plumber_*`, et par les étapes inférieures à l'intégration) : la couche page de pdfplumber, cas listés en tête du générateur (`architecture.md`, « Vague 4 », « Réalisation » du chantier PAGE) ; `cases_depth` : chaînes de Form XObjects (l'interpréteur puis `iter_layout_objects`), `/ColorSpace` d'image et `/MCID` imbriqués en tableaux ou par chaînes de références (`resolve_all`), tirets imbriqués (`Serializer` de `to_json`/`to_csv`, `plumber_doc`) ; `cases_climit` (68 fenêtres) : un opérande de `Tf` imbriqué en tableaux avant la scène, sur une page, sur deux, et sur une page balisée dont les éléments de structure ont un `/Pg` ou n'en ont pas (`tf-list-tagged`, `tf-list-tagged-nopg` : `element_bbox` et les objets de la page), à chaque profondeur de deux sous la première qui lève dans une étape `plumber_*` jusqu'à la limite des unités C (chaque opération qui interprète la page échoue à sa propre profondeur, fixée par les chargements de propriétés et les appels au-dessus d'elle, du pilote de l'étape à l'interpréteur). Pas de NaN dans les clés que `cluster_objects` met dans un `set` (leur ordre suit leur adresse en CPython).
 - Les étapes `plumber_*` passent aussi sur `adv-interp`, `adv-pages` et
   `adv-objects` (jonction de la vague 4). Les fenêtres `climit-*`
   d'`adv-interp` y vérifient les unités C de la couche page au-dessus de
@@ -517,7 +517,8 @@ d'écrire ses cas) :
   « Profondeur de récursion »).
 - `oracle/adversarial/structure.py` → `adv-structure` (441 PDF ; vérifié
   par `plumber_doc` et `plumber_objects`, rejoué par
-  `oracle/unit/structure.py`) : arbres de structure (`/StructTreeRoot`
+  `oracle/unit/structure.py` ; les étapes inférieures y passent aussi à
+  l'intégration) : arbres de structure (`/StructTreeRoot`
   absent ou de tout type, `/K` de toute sorte et imbrication, MCR et OBJR
   vers une annotation, un élément, une autre page, DAG, cycles de la
   portée document, `/Pg` absents, atypiques ou hors des pages choisies,
