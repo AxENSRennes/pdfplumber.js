@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# The `pdftrace` of the public JavaScript API (js/trace/pdftrace-js.mjs), as
+# an executable for `python -m oracle.verify --engine js-api`.
+exec node --no-warnings "$(dirname "${BASH_SOURCE[0]}")/pdftrace-js.mjs" "$@"

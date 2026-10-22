@@ -1,5 +1,8 @@
 """Generate the option tables of the ``plumber_*`` stages for their Rust
-side: ``crates/pdftrace/src/stages/plumber_ops.rs``.
+side: ``crates/pdftrace/src/stages/plumber_ops.rs``, and for the harness
+that writes them through the public JavaScript API:
+``js/trace/plumber-ops.json`` (``{"constants": {...}, "tables": {name:
+typed JSON}}``, the same names).
 
     PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python oracle/codegen/plumber_ops.py [--check]
 
@@ -26,6 +29,7 @@ from oracle import typed_json  # noqa: E402
 from oracle.stages import plumber_doc, plumber_tables, plumber_text  # noqa: E402
 
 OUT = REPO / "crates" / "pdftrace" / "src" / "stages" / "plumber_ops.rs"
+OUT_JS = REPO / "js" / "trace" / "plumber-ops.json"
 
 #: (Rust name, module, attribute): typed JSON tables
 TABLES = [
@@ -80,17 +84,28 @@ def render() -> str:
     return "".join(out).rstrip("\n") + "\n"
 
 
+def render_js() -> str:
+    """``js/trace/plumber-ops.json``: the constants and the tables (typed JSON)."""
+    constants = ",\n".join(f'    "{name}": {getattr(module, attr)}' for name, module, attr in CONSTANTS)
+    tables = ",\n".join(f'    "{name}": {typed_json.dumps(getattr(module, attr))}' for name, module, attr in TABLES)
+    return (
+        '{\n  "generated": "by oracle/codegen/plumber_ops.py from oracle/stages/plumber_*.py: do not edit",\n'
+        f'  "constants": {{\n{constants}\n  }},\n  "tables": {{\n{tables}\n  }}\n}}\n'
+    )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(prog="oracle/codegen/plumber_ops.py", description=__doc__.split("\n\n")[0])
     ap.add_argument("--check", action="store_true")
     args = ap.parse_args()
-    text = render()
+    outputs = [(OUT, render()), (OUT_JS, render_js())]
     if args.check:
-        if not OUT.exists() or OUT.read_text() != text:
-            print(f"{OUT.relative_to(REPO)} is not what oracle/codegen/plumber_ops.py generates", file=sys.stderr)
-            return 1
-        return 0
-    OUT.write_text(text)
+        stale = [path for path, text in outputs if not path.exists() or path.read_text() != text]
+        for path in stale:
+            print(f"{path.relative_to(REPO)} is not what oracle/codegen/plumber_ops.py generates", file=sys.stderr)
+        return 1 if stale else 0
+    for path, text in outputs:
+        path.write_text(text)
     return 0
 
 

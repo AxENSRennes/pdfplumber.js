@@ -54,6 +54,13 @@ listed but do not fail the run.
 
 ``--oracle-only`` stops after step 2 and reports the oracle build (counts,
 time, slowest files); it is how the oracle cache is warmed.
+
+``--engine js-api`` runs, in place of ``pdftrace``, the harness that writes
+the ``plumber_*`` stages through the public JavaScript API
+(``js/trace/pdftrace-js``: the same command line, the built package of
+``dist/`` with ``dist/pdfplumber-oracle.wasm``; ``docs/architecture.md``,
+"Vague 5", "Harnais"); build them first (``node scripts/build.mjs``,
+``node scripts/build-wasm.mjs --oracle``).
 """
 
 from __future__ import annotations
@@ -76,6 +83,9 @@ from .corpus import REPO_DIR, SET_NAMES, CorpusError, CorpusFile, cache_dir, fil
 from .stages import DEFAULT_MAX_PAGES, available_stages, get_stage
 
 DEFAULT_PDFTRACE = REPO_DIR / "target" / "release" / "pdftrace"
+#: ``--engine js-api``: the public JavaScript API's ``pdftrace``, and what it needs built
+JS_API_TRACE = REPO_DIR / "js" / "trace" / "pdftrace-js"
+JS_API_BUILT = (REPO_DIR / "dist" / "src" / "index.js", REPO_DIR / "dist" / "pdfplumber-oracle.wasm")
 DEFAULT_BATCH = 64
 CONTEXT = 3
 SHOW_WIDTH = 240
@@ -327,7 +337,13 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     src.add_argument("--files", nargs="+", metavar="PDF", help="explicit PDF files")
     ap.add_argument("-j", "--jobs", type=int, default=DEFAULT_JOBS, help="parallel oracle processes and pdftrace batches (default 3)")
     ap.add_argument("--max-pages", type=int, default=DEFAULT_MAX_PAGES, help="pages per document for paged stages (0 = all; default 20)")
-    ap.add_argument("--pdftrace", type=Path, default=Path(os.environ.get("PDFTRACE", DEFAULT_PDFTRACE)), help="Rust trace binary")
+    ap.add_argument("--pdftrace", type=Path, default=None, help="Rust trace binary (default: target/release/pdftrace, or $PDFTRACE)")
+    ap.add_argument(
+        "--engine",
+        choices=("pdftrace", "js-api"),
+        default="pdftrace",
+        help="pdftrace (the Rust library) or js-api (the public JavaScript API, js/trace/pdftrace-js)",
+    )
     ap.add_argument(
         "--cmap-dir",
         type=Path,
@@ -380,6 +396,13 @@ def _oracle_report(args: argparse.Namespace, cache: OracleCache, results: list[O
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.pdftrace is None:
+        args.pdftrace = JS_API_TRACE if args.engine == "js-api" else Path(os.environ.get("PDFTRACE", DEFAULT_PDFTRACE))
+    if args.engine == "js-api" and not args.oracle_only:
+        missing = [str(p.relative_to(REPO_DIR)) for p in JS_API_BUILT if not p.is_file()]
+        if missing:
+            print(f"verify: --engine js-api needs {', '.join(missing)} (node scripts/build.mjs; node scripts/build-wasm.mjs --oracle)", file=sys.stderr)
+            return 2
     try:
         files = load_set(args.set) if args.set else files_from_paths(args.files)
     except CorpusError as e:

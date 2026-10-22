@@ -377,6 +377,14 @@ export class PDFPlumberDocument {
     return this.structure_tree;
   }
 
+  /** `PDFStructTree(pdf, page)`: the structure tree of the document, or of
+   * one of its pages, with `findAll`, `find`, `elementBbox` and its
+   * elements' `allMcids`; waits for the boundary operations
+   * (docs/architecture.md, "Vague 5", BOUNDARY). */
+  structTree(_page?: PDFPlumberPage): Promise<never> {
+    return Promise.reject(new NotImplemented("PDFPlumberDocument.structTree"));
+  }
+
   /** `pdf.to_dict(object_types)` */
   toDict(objectTypes?: string[] | null): Promise<Record<string, unknown>> {
     return this.#get("doc_to_dict", [objectTypes === undefined ? {} : { object_types: objectTypes }]);
