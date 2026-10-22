@@ -178,6 +178,13 @@ mod tests {
     #[test]
     fn snapshots_share_only_unchanged_parts() {
         CMapDB::set_provider(Some(Rc::new(Empty)));
+        // a new process (under WebAssembly the tests share one thread)
+        pycompat::re_cache::reset();
+        pycompat::typing_cache::reset();
+        pycompat::logging::disable();
+        pycompat::specialize::reset();
+        CMapDB::clear_caches();
+        pycompat::warnings::reset();
         let changes: [(&str, &dyn Fn()); 6] = [
             ("re", &|| pycompat::re_cache::set_compiled(PATTERN, true)),
             ("typing", &|| drop(SUBSCRIPTION.eval())),
