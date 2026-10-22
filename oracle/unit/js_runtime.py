@@ -69,6 +69,8 @@ from typing import Any
 
 import pdfplumber
 from pdfminer.cmapdb import CMapDB
+from pdfminer.pdftypes import PDFObjRef
+from pdfminer.psparser import KWD, LIT
 from pdfplumber.structure import PDFStructTree
 from pdfplumber.table import TableFinder, TableSettings
 from pdfplumber.utils import text as utext
@@ -461,6 +463,16 @@ def documents_session() -> list[list[Any]]:
     for kw in ({"strip": False}, {"return_chars": 1}, {"self": 1}):
         s.add("page_extract_text_lines", p, True, True, kw)
     s.add("search", p, "A", {"pattern": 1}, js="A")
+    # pdfminer's objects given back as arguments (the objects of a result):
+    # PSLiteral, PSKeyword, PDFObjRef (bound to the target's document), a
+    # page; Python's errors name their types
+    s.add("page_crop", p, [LIT("A"), 0, 10, 10], {})
+    s.add("page_crop", p, [PDFObjRef(None, 1), 0, 10, 10], {})
+    s.add("page_extract_text", p, {"x_tolerance": KWD(b"BT")})
+    s.add("page_extract_text", p, {"x_tolerance": {"$obj": p}})
+    s.add("page_extract_words", p, {"extra_attrs": [LIT("fontname")]})
+    s.add("page_extract_tables", p, {"vertical_strategy": "explicit", "horizontal_strategy": "explicit",
+                                     "explicit_vertical_lines": [LIT("x"), 1], "explicit_horizontal_lines": [1, 2]})
     s.add("page_crop", p, [0, 0, 10, 10], {"bbox": 1})
     s.add("page_extract_text", p, [1, 2])
     s.add("page_extract_text", p, None)
@@ -761,6 +773,20 @@ def _stream_labels(v: Any, out: list[int]) -> None:
             stack.extend(reversed(list(x.values())))
 
 
+def _as_argument(v: Any) -> Any:
+    """A value of a result as an argument: its streams by reference as the
+    objects of the session they are (``{"$obj": k}``)."""
+    if isinstance(v, typed_json.Named) and v.name == "StreamRef":
+        return {"$obj": int(v.fields["handle"][1:])}
+    if isinstance(v, list):
+        return [_as_argument(x) for x in v]
+    if isinstance(v, tuple):
+        return tuple(_as_argument(x) for x in v)
+    if isinstance(v, dict):
+        return {k: _as_argument(x) for k, x in v.items()}
+    return v
+
+
 def streams_session() -> list[list[Any]]:
     """Streams by reference (``set_stream_refs``, ``crates/wasm/src/streams.rs``):
     the results that hold streams (each stream one handle: the first live
@@ -798,6 +824,16 @@ def streams_session() -> list[list[Any]]:
             s.add(op, k)
         s.add("stream_get_data", k, 1)
         s.add("stream_get_rawdata", k, 1)
+    # objects of a result given back as arguments: an image (its stream by
+    # reference, its color space's literals) as an explicit table line
+    for c, (r, _) in zip(s.cases, out["results"]):
+        if c[0] == "page_attr" and c[2] == ["images"] and isinstance(r, list) and r:
+            line = _as_argument(r[0])
+            s.add("page_find_tables", c[1], {"vertical_strategy": "explicit", "horizontal_strategy": "explicit",
+                                            "explicit_vertical_lines": [line, 1000],
+                                            "explicit_horizontal_lines": [0, 1000]}, makes=0)
+            s.add("page_extract_text", c[1], {"x_tolerance": line["stream"]})
+            break
     # the documents closed: the streams keep their bytes
     for doc, _ in docs:
         s.add("doc_close", doc)

@@ -904,6 +904,35 @@ export function encodeValue(value: unknown): Uint8Array {
       w.raw(b);
       return;
     }
+    // the objects of a result given back: the objects they stand for
+    // (crates/wasm/src/wire/binary.rs `decode_args`)
+    if (v instanceof PSLiteral) {
+      w.u8(TAG.LITERAL);
+      stack.push(v.name);
+      return;
+    }
+    if (v instanceof PSKeyword) {
+      w.u8(TAG.KEYWORD);
+      w.varint(v.name.length);
+      w.raw(v.name);
+      return;
+    }
+    if (v instanceof PDFObjRef) {
+      w.u8(TAG.REF);
+      stack.push(v.objid);
+      return;
+    }
+    if (v instanceof PageRef) {
+      w.u8(TAG.PAGE);
+      stack.push(v.page_number, v.handle);
+      return;
+    }
+    if (v instanceof PDFStream) {
+      if (v.handle === undefined) throw new TypeError("a PDFStream snapshot (made from its values) cannot be an argument");
+      w.u8(TAG.STREAM_REF);
+      stack.push(v.attrs, v.genno, v.objid, v.handle);
+      return;
+    }
     if (Array.isArray(v) || v instanceof PyTuple) {
       const items = Array.isArray(v) ? v : v.items;
       w.u8(Array.isArray(v) ? TAG.LIST : TAG.TUPLE);

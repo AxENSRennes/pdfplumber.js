@@ -14,6 +14,7 @@ use pdfplumber_wasm::wire::binary::*;
 use pdfplumber_wasm::wire::{write_value, MAX_SAFE};
 use pdftrace::value::{NameValue, PyStr, Value};
 use pycompat::PyInt;
+use rustc_hash::FxHashMap;
 
 /// A JavaScript value, as the decoders of `js/src/core/wire.ts` build it.
 #[derive(Clone, Debug)]
@@ -641,7 +642,44 @@ pub fn call(core: &mut Core, op: &str, handle: u32, args: PyValue, data: Option<
 }
 
 pub fn call_level(core: &mut Core, op: &str, handle: u32, args: PyValue, data: Option<Vec<u8>>, level: i64) -> Resp {
-    response(&core.call(&request(op, handle, &args, level), data.map(Rc::from)))
+    // the pages and streams of the arguments cross as their handles, as
+    // JavaScript gives them back
+    let (pages, streams) = arg_handles(core, &args);
+    let req = pdfplumber_wasm::wire::with_value_handles(pages, streams, || request(op, handle, &args, level));
+    response(&core.call(&req, data.map(Rc::from)))
+}
+
+/// The handles of the pages and streams a value holds (the core's objects).
+pub fn arg_handles(core: &Core, v: &PyValue) -> (FxHashMap<usize, u32>, FxHashMap<usize, u32>) {
+    use pdfplumber_wasm::ops::Object;
+    let (mut pages, mut streams) = (FxHashMap::default(), FxHashMap::default());
+    let mut stack = vec![v.clone()];
+    while let Some(v) = stack.pop() {
+        match &v {
+            PyValue::List(items) | PyValue::Tuple(items) => stack.extend(items.iter().cloned()),
+            PyValue::Dict(d) => stack.extend(d.items().iter().map(|(_, x)| x.clone())),
+            PyValue::Page(r) => {
+                for (h, o) in core.handles.iter() {
+                    if let Object::Page(p) = o {
+                        if p.page.as_ref().is_some_and(|p| p.as_value().ptr_eq(r)) {
+                            pages.entry(r.id()).or_insert(h);
+                        }
+                    }
+                }
+            }
+            PyValue::Pdf(PDFObject::Stream(st)) => {
+                for (h, o) in core.handles.iter() {
+                    if let Object::Stream(x) = o {
+                        if x.stream.as_ref().is_some_and(|x| Rc::ptr_eq(x, st)) {
+                            streams.entry(Rc::as_ptr(st) as usize).or_insert(h);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    (pages, streams)
 }
 
 /// The value of a successful response.

@@ -1068,7 +1068,7 @@ impl Core {
         self.calls += 1;
         let process = ProcessState::capture();
         let (result, collected) = {
-            let parsed = binary::decode(request).and_then(|req| {
+            let parsed = self.decode_request(request).and_then(|req| {
                 let r = seq(&req)?.to_vec();
                 let op = str_arg(arg(&r, 0)?)?.to_owned();
                 h = match arg(&r, 1)? {
@@ -1108,6 +1108,63 @@ impl Core {
                 Err(e) => response(STATUS_ERROR, FORMAT_BINARY, false, &encode_error(&e), &collected),
             },
             Err(e) => response(STATUS_ERROR, FORMAT_BINARY, false, &encode_error(&e), &collected),
+        }
+    }
+
+    /// The request block (`[op, handle, args, level]`), the objects of a
+    /// document its arguments hold made as the objects they stand for
+    /// ([`Core::object_arg`]): a `PDFObjRef` is bound to the document of
+    /// the request's target (decoded again once that is known, when the
+    /// arguments hold one).
+    fn decode_request(&self, request: &[u8]) -> PyResult<PyValue> {
+        let mut refs = false;
+        let first = binary::decode_args(request, &mut |o| self.object_arg(o, None, &mut refs))?;
+        if !refs {
+            return Ok(first);
+        }
+        let doc = seq(&first)
+            .ok()
+            .and_then(|r| r.get(1).cloned())
+            .and_then(|h| handle(&h).ok())
+            .and_then(|h| self.handles.get(h).and_then(|o| o.document(h)))
+            .and_then(|d| match self.handles.get(d) {
+                Some(Object::Document(d)) => d.state.pdf.as_ref().map(|pdf| {
+                    Rc::downgrade(&pdf.core.doc) as std::rc::Weak<dyn pdfminer::pdftypes::PDFResolver>
+                }),
+                _ => None,
+            });
+        binary::decode_args(request, &mut |o| self.object_arg(o, doc.clone(), &mut refs))
+    }
+
+    /// The object an argument stands for (`binary::ObjectArg`): a
+    /// `PDFObjRef` of `doc` (a new one, equal to the one of the result:
+    /// pdfminer's has no other identity than its own); the page of a page
+    /// handle (`PageRef`), the stream of a stream handle (the same objects).
+    fn object_arg(
+        &self,
+        o: binary::ObjectArg,
+        doc: Option<std::rc::Weak<dyn pdfminer::pdftypes::PDFResolver>>,
+        refs: &mut bool,
+    ) -> PyResult<PyValue> {
+        match o {
+            binary::ObjectArg::Ref(objid) => {
+                *refs = true;
+                let PyValue::Int(objid) = &objid else {
+                    return Err(exc::TypeError(format!("a PDFObjRef objid is an int, not {}", objid.type_name())));
+                };
+                let objid = objid.clone();
+                Ok(PyValue::Pdf(pdfminer::pdftypes::PDFObject::Ref(pdfminer::pdftypes::PDFObjRef::new(doc, objid))))
+            }
+            binary::ObjectArg::Page(h, _) => match self.handles.get(handle(&h)?) {
+                Some(Object::Page(PageObj { page: Some(p), .. })) => Ok(PyValue::Page(p.as_value())),
+                _ => Err(exc::ValueError("invalid handle")),
+            },
+            binary::ObjectArg::Stream(h) => match self.handles.get(handle(&h)?) {
+                Some(Object::Stream(StreamObj { stream: Some(s), .. })) => {
+                    Ok(PyValue::Pdf(pdfminer::pdftypes::PDFObject::Stream(s.clone())))
+                }
+                _ => Err(exc::ValueError("invalid handle")),
+            },
         }
     }
 

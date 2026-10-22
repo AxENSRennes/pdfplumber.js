@@ -152,6 +152,31 @@ fn object_arg(v: &Value) -> Option<usize> {
     }
 }
 
+/// An argument of a case, the objects of the session it names
+/// (`{"$obj": k}`: a page, a stream) as the core's objects (the request
+/// gives their handles: `common::arg_handles`).
+fn object_args(core: &Core, objs: &Objs, v: &Value) -> PyValue {
+    use pdfplumber_wasm::ops::Object;
+    if let Some(k) = object_arg(v) {
+        let h = objs.0[k];
+        return match core.handles.get(h) {
+            Some(Object::Page(p)) => PyValue::Page(p.page.as_ref().expect("a live page").as_value()),
+            Some(Object::Stream(s)) => {
+                PyValue::Pdf(pdfminer::pdftypes::PDFObject::Stream(s.stream.clone().expect("a live stream")))
+            }
+            _ => panic!("{k}: not a page or a stream"),
+        };
+    }
+    match v {
+        Value::List(items) => list(items.iter().map(|x| object_args(core, objs, x)).collect()),
+        Value::Tuple(items) => PyValue::tuple(items.iter().map(|x| object_args(core, objs, x))),
+        Value::Dict(items) => PyValue::Dict(pdfplumber::obj::Obj::from_pairs(items.iter().map(|(k, x)| {
+            (k.as_str().expect("a str key").to_owned(), object_args(core, objs, x))
+        }))),
+        other => py(other),
+    }
+}
+
 /// The exceptions a dict response holds as values (`page_info`'s
 /// `width_error`, `height_error`: the dicts of `errors.rs`) as the script
 /// writes them (`{exception, message}`).
@@ -765,7 +790,8 @@ fn replay_session(format: &str, name: &str, cases: &[Value], out: &Value) -> usi
                 call_cmaps(&mut core, op, h, list(vec![py(&args[0]), matcher]), None, &dir)
             }
             _ => {
-                let r = call_cmaps(&mut core, op, h, list(args.iter().map(py).collect()), None, &dir);
+                let args = list(args.iter().map(|a| object_args(&core, &objs, a)).collect());
+                let r = call_cmaps(&mut core, op, h, args, None, &dir);
                 match op {
                     "doc_pages" | "page_crop" | "page_within_bbox" | "page_outside_bbox" | "page_dedupe_chars"
                     | "page_find_tables" | "page_find_table" => objs.relabel(r),

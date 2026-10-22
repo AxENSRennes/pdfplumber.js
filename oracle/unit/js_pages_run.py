@@ -51,20 +51,36 @@ import sys
 
 import pdfplumber
 from pdfminer.pdftypes import PDFObjRef, PDFStream
-from pdfminer.psparser import PSKeyword, PSLiteral
+from pdfminer.psparser import KWD, LIT, PSKeyword, PSLiteral
 from pdfplumber.page import Page, tuplify_list_kwargs
 from pdfplumber.structure import PDFStructElement, PDFStructTree
 
 _SHORT = ("builtins", "pdfminer", "pdfplumber", "oracle")
 
 
+class _Ref:
+    """A ``PDFObjRef`` of an argument, bound to the document of the case's
+    target before the statement (``bind_args``), as the boundary binds it."""
+
+    def __init__(self, objid):
+        self.objid = objid
+
+
 def decode(j):
-    """Typed JSON to a value (no literals: the cases have none)."""
+    """Typed JSON to a value; the pdfminer objects of an argument as
+    pdfminer makes them (``LIT``, ``KWD``: interned; a ``PDFObjRef``,
+    bound by ``bind_args``)."""
     if j is None or type(j) in (bool, str):
         return j
     if type(j) is list:
         return [decode(x) for x in j]
     (k, v), = j.items()
+    if k == "lit":
+        return LIT(decode(v)) if type(v) is not dict or "b" not in v else LIT(bytes.fromhex(v["b"]))
+    if k == "kw":
+        return KWD(bytes.fromhex(v))
+    if k == "ref":
+        return _Ref(v if type(v) is int else decode(v))
     if k == "i":
         return int(v)
     if k == "f":
@@ -99,6 +115,38 @@ def page_handle(page):
         if o is page and k not in FREED:
             return f"#{k}"
     return handle(OBJS, page)
+
+
+def document_of(obj):
+    """The ``PDFDocument`` of a case's target (``None``: none)."""
+    for get in (lambda o: o.doc, lambda o: o.pdf.doc, lambda o: o.page.pdf.doc):
+        try:
+            doc = get(obj)
+        except AttributeError:
+            continue
+        if doc is not None and hasattr(doc, "getobj"):
+            return doc
+    return None
+
+
+def bind_args(args, obj):
+    """The arguments of a case with the objects they name: ``{"$obj": k}``
+    the ``k``-th object of the session (a page, a stream), a ``PDFObjRef``
+    bound to the document of the target (``crates/wasm/src/ops.rs``
+    ``object_arg``)."""
+    def go(v):
+        if isinstance(v, _Ref):
+            return PDFObjRef(document_of(obj), v.objid)
+        if type(v) is list:
+            return [go(x) for x in v]
+        if type(v) is tuple:
+            return tuple(go(x) for x in v)
+        if type(v) is dict:
+            if set(v) == {"$obj"} and type(v["$obj"]) is int:
+                return OBJS[v["$obj"]]
+            return {k: go(x) for k, x in v.items()}
+        return v
+    return go(args)
 
 
 def stream_handle(stream):
@@ -366,6 +414,8 @@ if __name__ == "__main__":
             obj = None if target is None else objs[target]
         first = len(objs)
         extra = None
+        if op != "struct_tree":
+            args = bind_args(args, obj)
         try:
             if op == "doc_open":
                 if type(data) is str:

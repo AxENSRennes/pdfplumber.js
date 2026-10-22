@@ -73,10 +73,30 @@ async function replaySession(lib, input, out, readFile) {
     handles.push(h);
     return `#${handles.length - 1}`;
   };
+  // the objects of the labels an argument can name ({"$obj": k}): pages,
+  // streams by reference
+  const objects = new Map();
   const relabel = (v) => {
     if (typeof v === "number") return label(v);
     if (Array.isArray(v)) return v.map(relabel);
-    if (v && typeof v === "object" && "handle" in v) return { ...v, handle: label(v.handle) };
+    if (v && typeof v === "object" && "handle" in v) {
+      const l = label(v.handle);
+      if ("page_number" in v) objects.set(l, new lib.PageRef(v.handle, v.page_number));
+      return { ...v, handle: l };
+    }
+    return v;
+  };
+  const withObjects = (v) => {
+    if (Array.isArray(v)) return v.map(withObjects);
+    if (v && typeof v === "object" && Object.getPrototypeOf(v) === Object.prototype) {
+      const keys = Object.keys(v);
+      if (keys.length === 1 && keys[0] === "$obj" && typeof v.$obj === "number") return objects.get(`#${v.$obj}`);
+      const o = {};
+      for (const k of keys) {
+        Object.defineProperty(o, k, { value: withObjects(v[k]), writable: true, enumerable: true, configurable: true });
+      }
+      return o;
+    }
     return v;
   };
   // the pages a result holds (PageRef) and its streams by reference: their
@@ -90,6 +110,7 @@ async function replaySession(lib, input, out, readFile) {
     if (v instanceof lib.PageRef) return new lib.PageRef(labelOf(v.handle), v.page_number);
     if (v instanceof lib.PDFStream && v.handle !== undefined) {
       const label = labelOf(v.handle);
+      objects.set(label, v);
       return { $streamref: label, objid: v.objid, genno: v.genno, attrs: relabelPages(v.attrs) };
     }
     if (Array.isArray(v)) return v.map(relabelPages);
@@ -119,7 +140,7 @@ async function replaySession(lib, input, out, readFile) {
     // none): nothing runs
     if (want && typeof want === "object" && Object.keys(want).length === 1 && want.$unresolved === true) continue;
     const handle = target === null ? 0 : handles[target];
-    const args = fromTyped(argsT, lib, true);
+    const args = op === "struct_tree" ? fromTyped(argsT, lib, true) : withObjects(fromTyped(argsT, lib, true));
     const where = `${name} #${i} ${op} ${JSON.stringify(fromTyped(argsT, lib), (k, v) => (typeof v === "bigint" ? `${v}n` : v))}`;
     let got;
     try {
