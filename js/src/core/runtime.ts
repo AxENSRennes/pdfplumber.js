@@ -5,8 +5,9 @@
  */
 
 import { CoreCrash, fromPython, type PythonErrorInfo } from "../errors.js";
+import { PDFStream, type StreamSource } from "../pdfobjects.js";
 import { project } from "./typed.js";
-import { decodeBinary, decodeJson, encodeValue } from "./wire.js";
+import { decodeBinary, decodeJson, encodeValue, withStreamRefs, type StreamRefMaker } from "./wire.js";
 
 /** Where the predefined CMaps come from. */
 export interface CMapSource {
@@ -34,6 +35,16 @@ export interface CallOptions {
    * ones): those of its final run, Python's, once. A run that missed a
    * CMap is void, and reports none (crates/wasm/src/ops.rs). */
   onDiagnostics?: (entries: Diagnostic[], dropped: number) => void;
+  /** The document whose job makes the request (its `PDFPlumberDocument`):
+   * the streams of the result read their data in its jobs, and reject
+   * with `DocumentReleased` once it is released (`StreamRefs`). */
+  owner?: StreamOwner;
+}
+
+/** What a stream by reference reads its data through: its document. */
+export interface StreamOwner {
+  job<T>(f: (call: CoreCall) => Promise<T>): Promise<T>;
+  callOptions?(page?: number): CallOptions;
 }
 
 /** One request, inside a job (`Core.exclusive`). */
@@ -63,6 +74,42 @@ export interface Core {
   /** Stops a core that holds more than references (a worker); a core in
    * the page is freed with its last reference. */
   terminate?(): void;
+}
+
+/** The streams by reference of a core's results (wire.ts
+ * `withStreamRefs`): one `PDFStream` per stream while it is alive (a
+ * handle names one stream of one document as long as the document lives:
+ * the core frees its stream handles with it), reading its data in its
+ * document's jobs (`CallOptions.owner`), or as plain requests of the core
+ * (the internal API, which has no document object). */
+export class StreamRefs {
+  readonly #live = new Map<number, { ref: WeakRef<PDFStream> | PDFStream; owner: StreamOwner | undefined }>();
+
+  constructor(private readonly core: Core) {}
+
+  /** The maker of the streams of a response to a request made with
+   * `options`. */
+  maker(options: CallOptions): StreamRefMaker {
+    const owner = options.owner;
+    return (handle, objid, genno, attrs) => {
+      const known = this.#live.get(handle);
+      if (known && known.owner === owner) {
+        const s = known.ref instanceof PDFStream ? known.ref : known.ref.deref();
+        if (s) return s;
+      }
+      const source: StreamSource = owner
+        ? { read: (op, h) => owner.job((call) => call(op, h, null, owner.callOptions?.())) }
+        : { read: (op, h) => this.core.call(op, h, null) };
+      const s = PDFStream.reference(objid, genno, attrs, handle, source);
+      this.#live.set(handle, { ref: typeof WeakRef === "function" ? new WeakRef(s) : s, owner });
+      return s;
+    };
+  }
+}
+
+/** Decodes a response with the stream references of `refs`. */
+export function decodeWithRefs(u8: Uint8Array, refs: StreamRefs, options: CallOptions): Response {
+  return withStreamRefs(refs.maker(options), () => decodeResponse(u8));
 }
 
 /** The FIFO of a core's requests and jobs (see `Core`). */
@@ -229,20 +276,25 @@ export class WasmCore implements Core {
     this.guard(() => this.ex.pp_result_free());
   }
 
+  /** The streams of the results (`StreamRefs`). */
+  private readonly refs = new StreamRefs(this);
+
   /** One request, no CMap loading. */
   callRaw(op: string, handle: number, args: unknown, options: CallOptions = {}): Response {
     const view = this.run(encodeRequest(op, handle, args, options.minLevel ?? 0), options.data);
     try {
-      return decodeResponse(view);
+      return decodeWithRefs(view, this.refs, options);
     } finally {
       this.release();
     }
   }
 
-  /** Hands the CMap names to the core, once. */
+  /** Hands the CMap names to the core, and has it write the streams of
+   * its results by reference (`set_stream_refs`), once. */
   configure(): void {
     if (this.configured) return;
     this.configured = true;
+    responseValue(this.callRaw("set_stream_refs", 0, [true]), "set_stream_refs");
     const r = this.callRaw("cmap_configure", 0, this.cmaps ? [...this.cmaps.names] : []);
     responseValue(r, "cmap_configure");
   }

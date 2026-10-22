@@ -80,7 +80,7 @@ function inlineNames(root, lib) {
   const isInline = (o) =>
     o.object_type === "image" &&
     typeof o.name === "string" &&
-    o.stream instanceof lib.PDFStream &&
+    (o.stream instanceof lib.PDFStream || o.stream?.$named === "PDFStream") &&
     o.stream.objid === null &&
     /^inline-(0|[1-9][0-9]*)$/.test(o.name);
   const go = (x) => {
@@ -126,6 +126,10 @@ function neutralValue(v, lib) {
     return { $named: "Table", bbox: v.bbox, cells: v.cells, rows: v.rows, columns: v.columns };
   }
   if (v instanceof lib.PDFPlumberDocument) return { $named: "PDFPlumberDocument" };
+  if (v instanceof lib.PDFStream) {
+    // a stream by reference: its data is read on demand
+    return { $named: "PDFStream", objid: v.objid, genno: v.genno, attrs: neutralValue(v.attrs, lib) };
+  }
   if (v instanceof lib.PageRef) return { $named: "Page", page_number: v.page_number };
   if (Object.getPrototypeOf(v) === Object.prototype) {
     const o = {};

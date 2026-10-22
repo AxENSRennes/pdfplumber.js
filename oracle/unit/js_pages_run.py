@@ -13,7 +13,8 @@ time a site runs, ``pycompat::specialize::AttrSite``), a method with
 attribute by name with ``getattr``. ``OUT`` gets, for each case, its result
 (the value written by the boundary, handles as ``"#<k>"``: the ``k``-th
 object the session made) or its exception, and the depth of the top level
-(``depth``: frames, C units left), which ``ENTRY_DEPTH`` must be.
+(``depth``: frames, C units left), which ``ENTRY_DEPTH`` must be, and how
+many objects each case made (``made``).
 
 It imports nothing but the standard library and pdfplumber (whose import
 interns the symbols the port starts from), and decodes and encodes typed
@@ -51,6 +52,7 @@ same page, ``args[0]`` the targets of the pages it holds). A value that does not
 case unresolved, as a target that was not made.
 """
 
+import dataclasses
 import io
 import json
 import logging
@@ -59,19 +61,36 @@ import sys
 
 import pdfplumber
 from pdfminer.pdftypes import PDFObjRef, PDFStream
-from pdfminer.psparser import PSKeyword, PSLiteral
+from pdfminer.psparser import KWD, LIT, PSKeyword, PSLiteral
 from pdfplumber.page import Page, tuplify_list_kwargs
+from pdfplumber.structure import PDFStructElement, PDFStructTree
 
 _SHORT = ("builtins", "pdfminer", "pdfplumber", "oracle")
 
 
+class _Ref:
+    """A ``PDFObjRef`` of an argument, bound to the document of the case's
+    target before the statement (``bind_args``), as the boundary binds it."""
+
+    def __init__(self, objid):
+        self.objid = objid
+
+
 def decode(j):
-    """Typed JSON to a value (no literals: the cases have none)."""
+    """Typed JSON to a value; the pdfminer objects of an argument as
+    pdfminer makes them (``LIT``, ``KWD``: interned; a ``PDFObjRef``,
+    bound by ``bind_args``)."""
     if j is None or type(j) in (bool, str):
         return j
     if type(j) is list:
         return [decode(x) for x in j]
     (k, v), = j.items()
+    if k == "lit":
+        return LIT(decode(v)) if type(v) is not dict or "b" not in v else LIT(bytes.fromhex(v["b"]))
+    if k == "kw":
+        return KWD(bytes.fromhex(v))
+    if k == "ref":
+        return _Ref(v if type(v) is int else decode(v))
     if k == "i":
         return int(v)
     if k == "f":
@@ -94,6 +113,9 @@ def _str(s):
 #: The objects the session made (handles ``#k``), and those it freed.
 OBJS = []
 FREED = set()
+#: Whether results hold their streams by reference (``set_stream_refs``,
+#: ``crates/wasm/src/streams.rs``).
+STREAM_REFS = [False]
 
 
 def page_handle(page):
@@ -103,6 +125,47 @@ def page_handle(page):
         if o is page and k not in FREED:
             return f"#{k}"
     return handle(OBJS, page)
+
+
+def document_of(obj):
+    """The ``PDFDocument`` of a case's target (``None``: none)."""
+    for get in (lambda o: o.doc, lambda o: o.pdf.doc, lambda o: o.page.pdf.doc):
+        try:
+            doc = get(obj)
+        except AttributeError:
+            continue
+        if doc is not None and hasattr(doc, "getobj"):
+            return doc
+    return None
+
+
+def bind_args(args, obj):
+    """The arguments of a case with the objects they name: ``{"$obj": k}``
+    the ``k``-th object of the session (a page, a stream), a ``PDFObjRef``
+    bound to the document of the target (``crates/wasm/src/ops.rs``
+    ``object_arg``)."""
+    def go(v):
+        if isinstance(v, _Ref):
+            return PDFObjRef(document_of(obj), v.objid)
+        if type(v) is list:
+            return [go(x) for x in v]
+        if type(v) is tuple:
+            return tuple(go(x) for x in v)
+        if type(v) is dict:
+            if set(v) == {"$obj"} and type(v["$obj"]) is int:
+                return OBJS[v["$obj"]]
+            return {k: go(x) for k, x in v.items()}
+        return v
+    return go(args)
+
+
+def stream_handle(stream):
+    """The handle the boundary names a stream by (``set_stream_refs``), as
+    ``page_handle``."""
+    for k, o in enumerate(OBJS):
+        if o is stream and k not in FREED:
+            return f"#{k}"
+    return handle(OBJS, stream)
 
 
 def encode(v):
@@ -136,6 +199,11 @@ def encode(v):
     if t is PDFObjRef:
         return {"ref": v.objid if type(v.objid) is int else encode(v.objid)}
     if t is PDFStream:
+        if STREAM_REFS[0]:
+            # by reference: its handle, objid, genno and attrs, in this order
+            label = stream_handle(v)
+            return {"named": "StreamRef", "d": [["handle", label], ["objid", encode(v.objid)], ["genno", encode(v.genno)],
+                                                ["attrs", encode(v.attrs)]]}
         fields = [("objid", v.objid), ("genno", v.genno), ("attrs", v.attrs), ("rawdata", v.rawdata), ("data", v.data)]
         return {"stream": {k: encode(x) for k, x in fields}}
     if isinstance(v, BaseException):
@@ -191,6 +259,100 @@ def span_of(text, m, g):
         return None
     u = lambda i: len(text[:i].encode("utf-16-le", "surrogatepass")) // 2  # noqa: E731
     return [u(m.start(g)), u(m.end(g))]
+
+
+def table_value(objs, t):
+    """A table as the boundary gives it (``find_tables``,
+    ``debug_tablefinder``): its handle, ``bbox``, ``cells``, ``rows``,
+    ``columns``."""
+    return {"handle": handle(objs, t), "bbox": t.bbox, "cells": t.cells,
+            "rows": [{"bbox": r.bbox, "cells": r.cells} for r in t.rows],
+            "columns": [{"bbox": c.bbox, "cells": c.cells} for c in t.columns]}
+
+
+def preorder(tree):
+    """The elements of a structure tree in ``_find_all``'s order (an element
+    reached twice listed twice)."""
+    out, stack = [], list(reversed(tree.children))
+    while stack:
+        el = stack.pop()
+        out.append(el)
+        stack.extend(reversed(el.children))
+    return out
+
+
+def elements_value(children):
+    """The elements as the boundary writes them: each dataclass field, in
+    order, ``children`` their values (no recursion; an element holding an
+    ancestor raises, as the boundary)."""
+    names = [f.name for f in dataclasses.fields(PDFStructElement)]
+    top = []
+    for root in children:
+        stack = [(root, list(reversed(root.children)), [])]
+        active = {id(root)}
+        while stack:
+            el, todo, done = stack[-1]
+            if todo:
+                child = todo.pop()
+                if id(child) in active:
+                    raise ValueError("Circular reference detected")
+                active.add(id(child))
+                stack.append((child, list(reversed(child.children)), []))
+                continue
+            stack.pop()
+            active.discard(id(el))
+            value = {n: getattr(el, n) for n in names if n != "children"}
+            value["children"] = done
+            (stack[-1][2] if stack else top).append(value)
+    return top
+
+
+def element_at(tree, path):
+    """The element of a path (indices from ``tree.children``)."""
+    if not path:
+        raise ValueError("an element's path is not empty")
+    children, el = tree.children, None
+    for i in path:
+        if type(i) is not int:
+            raise TypeError(f"expected an int, got {type(i).__name__}")
+        if i < 0:
+            raise IndexError("list index out of range")
+        el = children[i]
+        children = el.children
+    return el
+
+
+def element_paths(tree):
+    """The path of each element of a tree (its first one), by identity."""
+    paths = {}
+    stack = [([i], el) for i, el in reversed(list(enumerate(tree.children)))]
+    while stack:
+        path, el = stack.pop()
+        paths.setdefault(id(el), path)
+        stack.extend(([*path, j], c) for j, c in reversed(list(enumerate(el.children))))
+    return paths
+
+
+#: The predicates of the structure trees' ``find_all``/``find``
+#: (``oracle/stages/plumber_doc.py``), on elements.
+ELEMENT_PREDICATES = {"starts-with-H": lambda el: el.type.startswith("H"), "has-mcids": lambda el: bool(el.mcids)}
+
+
+def matcher_of(tree, m):
+    """The matcher of a case and the mask the boundary takes (the truth of
+    the matcher on each element, ``preorder``): ``{"predicate": name}`` (a
+    function), ``{"regexp": source}`` (``re.compile(source)``, whose
+    ``match`` decides, as a JavaScript ``RegExp`` at the start of the
+    type); anything else as it is (a tag, or a value Python calls)."""
+    import re
+
+    if type(m) is dict and set(m) == {"predicate"}:
+        f = ELEMENT_PREDICATES[m["predicate"]]
+        return f, [bool(f(el)) for el in preorder(tree)]
+    if type(m) is dict and set(m) == {"regexp"}:
+        pattern = re.compile(m["regexp"])
+        return pattern, [pattern.match(el.type) is not None for el in preorder(tree)]
+    return m, None
 
 
 def depth():
@@ -380,6 +542,16 @@ if __name__ == "__main__":
     #: ``[c, i]`` is the ``i``-th object case ``c`` made
     made = []
     top = depth()
+
+    def arg_object(a):
+        """An object of the session given as an argument: ``{"$obj": k}``
+        (``k``: its index, or ``[c, i]``, the ``i``-th object case ``c``
+        made), else the value itself."""
+        if type(a) is dict and set(a) == {"$obj"}:
+            k = a["$obj"]
+            return objs[made[k[0]][k[1]]] if type(k) is list else objs[k]
+        return a
+
     for case in cases:
         op, target, args, data = case[:4]
         labelled = None
@@ -392,6 +564,10 @@ if __name__ == "__main__":
                 if target[1] >= len(made[target[0]]):
                     raise Unresolved
                 obj = objs[made[target[0]][target[1]]]
+            elif type(target) is int and target >= len(objs):
+                # (a depth window's operation on the object an operation
+                # that raised did not make)
+                raise Unresolved
             else:
                 obj = None if target is None else objs[target]
             args = substitute(args)
@@ -420,6 +596,8 @@ if __name__ == "__main__":
             continue
         first = len(objs)
         extra = None
+        if op != "struct_tree":
+            args = bind_args(args, obj)
         try:
             if op == "doc_open":
                 if type(data) is str:
@@ -471,8 +649,16 @@ if __name__ == "__main__":
                     if hasattr(obj, name):
                         d[name] = getattr(obj, name)
                 d["bbox"] = obj.bbox
-                d["width"] = obj.width
-                d["height"] = obj.height
+                # width and height each in its own statement: either may
+                # raise (a crop box kept as given)
+                try:
+                    d["width"] = obj.width
+                except Exception as e:
+                    d["width_error"] = e
+                try:
+                    d["height"] = obj.height
+                except Exception as e:
+                    d["height_error"] = e
                 result = d
             elif op == "page_objects":
                 result = obj.objects
@@ -519,13 +705,17 @@ if __name__ == "__main__":
                 else:
                     found = obj.find_table(*args)
                     tables = [] if found is None else [found]
-                result = []
-                for t in tables:
-                    result.append({"handle": handle(objs, t), "bbox": t.bbox, "cells": t.cells,
-                                   "rows": [{"bbox": r.bbox, "cells": r.cells} for r in t.rows],
-                                   "columns": [{"bbox": c.bbox, "cells": c.cells} for c in t.columns]})
+                result = [table_value(objs, t) for t in tables]
                 if op == "page_find_table":
                     result = result[0] if result else None
+            elif op == "page_debug_tablefinder":
+                finder = obj.debug_tablefinder(*args)
+                settings = finder.settings
+                result = {"edges": finder.edges,
+                          "intersections": [[pt, d] for pt, d in finder.intersections.items()],
+                          "cells": finder.cells,
+                          "tables": [table_value(objs, t) for t in finder.tables],
+                          "settings": {f.name: getattr(settings, f.name) for f in dataclasses.fields(settings)}}
             elif op == "page_extract_tables":
                 result = obj.extract_tables(*args)
             elif op == "page_extract_table":
@@ -540,6 +730,47 @@ if __name__ == "__main__":
                 result = obj.to_csv(**args[0])
             elif op == "page_close":
                 result = obj.close(*args)
+            elif op == "struct_tree":
+                # [page]: a page of the session ({"$obj": k}) or None
+                page = arg_object(args[0])
+                tree = PDFStructTree(obj, page)
+                children = elements_value(tree.children)
+                result = {"handle": handle(objs, tree), "children": children}
+            elif op in ("struct_find_all", "struct_find"):
+                # [path or None, matcher]: on the tree or on an element
+                path, m = args
+                x = obj if path is None else element_at(obj, path)
+                m, extra = matcher_of(obj, m)
+                if op == "struct_find_all":
+                    found = list(x.find_all(m))
+                else:
+                    found = x.find(m)
+                paths = element_paths(obj)
+                if op == "struct_find_all":
+                    result = [paths[id(el)] for el in found]
+                else:
+                    result = None if found is None else paths[id(found)]
+            elif op == "struct_element_bbox":
+                el = element_at(obj, args[0])
+                result = obj.element_bbox(el)
+            elif op == "struct_all_mcids":
+                el = element_at(obj, args[0])
+                result = list(el.all_mcids())
+            elif op == "struct_element_repr":
+                el = element_at(obj, args[0])
+                result = repr(el)
+            elif op == "set_stream_refs":
+                # the streams of the following results by reference
+                STREAM_REFS[0] = bool(args[0])
+                result = None
+            elif op == "stream_rawdata":
+                result = obj.rawdata
+            elif op == "stream_data":
+                result = obj.data
+            elif op == "stream_get_data":
+                result = obj.get_data(*args) if args else obj.get_data()
+            elif op == "stream_get_rawdata":
+                result = obj.get_rawdata(*args) if args else obj.get_rawdata()
             elif op == "free":
                 FREED.add(target)
                 result = None
@@ -584,4 +815,4 @@ if __name__ == "__main__":
         sys.setrecursionlimit(1000)
     sys.setrecursionlimit(20000)
     with open(sys.argv[2], "w") as f:
-        json.dump({"depth": top, "results": results, "causes": causes}, f)
+        json.dump({"depth": top, "results": results, "causes": causes, "made": [len(m) for m in made]}, f)

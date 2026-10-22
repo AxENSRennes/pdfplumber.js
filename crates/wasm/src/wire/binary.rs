@@ -23,6 +23,8 @@
 
 use std::rc::Rc;
 
+use pdfminer::pdftypes::PDFObject;
+use pdfminer::psparser::{KWD, LIT, LIT_bytes};
 use pdfplumber::obj::{Obj, PyValue};
 use pycompat::{exc, PyErr, PyInt, PyResult, PyStr};
 use rustc_hash::FxHashMap;
@@ -52,6 +54,9 @@ pub const TAG_STREAM: u8 = 0x0f;
 pub const TAG_TABLE: u8 = 0x10;
 pub const TAG_INLINE_STR: u8 = 0x11;
 pub const TAG_PAGE: u8 = 0x12;
+/// A `PDFStream` by reference: its handle, `objid`, `genno`, `attrs`
+/// ([`Writer::stream_ref`]).
+pub const TAG_STREAM_REF: u8 = 0x13;
 
 pub const COL_GENERIC: u8 = 0;
 pub const COL_F64: u8 = 1;
@@ -401,6 +406,10 @@ impl Writer for BinWriter {
         self.buf.push(TAG_STREAM);
     }
 
+    fn stream_ref(&mut self) {
+        self.buf.push(TAG_STREAM_REF);
+    }
+
     fn page(&mut self) {
         self.buf.push(TAG_PAGE);
     }
@@ -552,12 +561,34 @@ enum Frame {
     List(Vec<PyValue>, usize),
     Tuple(Vec<PyValue>, usize),
     Dict(Obj, usize, Option<PyStr>),
+    /// The values of an object argument ([`ObjectArg`]) being read.
+    Object(u8, Vec<PyValue>, usize),
+}
+
+/// A pdfminer or pdfplumber object JavaScript gives back as an argument
+/// (an object of a result: `PDFObjRef`, a `PDFStream` by reference, a
+/// `PageRef`), which only the core can make the object it stands for
+/// ([`decode_args`]).
+pub enum ObjectArg {
+    /// `PDFObjRef`: its `objid`.
+    Ref(PyValue),
+    /// A pdfplumber `Page`: its handle and `page_number`.
+    Page(PyValue, PyValue),
+    /// A `PDFStream` by reference: its handle (then `objid`, `genno`,
+    /// `attrs`, which the handle decides).
+    Stream(PyValue),
 }
 
 /// Reads the value of a `PJB1` block sent by JavaScript. Only plain Python
 /// values are accepted (`None`, `bool`, `int`, `float`, `str`, `bytes`,
-/// `list`, `tuple`, `dict` with `str` keys).
+/// `list`, `tuple`, `dict` with `str` keys), and `PSLiteral`s and
+/// `PSKeyword`s (interned, as pdfminer's `LIT` and `KWD` make them).
 pub fn decode(block: &[u8]) -> PyResult<PyValue> {
+    decode_args(block, &mut |_| Err(exc::TypeError("unsupported argument value (an object of a document)")))
+}
+
+/// [`decode`], the objects of a document ([`ObjectArg`]) made by `object`.
+pub fn decode_args(block: &[u8], object: &mut dyn FnMut(ObjectArg) -> PyResult<PyValue>) -> PyResult<PyValue> {
     if block.len() < HEADER_LEN || &block[..4] != MAGIC {
         return Err(malformed("bad header"));
     }
@@ -622,6 +653,19 @@ pub fn decode(block: &[u8]) -> PyResult<PyValue> {
                     continue;
                 }
             }
+            TAG_KEYWORD => {
+                let n = r.varint()?;
+                PyValue::Pdf(PDFObject::Keyword(KWD(r.take(n)?)))
+            }
+            TAG_LITERAL | TAG_REF | TAG_PAGE | TAG_STREAM_REF => {
+                let n = match tag {
+                    TAG_LITERAL | TAG_REF => 1,
+                    TAG_PAGE => 2,
+                    _ => 4,
+                };
+                stack.push(Frame::Object(tag, Vec::with_capacity(n), n));
+                continue;
+            }
             other => return Err(exc::TypeError(format!("unsupported argument value (PJB1 tag {other:#04x})"))),
         };
         // attach the value to its container, closing the full ones
@@ -637,7 +681,7 @@ pub fn decode(block: &[u8]) -> PyResult<PyValue> {
                     }
                     return Ok(value);
                 }
-                Some(Frame::List(items, n) | Frame::Tuple(items, n)) => {
+                Some(Frame::List(items, n) | Frame::Tuple(items, n) | Frame::Object(_, items, n)) => {
                     items.push(value);
                     if items.len() < *n {
                         break;
@@ -664,6 +708,29 @@ pub fn decode(block: &[u8]) -> PyResult<PyValue> {
                 Frame::List(items, _) => PyValue::List(Rc::from(items)),
                 Frame::Tuple(items, _) => PyValue::Tuple(Rc::from(items)),
                 Frame::Dict(obj, _, _) => PyValue::Dict(obj),
+                Frame::Object(tag, items, _) => {
+                    let mut items = items.into_iter();
+                    let mut next = || items.next().expect("the values of the object");
+                    match tag {
+                        // PSLiteralTable.intern(name): `str` or `bytes`
+                        TAG_LITERAL => match &next() {
+                            PyValue::Str(name) => match name.as_str() {
+                                Some(name) => PyValue::Pdf(PDFObject::Literal(LIT(name))),
+                                None => return Err(exc::TypeError("a PSLiteral name with a lone surrogate")),
+                            },
+                            PyValue::Bytes(name) => PyValue::Pdf(PDFObject::Literal(LIT_bytes(name))),
+                            other => {
+                                return Err(exc::TypeError(format!("a PSLiteral name is a str, not {}", other.type_name())))
+                            }
+                        },
+                        TAG_REF => object(ObjectArg::Ref(next()))?,
+                        TAG_PAGE => {
+                            let handle = next();
+                            object(ObjectArg::Page(handle, next()))?
+                        }
+                        _ => object(ObjectArg::Stream(next()))?,
+                    }
+                }
             };
         }
     }

@@ -310,6 +310,8 @@ def inline_names(v: Any, inline: Callable[[dict[str, Any]], bool]) -> Any:
 
 def _python_inline(o: dict[str, Any]) -> bool:
     s = o.get("stream")
+    if isinstance(s, Named) and s.name == "PDFStream":
+        return s.fields["objid"] is None and o["name"].isdigit()
     return isinstance(s, PDFStream) and s.objid is None and o["name"].isdigit()
 
 
@@ -320,12 +322,15 @@ def js_error(name: str) -> Named:
 
 def neutral(v: Any) -> Any:
     """A result value as the API gives it: a ``Page`` held in it by its
-    ``page_number`` (its handle is the core's), inline image names as
-    ``inline_names`` writes them."""
+    ``page_number`` (its handle is the core's), a stream by reference
+    ``PDFStream{objid, genno, attrs}`` (its data is read on demand), inline
+    image names as ``inline_names`` writes them."""
 
     def go(x: Any) -> Any:
         if isinstance(x, Named) and x.name == "Page":
             return Named("Page", {"page_number": x.fields["page_number"]})
+        if isinstance(x, Named) and x.name == "StreamRef":
+            return Named("PDFStream", {k: go(x.fields[k]) for k in ("objid", "genno", "attrs")})
         if type(x) is list:
             return [go(i) for i in x]
         if type(x) is tuple:
@@ -339,8 +344,16 @@ def neutral(v: Any) -> Any:
 
 def page_geometry(g: dict[str, Any]) -> dict[str, Any]:
     """The geometry of a page value (``doc_pages``, ``page_info``) in the
-    order of ``GEOMETRY``, without its handle."""
-    return {k: g[k] for k in GEOMETRY if k in g}
+    order of ``GEOMETRY``, without its handle; ``width`` and ``height`` the
+    ``Error`` they throw when ``page_info`` gives their exception
+    (``width_error``, ``height_error``: a crop box kept as given)."""
+    out = {}
+    for k in GEOMETRY:
+        if k in g:
+            out[k] = g[k]
+        elif f"{k}_error" in g:
+            out[k] = error(g[f"{k}_error"])
+    return out
 
 
 def table_value(t: dict[str, Any]) -> Named:
@@ -425,6 +438,9 @@ class Session:
         self.pages_cases: list[int] = []
         self.derived_cases: list[tuple[int, Callable[[Results], dict[str, Any]]]] = []
         self.api_page_cases: list[int] = []
+        # the core of the API holds the streams of its results by reference
+        # (runtime.ts: set_stream_refs, once, before any document)
+        self.case("set_stream_refs", None, [True])
 
     # -------------------------------------------------------------- plumbing
 
@@ -669,6 +685,28 @@ class Session:
         doc.doc.released = True
         doc.doc.held = []
         self._expect(cid, doc, lambda r: r.error(c) if r.failed(c) else None)
+
+    def stream(self, doc: Obj, cid: int, *path: Any) -> Obj:
+        """The ``PDFStream`` at ``path`` in call ``cid``'s value (an image's
+        ``stream``): a reference to the stream in the core."""
+        ref = Ref(cid, *path)
+        return Obj("stream", [cid, *path], {"at": [self.case_of[cid], *path]}, doc.doc,
+                   lambda r: not self.ref_missing(r, ref))
+
+    def stream_read(self, stream: Obj, name: str) -> int:
+        """``rawdata``, ``data`` (promises: the stream as it is when they
+        are read), ``getData()``, ``getRawdata()`` (and their snake_case
+        names): ``stream_rawdata``... in the document's job."""
+        member = {"get_data": "getData", "get_rawdata": "getRawdata"}.get(name, name)
+        kind = "get" if member in ("rawdata", "data") else "call"
+        cid, skipped = self._async(stream, kind, name, [])
+        if skipped:
+            return cid
+        op = {"rawdata": "stream_rawdata", "data": "stream_data", "getData": "stream_get_data",
+              "getRawdata": "stream_get_rawdata"}[member]
+        c = self.case(op, stream.target, [])
+        self._expect(cid, stream, lambda r: r.plain(c))
+        return cid
 
     def page_ref(self, doc: Obj, cid: int, *path: Any) -> Obj | None:
         """``pdf.page(ref)``, the ``PageRef`` at ``path`` in call ``cid``'s
@@ -1435,6 +1473,34 @@ def calls_session() -> Session:
     return s
 
 
+def streams_session(files: list[tuple[str, bytes]]) -> Session:
+    """Streams by reference (``docs/public-api.md``, "PDFStream"): the
+    data of an image's stream read as it is when read (``rawdata``, then
+    ``getData()`` decodes it: ``rawdata`` is then ``None``), the same stream
+    reached from ``objects``, the document's ``images``, after ``close()``
+    and after ``release()``."""
+    s = Session("streams")
+    for name, data in files:
+        doc = s.open(data=data)
+        page = s.pages(doc)[0]
+        images = s.page_get(page, "images")
+        for i in range(3):
+            st = s.stream(doc, images, i, "stream")
+            for member in ("rawdata", "data", "getRawdata", "get_data", "rawdata", "data", "get_rawdata", "getData"):
+                s.stream_read(st, member)
+        objects = s.page_get(page, "objects")
+        s.stream_read(s.stream(doc, objects, "image", 0, "stream"), "data")
+        s.stream_read(s.stream(doc, objects, "image", 3, "stream"), "getData")
+        every = s.doc_get(doc, "images")
+        s.close(doc)
+        s.stream_read(s.stream(doc, every, 1, "stream"), "rawdata")
+        s.stream_read(s.stream(doc, every, 4, "stream"), "getData")
+        s.release(doc)
+        s.stream_read(s.stream(doc, every, 0, "stream"), "data")
+        s.stream_read(s.stream(doc, images, 0, "stream"), "getData")
+    return s
+
+
 def sessions() -> list[Session]:
     out = [file_session(k, rel) for k, rel in enumerate(FILES)]
     out += [open_session(), path_session(), order_session(), cjk_session()]
@@ -1445,6 +1511,7 @@ def sessions() -> list[Session]:
         if not path.is_file():
             raise SystemExit(f"js_api: {path} is missing: generate adv-plumber first (python -m oracle.unit plumber)")
         out.append(adversarial_session(name, path.read_bytes()))
+    out.append(streams_session([(n, (adv / n).read_bytes()) for n in ("078-image-kinds.pdf", "079-image-inline-many.pdf")]))
     return out
 
 
