@@ -22,6 +22,14 @@ export const PREDICATES = {
   "not-rect": (o) => o.object_type !== "rect",
   // obj.get("size", 0) < 10
   small: (o) => ("size" in o ? o.size : 0) < 10,
+  // obj.get("text", ""): a value whose truth is a string's, alike in both
+  text: (o) => ("text" in o ? o.text : ""),
+  // raise ValueError("boom"): the error rejects filter()
+  raises: () => {
+    const e = new Error("boom");
+    e.name = "ValueError";
+    throw e;
+  },
 };
 
 const UNRESOLVED = { $named: "Unresolved" };
@@ -133,13 +141,81 @@ function anyMessage(actual, want) {
   return { ...actual, message: want.message === null ? null : actual.message, cause: anyMessage(actual.cause, want.cause) };
 }
 
+/** A value an argument names that does not exist: the call is not made. */
+class Missing extends Error {}
+
 /** An argument (typed JSON, input mapping: floats cross as floats,
- * tuples as tuples); a search pattern `{regexp, flags}` is a `RegExp`. */
-function argument(j, lib, call) {
-  const v = fromTyped(j, lib, true);
+ * tuples as tuples), with the JavaScript forms of oracle/unit/js_api.py
+ * (`JSForm`): `$num` a plain number, `$bigint`, `$map` a `Map`,
+ * `$undefined`, `$ref` a value of an earlier result (`resolve`), `$cyclic`
+ * an array holding itself, `$function`, `$warnings` an `onWarning`
+ * collector (`warnings`); a search pattern `{regexp, flags}` is a
+ * `RegExp`. */
+function argument(j, lib, call, resolve, warnings) {
+  const go = (x) => {
+    if (Array.isArray(x)) return x.map(go);
+    if (x !== null && typeof x === "object") {
+      const keys = Object.keys(x);
+      if (keys.length === 1) {
+        const [k] = keys;
+        switch (k) {
+          case "$num":
+            return fromTyped(x.$num, lib, false);
+          case "$bigint":
+            return BigInt(x.$bigint);
+          case "$map":
+            return new Map(x.$map.map(([kk, vv]) => [kk, go(vv)]));
+          case "$undefined":
+            return undefined;
+          case "$ref": {
+            const v = resolve(x.$ref);
+            if (v === UNRESOLVED) throw new Missing();
+            return v;
+          }
+          case "$cyclic": {
+            const a = [];
+            a.push(a);
+            return a;
+          }
+          case "$function":
+            return () => 1;
+          case "$warnings":
+            return (w) => warnings.push(w);
+          case "t":
+            return new lib.PyTuple(x.t.map(go));
+          case "d": {
+            const o = {};
+            for (const [kk, vv] of x.d) setOwn(o, fromTyped(kk, lib, true), go(vv));
+            return o;
+          }
+        }
+      }
+    }
+    return fromTyped(x, lib, true);
+  };
+  const v = go(j);
   if (call.call === "search" && v && typeof v === "object" && "regexp" in v && Object.keys(v).length === 2)
     return new RegExp(v.regexp, v.flags);
   return v;
+}
+
+/** The input of `open()` in the form the session names (`as`). */
+function inputOf(bytes, as) {
+  switch (as) {
+    case undefined:
+      return bytes;
+    case "blob":
+      return new Blob([bytes]);
+    case "arraybuffer":
+      return bytes.slice().buffer;
+    case "dataview": {
+      // a view at an offset of a larger buffer
+      const buffer = new Uint8Array(bytes.length + 11);
+      buffer.set(bytes, 7);
+      return new DataView(buffer.buffer, 7, bytes.length);
+    }
+  }
+  throw new Error(`unknown input form ${as}`);
 }
 
 /** Replays one session (a line of sessions.jsonl); returns the number of
@@ -155,11 +231,16 @@ export async function replayApiSession(lib, line, env) {
     if (!r || !r.ok) return UNRESOLVED;
     let v = r.value;
     for (const i of ref.slice(1)) {
-      if (!Array.isArray(v) || i >= v.length) return UNRESOLVED;
+      if (typeof i === "number") {
+        if (!Array.isArray(v) || i >= v.length) return UNRESOLVED;
+      } else if (v === null || typeof v !== "object" || Array.isArray(v) || !Object.hasOwn(v, i)) {
+        return UNRESOLVED;
+      }
       v = v[i];
     }
     return v;
   };
+  const warnings = [];
   let checked = 0;
   for (const step of session.steps) {
     // the inputs of open() are read first: the calls of a step are made
@@ -169,18 +250,26 @@ export async function replayApiSession(lib, line, env) {
       if (call.call !== "open") continue;
       const inp = call.input;
       if ("bytes" in inp) inputs.set(call.id, Uint8Array.from(inp.bytes.match(/../g) ?? [], (h) => parseInt(h, 16)));
-      else if ("bytes_of" in inp) inputs.set(call.id, await env.readFile(inp.bytes_of));
+      else if ("bytes_of" in inp) inputs.set(call.id, inputOf(await env.readFile(inp.bytes_of), inp.as));
+      else if (inp.as === "file-url") inputs.set(call.id, env.fileUrl(inp.path));
       else inputs.set(call.id, env.fileInput(inp.path));
     }
     const pending = step.calls.map((call) => {
       const target = call.on === null ? lib : resolve(call.on);
       if (target === UNRESOLVED) return Promise.resolve({ unresolved: true });
-      const args = call.args.map((a) => argument(a, lib, call));
+      let args;
+      try {
+        args = call.args.map((a) => argument(a, lib, call, resolve, warnings));
+      } catch (e) {
+        if (e instanceof Missing) return Promise.resolve({ unresolved: true });
+        throw e;
+      }
       let p;
       try {
         if ("get" in call) p = target[call.get];
         else if (call.call === "open") p = lib.open(inputs.get(call.id), ...args);
         else if (call.call === "filter") p = target.filter(PREDICATES[call.predicate]);
+        else if (call.call === "asyncDispose") p = target[Symbol.asyncDispose]();
         else p = target[call.call](...args);
       } catch (e) {
         p = Promise.reject(e);

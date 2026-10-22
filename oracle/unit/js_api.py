@@ -113,6 +113,157 @@ GEOMETRY = ["page_number", "initial_doctop", "rotation", "mediabox", "cropbox", 
 UNRESOLVED = Named("Unresolved", {})
 
 
+# -------------------------------------------------- arguments in JavaScript forms
+#
+# An argument of a call is a Python value, written in typed JSON: the
+# replayer gives a ``float`` as a ``PyFloat`` and a ``tuple`` as a
+# ``PyTuple`` (the Python type crosses as it is). These classes write the
+# other JavaScript forms an argument takes (``docs/public-api.md``,
+# "Arguments"), each with the Python value the statement receives.
+
+
+class JSForm:
+    """An argument in a JavaScript form of its own."""
+
+    def json(self, enc: Callable[[Any], Any]) -> Any:
+        raise NotImplementedError
+
+    def py(self, conv: Callable[[Any], Any]) -> Any:
+        raise NotImplementedError
+
+
+class Num(JSForm):
+    """A plain JavaScript number: a safe integer (``-0`` excepted) crosses
+    as an ``int``, any other number as a ``float``."""
+
+    def __init__(self, x: float) -> None:
+        self.x = float(x)
+
+    def json(self, enc: Callable[[Any], Any]) -> Any:
+        return {"$num": typed_json.encode(self.x)}
+
+    def py(self, conv: Callable[[Any], Any]) -> Any:
+        x = self.x
+        safe = x == x and abs(x) <= 2**53 - 1 and x.is_integer() and not (x == 0 and str(x).startswith("-"))
+        return int(x) if safe else x
+
+
+class Big(JSForm):
+    """A ``bigint``: an ``int``."""
+
+    def __init__(self, n: int) -> None:
+        self.n = n
+
+    def json(self, enc: Callable[[Any], Any]) -> Any:
+        return {"$bigint": str(self.n)}
+
+    def py(self, conv: Callable[[Any], Any]) -> Any:
+        return self.n
+
+
+class JSMap(JSForm):
+    """A ``Map`` with string keys: a ``dict``."""
+
+    def __init__(self, d: dict[str, Any]) -> None:
+        self.d = d
+
+    def json(self, enc: Callable[[Any], Any]) -> Any:
+        return {"$map": [[k, enc(v)] for k, v in self.d.items()]}
+
+    def py(self, conv: Callable[[Any], Any]) -> Any:
+        return {k: conv(v) for k, v in self.d.items()}
+
+
+class Undefined(JSForm):
+    """``undefined`` as a property: the option is not given."""
+
+    def json(self, enc: Callable[[Any], Any]) -> Any:
+        return {"$undefined": True}
+
+    def py(self, conv: Callable[[Any], Any]) -> Any:
+        raise AssertionError("undefined is a property of an object only")
+
+
+class Ref(JSForm):
+    """A value of an earlier call's result given back (``[call id, index
+    or key...]``): the API gives it back as it is, the statement receives
+    it as it crosses (``js_pages_run.cross``)."""
+
+    def __init__(self, cid: int, *path: Any) -> None:
+        self.cid = cid
+        self.path = list(path)
+
+    def json(self, enc: Callable[[Any], Any]) -> Any:
+        return {"$ref": [self.cid, *self.path]}
+
+    def py(self, conv: Callable[[Any], Any]) -> Any:
+        raise AssertionError("a Ref is converted by its session")
+
+
+class Refused(JSForm):
+    """An argument the JavaScript encoder refuses (``TypeError``, before any
+    statement): a container holding itself, a function."""
+
+    def __init__(self, kind: str) -> None:
+        self.kind = kind
+
+    def json(self, enc: Callable[[Any], Any]) -> Any:
+        return {f"${self.kind}": True}
+
+    def py(self, conv: Callable[[Any], Any]) -> Any:
+        raise AssertionError("a refused argument reaches no statement")
+
+
+class Collector(JSForm):
+    """An ``onWarning`` function of ``open()`` (the API's own option: no
+    keyword of ``pdfplumber.open``)."""
+
+    def json(self, enc: Callable[[Any], Any]) -> Any:
+        return {"$warnings": True}
+
+    def py(self, conv: Callable[[Any], Any]) -> Any:
+        raise AssertionError("onWarning is not given to Python")
+
+
+def encode_arg(a: Any) -> Any:
+    """An argument as the session writes it (typed JSON, JavaScript forms)."""
+    if isinstance(a, JSForm):
+        return a.json(encode_arg)
+    if type(a) is list:
+        return [encode_arg(x) for x in a]
+    if type(a) is tuple:
+        return {"t": [encode_arg(x) for x in a]}
+    if type(a) is dict:
+        return {"d": [[typed_json.encode(k), encode_arg(v)] for k, v in a.items()]}
+    return typed_json.encode(a)
+
+
+def refs_in(a: Any) -> list[Ref]:
+    """The ``Ref`` arguments in ``a``."""
+    if isinstance(a, Ref):
+        return [a]
+    if isinstance(a, JSMap):
+        return refs_in(list(a.d.values()))
+    if type(a) in (list, tuple):
+        return [x for i in a for x in refs_in(i)]
+    if type(a) is dict:
+        return refs_in(list(a.values()))
+    return []
+
+
+def refused(a: Any) -> bool:
+    """Whether the JavaScript encoder refuses the argument."""
+    if isinstance(a, Refused):
+        return True
+    if isinstance(a, JSMap):
+        return any(refused(v) for v in a.d.values())
+    if type(a) in (list, tuple):
+        return any(refused(x) for x in a)
+    if type(a) is dict:
+        return any(refused(x) for x in a.values())
+    return False
+
+
 #: ``str(valid_dirs)`` in the messages of
 #: pdfplumber/utils/text.py:78 validate_directions: a ``set``, whose order changes with
 #: ``PYTHONHASHSEED``; written in the port's order, as the ``plumber_*``
@@ -206,6 +357,9 @@ class Results:
     def value(self, case: int) -> Any:
         return self.results[case][0]
 
+    def extra(self, case: int) -> Any:
+        return self.results[case][1]
+
     def unresolved(self, case: int) -> bool:
         v = self.value(case)
         return type(v) is dict and v.get("$unresolved") is True
@@ -228,6 +382,10 @@ class Doc:
         self.pages: list[Obj] | None = None
         self.pages_value: Callable[[Results], Any] | None = None
         self.released = False
+        #: the pages the API holds objects of (``js_pages_run.held_by_api``
+        #: entries), with whether each is a page of ``pdf.pages`` (which
+        #: ``close()`` drops) or a derived page (which it keeps)
+        self.held: list[tuple[list[Any], bool]] = []
 
 
 class Obj:
@@ -242,6 +400,8 @@ class Obj:
         self.alive = alive
         #: a page: its geometry from the results (once alive)
         self.geometry: Callable[[Results], dict[str, Any]] | None = None
+        #: a derived page: the page it derives from; a table: its page
+        self.parent: Obj | None = None
 
 
 class Session:
@@ -256,18 +416,62 @@ class Session:
         self.expect: list[tuple[int, Callable[[Results], Any]]] = []
         self.next_id = 0
         self.batch: list[dict[str, Any]] | None = None
+        #: the case of each call made of one statement whose value is the
+        #: statement's (``Ref`` to its result)
+        self.case_of: dict[int, int] = {}
+        #: the cases that made pages, to find a page's geometry by its
+        #: handle: ``doc_pages`` cases, derived pages (the case that made
+        #: it, its geometry), ``api_page`` cases
+        self.pages_cases: list[int] = []
+        self.derived_cases: list[tuple[int, Callable[[Results], dict[str, Any]]]] = []
+        self.api_page_cases: list[int] = []
 
     # -------------------------------------------------------------- plumbing
 
+    def py(self, a: Any) -> Any:
+        """An argument as the statement receives it."""
+        if isinstance(a, Ref):
+            return {"$cross": [self.case_of[a.cid], *a.path]}
+        if isinstance(a, JSForm):
+            return a.py(self.py)
+        if type(a) is list:
+            return [self.py(x) for x in a]
+        if type(a) is tuple:
+            return tuple(self.py(x) for x in a)
+        if type(a) is dict:
+            return {k: self.py(v) for k, v in a.items() if not isinstance(v, (Undefined, Collector))}
+        return a
+
     def case(self, op: str, target: Any, args: list[Any], data: Any = None, js: Any = None) -> int:
-        self.cases.append([op, target, args, data, js])
+        self.cases.append([op, target, self.py(args), data, js])
         return len(self.cases) - 1
+
+    def plain_case(self, cid: int, case: int) -> int:
+        """Call ``cid``'s value is case ``case``'s (a ``Ref`` reads it)."""
+        self.case_of[cid] = case
+        return case
+
+    def geometry_of(self, r: Results, handle: str) -> dict[str, Any]:
+        """The geometry of the page the API holds under ``handle``."""
+        for c in self.pages_cases:
+            if not r.unresolved(c) and not r.failed(c):
+                for g in r.value(c):
+                    if g["handle"] == handle:
+                        return page_geometry(g)
+        for c, geometry in self.derived_cases:
+            if not r.unresolved(c) and not r.failed(c) and r.value(c)["handle"] == handle:
+                return geometry(r)
+        for c in self.api_page_cases:
+            extra = r.extra(c)
+            if extra is not None and extra["handle"] == handle:
+                return page_geometry(r.value(c))
+        raise AssertionError(f"{self.name}: no page {handle}")
 
     def _call(self, on: Obj | None, kind: str, name: str, args: list[Any], **extra: Any) -> int:
         cid = self.next_id
         self.next_id += 1
         call: dict[str, Any] = {"id": cid, "on": None if on is None else on.ref, kind: name,
-                                "args": [typed_json.encode(a) for a in args]}
+                                "args": [encode_arg(a) for a in args]}
         call.update(extra)
         if self.batch is not None:
             self.batch.append(call)
@@ -284,13 +488,40 @@ class Session:
             self.expect.append((cid, lambda r: f(r) if on.alive(r) else UNRESOLVED))
 
     def _async(self, obj: Obj, kind: str, name: str, args: list[Any], **extra: Any) -> tuple[int, bool]:
-        """An asynchronous member: the call, and whether its document was
-        released (``DocumentReleased``: no statement)."""
+        """An asynchronous member: the call, and whether it runs no
+        statement: its document was released (``DocumentReleased``), or an
+        argument is one the JavaScript encoder refuses (``TypeError``, at
+        the job's first request)."""
         cid = self._call(obj, kind, name, args, **extra)
+        refs = refs_in(args)
+
+        def fails(name: str) -> Callable[[Results], Any]:
+            # (the replayer reads the values an argument gives back first:
+            # one that does not exist leaves the call unmade)
+            return lambda r: UNRESOLVED if any(self.ref_missing(r, x) for x in refs) else js_error(name)
+
         if obj.doc.released:
-            self._expect(cid, obj, lambda r: js_error("DocumentReleased"))
+            self._expect(cid, obj, fails("DocumentReleased"))
+            return cid, True
+        if refused(args):
+            self._expect(cid, obj, fails("TypeError"))
             return cid, True
         return cid, False
+
+    def ref_missing(self, r: Results, ref: Ref) -> bool:
+        """Whether the value a ``Ref`` names does not exist."""
+        c = self.case_of[ref.cid]
+        if r.unresolved(c) or r.failed(c):
+            return True
+        v = r.value(c)
+        for k in ref.path:
+            if type(v) in (list, tuple) and type(k) is int and 0 <= k < len(v):
+                v = v[k]
+            elif type(v) is dict and k in v:
+                v = v[k]
+            else:
+                return True
+        return False
 
     def concurrently(self, order: list[int] | None = None) -> "_Batch":
         """``with s.concurrently(order):`` the calls made inside are made
@@ -300,27 +531,37 @@ class Session:
     # ------------------------------------------------------------ the module
 
     def open(self, rel: str | None = None, options: dict[str, Any] | None = None, *, data: bytes | None = None,
-             by_path: bool = False) -> Obj:
+             by_path: bool = False, as_: str | None = None) -> Obj:
         """``open(input, options)``: ``doc_open`` (bytes), or
         ``doc_open_file`` (a path, Node: ``node_only`` sessions). Every
         option but ``logLevel`` and ``onWarning`` is a keyword argument of
-        ``pdfplumber.open``."""
-        options = dict(options or {})
-        if by_path:
+        ``pdfplumber.open``. ``as_``: the JavaScript form of the bytes
+        (``blob``, ``arraybuffer``, ``dataview``: a view at an offset of a
+        larger buffer), or ``file-url`` (Node: a ``file:`` URL, opened as
+        its path)."""
+        given: Any = options
+        options = dict(options.d if isinstance(options, JSMap) else options or {})
+        api_options = {k: v for k, v in options.items() if k not in ("logLevel", "onWarning")}
+        if by_path or as_ == "file-url":
             assert self.node_only and rel is not None
-            inp: dict[str, Any] = {"path": rel}
-            c = self.case("doc_open_file", None, [rel, options], rel)
+            inp: dict[str, Any] = {"path": rel} if as_ is None else {"path": rel, "as": as_}
+            c = self.case("doc_open_file", None, [rel, api_options], rel)
         elif rel is not None:
-            inp = {"bytes_of": rel}
-            c = self.case("doc_open", None, [options], rel)
+            inp = {"bytes_of": rel} if as_ is None else {"bytes_of": rel, "as": as_}
+            c = self.case("doc_open", None, [api_options], rel)
         else:
             assert data is not None
             inp = {"bytes": data.hex()}
-            c = self.case("doc_open", None, [options], data)
-        cid = self._call(None, "call", "open", [options] if options else [], input=inp)
+            c = self.case("doc_open", None, [api_options], data)
+        cid = self._call(None, "call", "open", [given] if options else [], input=inp)
         obj = Obj("document", [cid], [c, 0], Doc(), lambda r: not r.failed(c))
         self._expect(cid, None, lambda r: r.error(c) if r.failed(c) else Named("PDFPlumberDocument", {}))
         return obj
+
+    def options(self, doc: Obj, options: dict[str, Any]) -> None:
+        """``pdf.options``: the options of ``open()``, as given."""
+        cid = self._call(doc, "get", "options", [])
+        self._expect(cid, doc, lambda r: options)
 
     # ---------------------------------------------------------- the document
 
@@ -337,6 +578,8 @@ class Session:
             self._expect(cid, doc, d.pages_value)  # type: ignore[arg-type]
             return d.pages
         c = self.case("doc_pages", doc.target, [])
+        self.pages_cases.append(c)
+        d.held.append(([c, "*"], True))
 
         def value(r: Results) -> Any:
             if r.unresolved(c):
@@ -368,8 +611,9 @@ class Session:
             op = {"metadata": "doc_metadata", "objects": "doc_objects", "annots": "doc_annots",
                   "hyperlinks": "doc_hyperlinks", "structure_tree": "doc_structure_tree"}[member]
             c = self.case(op, doc.target, [])
+        self.plain_case(cid, c)
         self._expect(cid, doc, lambda r: r.plain(c))
-
+        return cid
     def serialize(self, obj: Obj, name: str, *args: Any) -> None:
         """``toDict(objectTypes)``, ``toJson(options)``, ``toCsv(options)``
         of a document or a page."""
@@ -383,6 +627,7 @@ class Session:
         else:
             op = {"toJson": "to_json", "toCsv": "to_csv"}[member]
             c = self.case(f"{prefix}_{op}", obj.target, [args[0] if args else {}])
+        self.plain_case(cid, c)
         self._expect(cid, obj, lambda r: r.plain(c))
 
     def close(self, obj: Obj) -> None:
@@ -393,15 +638,64 @@ class Session:
             return
         c = self.case("doc_close" if obj.kind == "document" else "page_close", obj.target, [])
         if obj.kind == "document":
-            obj.doc.pages = None
+            self._closed(obj.doc)
         self._expect(cid, obj, lambda r: r.plain(c))
 
+    @staticmethod
+    def _closed(d: Doc) -> None:
+        """``pdf.close()`` made the API drop its pages (not the derived
+        ones): they are made again at the next read."""
+        d.pages = None
+        d.held = [(t, root) for t, root in d.held if not root]
+
     def release(self, doc: Obj) -> None:
-        """``pdf.release()``: the document leaves the core (no statement)."""
+        """``pdf.release()``: the document leaves the core (no statement);
+        idempotent."""
         cid = self._call(doc, "call", "release", [])
         doc.doc.released = True
         doc.doc.pages = None
+        doc.doc.held = []
         self._expect(cid, doc, lambda r: None)
+
+    def dispose(self, doc: Obj) -> None:
+        """``await pdf[Symbol.asyncDispose]()`` (``await using``):
+        ``close()``, then ``release()``; ``close()``'s error, if any."""
+        cid = self._call(doc, "call", "asyncDispose", [])
+        if doc.doc.released:
+            self._expect(cid, doc, lambda r: None)
+            return
+        c = self.case("doc_close", doc.target, [])
+        self._closed(doc.doc)
+        doc.doc.released = True
+        doc.doc.held = []
+        self._expect(cid, doc, lambda r: r.error(c) if r.failed(c) else None)
+
+    def page_ref(self, doc: Obj, cid: int, *path: Any) -> Obj | None:
+        """``pdf.page(ref)``, the ``PageRef`` at ``path`` in call ``cid``'s
+        value (an annotation's ``data.P``): the page the API holds for its
+        handle (no statement), else ``page_info`` (``api_page``)."""
+        ref = Ref(cid, *path)
+        call, released = self._async(doc, "call", "page", [ref])
+        if released:
+            return None
+        target = {"at": [self.case_of[cid], *path]}
+        c = self.case("api_page", target, [[t for t, _ in doc.doc.held]])
+        self.api_page_cases.append(c)
+        doc.doc.held.append(([c, "label"], True))
+
+        def geometry(r: Results) -> dict[str, Any]:
+            v = r.value(c)
+            return self.geometry_of(r, v["known"]) if "known" in v else page_geometry(v)
+
+        def value(r: Results) -> Any:
+            if r.unresolved(c):
+                return UNRESOLVED
+            return r.error(c) if r.failed(c) else Named("PDFPlumberPage", geometry(r))
+
+        self._expect(call, doc, value)
+        page = Obj("page", [call], target, doc.doc, lambda r: doc.alive(r) and not r.unresolved(c) and not r.failed(c))
+        page.geometry = geometry
+        return page
 
     # --------------------------------------------------------------- the page
 
@@ -414,15 +708,27 @@ class Session:
             geometry = page.geometry
             assert geometry is not None
             self._expect(cid, page, lambda r: geometry(r).get(member))
-            return
+            return cid
+        if member == "pdf":
+            cid = self._call(page, "get", name, [])
+            self._expect(cid, page, lambda r: Named("PDFPlumberDocument", {}))
+            return cid
+        if member == "parent":
+            # the page a derived page derives from (DerivedPage.parent_page)
+            cid = self._call(page, "get", name, [])
+            parent = page.parent
+            self._expect(cid, page, lambda r: None if parent is None else Named("PDFPlumberPage", parent.geometry(r)))  # type: ignore[misc]
+            return cid
         cid, released = self._async(page, "get", name, [])
         if released:
-            return
+            return cid
         if member in LISTS or member in ("annots", "hyperlinks"):
             c = self.case("page_attr", page.target, [member])
         else:
             c = self.case({"objects": "page_objects", "structure_tree": "page_structure_tree"}[member], page.target, [])
+        self.plain_case(cid, c)
         self._expect(cid, page, lambda r: r.plain(c))
+        return cid
 
     def to_string(self, page: Obj) -> None:
         """``String(page)``: ``repr(page)``."""
@@ -438,16 +744,21 @@ class Session:
         if released:
             return
         member = ALIASES.get(name, name)
-        kw = dict(options or {})
+        kw = dict(options.d if isinstance(options, JSMap) else options or {})
         if member == "extractTextLines":
+            # (an option undefined is not given: its default)
             strip = kw.pop("strip", True)
             chars = kw.pop("return_chars", True)
+            strip = True if isinstance(strip, Undefined) else strip
+            chars = True if isinstance(chars, Undefined) else chars
             c = self.case("page_extract_text_lines", page.target, [strip, chars, kw])
         else:
             op = {"extractText": "page_extract_text", "extractTextSimple": "page_extract_text_simple",
                   "extractWords": "page_extract_words"}[member]
             c = self.case(op, page.target, [kw])
+        self.plain_case(cid, c)
         self._expect(cid, page, lambda r: r.plain(c))
+        return cid
 
     def search(self, page: Obj, py_pattern: Any, js_pattern: Any, options: dict[str, Any] | None = None) -> None:
         """``search(pattern, options)``: one statement,
@@ -457,7 +768,9 @@ class Session:
         cid, released = self._async(page, "call", "search", [js_pattern] + ([] if options is None else [options]))
         if released:
             return
-        c = self.case("search", page.target, [py_pattern, dict(options or {})], js=js_pattern)
+        c = self.case("search", page.target, [py_pattern, dict(options.d if isinstance(options, JSMap) else options or {})],
+                      js=js_pattern)
+        self.plain_case(cid, c)
         self._expect(cid, page, lambda r: r.plain(c))
 
     def _derived(self, page: Obj, cid: int, made: int, before: int | None = None) -> Obj:
@@ -483,6 +796,9 @@ class Session:
             return {k: g[k] for k in GEOMETRY if k in g}
 
         derived.geometry = geometry
+        derived.parent = page
+        self.derived_cases.append((made, geometry))
+        page.doc.held.append(([made, 0], False))
 
         def value(r: Results) -> Any:
             for c in (before, made):
@@ -533,6 +849,8 @@ class Session:
         c = self.case(op, page.target, list(args))
 
         def value(r: Results) -> Any:
+            if r.unresolved(c):
+                return UNRESOLVED
             if r.failed(c):
                 return r.error(c)
             v = r.value(c)
@@ -550,16 +868,27 @@ class Session:
             v = r.value(c)
             return i < len(v) if member == "findTables" else v is not None
 
+        if member in ("extractTables", "extractTable"):
+            self.plain_case(cid, c)
+        found: list[Obj] = []
         if member == "findTables":
-            return [Obj("table", [cid, i], [c, i], page.doc, lambda r, i=i: made(r, i)) for i in range(2)]
+            found = [Obj("table", [cid, i], [c, i], page.doc, lambda r, i=i: made(r, i)) for i in range(2)]
         if member == "findTable":
-            return [Obj("table", [cid], [c, 0], page.doc, lambda r: made(r, 0))]
-        return []
+            found = [Obj("table", [cid], [c, 0], page.doc, lambda r: made(r, 0))]
+        for t in found:
+            t.parent = page
+        return found
 
     def table_get(self, table: Obj, name: str) -> None:
         """``bbox``, ``cells``, ``rows``, ``columns`` of a table (known
-        since it was found)."""
+        since it was found), ``page`` (the page it was found on)."""
         cid = self._call(table, "get", name, [])
+        if name == "page":
+            page = table.parent
+            assert page is not None and page.geometry is not None
+            geometry = page.geometry
+            self._expect(cid, table, lambda r: Named("PDFPlumberPage", geometry(r)))
+            return
         ref = table.ref
         found = ref[0]
         index = ref[1] if len(ref) > 1 else None
@@ -577,6 +906,7 @@ class Session:
         if released:
             return
         c = self.case("table_extract", table.target, [dict(options or {})])
+        self.plain_case(cid, c)
         self._expect(cid, table, lambda r: r.plain(c))
 
     # ---------------------------------------------------------------- output
@@ -882,9 +1212,233 @@ def adversarial_session(name: str, data: bytes) -> Session:
     return s
 
 
+def inputs_session() -> Session:
+    """The forms of ``open()``'s input (bytes as a ``Blob``, an
+    ``ArrayBuffer``, a view at an offset of a larger buffer), ``null``
+    options, the API's own options (no keyword of ``pdfplumber.open``),
+    ``pdf.options``."""
+    s = Session("open-inputs")
+    rel = "corpus/micro/text-operators.pdf"
+    for as_ in ("blob", "arraybuffer", "dataview"):
+        doc = s.open(rel, as_=as_)
+        s.text(s.pages(doc)[0], "extractText", None)
+        s.release(doc)
+    for options in [{"logLevel": "silent"}, {"logLevel": "warning", "pages": [1]}, {"onWarning": Collector()},
+                    JSMap({"pages": [1], "logLevel": "silent"}), {"pages": Undefined()}]:
+        doc = s.open(rel, options)  # type: ignore[arg-type]
+        if type(options) is dict and not any(isinstance(v, JSForm) for v in options.values()):
+            s.options(doc, options)
+        s.text(s.pages(doc)[0], "extractWords", None)
+        s.release(doc)
+    # an option that cannot cross: TypeError, no statement
+    cid = s._call(None, "call", "open", [{"bogus": Refused("function")}], input={"bytes_of": rel})
+    s._expect(cid, None, lambda r: js_error("TypeError"))
+    return s
+
+
+def url_session() -> Session:
+    """Node: a ``file:`` URL is opened as its path (``pdfplumber.open(path)``)."""
+    s = Session("open-file-url", node_only=True)
+    doc = s.open("corpus/micro/annotations.pdf", as_="file-url")
+    s.page_get(s.pages(doc)[0], "annots")
+    s.close(doc)
+    s.page_get(s.pages(doc)[0], "chars")
+    s.release(doc)
+    return s
+
+
+def arguments_session() -> Session:
+    """Arguments in their JavaScript forms (``docs/public-api.md``,
+    "Arguments"): plain numbers (an integral one crosses as an ``int``,
+    visible in ``to_json``), ``PyFloat``, ``PyTuple``, ``bigint``, ``Map``,
+    ``undefined`` options, objects of a result given back (explicit table
+    lines), values the encoder refuses; options that are not a mapping."""
+    s = Session("arguments")
+    doc = s.open("upstream/pdfplumber-python/tests/pdfs/nics-background-checks-2015-11.pdf")
+    page = s.pages(doc)[0]
+    for bbox in ([Num(0), Num(0), Num(300.0), Num(300.5)], (0.0, 0, 300, 300.5), [Big(0), 0, Big(300), 300],
+                 [Num(-0.0), 0, 200, 200], [Num(float("nan")), 0, 100, 100]):
+        crop = s.derive(page, "crop", bbox)
+        if crop is not None:
+            s.serialize(crop, "toJson", {"object_types": ["rect"], "precision": 2})
+    rects = s.page_get(page, "rects")
+    lines = s.page_get(page, "lines")
+    s.page_get(page, "edges")
+    explicit = [
+        {"vertical_strategy": "explicit", "horizontal_strategy": "lines",
+         "explicit_vertical_lines": [Ref(rects, 0), Ref(rects, 1), Num(100), 200.5, Num(400.0)]},
+        {"vertical_strategy": "lines", "horizontal_strategy": "explicit",
+         "explicit_horizontal_lines": [Ref(lines, 0), Ref(lines, 3), 100, Big(150)]},
+        {"vertical_strategy": "explicit", "horizontal_strategy": "explicit",
+         "explicit_vertical_lines": [Ref(rects, 5), 300, 400], "explicit_horizontal_lines": [Ref(rects, 6), 100, 200]},
+        {"vertical_strategy": "explicit", "explicit_vertical_lines": [Ref(rects, 100000)]},
+    ]
+    for settings in explicit:
+        for t in s.tables(page, "findTables", settings)[:1]:
+            s.table_get(t, "bbox")
+            s.extract(t)
+        s.tables(page, "extractTables", settings)
+    s.tables(page, "extractTable", JSMap({"snap_tolerance": Num(4.0), "intersection_tolerance": 2.0}))
+    words = s.text(page, "extractWords", JSMap({"x_tolerance": Num(2.0), "extra_attrs": ["size"]}))  # type: ignore[arg-type]
+    s.text(page, "extractWords", {"x_tolerance": Undefined(), "y_tolerance": 2.0})
+    s.text(page, "extractTextLines", JSMap({"strip": False, "return_chars": False, "layout": True}))  # type: ignore[arg-type]
+    s.text(page, "extractTextLines", {"strip": Undefined(), "return_chars": False})
+    s.search(page, "Alabama", "Alabama", JSMap({"return_chars": False, "x_tolerance": 1}))  # type: ignore[arg-type]
+    s.text(page, "extractText", {"layout": True, "layout_bbox": (0, 0, 400.0, 400), "x_density": Num(7.0)})
+    s.text(page, "extractText", {"x_tolerance": Refused("function")})
+    s.text(page, "extractText", {"extra_attrs": Refused("cyclic")})
+    # options that are not a mapping: Python's TypeError (argument after **)
+    for name in ("extractText", "extractWords", "extractTextLines"):
+        cid = s._call(page, "call", name, [None])
+        member = ALIASES.get(name, name)
+        if member == "extractTextLines":
+            c = s.case("page_extract_text_lines", page.target, [True, True, None])
+        else:
+            c = s.case({"extractText": "page_extract_text", "extractWords": "page_extract_words"}[member], page.target, [None])
+        s._expect(cid, page, lambda r, c=c: r.plain(c))
+    cid = s._call(page, "call", "search", ["a", None])
+    c = s.case("search", page.target, ["a", None], js="a")
+    s._expect(cid, page, lambda r: r.plain(c))
+    # a word given back to a call that reads objects (dedupe's extra_attrs
+    # are names; crop's bbox from a word's coordinates)
+    s.derive(page, "crop", [Ref(words, 0, "x0"), Ref(words, 0, "top"), Ref(words, 3, "x1"), Ref(words, 3, "bottom")])
+    s.release(doc)
+    return s
+
+
+def lifetime_session() -> Session:
+    """``pdf.page(ref)`` (the page of a ``PageRef``: before and after
+    ``pdf.pages``, of a derived page, after ``close()``), ``page.pdf``,
+    ``page.parent``, ``table.page``, ``close()`` twice, ``release()`` twice,
+    ``await using`` (``Symbol.asyncDispose``), and every kind of object
+    after ``release()``."""
+    s = Session("lifetime")
+    # (annotations whose /P names their page, on the first two pages)
+    rel = "upstream/pdfplumber-python/tests/pdfs/issue-463-example.pdf"
+    doc = s.open(rel)
+    annots = s.doc_get(doc, "annots")
+    first = s.page_ref(doc, annots, 0, "data", "P")
+    if first is not None:
+        s.page_get(first, "chars")
+        s.page_get(first, "pdf")
+        s.page_get(first, "parent")
+    for i in (1, 2):
+        s.page_ref(doc, annots, i, "data", "P")
+    pages = s.pages(doc)
+    page = pages[0]
+    s.page_get(pages[1], "annots")
+    # the page of pdf.pages is the page made above (the same object)
+    again = s.page_get(page, "annots")
+    s.page_ref(doc, again, 0, "data", "P")
+    s.page_ref(doc, again, 1, "data", "P")
+    crop = s.derive(page, "crop", [0, 0, 400, 400])
+    if crop is not None:
+        s.page_get(crop, "parent")
+        s.page_get(crop, "pdf")
+        cropped = s.page_get(crop, "annots")
+        derived = s.page_ref(doc, cropped, 0, "data", "P")
+        if derived is not None:
+            s.page_get(derived, "bbox")
+            s.text(derived, "extractText", None)
+        s.serialize(crop, "toDict", ["annot"])
+    for t in s.tables(page, "findTables", {"vertical_strategy": "text", "horizontal_strategy": "text"})[:1]:
+        s.table_get(t, "page")
+    s.close(doc)
+    s.close(doc)
+    # after close(): the pages are made again, a reference of before names
+    # the page it named (a page of the flushed list)
+    s.page_ref(doc, again, 0, "data", "P")
+    later = s.pages(doc)[0]
+    s.page_ref(doc, s.page_get(later, "annots"), 0, "data", "P")
+    s.release(doc)
+    s.release(doc)
+    s.page_ref(doc, again, 0, "data", "P")
+    s.doc_get(doc, "metadata")
+    if crop is not None:
+        s.page_get(crop, "bbox")
+        s.page_get(crop, "chars")
+        s.dedupe(crop)
+    s.page_get(page, "rects")
+    s.serialize(page, "toJson")
+    s.dispose(doc)
+    # await using: close(), then release()
+    other = s.open("upstream/pdfplumber-python/tests/pdfs/pdffill-demo.pdf")
+    p = s.pages(other)[0]
+    tables = s.tables(p, "findTables")
+    s.dispose(other)
+    s.page_get(p, "chars")
+    s.page_get(p, "width")
+    for t in tables[:1]:
+        s.table_get(t, "cells")
+        s.extract(t)
+    s.dispose(other)
+    return s
+
+
+def calls_session() -> Session:
+    """The members and options the file sessions leave out: every search
+    option and error of ``main_group``, crop options and boxes out of the
+    page, filter predicates (a truthy value, an error), dedupe options,
+    ``extractTextSimple`` options, serializations' options, the document's
+    ``toCsv``."""
+    s = Session("calls")
+    doc = s.open("upstream/pdfplumber-python/tests/pdfs/scotus-transcript-p1.pdf")
+    page = s.pages(doc)[0]
+    for py, js, options in [
+        ("(?P<a>J)(?P<b>U)?", "(?<a>J)(?<b>U)?", {"main_group": "b"}),
+        ("(?P<a>J)", "(?<a>J)", {"main_group": "nope"}),
+        ("(J)(U)", "(J)(U)", {"main_group": True, "return_groups": False}),
+        ("(J)(U)", "(J)(U)", {"main_group": False}),
+        ("(J)(x)?", "(J)(x)?", {"main_group": 2}),
+        ("(J)", "(J)", {"main_group": -1}),
+        ("J.S", "J.S", {"regex": False, "case": False}),
+        ("[.]", "[.]", {"regex": False}),
+        ("justice", "justice", {"case": False, "return_chars": False, "return_groups": False}),
+        ("zzzz", "zzzz", None),
+    ]:
+        s.search(page, py, js, options)
+    s.search(page, {"$compiled": "J"}, {"regexp": "J", "flags": "y"}, {"return_chars": False})
+    s.search(page, {"$compiled": "J"}, {"regexp": "J", "flags": ""}, {"case": False})
+    for bbox, options in [([0, 0, 2000, 2000], None), ([0, 0, 2000, 2000], {"strict": False}),
+                          ([-10, -10, 100, 100], {"relative": True}), ([50, 50, 10, 10], None),
+                          ([0, 0, 100], None), ([10, 10, 100, 100], {"relative": True, "strict": True})]:
+        for name in ("crop", "within_bbox", "outsideBbox"):
+            d = s.derive(page, name, bbox, options)
+            if d is not None and name == "crop":
+                s.text(d, "extractTextSimple", {"x_tolerance": 1})
+    for predicate in ("text", "raises"):
+        f = s.filter(page, predicate)
+        if f is not None:
+            s.page_get(f, "chars")
+    for options in [{"tolerance": 2.5}, {"extra_attrs": ["fontname"]}, {"tolerance": "x"}, {"extra_attrs": None},
+                    {"bogus": 1}]:
+        d = s.dedupe(page, "dedupe_chars", options)
+        if d is not None:
+            s.text(d, "extractText", None)
+    for options in [{}, {"x_tolerance": 1, "y_tolerance": 1}, {"keep_blank_chars": True}, {"layout": True}]:
+        s.text(page, "extract_text_simple", options)
+    for options in [{"include_attrs": ["text", "size"]}, {"exclude_attrs": ["fontname"]}, {"precision": 0},
+                    {"object_types": ["char"], "precision": 1, "indent": 1}, {"bogus": True}]:
+        s.serialize(page, "toJson", options)
+        s.serialize(page, "toCsv", options)
+    s.serialize(page, "toDict", None)
+    s.serialize(page, "toDict", ["char", "rect", "line", "curve", "image", "annot"])
+    s.serialize(doc, "toCsv", {"precision": 2})
+    s.serialize(doc, "to_csv")
+    s.serialize(doc, "toDict", ["char"])
+    for name in ["textboxhorizontals", "textlinehorizontals", "curves", "images", "rect_edges", "curve_edges"]:
+        s.doc_get(doc, name)
+    s.close(page)
+    s.close(page)
+    s.text(page, "extractText", None)
+    s.release(doc)
+    return s
+
+
 def sessions() -> list[Session]:
     out = [file_session(k, rel) for k, rel in enumerate(FILES)]
     out += [open_session(), path_session(), order_session(), cjk_session()]
+    out += [inputs_session(), url_session(), arguments_session(), lifetime_session(), calls_session()]
     adv = cache_dir() / "corpus" / "adv-plumber"
     for name in ADV:
         path = adv / name

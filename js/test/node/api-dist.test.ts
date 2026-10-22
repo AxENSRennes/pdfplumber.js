@@ -12,6 +12,7 @@ import { replayApiSession } from "../shared/api-sessions.mjs";
 const env = {
   readFile: async (rel: string) => new Uint8Array(await readFile(join(PDFPLUMBER_ROOT, rel))),
   fileInput: (rel: string) => join(PDFPLUMBER_ROOT, rel),
+  fileUrl: (rel: string) => pathToFileURL(join(PDFPLUMBER_ROOT, rel)),
 };
 
 describe("public API sessions on the dist build", async () => {

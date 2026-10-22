@@ -144,12 +144,40 @@ export function diagnosticsPolicy(options: OpenOptions, page?: number): Diagnost
  * does (an `unicode_norm` it does not know when the text is normalized,
  * `pages` when the pages load...). */
 function openKwargs(options: OpenOptions): Record<string, unknown> {
-  const kwargs: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(options)) {
-    if (k === "logLevel" || k === "onWarning") continue;
-    Object.defineProperty(kwargs, k, { value: v, enumerable: true, writable: true, configurable: true });
+  const [, kwargs] = splitOptions(options, OPEN_OWN);
+  return kwargs as Record<string, unknown>;
+}
+
+/** The API's own options of `open()` (`logLevel`, `onWarning`), from a
+ * plain object or a `Map`. */
+function apiOptions(options: OpenOptions): OpenOptions {
+  return splitOptions(options, OPEN_OWN)[0] as OpenOptions;
+}
+
+/** The options of `open()` that are the API's own. */
+const OPEN_OWN = new Set(["logLevel", "onWarning"]);
+
+function setOwn(o: Record<string, unknown>, k: string, v: unknown): void {
+  // a key such as `__proto__` is an own property, as in a Python dict
+  Object.defineProperty(o, k, { value: v, enumerable: true, writable: true, configurable: true });
+}
+
+/** An options argument split into the options named in `own` and the
+ * others (`**kwargs`). Options are a dict: a plain object (its own
+ * enumerable properties) or a `Map` with string keys (docs/public-api.md,
+ * "Arguments"). Any other value is not split: it goes to the core as the
+ * `**kwargs` it is, where Python's `TypeError` ("argument after ** must be
+ * a mapping") is raised. */
+function splitOptions(options: unknown, own: ReadonlySet<string>): [Record<string, unknown>, unknown] {
+  if (options === null || typeof options !== "object" || Array.isArray(options)) return [{}, options];
+  const entries = options instanceof Map ? [...options.entries()] : Object.entries(options);
+  const mine: Record<string, unknown> = {};
+  const kw: Record<string, unknown> = {};
+  for (const [k, v] of entries) {
+    if (typeof k !== "string") throw new TypeError("dict keys must be strings");
+    setOwn(own.has(k) ? mine : kw, k, v);
   }
-  return kwargs;
+  return [mine, kw];
 }
 
 /** A document released (`release()`, `await using`) is no longer in the
@@ -161,10 +189,33 @@ export class DocumentReleased extends Error {
   }
 }
 
+/** Whether a document is still in its core: shared by the document and the
+ * finalizers of its pages and tables (a finalizer must not free a handle
+ * of a released document, whose number the core may have given to
+ * another object since). */
+interface Life {
+  released: boolean;
+}
+
+/** What a finalizer frees: a handle of a core, while its document lives. */
+interface Held {
+  core: Core;
+  handle: number;
+  life: Life;
+}
+
+/** Frees the handle of an object that became unreachable (a document, a
+ * derived page, a table): `free`, queued after the calls made before it.
+ * Freeing never changes a result (the core keeps no Python-visible state
+ * of a freed object; docs/js-runtime.md, "Handles libérés"). A document's
+ * entry marks its life released first: the entries of its pages and tables
+ * that run after it free nothing (the document took them along). */
 const registry =
   typeof FinalizationRegistry === "function"
-    ? new FinalizationRegistry<{ core: Core; handle: number }>(({ core, handle }) => {
-        if (!core.crashed) core.call("free", handle, null).catch(() => undefined);
+    ? new FinalizationRegistry<Held & { document?: true }>(({ core, handle, life, document }) => {
+        if (life.released || core.crashed) return;
+        if (document) life.released = true;
+        core.call("free", handle, null).catch(() => undefined);
       })
     : undefined;
 
@@ -172,12 +223,14 @@ const registry =
  * `pdfplumber.open(path)`, any other input as
  * `pdfplumber.open(io.BytesIO(bytes))`. */
 export async function open(input: PDFInput, options: OpenOptions = {}): Promise<PDFPlumberDocument> {
+  // `null` is no option (`pdfplumber.open(x)`)
+  options ??= {};
   const args = openKwargs(options);
   const p = platform();
   const path = p.filePath?.(input);
   const bytes = await p.readInput(input);
   const core = await getCore();
-  const policy = diagnosticsPolicy(options);
+  const policy = diagnosticsPolicy(apiOptions(options));
   const oracle = (options as { [ORACLE]?: OracleOpen })[ORACLE];
   let handle: number;
   if (oracle) handle = (await core.call("oracle_doc_open", 0, [args, oracle.ids, path ?? null], { data: bytes, ...policy })) as number;
@@ -225,43 +278,96 @@ type ListName =
 
 /** An open PDF (`pdfplumber.PDF`). */
 export class PDFPlumberDocument {
-  #released = false;
+  readonly #life: Life = { released: false };
   #pages: Promise<PDFPlumberPage[]> | undefined;
-  /** The pages by handle (`PageRef` resolution). */
+  /** The pages by handle (`PageRef` resolution): the pages of `pdf.pages`,
+   * of `page(ref)`, and the derived pages a value may name (`pin`). */
   readonly #byHandle = new Map<number, PDFPlumberPage>();
+  /** The other derived pages, which the document does not keep: freed in
+   * the core once unreachable (`track`). */
+  readonly #weak = new Map<number, WeakRef<PDFPlumberPage>>();
+  /** The pages of Python's current `pdf.pages` list (`PDF._pages`, made
+   * again after each `close()`) the API has objects of, by page number:
+   * from `pdf.pages`, or from `page(ref)` of a reference read since the
+   * last `close()` (`#refs`). */
+  readonly #current = new Map<number, PDFPlumberPage>();
+  /** How many times `close()` flushed the pages. */
+  #epoch = 0;
+  /** The epoch each `PageRef` of a result was read in: a reference read
+   * since the last `close()` names a page of the current list. */
+  readonly #refs = new WeakMap<PageRef, number>();
   readonly #token = {};
+  /** The API's own options (`logLevel`, `onWarning`). */
+  readonly #own: OpenOptions;
 
   /** @internal */
   constructor(
     /** @internal */ readonly core: Core,
     /** @internal */ readonly handle: number,
+    /** The options of `open()`, as given. */
     readonly options: OpenOptions,
   ) {
-    registry?.register(this, { core, handle }, this.#token);
+    this.#own = apiOptions(options);
+    registry?.register(this, { core, handle, life: this.#life, document: true }, this.#token);
   }
 
   /** @internal A job on this document: rejects once it is released. */
   job<T>(f: (call: CoreCall) => Promise<T>): Promise<T> {
-    if (this.#released) return Promise.reject(new DocumentReleased());
+    if (this.#life.released) return Promise.reject(new DocumentReleased());
     return this.core.exclusive((call) => {
-      if (this.#released) throw new DocumentReleased();
+      if (this.#life.released) throw new DocumentReleased();
       return f(call);
     });
+  }
+
+  /** @internal Frees the core's handle of `obj` (a derived page, a table)
+   * once it is unreachable, while this document lives. */
+  track(obj: object, handle: number): void {
+    registry?.register(obj, { core: this.core, handle, life: this.#life }, obj);
+  }
+
+  /** @internal A derived page whose handle a value may hold (a `PageRef`
+   * of its annotations, `CroppedPage.annots` naming the cropped page):
+   * kept by the document, as the pages of `pdf.pages` are, so that
+   * `page(ref)` gives it back and its handle is never freed while the
+   * reference can be resolved. */
+  pin(page: PDFPlumberPage): void {
+    if (page.parent === undefined || this.#byHandle.get(page.handle) === page) return;
+    registry?.unregister(page);
+    this.#weak.delete(page.handle);
+    this.#byHandle.set(page.handle, page);
   }
 
   /** @internal The call options of a request on this document (its
    * diagnostics, for page `page`). */
   callOptions(page?: number): CallOptions {
-    return diagnosticsPolicy(this.options, page);
+    return diagnosticsPolicy(this.#own, page);
   }
 
   /** @internal A page of this document from its geometry. */
   page_(geometry: Geometry, handle: number, typed: unknown, parent?: PDFPlumberPage, geometryError?: unknown): PDFPlumberPage {
-    const known = this.#byHandle.get(handle);
+    const known = this.#known(handle);
     if (known) return known;
     const page = new PDFPlumberPage(this, handle, geometry, typed, parent, geometryError);
-    this.#byHandle.set(handle, page);
+    if (parent === undefined) {
+      this.#byHandle.set(handle, page);
+    } else {
+      // a derived page: the caller keeps it (or its tables, or the pages
+      // derived from it); its handle is freed once it is unreachable
+      this.#weak.set(handle, new WeakRef(page));
+      this.track(page, handle);
+    }
     return page;
+  }
+
+  /** The live page of a handle, if this document gave one. */
+  #known(handle: number): PDFPlumberPage | undefined {
+    const strong = this.#byHandle.get(handle);
+    if (strong) return strong;
+    const weak = this.#weak.get(handle)?.deref();
+    if (weak) return weak;
+    this.#weak.delete(handle);
+    return undefined;
   }
 
   /** The pages (`pdf.pages`): computed at the first read, as pdfplumber
@@ -274,7 +380,15 @@ export class PDFPlumberDocument {
     const p = this.job(async (call) => {
       const list = (await call("doc_pages", this.handle, null, this.callOptions())) as Geometry[];
       const typed = this.core.lastTyped as unknown[] | undefined;
-      return list.map((g, i) => this.page_(g, g.handle!, typed?.[i]));
+      // a page `page(ref)` made of a reference read since the last
+      // `close()` is one of these: the same object (as Python's
+      // `annot["data"]["P"] is pdf.pages[i]`), called through the handle
+      // it was made with
+      return list.map((g, i) => {
+        const page = this.#current.get(g.page_number) ?? this.page_(g, g.handle!, typed?.[i]);
+        this.#current.set(g.page_number, page);
+        return page;
+      });
     });
     this.#pages = p;
     p.catch(() => {
@@ -286,16 +400,45 @@ export class PDFPlumberDocument {
   /** The page of a `PageRef` (a `Page` held in a result: an annotation's
    * `data.P`...): the same `PDFPlumberPage` as `pdf.pages` gives for it. */
   page(ref: PageRef): Promise<PDFPlumberPage> {
-    const known = this.#byHandle.get(ref.handle);
-    if (known) return Promise.resolve(known);
+    if (!(ref instanceof PageRef)) return Promise.reject(new TypeError("page() takes a PageRef of this document"));
+    // decided when the job runs, in the order of the calls (a `pages` or a
+    // `close()` called before runs before)
     return this.job(async (call) => {
+      const current = this.#refs.get(ref) === this.#epoch;
+      const n = Number(ref.page_number);
+      const known = this.#known(ref.handle) ?? (current ? this.#current.get(n) : undefined);
+      if (known) return known;
       const g = (await call("page_info", ref.handle, null, this.callOptions())) as Geometry;
-      return this.page_(g, ref.handle, this.core.lastTyped);
+      const page = this.page_(g, ref.handle, this.core.lastTyped);
+      if (current && !this.#current.has(n)) this.#current.set(n, page);
+      return page;
     });
   }
 
-  #get<T>(op: string, args: unknown = null): Promise<T> {
-    return this.job(async (call) => (await call(op, this.handle, args, this.callOptions())) as T);
+  /** @internal Notes the `PageRef`s of a value that holds annotations (a
+   * `Page` is only ever an annotation's `data.P`: `Page.annots` sets it)
+   * as read now: `annots` a list of annotations, or a `to_dict` (`annots`,
+   * and each page's for a document's). */
+  readRefs(value: unknown, kind: "annots" | "page_dict" | "doc_dict"): void {
+    const annots = (list: unknown): void => {
+      if (!Array.isArray(list)) return;
+      for (const a of list) {
+        const p = (a as { data?: { P?: unknown } } | null)?.data?.P;
+        if (p instanceof PageRef) this.#refs.set(p, this.#epoch);
+      }
+    };
+    const page = (d: unknown): void => annots((d as { annots?: unknown } | null)?.annots);
+    if (kind === "annots") annots(value);
+    else if (kind === "page_dict") page(value);
+    else for (const d of ((value as { pages?: unknown } | null)?.pages as unknown[] | undefined) ?? []) page(d);
+  }
+
+  #get<T>(op: string, args: unknown = null, refs?: "annots" | "doc_dict"): Promise<T> {
+    return this.job(async (call) => {
+      const value = await call(op, this.handle, args, this.callOptions());
+      if (refs) this.readRefs(value, refs);
+      return value as T;
+    });
   }
 
   /** The Info dictionary (`pdf.metadata`). */
@@ -368,11 +511,11 @@ export class PDFPlumberDocument {
   }
 
   get annots(): Promise<PDFObject[]> {
-    return this.#get("doc_annots");
+    return this.#get("doc_annots", null, "annots");
   }
 
   get hyperlinks(): Promise<PDFObject[]> {
-    return this.#get("doc_hyperlinks");
+    return this.#get("doc_hyperlinks", null, "annots");
   }
 
   /** `pdf.structure_tree`: the elements' `to_dict()`. */
@@ -393,7 +536,7 @@ export class PDFPlumberDocument {
 
   /** `pdf.to_dict(object_types)` */
   toDict(objectTypes?: string[] | null): Promise<Record<string, unknown>> {
-    return this.#get("doc_to_dict", [objectTypes === undefined ? {} : { object_types: objectTypes }]);
+    return this.#get("doc_to_dict", [objectTypes === undefined ? {} : { object_types: objectTypes }], "doc_dict");
   }
   to_dict(objectTypes?: string[] | null): Promise<Record<string, unknown>> {
     return this.toDict(objectTypes);
@@ -423,18 +566,25 @@ export class PDFPlumberDocument {
   close(): Promise<void> {
     return this.job(async (call) => {
       await call("doc_close", this.handle, [], this.callOptions());
+      // the pages are made again at the next read (`PDF.close()` flushes
+      // `_pages`); a derived page keeps the page it derives from, as in
+      // Python, and stays what a value naming it resolves to
       this.#pages = undefined;
-      this.#byHandle.clear();
+      for (const [h, page] of this.#byHandle) if (page.parent === undefined) this.#byHandle.delete(h);
+      this.#current.clear();
+      this.#epoch++;
     });
   }
 
   /** Releases the document in the core, with its pages and tables
    * (idempotent); any later call rejects with `DocumentReleased`. */
   async release(): Promise<void> {
-    if (this.#released) return;
-    this.#released = true;
+    if (this.#life.released) return;
+    this.#life.released = true;
     this.#pages = undefined;
     this.#byHandle.clear();
+    this.#weak.clear();
+    this.#current.clear();
     registry?.unregister(this.#token);
     if (!this.core.crashed) await this.core.call("free", this.handle, null);
   }
@@ -443,7 +593,7 @@ export class PDFPlumberDocument {
    * `with pdfplumber.open(...) as pdf:` closes it. */
   async [Symbol.asyncDispose](): Promise<void> {
     try {
-      if (!this.#released && !this.core.crashed) await this.close();
+      if (!this.#life.released && !this.core.crashed) await this.close();
     } finally {
       await this.release();
     }
@@ -484,6 +634,9 @@ interface TableValue {
 /** The options of `search` that `Page.search` takes itself (the others
  * go to the text map). */
 const SEARCH_ARGS = new Set(["regex", "case", "main_group", "return_chars", "return_groups"]);
+
+/** The arguments of `extract_text_lines` before `**kwargs`. */
+const TEXT_LINE_ARGS = new Set(["strip", "return_chars"]);
 
 /** A page (`pdfplumber.page.Page`), or a page derived from one (`crop`,
  * `filter`...). Coordinates follow pdfplumber (top-left origin).
@@ -558,8 +711,12 @@ export class PDFPlumberPage {
     return `<Page:${this.page_number}>`;
   }
 
-  #run<T>(op: string, args: unknown): Promise<T> {
-    return this.pdf.job(async (call) => (await call(op, this.handle, args, this.pdf.callOptions(this.page_number))) as T);
+  #run<T>(op: string, args: unknown, refs?: "annots" | "page_dict"): Promise<T> {
+    return this.pdf.job(async (call) => {
+      const value = await call(op, this.handle, args, this.pdf.callOptions(this.page_number));
+      if (refs) this.pdf.readRefs(value, refs);
+      return value as T;
+    });
   }
 
   get objects(): Promise<Record<string, PDFObject[]>> {
@@ -567,7 +724,7 @@ export class PDFPlumberPage {
   }
 
   #list(name: ListName): Promise<PDFObject[]> {
-    return this.#run("page_attr", [name]);
+    return this.#run("page_attr", [name], name === "annots" || name === "hyperlinks" ? "annots" : undefined);
   }
 
   get chars(): Promise<PDFObject[]> {
@@ -585,10 +742,14 @@ export class PDFPlumberPage {
   get images(): Promise<PDFObject[]> {
     return this.#list("images");
   }
+  /** `page.annots`: each annotation's `data.P` is this page (a `PageRef`;
+   * for a derived page, the derived page itself: `pin`). */
   get annots(): Promise<PDFObject[]> {
+    this.pdf.pin(this);
     return this.#list("annots");
   }
   get hyperlinks(): Promise<PDFObject[]> {
+    this.pdf.pin(this);
     return this.#list("hyperlinks");
   }
   get edges(): Promise<PDFObject[]> {
@@ -659,8 +820,14 @@ export class PDFPlumberPage {
   }
   /** `page.extract_text_lines(strip, return_chars, **options)` */
   extractTextLines(options: TextLineOptions = {}): Promise<SearchResult[]> {
-    const { strip, return_chars, ...kw } = options;
-    return this.#run("page_extract_text_lines", [strip ?? true, return_chars ?? true, kw]);
+    let own: Record<string, unknown>, kw: unknown;
+    try {
+      [own, kw] = splitOptions(options, TEXT_LINE_ARGS);
+    } catch (e) {
+      return Promise.reject(e);
+    }
+    // (an option `undefined` is not given: its default)
+    return this.#run("page_extract_text_lines", [own.strip ?? true, own.return_chars ?? true, kw]);
   }
   extract_text_lines(options?: TextLineOptions): Promise<SearchResult[]> {
     return this.extractTextLines(options);
@@ -671,10 +838,13 @@ export class PDFPlumberPage {
    * (`page_search_text`), the pattern run over it here, then the results
    * of the spans (`page_search`), in one job. */
   search(pattern: string | RegExp, options: SearchOptions = {}): Promise<SearchResult[]> {
-    const oracle = (options as { [ORACLE]?: OracleSearch })[ORACLE];
-    const kw: Record<string, unknown> = {};
-    const own: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(options)) (SEARCH_ARGS.has(k) ? own : kw)[k] = v;
+    const oracle = (options as { [ORACLE]?: OracleSearch } | null)?.[ORACLE];
+    let own: Record<string, unknown>, kw: unknown;
+    try {
+      [own, kw] = splitOptions(options, SEARCH_ARGS);
+    } catch (e) {
+      return Promise.reject(e);
+    }
     return this.pdf.job(async (call) => {
       const opts = this.pdf.callOptions(this.page_number);
       // the text map first (`page.get_textmap(...)`), then the pattern:
@@ -760,13 +930,19 @@ export class PDFPlumberPage {
     return this.dedupeChars(options);
   }
 
-  #tables(values: TableValue[]): Table[] {
-    return values.map((t) => new Table(this, t.handle, t.bbox, t.cells, t.rows, t.columns));
+  /** @internal The `Table` objects of the tables the core found, their
+   * handles freed once they are unreachable. */
+  tables_(values: TableValue[]): Table[] {
+    return values.map((t) => {
+      const table = new Table(this, t.handle, t.bbox, t.cells, t.rows, t.columns);
+      this.pdf.track(table, t.handle);
+      return table;
+    });
   }
 
   /** `page.find_tables(table_settings)` */
   findTables(settings?: TableOptions | null): Promise<Table[]> {
-    return this.#run<TableValue[]>("page_find_tables", settings === undefined ? [] : [settings]).then((v) => this.#tables(v));
+    return this.#run<TableValue[]>("page_find_tables", settings === undefined ? [] : [settings]).then((v) => this.tables_(v));
   }
   find_tables(settings?: TableOptions | null): Promise<Table[]> {
     return this.findTables(settings);
@@ -774,7 +950,7 @@ export class PDFPlumberPage {
   /** `page.find_table(table_settings)` */
   findTable(settings?: TableOptions | null): Promise<Table | null> {
     return this.#run<TableValue | null>("page_find_table", settings === undefined ? [] : [settings]).then((v) =>
-      v === null ? null : this.#tables([v])[0],
+      v === null ? null : this.tables_([v])[0],
     );
   }
   find_table(settings?: TableOptions | null): Promise<Table | null> {
@@ -804,7 +980,9 @@ export class PDFPlumberPage {
 
   /** `page.to_dict(object_types)` */
   toDict(objectTypes?: string[] | null): Promise<Record<string, unknown>> {
-    return this.#run("page_to_dict", [objectTypes === undefined ? {} : { object_types: objectTypes }]);
+    // the annotations it may hold name this page (`annots`)
+    this.pdf.pin(this);
+    return this.#run("page_to_dict", [objectTypes === undefined ? {} : { object_types: objectTypes }], "page_dict");
   }
   to_dict(objectTypes?: string[] | null): Promise<Record<string, unknown>> {
     return this.toDict(objectTypes);

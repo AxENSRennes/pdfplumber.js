@@ -39,6 +39,16 @@ spans of the named groups of each match, as JavaScript's ``indices.groups``);
 ``page_filter`` names a predicate (``PREDICATES``), whose truth on each of
 the parent's objects is written with the result: the mask the boundary
 takes.
+
+The sessions of the API also write, for the harness only (the boundary
+never sees them): a target ``{"at": [c, path...]}``, the object a value of
+case ``c``'s result names (the page of a ``Page`` value, with the handle the
+boundary labelled it with: ``pdf.page(ref)``); an argument ``{"$cross": [c,
+path...]}``, the value at that path given back as the API gives it back
+(``cross``: an object of a result as an argument); and ``api_page``
+(``pdf.page(ref)``: ``page_info`` unless the API holds an object of the
+same page, ``args[0]`` the targets of the pages it holds). A value that does not exist makes the
+case unresolved, as a target that was not made.
 """
 
 import io
@@ -147,8 +157,17 @@ def _small(obj):
     return obj.get("size", 0) < 10
 
 
-#: The predicates of ``page_filter`` (``oracle/stages/plumber_text.py``).
-PREDICATES = {"upright": _upright, "not-rect": _not_rect, "small": _small}
+def _text(obj):
+    return obj.get("text", "")
+
+
+def _raises(obj):
+    raise ValueError("boom")
+
+
+#: The predicates of ``page_filter`` (``oracle/stages/plumber_text.py``;
+#: ``text`` and ``raises``: the sessions of the API).
+PREDICATES = {"upright": _upright, "not-rect": _not_rect, "small": _small, "text": _text, "raises": _raises}
 
 
 def mask_of(page, name):
@@ -203,6 +222,148 @@ def handle(objs, x):
     return f"#{len(objs) - 1}"
 
 
+# ------------------------------------------------------- the sessions of the API
+#
+# What the sessions of the public API (``oracle/unit/js_api.py``) need besides
+# the operations: values of earlier results given back as arguments, and
+# pages named by a value (``pdf.page(ref)``). The harness writes them, the
+# boundary never sees them.
+
+
+class Unresolved(Exception):
+    """A value of an earlier result that does not exist (its case raised or
+    gave less): the call is not made, as the API makes no call with an
+    argument it does not have."""
+
+
+#: The value of each case (the Python object) and its encoded form.
+RAW = []
+ENCODED = []
+
+
+def _at(case, path):
+    """The value at ``path`` (indices and keys) in the result of case
+    ``case``, and its encoded form."""
+    if case >= len(RAW) or isinstance(RAW[case], BaseException):
+        raise Unresolved
+    raw, enc = RAW[case], ENCODED[case]
+    for k in path:
+        if isinstance(raw, Page):
+            raise Unresolved
+        if type(raw) in (list, tuple) and type(k) is int and 0 <= k < len(raw):
+            raw = raw[k]
+            enc = enc[k] if type(enc) is list else enc["t"][k]
+        elif type(raw) is dict and k in raw:
+            enc = next(v for ek, v in enc["d"] if decode(ek) == k)
+            raw = raw[k]
+        else:
+            raise Unresolved
+    return raw, enc
+
+
+def _is_index(k):
+    """Whether a key is an array index of a JavaScript object (``"7"``),
+    which the object puts first, in ascending order."""
+    return k.isdigit() and (k == "0" or k[0] != "0") and int(k) < 2**32 - 1
+
+
+def cross(v):
+    """A value of a result given back as an argument: what the API gives
+    for it (``docs/js-runtime.md``, "Valeurs"), encoded again as a
+    JavaScript argument is: an integral ``float`` a JavaScript safe integer
+    crosses as an ``int``, a ``tuple`` as a ``list``, a ``dict`` with its
+    integer-like keys first, two surrogates as the astral character they
+    make, and a pdfminer object as the plain object of its fields (a
+    ``PSLiteral`` as ``{"name": ...}``...) as the wave 5 base encodes it.
+    Iterative: values of any depth."""
+    out = []
+    stack = [(v, out.append)]
+    while stack:
+        x, put = stack.pop()
+        t = type(x)
+        if x is None or t in (bool, int, bytes):
+            put(x)
+        elif t is float:
+            safe = x == x and abs(x) <= 2**53 - 1 and x.is_integer() and not (x == 0 and str(x).startswith("-"))
+            put(int(x) if safe else x)
+        elif t is str:
+            put(x.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "surrogatepass"))
+        elif t in (list, tuple):
+            items = [None] * len(x)
+            put(items)
+            for i, item in enumerate(x):
+                stack.append((item, lambda y, i=i, items=items: items.__setitem__(i, y)))
+        elif t is dict or t in (PSLiteral, PSKeyword, PDFObjRef, PDFStream):
+            if t is PSLiteral or t is PSKeyword:
+                pairs = [("name", x.name)]
+            elif t is PDFObjRef:
+                pairs = [("objid", x.objid)]
+            elif t is PDFStream:
+                pairs = [("objid", x.objid), ("genno", x.genno), ("attrs", x.attrs), ("rawdata", x.rawdata),
+                         ("data", x.data)]
+            else:
+                pairs = [(str(k), i) for k, i in x.items()]
+            index = sorted((k for k, _ in pairs if _is_index(k)), key=int)
+            order = index + [k for k, _ in pairs if not _is_index(k)]
+            values = dict(pairs)
+            d = {}
+            put(d)
+            for k in order:
+                d[k] = None
+                stack.append((values[k], lambda y, k=k, d=d: d.__setitem__(k, y)))
+        else:
+            # a Page: a PageRef, whose handle the core gives
+            raise TypeError(f"cannot cross {t.__qualname__}")
+    return out[0]
+
+
+def substitute(v):
+    """``v`` with each ``{"$cross": [case, path...]}`` replaced by the
+    crossed value at that path (``cross``)."""
+    if type(v) is list:
+        return [substitute(x) for x in v]
+    if type(v) is tuple:
+        return tuple(substitute(x) for x in v)
+    if type(v) is dict:
+        if len(v) == 1 and "$cross" in v:
+            case, *path = v["$cross"]
+            return cross(_at(case, path)[0])
+        return {k: substitute(x) for k, x in v.items()}
+    return v
+
+
+#: The handle of the page each ``api_page`` case that ran ``page_info``
+#: made an object of (the API holds it from then on).
+LABELS = {}
+
+
+def held_by_api(entries, made):
+    """The handles of the pages the API holds objects of: ``[c, i]`` the
+    ``i``-th object case ``c`` made, ``[c, "*"]`` every object it made,
+    ``[c, "label"]`` the page of ``api_page`` case ``c``."""
+    out = set()
+    for c, i in entries:
+        if i == "*":
+            out.update(made[c])
+        elif i == "label":
+            if c in LABELS:
+                out.add(LABELS[c])
+        elif i < len(made[c]):
+            out.add(made[c][i])
+    return out
+
+
+def page_at(case, path):
+    """The object a value names and its handle: the page a ``Page`` value
+    is and the handle the boundary labelled it with (the ``PageRef``'s),
+    else the value and ``None``."""
+    raw, enc = _at(case, path)
+    if isinstance(raw, Page):
+        k = int(dict((decode(a), b) for a, b in enc["d"])["handle"][1:])
+        return OBJS[k], k
+    return raw, None
+
+
 if __name__ == "__main__":
     # the reference configuration: logging disabled (docs/verification.md,
     # "Étapes"), as the boundary runs without onWarning
@@ -221,18 +382,42 @@ if __name__ == "__main__":
     top = depth()
     for case in cases:
         op, target, args, data = case[:4]
-        if type(target) is list:
-            if target[1] >= len(made[target[0]]):
-                # the object was not made (the case that makes it raised, or
-                # made fewer): nothing runs, as the API makes no call on an
-                # object it does not have
-                results.append([encode({"$unresolved": True}), None])
-                causes.append([])
-                made.append([])
-                continue
-            obj = objs[made[target[0]][target[1]]]
-        else:
-            obj = None if target is None else objs[target]
+        labelled = None
+        try:
+            if type(target) is dict:
+                # {"at": [case, path...]}: the page a value names (the API's
+                # pdf.page(ref)), or the value
+                obj, labelled = page_at(target["at"][0], target["at"][1:])
+            elif type(target) is list:
+                if target[1] >= len(made[target[0]]):
+                    raise Unresolved
+                obj = objs[made[target[0]][target[1]]]
+            else:
+                obj = None if target is None else objs[target]
+            args = substitute(args)
+            if op == "api_page":
+                # pdf.page(ref) of the API (harness only): no statement for
+                # a page the API has an object of (args[0]: the targets of
+                # the pages it holds), else page_info on it
+                # (the API holds an object for this page if it holds one
+                # for its handle, or one for the same page of pdf.pages: a
+                # Page value names its page by its first live handle, not
+                # necessarily the one pdf.pages gave)
+                same = sorted(h for h in held_by_api(args[0], made) if objs[h] is obj)
+                known = f"#{same[0]}" if same else None
+                op = "api_known" if same else "page_info"
+                if op == "page_info":
+                    LABELS[len(results)] = labelled
+        except Unresolved:
+            # the object was not made (the case that makes it raised, or
+            # made fewer), or a value an argument gives back: nothing runs,
+            # as the API makes no call on an object it does not have
+            results.append([encode({"$unresolved": True}), None])
+            causes.append([])
+            made.append([])
+            RAW.append(Unresolved())
+            ENCODED.append(None)
+            continue
         first = len(objs)
         extra = None
         try:
@@ -358,10 +543,15 @@ if __name__ == "__main__":
             elif op == "free":
                 FREED.add(target)
                 result = None
+            elif op == "api_known":
+                result = {"known": known}
             else:
                 raise AssertionError(op)
         except Exception as e:
             result = e
+        if len(results) in LABELS:
+            # api_page: the handle of the page the API made an object of
+            extra = {"handle": f"#{LABELS[len(results)]}"}
         if op == "search" and not isinstance(result, Exception):
             # the text the pattern ran over (the text map search found in
             # the cache), and the spans of its matches
@@ -383,6 +573,8 @@ if __name__ == "__main__":
         # encoded with room, the limit put back before the next statement
         sys.setrecursionlimit(20000)
         results.append([encode(result), encode(extra)])
+        RAW.append(result)
+        ENCODED.append(results[-1][0])
         chain = []
         while isinstance(result, BaseException) and len(result.args) == 1 and isinstance(result.args[0], BaseException):
             result = result.args[0]

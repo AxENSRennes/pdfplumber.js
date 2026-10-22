@@ -4,6 +4,7 @@
 // statements the API runs (js/test/shared/api-sessions.mjs).
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, it } from "vitest";
 
 import * as api from "../../src/index.js";
@@ -15,6 +16,7 @@ const lib = { ...api, ...internal };
 const env = {
   readFile: async (rel: string) => new Uint8Array(await readFile(join(PDFPLUMBER_ROOT, rel))),
   fileInput: (rel: string) => join(PDFPLUMBER_ROOT, rel),
+  fileUrl: (rel: string) => pathToFileURL(join(PDFPLUMBER_ROOT, rel)),
 };
 
 describe("public API sessions (oracle/unit/js_api.py)", () => {
