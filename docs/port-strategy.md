@@ -375,7 +375,16 @@ Lecture :
     `dropCore()` laissant vivre le worker de l'ancien ; le module compilé
     est désormais réutilisé et le worker arrêté (`js-runtime.md`,
     « Paquet JS »).
-- **Vague suivante** : **vague 5**, l'API JS publique
+- **Vague 5** (en cours ; base `wave5/base`, `architecture.md`,
+  « Vague 5 ») : contrat de l'API (`public-api.md`, table « Operations »),
+  épine de l'API sur les opérations de la frontière (file FIFO des jobs,
+  causes des erreurs, `open(path)` comme `pdfplumber.open(path)`),
+  harnais (sessions `oracle/unit/js_api.py` rejouées par l'API publique
+  dans Node, le build `dist` et les navigateurs ; traces des étapes
+  `plumber_*` par l'API, `oracle.verify --engine js-api`), propriété des
+  fichiers des chantiers API, BOUNDARY et PERF, référence PERF sur
+  `quick`. Ce qui suit est la liste d'origine de la vague.
+- **Vague 5 (liste d'origine)** : l'API JS publique
   (`PDFPlumberDocument`, `PDFPlumberPage`), construite sur les opérations
   de la frontière que la vague 4 a vérifiées (`js-runtime.md`,
   « Documents et pages » : `pdf.pages` par `doc_pages`, la recherche en

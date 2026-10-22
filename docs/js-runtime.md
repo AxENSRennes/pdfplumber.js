@@ -89,6 +89,16 @@ Deux encodages ont été implémentés et mesurés (`crates/wasm/src/wire/`) :
 Les deux donnent les mêmes objets JS (vérifié sur tout le corpus de mesure
 et par les tests aléatoires de `crates/wasm/tests/boundary.rs`).
 
+- **Typé** (vague 5, base ; format `2` de la réponse, `set_format("typed")`) :
+  PJB1 sans tables (`BinWriter::without_tables`), où chaque valeur garde
+  son étiquette : `int` (`I32`, `INT_F64`, `BIGINT`) et `float` (`F64`),
+  `list` et `tuple`, l'ordre des clés d'un `dict`. JS le décode en valeurs
+  typées (`decodeBinary(.., true)`, `js/src/core/typed.ts` : `PyFloat`,
+  `PyTuple`, `PyDict`) et rend à l'API leur projection (`project`), les
+  valeurs publiques ; la valeur typée du dernier résultat est
+  `core.lastTyped`. C'est le format du harnais qui écrit les traces des
+  étapes par l'API (`js/trace/`), jamais celui de l'API.
+
 ### Mesures
 
 Corpus : les `chars` et `edges` des 215 pages réelles de
@@ -190,7 +200,11 @@ son `__qualname__`, son MRO (linéarisation C3 des bases d'`ExcKind`, avec
 est le nom Python (`errors.ts`). Le MRO de chacune des 71 classes d'`ExcKind`
 est comparé à celui de CPython (`oracle/unit/js_runtime.py`,
 `exceptions.jsonl`), en Rust et dans chaque moteur. `NotPorted` (un chemin
-non porté) devient l'erreur JS `NotImplemented`.
+non porté) devient l'erreur JS `NotImplemented` (qui garde module, classe
+et MRO). L'exception qu'enveloppe une exception de pdfplumber
+(`PdfminerException(e)`, `MalformedPDFException(e)` : `PyErr::cause`)
+arrive sous la clé `cause`, au même format (imbriqué ; `None` sans
+cause) : c'est l'`error.cause` du `PDFPlumberError`.
 
 ## Diagnostics
 
@@ -303,6 +317,18 @@ et ses pages derrière des handles.
   `NotPorted`), `doc_annots`, `doc_hyperlinks`,
   `doc_structure_tree`, `doc_to_dict`/`to_json`/`to_csv`, `doc_close`
   (`PDF.close()`, sans libérer le handle : `free` le fait).
+  `doc_open_file` (`[path, options]`, vague 5) exécute
+  `pdfplumber.open(path, **options)` sur les octets que JS a lus
+  (`Source::Path` : le `PDF` possède le fichier, `close()` le ferme) :
+  l'`open(path)` de Node.
+- **File** (vague 5) : les requêtes d'un cœur s'exécutent une à une dans
+  l'ordre où elles sont faites, chacune jusqu'au bout (ses relances après
+  un appel nul comprises) ; un *job* (`Core.exclusive`) tient le cœur pour
+  plusieurs requêtes et le JavaScript entre elles (`search`, `filter` de
+  l'API). Dans la page (`WasmCore`) comme en worker (`WorkerCore` met en
+  file côté appelant, le worker exécute ses messages un par un). Sans
+  elle, un appel fait pendant qu'un autre attendait ses CMaps passait
+  avant sa relance.
 - **Pages** : `page_info`, `page_objects`, `page_attr` (`getattr(page,
   nom)` : `chars`, `rects`..., les arêtes, `annots`, `hyperlinks`,
   `objects`, les mêmes noms que `doc_attr`), `page_structure_tree`, `page_extract_text`,
@@ -310,7 +336,9 @@ et ses pages derrière des handles.
   `page_extract_text_lines`, la recherche en deux appels
   (`page_search_text` : le texte que parcourt le motif, celui de la carte
   de `search`, calculée là où `search` la calcule ; JS y exécute sa
-  `RegExp` ; `page_search` prend les spans, comme `textmap_search`),
+  `RegExp` ; `page_search` prend les spans, comme `textmap_search`, en
+  unités UTF-16, ou en points de code de Python avec `code_points`, son
+  septième argument : les spans de `re` que donne le harnais des traces),
   `page_crop`/`page_within_bbox`/`page_outside_bbox`,
   `page_filter` (le masque que JS a calculé sur les objets du parent, par
   sorte : la fonction de test le lit par identité ; des objets recalculés
@@ -429,6 +457,9 @@ js/src/worker/*.ts            mode worker : requêtes encodées ici, exécutées
                               dans le worker, réponse décodée ici (les classes survivent)
 js/src/search.ts              motifs de search() (RegExp JS → spans, voir public-api.md)
 js/src/internal.ts            API interne des tests et du benchmark (pdfplumber-js/internal)
+js/src/hooks.ts               crochets internes du harnais des traces (ORACLE, TYPED ; jamais publics)
+js/src/core/typed.ts          valeurs typées (PyDict, project) du format typé
+js/trace/                     traces des étapes plumber_* par l'API publique (oracle.verify --engine js-api)
 ```
 
 Un nouveau cœur (après un plantage, `configure()`, ou `dropCore()` des
@@ -446,7 +477,12 @@ Build : `node scripts/build.mjs` = `build-wasm.mjs` (cargo `--profile dist`,
 puis `wasm-opt -O3` du paquet npm `binaryen`, `--no-opt` pour l'éviter),
 `build-cmaps.mjs`, `build-js.mjs` (`tsc` → `dist/src` avec les `.d.ts` ;
 esbuild → `dist/browser/{index,worker,internal}.js` avec morceaux partagés).
-Aucune dépendance d'exécution.
+Aucune dépendance d'exécution. `node scripts/build-wasm.mjs --oracle`
+construit `dist/pdfplumber-oracle.wasm` : le même module avec les crochets
+d'oracle du harnais (feature `oracle-hooks`, `crates/wasm/src/oracle.rs`,
+opérations `oracle_*` : rang des `id()` de Python, ligne `ids`, indices par
+identité), dans son propre dossier `target/oracle`, jamais livré
+(`package.json` ne liste que `dist/pdfplumber.wasm`).
 
 ## Taille
 
@@ -492,6 +528,13 @@ la couche page ajoutera l'interpréteur et les polices. Budget (brotli) :
   texte/mots/recherche (dont `main_group` contre `m.group()`)/tables contre
   pdfplumber, entrées et options de `open()` (`open.jsonl`), un PDF une
   seule fois en mémoire, absence de fuite de tampons.
+- **API publique** (vague 5) : les sessions de `oracle/unit/js_api.py`
+  (`sessions.jsonl`), rejouées par `js/test/shared/api-sessions.mjs` par
+  l'API publique seulement, dans Node sur les sources (`api.test.ts`) et
+  sur le build `dist` (`api-dist.test.ts`), et dans les navigateurs, dans
+  la page et en worker (`api.spec.ts` ; `js/test/serve.mjs` sert aussi
+  `/upstream/` et `/oracle-api/`) ; voir `architecture.md`, « Vague 5 »,
+  « Harnais ».
 - `scripts/check.sh` : noms de CMaps, build (sans `wasm-opt`), types, vitest,
   budget. `scripts/check-browsers.sh` : build complet puis Playwright.
 - **Mutations** (`docs/verification.md`), sur tout `crates/wasm/src` et sur

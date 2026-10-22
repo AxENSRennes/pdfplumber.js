@@ -2011,6 +2011,284 @@ tests/performances/Wasm), chaque constat revérifié :
   le texte des `log.*` de pdfminer, la copie profonde d'un document lu
   depuis des octets par `structure_tree`.
 
+## Vague 5 : l'API JavaScript publique
+
+Base commune : branche `wave5/base` (depuis `rewrite/rust-core` à
+`73b88b9`). Trois chantiers parallèles, API, BOUNDARY et PERF, partent de
+cette base et ne modifient pas le contrat ci-dessous sans accord écrit
+(une note datée dans cette section, sur la branche qui le change).
+
+### Ce que contient la base
+
+- **Le contrat** : [`public-api.md`](public-api.md) (membres, options,
+  asynchronie, valeurs, arguments, alias, durée de vie, mode worker,
+  erreurs, table « Operations » : membre → opérations de la frontière →
+  instructions de `oracle/unit/js_pages_run.py`) et `js/src/types.ts`.
+- **L'épine de l'API** (`js/src/api.ts`) : chaque membre est un *job* du
+  cœur, implémenté sur les opérations de `crates/wasm/src/pages.rs` ;
+  documents (`pages` gardées jusqu'à `close()`, `metadata`, listes,
+  `annots`, `structure_tree`, sérialisations, `close`, `release`,
+  `asyncDispose`, `page(ref)`), pages (géométrie, listes, texte, mots,
+  lignes, `search` en un job, pages dérivées puis leur `page_info`,
+  `filter` en un job, tables et `Table`, sérialisations, `close`).
+  En attente (rejettent `NotImplemented`) : `debugTablefinder`,
+  `structTree` (`PDFStructTree`), `PDFStream` par référence.
+- **Changements partagés faits dans la base** (frontière et paquet) :
+  file FIFO des requêtes et des jobs par cœur (`Core.exclusive`,
+  `Serial`, dans la page et dans le worker : sans elle, la relance d'un
+  appel nul laissait passer un appel fait après lui) ; les erreurs portent
+  l'exception qu'elles enveloppent (`cause`, `errors.rs` → `error.cause`) ;
+  `doc_open_file` (`open(path)` de Node = `pdfplumber.open(path)`,
+  `Source::Path`) ; `open()` transmet toute option sauf `logLevel` et
+  `onWarning` ; format de résultat typé (`set_format("typed")`,
+  `FORMAT_TYPED` : PJB1 sans tables, décodé en valeurs typées,
+  `js/src/core/typed.ts`) ; crochets d'oracle (feature `oracle-hooks`,
+  `crates/wasm/src/oracle.rs`, `dist/pdfplumber-oracle.wasm`, jamais
+  livré) ; `page_search` prend des spans en points de code
+  (`code_points`) ; `NotImplemented` d'un `NotPorted` garde module et
+  classe.
+- **Le harnais** (ci-dessous) : sessions `oracle/unit/js_api.py` et leur
+  rejoueur, traces des étapes `plumber_*` par l'API (`js/trace/`,
+  `oracle.verify --engine js-api`).
+- **Les mesures de référence** (« Référence PERF », ci-dessous) et leurs
+  outils : `crates/pdftrace/examples/plumber_phases.py` (jumeau Python de
+  `plumber_phases.rs`), `js/bench/phases.mjs` (les mêmes phases par l'API
+  publique, build `dist`).
+
+### Contrat de l'API (décisions)
+
+- **Un job par membre, FIFO.** Le cœur est un processus Python qui
+  exécute une instruction après l'autre : chaque membre est un job mis en
+  file au moment de l'appel (`Core.exclusive`), ses opérations
+  s'exécutent dans l'ordre des appels quel que soit l'ordre des `await`,
+  chacune jusqu'au bout (relances d'appel nul comprises). `search` (la
+  `RegExp` entre `page_search_text` et `page_search`) et `filter` (la
+  fonction entre `page_objects` et `page_filter`) sont un job chacun. Un
+  membre ne lève jamais de façon synchrone (promesse rejetée), hors la
+  géométrie (`width`, `height`), propriété synchrone comme en Python.
+- **Instruction et récursion.** Le plan d'un membre est sa ligne de la
+  table « Operations » ; chaque opération est une instruction au niveau du
+  module de `js_pages_run.py` (`ENTRY_DEPTH`) : une `RecursionError`
+  arrive par l'API là où elle arrive dans ce script, ce que les sessions
+  vérifient (fenêtres de profondeur d'`adv-plumber`). Les étapes de
+  l'oracle appellent pdfplumber depuis des générateurs imbriqués
+  (cadres et sites de chargement à eux) : sur les fenêtres de profondeur
+  des corpus adverses, une trace écrite par l'API peut lever plus loin ou
+  moins loin que la trace de l'étape, par construction ; la parité de ces
+  fichiers par l'API est celle des sessions.
+- **Caches.** `pdf.pages` : le tableau de la première lecture résolue,
+  jusqu'à `close()` (qui vide `_pages` en Python) ; une lecture rejetée
+  n'est pas gardée. Les autres getters exécutent leur instruction à chaque
+  lecture ; un chantier peut garder les valeurs résolues (jamais les
+  rejets : la seconde exécution d'une instruction qui a levé peut réussir,
+  un site spécialisé tenant deux unités C de moins), à condition que le
+  plan (les sessions) le dise.
+- **Durée de vie.** `close()` = `PDF.close()` / `Page.close()` (le document
+  reste utilisable, comme en Python) ; `release()` libère le document dans
+  le cœur (pages, tables, flux, historique) ; ensuite tout membre qui a
+  besoin du cœur rejette `DocumentReleased` (erreur JavaScript, sans
+  équivalent Python) ; `await using` = `close()` puis `release()` ; un
+  `FinalizationRegistry` libère un document injoignable (une page, une
+  table le retiennent). Libérer ne change aucun résultat.
+- **Valeurs et arguments** : ceux de `js-runtime.md` (« Valeurs ») ; une
+  `Page` dans un résultat est un `PageRef`, `pdf.page(ref)` donne le même
+  `PDFPlumberPage` que `pdf.pages` ; un objet de résultat rendu en argument
+  traverse par valeur (un flottant entier devient un `int`, visible
+  seulement dans un texte).
+- **Alias** : tout nom pdfplumber à `_` a son alias camelCase (et
+  l'inverse), un seul membre ; options et clés restent celles de
+  pdfplumber.
+- **Erreurs** : `PDFPlumberError` (`name` = classe Python, `cause` =
+  l'exception enveloppée), `NotImplemented` (membre en attente ou
+  `NotPorted`), `DocumentReleased`, `CoreCrash`.
+- **Mode worker** : même API ; jobs en file dans le thread appelant, la
+  fonction de `filter` et la `RegExp` de `search` y tournent aussi ; le
+  worker exécute ses messages un par un (`Serial`).
+- **Journalisation** : la configuration de référence reste « logging
+  coupé » pour les résultats et la récursion ; le texte transmis à
+  `onWarning` est un diagnostic seulement.
+- **Hors périmètre** : `display.py`/`to_image`, `repair.py`, `cli.py`.
+
+### Harnais
+
+**Sessions (spécification de l'API).** `oracle/unit/js_api.py`
+(générateur à empreinte, `python -m oracle.unit js_api`, après `plumber`
+dont il lit `adv-plumber`) écrit `<cache>/unit/js_api/<fp>/sessions.jsonl`,
+une session par ligne :
+
+```
+{"in": [session], "out": [{"id": n, "value": JSON typé}, ...]}
+session = {"name", "node_only", "steps": [{"calls": [appel...], "await": [k...]}]}
+appel   = {"id", "on": [id d'appel, index...] | null, "get"|"call": membre,
+           "args": [JSON typé...], "input": {"bytes_of": rel}|{"bytes": hex}|{"path": rel},
+           "predicate": nom (filter)}
+```
+
+Les appels d'une étape sont faits sans attendre, puis attendus dans
+l'ordre de `await`. Le générateur traduit chaque appel en instructions de
+`js_pages_run.py` selon la table « Operations » (le plan des membres est
+écrit là, une fois), exécute la session dans un processus neuf
+(`js_pages_run.py` : cibles `[cas, index]`, `doc_open_file`, `causes`,
+motifs compilés `{"$compiled": source}`), et déduit des résultats ce que
+chaque appel doit donner : une valeur, une `Error{name, message, cause}`
+(Python, ou de l'API : `DocumentReleased`), `Unresolved{}` (un appel sur
+un objet jamais fait : aucun côté ne l'exécute). Valeurs neutres : un objet
+de l'API est un `Named` (`PDFPlumberPage{géométrie}`, `Table{bbox, cells,
+rows, columns}`, `PDFPlumberDocument{}`, `Page{page_number}`), le nom
+d'une image en ligne `"<inline k>"` des deux côtés (rang par page ;
+l'écart `str(id())`/`inline-<k>` est documenté et vérifié par les traces),
+l'ensemble des directions de `validate_directions` dans l'ordre du port.
+Couverture de la base : 40 sessions, 1 595 appels (dix fichiers réels
+avec chaque membre et alias de la première page et du document, chaînes
+de pages dérivées, prédicats, tables et `Table`, sérialisations,
+`close` puis pages refaites, `release` puis `DocumentReleased` ; options
+d'ouverture et mots de passe ; `open(path)` (Node) ; ordre d'attente
+inversé ; pages CJK aux CMaps paresseuses ; 26 PDF d'`adv-plumber`, dont
+des fenêtres de profondeur et d'unités C). Rejoueur :
+`js/test/shared/api-sessions.mjs`, **par l'API publique seulement** ; lancé
+par vitest sur les sources (`js/test/node/api.test.ts`) et sur le build
+`dist` (`api-dist.test.ts`), par Playwright dans Chromium, Firefox et
+WebKit, dans la page et en worker (`js/test/browser/api.spec.ts`, sessions
+`node_only` exclues). Un membre en attente entre dans les sessions avec
+son opération (BOUNDARY ajoute l'instruction à `js_pages_run.py`, API la
+ligne du plan et les appels).
+
+**Traces par l'API publique.** `js/trace/pdftrace-js` (Node, build `dist`
+avec `dist/pdfplumber-oracle.wasm`) a la ligne de commande de `pdftrace`
+et écrit les traces des étapes `plumber_objects`, `plumber_text`,
+`plumber_tables`, `plumber_doc` en suivant leur parcours Python
+(`js/trace/plumber_*.mjs`, tables d'options générées par
+`oracle/codegen/plumber_ops.py` dans `js/trace/plumber-ops.json`,
+`--check`) ; `python -m oracle.verify --engine js-api --stage S --set X`
+le lance à la place de `pdftrace`. Égalité octet pour octet :
+
+- chaque fichier dans un cœur neuf (un processus Python), au format typé
+  (`set_format("typed")`) : la valeur publique que l'API rend est la
+  projection (`project`) de la valeur typée, que l'étape lit dans
+  `core.lastTyped` juste après l'appel (file FIFO : rien entre les deux) ;
+  un `float` est un `PyFloat` (`3` et `3.0` distincts), un `tuple` un
+  `PyTuple`, un `dict` un `PyDict` (ordre des clés de Python, clés
+  entières comprises), un `int` un nombre ou un `bigint` ;
+- `js/trace/canon.mjs` : `canon` d'`oracle/canon.py` sur ces valeurs
+  (`repr` de flottant de CPython depuis les chiffres les plus courts de
+  `toExponential`, `json.dumps(ensure_ascii=True)` par unité UTF-16 — une
+  paire de substituts s'écrit comme Python écrit un caractère astral —,
+  octets au-delà de 256 par SHA-256, `Stream(...)` avec le `rawdata` lu à
+  la fin de l'appel, exceptions par `pythonModule`/`pythonQualname`) ;
+- crochets internes (`pdfplumber-js/internal`, jamais publics), là où la
+  sémantique publique diffère volontairement de Python, chacun documenté
+  dans `js/src/hooks.ts` et `crates/wasm/src/oracle.rs` : rang des `id()`
+  de l'analyse (`open(..., {[ORACLE]: {ids}})` → `oracle_doc_open`, et
+  `oracle_page_ids` pour écrire la ligne `ids`) ; spans de `re`
+  (`search(..., {[ORACLE]: {spans}})`, en points de code,
+  `page_search` `code_points`) ; identité des objets
+  (`oracle_object_indices` : les pages dérivées de Python tiennent les
+  dicts du parent, les résultats JS sont des copies) ; format typé (une
+  vue sans perte, pas une entrée).
+
+Résultat sur `quick` (150 fichiers, `heavy.sh`, `-j 3`) :
+`plumber_objects` 150/150 et `plumber_text` 150/150 identiques par
+l'API (149 avant la correction des spans en points de code :
+`lone-surrogates.pdf`, une paire de substituts que JS fusionne) ;
+`plumber_tables` et `plumber_doc` identiques hors les lignes des
+opérations en attente (`finder ...` de `debug_tablefinder` ; `tree`,
+`find_all`, `find`, `mcids`, `element_bbox`, `element_repr` de
+`PDFStructTree`).
+
+### Chantiers et propriété des fichiers
+
+| Chemins | API | BOUNDARY | PERF |
+|---|---|---|---|
+| `js/src/api.ts`, nouveaux modules `js/src/api/*`, `types.ts`, `search.ts`, `exports.ts`, `index.ts`, `browser.ts`, `browser-internal.ts`, `errors.ts`, `hooks.ts` | écrit | lit | lit |
+| `js/src/core/*`, `pdfobjects.ts`, `worker/*`, `platform/*`, `internal.ts` | lit | écrit | lit (mesures) |
+| `crates/wasm/src/{ops,pages,oracle,cmaps,errors,handles,abi,strings}.rs`, `crates/wasm/tests/*` | lit | écrit | lit |
+| `crates/wasm/src/wire/*`, `js/src/core/wire.ts` | lit | ajouts seulement (protocole 1) | écrit |
+| `crates/pdfplumber`, `crates/pdfminer`, `crates/pycompat` | — | sites `log.*` et `pycompat::logging` (protocole 2), analyse des CMaps | écrit |
+| `crates/pdftrace/examples/*`, `js/bench/*`, `scripts/size.mjs` | — | — | écrit |
+| `oracle/unit/js_api.py`, `js/trace/*`, `js/test/shared/api-sessions.mjs`, `js/test/node/api*.test.ts`, `js/test/browser/api.spec.ts`, `oracle/verify.py` (`--engine`) | écrit | lit | lit |
+| `oracle/unit/js_pages_run.py`, `oracle/unit/js_runtime.py`, `js/test/shared/tests.mjs` | ajouts d'instructions coordonnés (protocole 3) | écrit | — |
+| `docs/public-api.md`, `README.md` | écrit | — | — |
+| `docs/js-runtime.md` | — | écrit | section « Mesures » |
+| `docs/architecture.md` « Vague 5 » | sa sous-section | sa sous-section | sa sous-section et « Référence PERF » |
+| `scripts/check.sh`, `check-browsers.sh`, `build-*.mjs` | — | écrit | — |
+
+Protocoles :
+
+1. **Fil (`wire`)** : PERF possède l'encodage (allocation, table de
+   chaînes, colonnes, décodeur) ; BOUNDARY y ajoute seulement des sortes
+   de valeurs (le flux par référence : nouvelle étiquette, nouvelle
+   méthode de `Writer`, nouveau cas du décodeur), en un commit à part,
+   annoncé dans sa sous-section ; aucun ne change le format typé ni le
+   sens d'une étiquette existante sans l'autre. La jonction résout les
+   conflits textuels en gardant les deux.
+2. **`log.*` de pdfminer** : BOUNDARY ajoute le texte des messages aux
+   sites existants (fermetures de formatage, `pycompat::logging`) en un
+   commit de bout en bout, sans toucher au comptage des cadres ; PERF ne
+   reformate pas les lignes qui portent un appel de journalisation. Toute
+   autre modification de `crates/pdfminer` par BOUNDARY (l'analyse des
+   CMaps d'un document) vit dans un module nouveau.
+3. **Instructions de `js_pages_run.py`** : BOUNDARY ajoute l'instruction de
+   chaque nouvelle opération (ajout pur d'une branche du `if`), API ajoute
+   à `js_api.py` la ligne du plan du membre et ses appels. Toute
+   modification de `js_pages_run.py` invalide les données `js_runtime` et
+   `js_api` (empreinte) : à régénérer.
+4. **Traces et caches** : aucun chantier ne change `oracle/stages/*`,
+   `oracle/canon.py`, `oracle/typed_json.py`, `oracle/depth.py` (ils sont
+   dans l'empreinte des caches de l'oracle).
+
+**Chantier API** : le reste de la surface (`debugTablefinder`,
+`PDFStructTree` et ses éléments, `PDFStream` par référence côté API,
+mémoïsation éventuelle des getters, `FinalizationRegistry` des pages et
+tables, `README.md` : démarrage rapide et migration depuis l'ancien port
+`legacy-pdfjs`), les sessions de chaque membre et option (dont les
+nouveaux), les quatre étapes par l'API identiques sur `all` et les corpus
+adverses (hors fenêtres de profondeur, couvertes par les sessions), les
+tests de mutation de la couche API (Stryker hors ligne s'il tourne depuis
+`node_modules`, sinon mutants à la main de chaque branche, chaque
+survivant justifié).
+
+**Chantier BOUNDARY** — opérations que l'API attend :
+
+| Opération | Instruction (`js_pages_run.py`) | Résultat |
+|---|---|---|
+| `page_debug_tablefinder [settings?]` | `obj.debug_tablefinder(*args)` | `{edges, intersections: [[point, {v, h}]...], cells, tables: [table + handle...], settings}` |
+| `struct_tree [page handle ou None]` (sur le document) | `PDFStructTree(obj, page)` | handle de l'arbre, `children` (éléments : champs du dataclass, `children`, chemin) |
+| `struct_find_all [matcher]`, `struct_find [matcher]` (arbre ou élément) | `obj.find_all(m)` (liste), `obj.find(m)` | chemins des éléments ; `matcher` = nom, `{"regexp": ...}` (spans JS de `match` au début du type), ou masque calculé par JS |
+| `struct_element_bbox [path]` | `tree.element_bbox(el)` | bbox ou exception |
+| `struct_all_mcids [path]`, `struct_element_repr [path]` | `list(el.all_mcids())`, `repr(el)` | — |
+| `page_info` : `width`, `height` | lus séparément | valeur ou exception chacune |
+| `stream_rawdata`, `stream_data`, `stream_get_data`, `stream_get_rawdata` [handle] | `s.rawdata`... | octets ; flux par référence (étiquette de fil, durée de vie liée au document) |
+| `doc_cmap_scan` (préchargement) | aucune (analyse sans effet Python, sur un document à part) | noms de CMaps probables |
+
+Aussi : arguments `PSLiteral`, `PDFObjRef`, `PDFStream`, `PageRef`
+décodés comme les objets qu'ils représentent ; texte des `log.*` de
+pdfminer vers `onWarning` comme `logging` le formaterait (nom du logger,
+niveau, `%`-formatage, une fois par enregistrement) ; préchargement des
+CMaps d'un document pour que les appels nuls deviennent rares, sans
+changer aucun résultat ni la récursion (une CMap présente dès le départ
+= Python avec toutes ses CMaps) ; croissance de l'historique des appels
+nuls (aujourd'hui il ne raccourcit qu'à la libération) ;
+`docs/js-runtime.md`.
+
+**Chantier PERF** : chemins chauds de `crates/pdfplumber`,
+`crates/pdfminer`, `crates/pycompat` (`page.objects`/`process_object` :
+`resolve_all`, dicts d'attributs, conversions ; texte, mots, tables de la
+vague 1 ; layout), coût et allocations de l'encodage, taille et vitesse du
+Wasm `dist` ; mesuré en natif (`plumber_phases.rs` et son jumeau Python),
+dans Node (`js/bench/phases.mjs`) et dans les navigateurs ; chaque
+changement garde toutes les traces et toutes les fenêtres de profondeur
+(cadres et unités C) identiques ; avant/après avec la méthode écrite.
+
+**Fini pour la vague 5** (en plus de `verification.md`) : chaque membre et
+option de `public-api.md` implémenté et vérifié contre Python *par l'API
+publique* (sessions et traces), dans Node, Chromium, Firefox, WebKit et en
+mode worker ; performances mesurées avant/après, méthode notée ; aucune
+optimisation ne change une trace.
+
+### Référence PERF (base, `quick`)
+
+PERF_BASELINE_PLACEHOLDER
+
 ## Sémantique Python centralisée (`crates/pycompat`)
 
 Tout ce qui imite Python vit ici, une seule fois, testé contre CPython :

@@ -77,10 +77,12 @@ const SHORT = new Set(["builtins", "pdfminer", "pdfplumber", "pycompat", "oracle
  * for builtins, pdfminer, pdfplumber (and the port's `NotPorted`), else
  * `module.name`. */
 export function exceptionName(e) {
-  const module = e.pythonModule ?? "";
+  // an exception known by its trace name only (typed JSON's `ExcValue`)
+  if (!e.pythonModule) return e.name;
+  const module = e.pythonModule;
   const qual = e.pythonQualname ?? e.name;
   const name = qual.slice(qual.lastIndexOf(".") + 1);
-  if (!e.pythonModule || SHORT.has(module.split(".")[0])) return name;
+  if (SHORT.has(module.split(".")[0])) return name;
   return `${module}.${name}`;
 }
 

@@ -35,6 +35,11 @@ export interface OpenOptions {
   raise_unicode_errors?: boolean;
   /** `strict_metadata=` */
   strict_metadata?: boolean;
+  /** `repair=`: `true` is not ported (Ghostscript; `NotImplemented`). */
+  repair?: boolean;
+  /** `gs_path=`, `repair_setting=`: read with `repair` only. */
+  gs_path?: string | null;
+  repair_setting?: string;
   /** Where diagnostics go besides `onWarning`: `"silent"` (default),
    * `"warning"` (warnings and above to `console.warn`) or `"debug"`
    * (everything to `console.debug`/`console.warn`). */
@@ -42,6 +47,9 @@ export interface OpenOptions {
   /** Receives the diagnostics at warning level and above (all of them with
    * `logLevel: "debug"`). */
   onWarning?: (warning: PDFPlumberWarning) => void;
+  /** Any other option is a keyword argument of `pdfplumber.open` too
+   * (an unknown name: Python's `TypeError`). */
+  [keyword: string]: unknown;
 }
 
 /** `pdfminer.layout.LAParams` keyword arguments. */

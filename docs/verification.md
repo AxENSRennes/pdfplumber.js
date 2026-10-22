@@ -372,6 +372,19 @@ Mode d'emploi détaillé : [`oracle/README.md`](../oracle/README.md).
   dépôt) donne l'emplacement de `corpus/`, `upstream/` et `.cache`
   (`PDFPLUMBER_CACHE` peut désigner un autre cache). Dans un worktree Git, elle
   pointe vers le dépôt principal, qui contient les PDF téléchargés et le venv.
+- **Parité par l'API JavaScript publique** (vague 5, `architecture.md`,
+  « Vague 5 », « Harnais ») : `python -m oracle.verify --engine js-api
+  --stage plumber_{objects,text,tables,doc} --set NOM` lance
+  `js/trace/pdftrace-js` (même ligne de commande que `pdftrace`, build
+  `dist` avec `dist/pdfplumber-oracle.wasm` : `node scripts/build.mjs`,
+  `node scripts/build-wasm.mjs --oracle`) à la place du binaire Rust :
+  les traces sont écrites par l'API publique, au format typé, avec les
+  seuls crochets d'oracle documentés. Les sessions de
+  `oracle/unit/js_api.py` (instructions de `js_pages_run.py`, résultats de
+  Python) vérifient chaque membre de l'API, et la récursion là où l'API
+  l'atteint (les étapes appellent pdfplumber depuis des générateurs : sur
+  les fenêtres de profondeur, une trace par l'API diffère par
+  construction, la parité y est celle des sessions).
 
 ### Mesurer une profondeur de cadres
 

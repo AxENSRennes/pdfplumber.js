@@ -3,8 +3,10 @@
 # tests on the unit oracle data (natively and compiled to WebAssembly, run by
 # Node's WASI), the deepest recursions on the production Wasm profile
 # (scripts/wasm-depth-gate.sh), the JavaScript package (Wasm build, Node
-# tests, size budget; the browsers are scripts/check-browsers.sh) and the
-# oracle self-tests. Regenerates the unit oracle data first when it is
+# tests and the sessions of the public API on the sources and the dist
+# build, size budget; the browsers are scripts/check-browsers.sh), the
+# plumber_* stages through the public API on micro, and the oracle
+# self-tests. Regenerates the unit oracle data first when it is
 # missing or stale (`python -m oracle.unit`).
 #
 #   scripts/check.sh            # from any directory
@@ -93,6 +95,12 @@ node scripts/build-js.mjs
 node node_modules/typescript/bin/tsc -p js/tsconfig.test.json
 capped node node_modules/vitest/vitest.mjs run --config js/vitest.config.ts
 node scripts/size.mjs --budget
+
+step "the plumber_* stages through the public JavaScript API on micro (js/trace, dist/pdfplumber-oracle.wasm)"
+node scripts/build-wasm.mjs --oracle --no-opt
+for stage in plumber_objects plumber_text; do
+  capped "$PY" -m oracle.verify --engine js-api --stage "$stage" --set micro -j 2
+done
 
 step "oracle self-tests"
 "$PY" -m unittest discover -s oracle/tests -t .
