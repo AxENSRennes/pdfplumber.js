@@ -1132,3 +1132,57 @@ fn the_history_goes_once_every_cmap_is_handed_over() {
 fn out_list(out: &Value, key: &str) -> Vec<String> {
     str_list(item(out, key))
 }
+
+/// The first void call of a document asks for every CMap its fonts name
+/// (`crates/wasm/src/cmap_scan.rs`): `pr-136-example.pdf` needs two
+/// (`documents.jsonl`), both asked for by its first void call, and the
+/// re-run gives pdfplumber's text; a document that misses none is never
+/// scanned.
+#[test]
+#[cfg_attr(target_family = "wasm", ignore = "loads CMaps: run alone, one process per test, by scripts/check.sh")]
+fn the_first_void_call_of_a_document_asks_for_every_cmap_its_fonts_name() {
+    on_thread(1 << 30, || {
+        let dir = cmap_dir();
+        let root = PathBuf::from(std::env::var("PDFPLUMBER_ROOT").expect("PDFPLUMBER_ROOT"));
+        let (input, out) = data()
+            .cases("documents")
+            .into_iter()
+            .find(|(i, _)| i[0].as_str().unwrap().ends_with("pr-136-example.pdf"))
+            .expect("pr-136-example.pdf");
+        let mut needed: Vec<String> = out_list(&out, "cmaps");
+        needed.extend(out_list(&out, "umaps").into_iter().map(|u| format!("to-unicode-{u}")));
+        needed.sort();
+        let names: Vec<PyValue> =
+            fs::read_to_string(dir.join("names.txt")).unwrap().lines().map(PyValue::str).collect();
+        let mut core = Core::new();
+        ok(call(&mut core, "cmap_configure", 0, list(names), None));
+        let pdf = fs::read(root.join(input[0].as_str().unwrap())).unwrap();
+        let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(pdf))) else { panic!() };
+        let Js::Arr(pages) = ok(call(&mut core, "doc_pages", doc as u32, list(vec![]), None)) else { panic!() };
+        let Value::Int(number) = &input[1] else { panic!("a page number") };
+        let Js::Obj(page) = &pages[number.as_i64().unwrap() as usize - 1] else { panic!() };
+        let Js::Num(page) = page[0].1 else { panic!() };
+        let empty = || list(vec![PyValue::Dict(pdfplumber::obj::Obj::new())]);
+        let r = call(&mut core, "page_extract_text", page as u32, empty(), None);
+        assert_eq!(r.status, 2, "a void call");
+        let Js::Arr(asked) = r.value else { panic!() };
+        let mut asked: Vec<String> =
+            asked.iter().map(|n| if let Js::Str(u) = n { String::from_utf16(u).unwrap() } else { panic!() }).collect();
+        asked.sort();
+        // those of the page and those of the document's other fonts
+        assert!(needed.iter().all(|n| asked.contains(n)), "every CMap at once: {asked:?} {needed:?}");
+        for name in &asked {
+            let raw = fs::read(dir.join(format!("{name}.pdfcmap"))).unwrap();
+            ok(call(&mut core, "cmap_add", 0, PyValue::str(name), Some(raw)));
+        }
+        let text = ok(call(&mut core, "page_extract_text", page as u32, empty(), None));
+        assert_eq!(text, value_view(item(&out, "text")));
+        // a document that misses no CMap: no scan, no void call
+        let plain = fs::read(root.join("corpus/micro/text-operators.pdf")).unwrap();
+        let Js::Num(other) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(plain))) else { panic!() };
+        let Js::Arr(pages) = ok(call(&mut core, "doc_pages", other as u32, list(vec![]), None)) else { panic!() };
+        let Js::Obj(p) = &pages[0] else { panic!() };
+        let Js::Num(p) = p[0].1 else { panic!() };
+        assert_eq!(call(&mut core, "page_extract_text", p as u32, empty(), None).status, 0);
+    });
+}

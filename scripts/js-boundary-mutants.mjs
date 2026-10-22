@@ -12,7 +12,6 @@ const root = process.argv[2];
 const only = new Set(process.argv.slice(3));
 
 const STREAMS = "the streams of results are references";
-const PRELOAD = "the CMaps a document names are preloaded";
 const LAZY = "a CJK document extracts like pdfplumber, its CMaps fetched once";
 const HISTORY = "a long history makes the runtime hand over every CMap";
 const PAGES = "page operations through the boundary match pdfplumber";
@@ -35,16 +34,11 @@ const mutants = [
   ["js/src/core/runtime.ts", "        if (s) return s;\n", "", STREAMS],
   ["js/src/core/runtime.ts", "      const source: StreamSource = owner\n", "      const source: StreamSource = false\n", STREAMS],
   ["js/src/core/runtime.ts", 'responseValue(this.callRaw("set_stream_refs", 0, [true]), "set_stream_refs");', 'responseValue(this.callRaw("set_stream_refs", 0, [false]), "set_stream_refs");', STREAMS],
-  ["js/src/core/runtime.ts", "    if (!this.cmaps) return;\n    const names", "    const names", PRELOAD],
-  ["js/src/core/runtime.ts", "await Promise.all(names.filter((n) => !this.added.has(n))", "await Promise.all(names.filter((n) => this.added.has(n))", PRELOAD],
-  ["js/src/core/runtime.ts", "if (r.status === STATUS_OK && OPENS.has(op) && options.preload !== false) await this.preload(value as number);", "if (r.status === STATUS_OK && OPENS.has(op)) await this.preload(value as number);", LAZY],
-  ["js/src/core/runtime.ts", "if (r.status === STATUS_OK && OPENS.has(op) && options.preload !== false) await this.preload(value as number);", "", PRELOAD],
   ["js/src/core/runtime.ts", "  return (u8[6] & 2) !== 0;", "  return false;", HISTORY],
   ["js/src/core/runtime.ts", "  return (u8[6] & 2) !== 0;", "  return (u8[6] & 1) !== 0;", HISTORY],
   ["js/src/core/runtime.ts", "      if (r.historyLong) await this.loadAll();\n", "", HISTORY],
   ["js/src/core/runtime.ts", "this.cmaps.names.filter((n) => !this.added.has(n))", "this.cmaps.names.filter((n) => this.added.has(n))", HISTORY],
   ["js/src/core/runtime.ts", "        this.voidCalls++;\n        await this.loadMissing(r.value as string[]);\n        continue;", "        await this.loadMissing(r.value as string[]);\n        continue;", LAZY],
-  ["js/src/core/runtime.ts", 'const OPENS = new Set(["doc_open", "doc_open_file", "oracle_doc_open"]);', 'const OPENS = new Set(["doc_open_file", "oracle_doc_open"]);', PRELOAD],
   // wire.ts
   ["js/src/core/wire.ts", "return streamRefMaker ? streamRefMaker(handle, objid, genno, attrs) : PDFStream.reference(objid, genno, attrs, handle, null);", "return PDFStream.reference(objid, genno, attrs, handle, null);", STREAMS],
   ["js/src/core/wire.ts", "    if (v instanceof PSLiteral) {\n      w.u8(TAG.LITERAL);", "    if (false) {\n      w.u8(TAG.LITERAL);", PAGES],

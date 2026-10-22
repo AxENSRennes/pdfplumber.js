@@ -158,6 +158,9 @@ pub struct Document {
     /// Whether calls that reached it were not recorded (every CMap was
     /// handed over: `cmaps::complete`): its history cannot rebuild it.
     pub unrecorded: bool,
+    /// Whether the CMaps its fonts name were looked for (at its first void
+    /// call: `crate::cmap_scan`).
+    pub scanned: bool,
 }
 
 /// The state a document derives from its bytes.
@@ -717,8 +720,13 @@ impl Core {
                     crate::pages::open(&data, args)?
                 };
                 let state = DocState { pdf: Some(Rc::new(pdf)), ..DocState::default() };
-                let h =
-                    self.insert(Object::Document(Document { data, options: args.clone(), state, unrecorded: false }))?;
+                let h = self.insert(Object::Document(Document {
+                    data,
+                    options: args.clone(),
+                    state,
+                    unrecorded: false,
+                    scanned: false,
+                }))?;
                 self.reach(handle(&h)?)?;
                 h
             }
@@ -733,7 +741,13 @@ impl Core {
                 };
                 let state = DocState { pdf: Some(Rc::new(pdf)), ..DocState::default() };
                 let options = a.get(1).cloned().unwrap_or(PyValue::None);
-                let h = self.insert(Object::Document(Document { data, options, state, unrecorded: false }))?;
+                let h = self.insert(Object::Document(Document {
+                    data,
+                    options,
+                    state,
+                    unrecorded: false,
+                    scanned: false,
+                }))?;
                 self.reach(handle(&h)?)?;
                 h
             }
@@ -787,16 +801,6 @@ impl Core {
                     }
                 }
                 PyValue::list(out)
-            }
-            "doc_cmap_scan" => {
-                // the predefined CMaps the document's fonts name, not handed
-                // over yet (crate::cmap_scan: no Python effect, not recorded)
-                let (data, options) = match self.handles.get(h) {
-                    Some(Object::Document(d)) => (d.data.clone(), d.options.clone()),
-                    _ => return Err(exc::ValueError("invalid handle")),
-                };
-                let names = crate::cmap_scan::scan(&data, &options, &|n| cmaps::is_known(n) && !cmaps::is_loaded(n));
-                PyValue::list(names.iter().map(|n| PyValue::str(n)))
             }
             "doc_info" => match self.handles.get(h) {
                 Some(Object::Document(d)) => PyValue::Dict(Obj::from_pairs([
@@ -1145,10 +1149,25 @@ impl Core {
                 }
             }
         };
-        let missing = cmaps::take_missing();
+        let mut missing = cmaps::take_missing();
         if !missing.is_empty() {
             // the re-run emits its own diagnostics: Python's, once
             drop((result, collected));
+            // the first void call of a document asks for every CMap its
+            // fonts name too (crate::cmap_scan): one void call where each
+            // of its CMaps would make one
+            for doc in self.touched.clone() {
+                if let Some(Object::Document(d)) = self.handles.get_mut(doc) {
+                    if !d.scanned {
+                        d.scanned = true;
+                        let (data, options) = (d.data.clone(), d.options.clone());
+                        let known =
+                            |n: &str| cmaps::is_known(n) && !cmaps::is_loaded(n) && !missing.iter().any(|m| m == n);
+                        let found = crate::cmap_scan::scan(&data, &options, &known);
+                        missing.extend(found);
+                    }
+                }
+            }
             self.void(process);
             let none = diagnostics::Collected::default();
             return response(STATUS_NEED_CMAPS, FORMAT_BINARY, false, &encode_names(&missing), &none);

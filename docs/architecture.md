@@ -2294,8 +2294,11 @@ Détails dans [`js-runtime.md`](js-runtime.md) (« Format des résultats »,
   leur chemin, matcher = type, `{"mask": [...]}` dans l'ordre de
   `_find_all`, ou valeur appelée comme Python l'appelle),
   `stream_rawdata`, `stream_data`, `stream_get_data`,
-  `stream_get_rawdata` (`streams.rs`), `doc_cmap_scan` (`cmap_scan.rs`),
-  `set_stream_refs`, `set_history_limit` (tests). Leurs instructions sont
+  `stream_get_rawdata` (`streams.rs`), `set_stream_refs`,
+  `set_history_limit` (tests). Pas de `doc_cmap_scan` : l'analyse des
+  CMaps d'un document (`cmap_scan.rs`) se fait dans le cœur, à son premier
+  appel nul (une analyse à chaque ouverture coûtait jusqu'à 75 % de
+  l'ouverture d'un gros document qui n'en a pas besoin). Leurs instructions sont
   dans `js_pages_run.py` (protocole 3), qui écrit aussi `made` (le nombre
   d'objets de chaque cas), lie les arguments (`bind_args` : `{"$obj": k}`,
   `PDFObjRef` liés au document de la cible) et rend `$unresolved` pour une

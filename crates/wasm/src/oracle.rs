@@ -93,7 +93,13 @@ impl Core {
                     crate::pages::open_source(source, &options, Some(factory))?
                 };
                 let state = DocState { pdf: Some(Rc::new(pdf)), hooks: Some(Rc::new(registry)), ..DocState::default() };
-                let h = self.insert(Object::Document(Document { data, options, state, unrecorded: false }))?;
+                let h = self.insert(Object::Document(Document {
+                    data,
+                    options,
+                    state,
+                    unrecorded: false,
+                    scanned: false,
+                }))?;
                 self.reach(handle(&h)?)?;
                 h
             }

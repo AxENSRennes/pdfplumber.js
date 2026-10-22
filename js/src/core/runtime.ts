@@ -35,12 +35,6 @@ export interface CallOptions {
    * ones): those of its final run, Python's, once. A run that missed a
    * CMap is void, and reports none (crates/wasm/src/ops.rs). */
   onDiagnostics?: (entries: Diagnostic[], dropped: number) => void;
-  /** For a request that opens a document (`doc_open`...): fetch the
-   * predefined CMaps its fonts name before anything else runs
-   * (`doc_cmap_scan`, crates/wasm/src/cmap_scan.rs), so that its calls
-   * are rarely void. Default `true`; `false` keeps the lazy loading alone
-   * (the tests of void calls). */
-  preload?: boolean;
   /** The document whose job makes the request (its `PDFPlumberDocument`):
    * the streams of the result read their data in its jobs, and reject
    * with `DocumentReleased` once it is released (`StreamRefs`). */
@@ -140,9 +134,6 @@ export const STATUS_NEED_CMAPS = 2;
 /** The payload format of a typed result (crates/wasm/src/ops.rs). */
 export const FORMAT_TYPED = 2;
 
-/** The requests that open a document: the core preloads its CMaps after
- * them (`CallOptions.preload`). */
-const OPENS = new Set(["doc_open", "doc_open_file", "oracle_doc_open"]);
 
 interface Exports {
   memory: WebAssembly.Memory;
@@ -340,16 +331,6 @@ export class WasmCore implements Core {
   /** The calls that were void (a CMap missing), since the core started. */
   voidCalls = 0;
 
-  /** Fetches and hands over the CMaps the fonts of the document `handle`
-   * name (`doc_cmap_scan`): a guess, which changes no result (a CMap
-   * present from the start is Python with every CMap installed). A file
-   * that cannot be fetched now is fetched again when a call asks for it. */
-  async preload(handle: number): Promise<void> {
-    if (!this.cmaps) return;
-    const names = responseValue(this.callRaw("doc_cmap_scan", handle, null), "doc_cmap_scan") as string[];
-    await Promise.all(names.filter((n) => !this.added.has(n)).map((n) => this.addCMap(n).catch(() => undefined)));
-  }
-
   /** Hands over every CMap not handed over yet: what a response whose
    * history is long asks for (`Response.historyLong`). A file that cannot
    * be fetched now is fetched again when a call asks for it. */
@@ -369,17 +350,13 @@ export class WasmCore implements Core {
   /** Runs a request until it does not miss CMaps; returns its final
    * response, still undecoded beyond its status, as a copy (the void runs
    * report nothing). */
-  async runToEnd(request: Uint8Array, data?: Uint8Array, preload = true): Promise<Uint8Array> {
+  async runToEnd(request: Uint8Array, data?: Uint8Array): Promise<Uint8Array> {
     this.configure();
     for (;;) {
       const view = this.run(request, data);
       if (responseStatus(view) !== STATUS_NEED_CMAPS) {
         const response = view.slice();
         this.release();
-        if (preload && responseStatus(response) === STATUS_OK) {
-          const [op] = decodeBinary(request) as [string];
-          if (OPENS.has(op)) await this.preload(decodeResponse(response).value as number);
-        }
         if (historyLong(response)) await this.loadAll();
         return response;
       }
@@ -422,9 +399,7 @@ export class WasmCore implements Core {
       this.typedValue = r.typed;
       if (r.diagnostics.length || r.dropped) options.onDiagnostics?.(r.diagnostics, r.dropped);
       if (r.historyLong) await this.loadAll();
-      const value = responseValue(r, op);
-      if (r.status === STATUS_OK && OPENS.has(op) && options.preload !== false) await this.preload(value as number);
-      return value;
+      return responseValue(r, op);
     }
   }
 

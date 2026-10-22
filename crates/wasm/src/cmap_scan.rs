@@ -1,9 +1,9 @@
 //! CMap preloading (`docs/js-runtime.md`, "CMaps"): the predefined CMaps a
-//! document will probably ask for, so that JavaScript fetches them before
-//! its first page is interpreted and the void calls of the lazy loading
-//! (`crate::ops`, "Void calls") become rare.
+//! document will probably ask for, so that its first void call (`crate::ops`,
+//! "Void calls") asks JavaScript for all of them at once, instead of one void
+//! call per CMap, and a document that never misses one costs nothing.
 //!
-//! `doc_cmap_scan` (on a document handle) reads the document again, apart
+//! At the first void call of a document, the core reads it again, apart
 //! from its `PDF` (a new `PDFDocument` of the same bytes and password, its
 //! page tree and the fonts of each node's resources: no content stream or
 //! XObject, whose data would be copied for nothing; a font used only in a
@@ -15,7 +15,7 @@
 //! and has not handed over yet. A guess: a name it misses is still loaded
 //! lazily, a name it adds is loaded for nothing.
 //!
-//! It has no Python counterpart and no Python effect: the modeled state of
+//! The scan has no Python counterpart and no Python effect: the modeled state of
 //! the process (`pdfminer::process_state`: names interned, sites
 //! specialized, caches) is put back after it, its diagnostics are
 //! dropped, its errors (a document that cannot be read again, a

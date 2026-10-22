@@ -321,27 +321,29 @@ dans `check.sh`).
   Un nom hors de la liste est `CMapNotFound` sans requête réseau. Avec
   `cmaps: false`, toutes les CMaps sont absentes, comme une installation de
   pdfminer sans son dossier `cmap`.
-- **Préchargement** (vague 5, `crates/wasm/src/cmap_scan.rs`) : après
-  chaque ouverture (`doc_open`, `doc_open_file`, `oracle_doc_open`), le
-  runtime demande `doc_cmap_scan` : le cœur relit le document à part (un
-  nouveau `PDFDocument` des mêmes octets et du même mot de passe, chaque
-  objet de ses tables xref) et donne les CMaps prédéfinies que ses polices
-  nomment (l'`/Encoding` d'une police `Type0`, l'`/UseCMap` d'une CMap
-  embarquée, la carte unicode `to-unicode-<Registry>-<Ordering>` d'un
-  `/CIDSystemInfo`), parmi celles que JS peut fournir et n'a pas données ;
-  JS les récupère avant la requête suivante. Sans effet Python : l'état
-  du processus est remis après l'analyse, ses diagnostics sont jetés, ses
-  erreurs l'arrêtent avec ce qu'elle a trouvé, elle n'entre pas dans
-  l'historique et ne charge aucune CMap ; une CMap présente dès le départ
-  est Python avec toutes ses CMaps : résultats et récursion inchangés
-  (les sessions et les traces passent avec ou sans). C'est une estimation
-  : une CMap qu'elle manque est chargée paresseusement (appel nul), une
-  de trop l'est pour rien. `CallOptions.preload: false` garde le
-  chargement paresseux seul (les tests des appels nuls) ; en worker, le
-  worker précharge (`runToEnd`). Testé : `tests.mjs` ouvre les documents
-  CJK de `documents.jsonl` par l'API, vérifie que les CMaps de Python sont
-  récupérées par `open()`, puis le texte, sans aucun appel nul
-  (`WasmCore.voidCalls`).
+- **Préchargement au premier manque** (vague 5,
+  `crates/wasm/src/cmap_scan.rs`) : le premier appel nul d'un document
+  demande aussi toutes les CMaps prédéfinies que ses polices nomment :
+  le cœur relit le document à part (un nouveau `PDFDocument` des mêmes
+  octets et du même mot de passe, son arbre de pages et les polices des
+  ressources de chaque nœud ; aucun flux de contenu ni XObject, dont les
+  données seraient copiées pour rien) et ajoute aux noms manquants
+  l'`/Encoding` de chaque police `Type0` (ou l'`/UseCMap` d'une CMap
+  embarquée) et la carte unicode `to-unicode-<Registry>-<Ordering>` de
+  chaque `/CIDSystemInfo`, parmi celles que JS peut fournir et n'a pas
+  données. Un appel nul par document au lieu d'un par CMap ; un document
+  qui n'en manque aucune ne coûte rien (mesuré sur
+  `pdfjs-pdf-reference-1-7.pdf`, 1 310 pages : une analyse à l'ouverture
+  coûtait 243 ms pour une ouverture de 320 ms, d'où ce choix). Sans effet
+  Python : l'état du processus est remis après l'analyse, ses diagnostics
+  sont jetés, ses erreurs l'arrêtent avec ce qu'elle a trouvé, elle
+  n'entre pas dans l'historique et ne charge aucune CMap ; une CMap
+  présente dès le départ est Python avec toutes ses CMaps : résultats et
+  récursion inchangés. C'est une estimation : une CMap qu'elle manque (une
+  police d'un Form XObject) est chargée par un appel nul suivant, une de
+  trop l'est pour rien. Testé :
+  `the_first_void_call_of_a_document_asks_for_every_cmap_its_fonts_name`
+  et `tests.mjs` (un seul appel nul par document CJK, `WasmCore.voidCalls`).
 - Alternative écartée pour l'instant : un `PyErr` hors hiérarchie Python
   qui interromprait l'appel au lieu de le laisser finir. Elle éviterait de
   jeter un calcul, mais demande de changer le trait `CMapProvider` (autre

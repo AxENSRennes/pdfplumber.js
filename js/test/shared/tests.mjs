@@ -909,14 +909,17 @@ export const tests = [
         // pdfplumber.open, pdf.pages, page.extract_text(): the first call
         // that needs a CMap is void, the core rebuilds the document and the
         // call runs again
-        // (the lazy loading alone: no preloading)
-        const doc = await t.call("doc_open", {}, 0, { data: await readFile(rel), preload: false });
+        const doc = await t.call("doc_open", {}, 0, { data: await readFile(rel) });
         const pages = await t.call("doc_pages", null, doc);
         const text = await t.call("page_extract_text", [{}], pages[number - 1].handle);
         assertSame(text, expected.text, rel);
         const want = [...expected.cmaps, ...expected.umaps.map((u) => `to-unicode-${u}`)].sort();
-        assertSame([...loads].sort(), want, `${rel}: the CMaps fetched`);
-        assert(t.core.voidCalls > 0, `${rel}: the lazy loading made void calls`);
+        // those of the page (and those the document's other fonts name)
+        for (const n of want) assert(loads.includes(n), `${rel}: ${n} fetched (${loads})`);
+        assertSame([...new Set(loads)].length, loads.length, `${rel}: each CMap fetched once`);
+        // the first void call of the document asks for every CMap its fonts
+        // name (crates/wasm/src/cmap_scan.rs): one void call
+        assert(t.core.voidCalls === 1, `${rel}: ${t.core.voidCalls} void calls`);
         await t.free(doc);
         checked++;
       }
@@ -1031,33 +1034,6 @@ export const tests = [
       }
       lib.dropCore();
       assert(checked >= 9 && entries >= 40, `${checked} cases, ${entries} records`);
-    },
-  },
-  {
-    name: "the CMaps a document names are preloaded: no void call, pdfplumber's text",
-    only: "direct",
-    async run({ lib, oracle, readFile, readCMap }) {
-      let checked = 0;
-      for (const { in: input, out } of await oracle("documents")) {
-        const [rel, numberT] = input;
-        const number = fromTyped(numberT, lib);
-        const expected = fromTyped(out, lib);
-        const loads = [];
-        lib.configure({ cmaps: { load: async (name) => (loads.push(name), readCMap(name)) } });
-        const pdf = await lib.open(await readFile(rel));
-        const t = await lib.internals();
-        // fetched by open(), before any page is read
-        const needed = [...expected.cmaps, ...expected.umaps.map((u) => `to-unicode-${u}`)];
-        for (const n of needed) assert(loads.includes(n), `${rel}: ${n} preloaded (${loads})`);
-        const page = (await pdf.pages)[number - 1];
-        assertSame(await page.extractText(), expected.text, rel);
-        assert(t.core.voidCalls === 0, `${rel}: ${t.core.voidCalls} void calls`);
-        assertSame([...new Set(loads)].length, loads.length, `${rel}: each CMap fetched once`);
-        await pdf.release();
-        checked++;
-      }
-      lib.configure({});
-      assert(checked >= 2, `${checked} documents`);
     },
   },
   {

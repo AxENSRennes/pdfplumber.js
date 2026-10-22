@@ -1377,8 +1377,6 @@ fn stream_handles_objects_as_arguments_and_their_errors() {
             "invalid handle"
         );
         assert_eq!(err(&mut core, "struct_nope", page, PyValue::None).1, "unknown operation \"struct_nope\"");
-        assert_eq!(ok(call(&mut core, "doc_cmap_scan", doc, PyValue::None, None)), Js::Arr(vec![]));
-        assert_eq!(err(&mut core, "doc_cmap_scan", page, PyValue::None).1, "invalid handle");
         // a stream goes with its document; by value without references
         let other = {
             let Js::Num(d) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(tiny_pdf(content)))) else {
