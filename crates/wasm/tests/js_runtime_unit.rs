@@ -1069,3 +1069,65 @@ fn a_wrapping_exception_carries_its_cause() {
         assert_eq!(field(&cause, "cause"), Js::Null, "{op}");
     }
 }
+
+/// The history of the documents is bounded (`crates/wasm/src/ops.rs`,
+/// "Freed handles"): past its limit, every response asks for every CMap
+/// (`FLAG_HISTORY_LONG`); once each is handed over no call can be void,
+/// the history goes and nothing is recorded any more; the text is
+/// pdfplumber's (`documents.jsonl`).
+#[test]
+#[cfg_attr(target_family = "wasm", ignore = "loads CMaps: run alone, one process per test, by scripts/check.sh")]
+fn the_history_goes_once_every_cmap_is_handed_over() {
+    on_thread(1 << 30, || {
+        let dir = cmap_dir();
+        let root = PathBuf::from(std::env::var("PDFPLUMBER_ROOT").expect("PDFPLUMBER_ROOT"));
+        let (input, out) = data()
+            .cases("documents")
+            .into_iter()
+            .find(|(i, _)| i[0].as_str().unwrap().ends_with("pr-136-example.pdf"))
+            .expect("pr-136-example.pdf");
+        let names: Vec<String> = [&out_list(&out, "cmaps")[..], &out_list(&out, "umaps")[..]]
+            .concat()
+            .into_iter()
+            .enumerate()
+            .map(|(i, n)| if i < out_list(&out, "cmaps").len() { n } else { format!("to-unicode-{n}") })
+            .collect();
+        assert!(names.len() >= 2, "{names:?}");
+        let mut core = Core::new();
+        ok(call(&mut core, "cmap_configure", 0, list(names.iter().map(|n| PyValue::str(n)).collect()), None));
+        ok(call(&mut core, "set_history_limit", 0, list(vec![PyValue::from(1_i64)]), None));
+        let raw = |core: &mut Core, op: &str, h: u32, args: PyValue, data: Option<Vec<u8>>| {
+            core.call(&request(op, h, &args, 0), data.map(Rc::from))
+        };
+        let history = |core: &mut Core| {
+            let Js::Obj(info) = ok(call(core, "info", 0, PyValue::None, None)) else { panic!() };
+            info[4].1.clone()
+        };
+        let pdf = fs::read(root.join(input[0].as_str().unwrap())).unwrap();
+        let r = raw(&mut core, "doc_open", 0, PyValue::None, Some(pdf));
+        assert_eq!(r[6] & pdfplumber_wasm::ops::FLAG_HISTORY_LONG, 0, "one entry: not past the limit");
+        let Js::Num(doc) = response(&r).value else { panic!() };
+        let r = raw(&mut core, "doc_pages", doc as u32, list(vec![]), None);
+        assert_ne!(r[6] & pdfplumber_wasm::ops::FLAG_HISTORY_LONG, 0, "two entries: past the limit");
+        let Js::Arr(pages) = response(&r).value else { panic!() };
+        let Value::Int(number) = &input[1] else { panic!("a page number") };
+        let number = number.as_i64().unwrap() as usize;
+        let Js::Obj(page) = &pages[number - 1] else { panic!() };
+        let Js::Num(page) = page[0].1 else { panic!() };
+        let page = page as u32;
+        let empty = || list(vec![PyValue::Dict(pdfplumber::obj::Obj::new())]);
+        // the text: void calls until every CMap is handed over
+        let text = call_cmaps(&mut core, "page_extract_text", page, empty(), None, &dir);
+        assert_eq!(text, value_view(item(&out, "text")));
+        // every known CMap is handed over: the history goes at the next call
+        assert_eq!(history(&mut core), Js::Num(0.0));
+        let again = raw(&mut core, "page_extract_text", page, empty(), None);
+        assert_eq!(again[6] & pdfplumber_wasm::ops::FLAG_HISTORY_LONG, 0);
+        assert_eq!(response(&again).value, text);
+        assert_eq!(history(&mut core), Js::Num(0.0), "nothing is recorded any more");
+    });
+}
+
+fn out_list(out: &Value, key: &str) -> Vec<String> {
+    str_list(item(out, key))
+}

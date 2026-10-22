@@ -27,7 +27,7 @@ export type WorkerReply =
 /** Messages to the worker. */
 export type WorkerRequest =
   | { type: "init"; id: number; module: WebAssembly.Module; cmapBase: string | null }
-  | { type: "call"; id: number; request: Uint8Array; data?: Uint8Array };
+  | { type: "call"; id: number; request: Uint8Array; data?: Uint8Array; preload?: boolean };
 
 export class WorkerCore implements Core {
   private next = 1;
@@ -92,7 +92,10 @@ export class WorkerCore implements Core {
 
   private async callNow(op: string, handle: number, args: unknown, options: CallOptions = {}): Promise<unknown> {
     const request = encodeRequest(op, handle, args, options.minLevel ?? 0);
-    const r = await this.post({ type: "call", id: 0, request, data: options.data }, [request.buffer]);
+    const r = await this.post(
+      { type: "call", id: 0, request, data: options.data, preload: options.preload !== false },
+      [request.buffer],
+    );
     if ("error" in r) {
       if (r.error.name === "CoreCrash") {
         this.dead = r.error.message;

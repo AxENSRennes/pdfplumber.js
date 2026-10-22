@@ -74,7 +74,8 @@ step "cargo test on wasm32-wasip1: the tests that need a process of their own (i
 # No fresh thread per test under WebAssembly: these leave CMaps in the
 # provider and CMapDB's caches (crates/wasm/tests/js_runtime_unit.rs).
 for t in a_void_call_leaves_no_state_and_its_rerun_matches_pdfminer a_void_call_puts_the_process_state_back \
-  a_void_call_rebuilds_its_document_by_replaying_its_history page_operations_match_pdfplumber_through_the_boundary; do
+  a_void_call_rebuilds_its_document_by_replaying_its_history page_operations_match_pdfplumber_through_the_boundary \
+  the_history_goes_once_every_cmap_is_handed_over; do
   out=$(CARGO_TARGET_WASM32_WASIP1_RUNNER="node --no-warnings $ROOT/scripts/wasi-runner.mjs" \
     capped cargo test --release --target wasm32-wasip1 -p pdfplumber-wasm --test js_runtime_unit -- --ignored --exact "$t" 2>&1) \
     || { printf '%s\n' "$out"; exit 1; }

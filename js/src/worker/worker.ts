@@ -28,7 +28,7 @@ async function handle(m: WorkerRequest): Promise<void> {
       return;
     }
     if (!core) throw new Error("worker not initialized");
-    const response = await (await core).runToEnd(m.request, m.data);
+    const response = await (await core).runToEnd(m.request, m.data, m.preload !== false);
     scope.postMessage({ id: m.id, response }, [response.buffer]);
   } catch (err) {
     const name = err instanceof CoreCrash ? "CoreCrash" : err instanceof Error ? err.name : "Error";

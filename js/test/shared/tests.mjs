@@ -889,7 +889,8 @@ export const tests = [
         // pdfplumber.open, pdf.pages, page.extract_text(): the first call
         // that needs a CMap is void, the core rebuilds the document and the
         // call runs again
-        const doc = await t.call("doc_open", {}, 0, { data: await readFile(rel) });
+        // (the lazy loading alone: no preloading)
+        const doc = await t.call("doc_open", {}, 0, { data: await readFile(rel), preload: false });
         const pages = await t.call("doc_pages", null, doc);
         const text = await t.call("page_extract_text", [{}], pages[number - 1].handle);
         assertSame(text, expected.text, rel);
@@ -985,6 +986,57 @@ export const tests = [
       }
       lib.dropCore();
       assert(checked >= 9 && entries >= 40, `${checked} cases, ${entries} records`);
+    },
+  },
+  {
+    name: "the CMaps a document names are preloaded: no void call, pdfplumber's text",
+    only: "direct",
+    async run({ lib, oracle, readFile, readCMap }) {
+      let checked = 0;
+      for (const { in: input, out } of await oracle("documents")) {
+        const [rel, numberT] = input;
+        const number = fromTyped(numberT, lib);
+        const expected = fromTyped(out, lib);
+        const loads = [];
+        lib.configure({ cmaps: { load: async (name) => (loads.push(name), readCMap(name)) } });
+        const pdf = await lib.open(await readFile(rel));
+        const t = await lib.internals();
+        // fetched by open(), before any page is read
+        const needed = [...expected.cmaps, ...expected.umaps.map((u) => `to-unicode-${u}`)];
+        for (const n of needed) assert(loads.includes(n), `${rel}: ${n} preloaded (${loads})`);
+        const page = (await pdf.pages)[number - 1];
+        assertSame(await page.extractText(), expected.text, rel);
+        assert(t.core.voidCalls === 0, `${rel}: ${t.core.voidCalls} void calls`);
+        assertSame([...new Set(loads)].length, loads.length, `${rel}: each CMap fetched once`);
+        await pdf.release();
+        checked++;
+      }
+      lib.configure({});
+      assert(checked >= 2, `${checked} documents`);
+    },
+  },
+  {
+    name: "a long history makes the runtime hand over every CMap, after which the history goes",
+    only: "direct",
+    async run({ lib, oracle, readFile, readCMap }) {
+      const [{ in: input, out }] = (await oracle("documents")).filter((l) => fromTyped(l.in[0], lib).endsWith("pr-136-example.pdf"));
+      const expected = fromTyped(out, lib);
+      lib.configure({ cmaps: { load: (name) => readCMap(name) } });
+      try {
+        const t = await lib.internals();
+        await t.call("set_history_limit", [2]);
+        const pdf = await lib.open(await readFile(fromTyped(input[0], lib)), { onWarning() {} });
+        const page = (await pdf.pages)[fromTyped(input[1], lib) - 1];
+        // the third entry: every CMap is handed over after this call
+        assertSame(await page.extractText(), expected.text, "the text");
+        await page.chars;
+        assert((await t.info()).history === 0, "the history went");
+        assertSame(await page.extractText(), expected.text, "the text again");
+        assert((await t.info()).history === 0, "nothing is recorded any more");
+        await pdf.release();
+      } finally {
+        lib.configure({});
+      }
     },
   },
   {
