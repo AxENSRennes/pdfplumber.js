@@ -10,15 +10,16 @@ CMaps, workers) is described in [`js-runtime.md`](js-runtime.md); the
 contract of wave 5, its workstreams and its harness in
 [`architecture.md`](architecture.md) ("Vague 5").
 
-> **Status (wave 5, base).** Every member below is implemented over the
-> operations of the core and checked against Python by the sessions of
-> `oracle/unit/js_api.py` (Node, the dist build, Chromium, Firefox and
-> WebKit, in the page and in worker mode) and by the `plumber_*` stage
-> traces written through this API (`oracle.verify --engine js-api`),
-> except those marked **pending**, which reject with `NotImplemented`
-> until their boundary operation lands (workstream BOUNDARY):
-> `page.debugTablefinder()`, `pdf.structTree()` (`PDFStructTree`), the
-> `PDFStream` by reference.
+> **Status (wave 5): implemented.** Every member below is implemented over
+> the operations of the core and checked against Python through this API:
+> by the sessions of `oracle/unit/js_api.py` (every member, option, alias,
+> error path and lifetime case, on real and adversarial PDFs; replayed in
+> Node on the sources and on the dist build, and in Chromium, Firefox and
+> WebKit, in the page and in worker mode), by
+> `js/test/node/api-lifetime.test.ts` (identities and the garbage
+> collector), and by the four `plumber_*` stage traces written through this
+> API (`oracle.verify --engine js-api`) on `all` and the adversarial sets.
+> `NotImplemented` remains only for the paths marked "not ported" below.
 
 ## Entrypoint
 
@@ -42,9 +43,9 @@ Supported inputs (`PDFInput`):
 - Browser: `ArrayBuffer`, `ArrayBufferView`, `Blob`, `URL`, and URL string
   (resolved against the document's base URL), all opened from their bytes.
 
-`open()` options (`OpenOptions`): every option is a keyword argument of
-`pdfplumber.open`, as given, except the API's own `logLevel` and
-`onWarning`:
+`open()` options (`OpenOptions`, a plain object or a `Map`; `null` is no
+option): every option is a keyword argument of `pdfplumber.open`, as given,
+except the API's own `logLevel` and `onWarning`:
 
 - `pages`: one-based page numbers to load.
 - `password`: password for encrypted PDFs (a string; an unencrypted
@@ -74,11 +75,13 @@ decoded, `pdfplumber.structure` for an unknown attribute class) and of
 its `warnings.warn` (`source` is the warning category: `UserWarning` for
 an annotation text that cannot be decoded), shown as Python's default
 filters show them: a warning once per text for the whole runtime (the
-filters' registry). pdfminer's own `logging` calls (malformed operators,
-fonts, xref entries...) are forwarded by workstream BOUNDARY (pending: the
-core counts their Python frames but drops their text). Diagnostics never
-change a result. Python prints warnings to stderr by default; the
-JavaScript API is silent by default.
+filters' registry), and of pdfminer's `log.warning` calls (malformed
+operators, page boxes, fonts, xref entries, corrupt streams...: `source`
+is the logger name, `pdfminer.pdfinterp`..., the text `msg % args` as
+`logging` formats it; `js-runtime.md`, "Diagnostics"); pdfminer's
+`log.debug` records (one per token, operator or object read) are not
+forwarded. Diagnostics never change a result. Python prints warnings to
+stderr by default; the JavaScript API is silent by default.
 
 Runtime settings, before the first `open()` (`configure(options)`,
 `RuntimeOptions`): where the WebAssembly module is (`wasm`: URL, path,
@@ -88,14 +91,15 @@ browsers, `worker: true` to run the core in a dedicated worker. There is no
 engine selection: the Rust core is the engine.
 
 The package exports the classes `PDFPlumberDocument`, `PDFPlumberPage`,
-`Table`, `PDFPlumberError`, `NotImplemented`, `CoreCrash`,
+`Table`, `PDFStructTree`, `PDFStructElement`, `PDFPlumberError`,
+`NotImplemented`, `CoreCrash`,
 `DocumentReleased`, `PSLiteral`, `PSKeyword`, `PDFObjRef`, `PDFStream`,
 `PageRef`, `PyFloat`, `PyTuple` (and `pyFloat`, `pyTuple`), and the types
 `PDFInput`, `OpenOptions`, `RuntimeOptions`, `PDFPlumberWarning`,
 `PDFObject`, `Word`, `SearchResult`, `ExtractTextOptions`, `WordOptions`,
 `SearchOptions`, `TextLineOptions`, `TextDirection`, `CropOptions`,
 `DedupeOptions`, `TableOptions`, `TableStrategy`, `ExplicitTableLine`,
-`TableAxisGroup`, `TableFinderResult`, `SerializeOptions`, `Bbox`,
+`TableAxisGroup`, `TableFinderResult`, `StructMatcher`, `SerializeOptions`, `Bbox`,
 `LAParams`.
 
 ## Asynchrony
@@ -146,17 +150,17 @@ map as follows (details in [`js-runtime.md`](js-runtime.md#valeurs)):
   within ±2^53, `bigint` beyond. An `int` and a `float` of the same value are
   the same number.
 - pdfminer objects: `PSLiteral` (`name`), `PSKeyword`, `PDFObjRef`
-  (`objid`), `PDFStream` (`objid`, `genno`, `attrs`, `rawdata`, `data`).
-  Today a `PDFStream` carries its bytes: a result that holds images
-  (`objects`, `images`, `to_dict`) copies each image's raw (and, once
-  decoded, decoded) data out of the core every time. **Pending**
-  (BOUNDARY): streams by reference, `rawdata` and `data` read on demand
-  (contract below, "PDFStream").
-- a pdfplumber `Page` held as a value (an annotation's `data.P`, a page of
-  `getattr(pdf, "pages")`): `PageRef` (`handle`: the page in the core,
-  the first live handle of that page, else a new one; `page_number`);
-  `await pdf.page(ref)` gives the `PDFPlumberPage` (the same object as
-  `pdf.pages` gives for that page).
+  (`objid`), `PDFStream` (`objid`, `genno`, `attrs`, and its data read on
+  demand: a reference to the stream in the core, below, "PDFStream").
+- a pdfplumber `Page` held as a value (an annotation's `data.P`: pdfplumber
+  sets it to the page whose `annots` were read, a cropped page for a
+  cropped page's): `PageRef` (`handle`: the page in the core, the first live
+  handle of that page, else a new one; `page_number`); `await
+  pdf.page(ref)` gives its `PDFPlumberPage`: the same object as `pdf.pages`
+  gives for that page (as `annot["data"]["P"] is pdf.pages[i]` in Python),
+  or as the derived page it names, for a reference read since the last
+  `close()` (one read before names a page of the list `close()` flushed: a
+  page object of its own).
 - Integer-like keys (`"1"`) come first in a JavaScript object's key order,
   whatever their position in the Python dict.
 
@@ -175,10 +179,19 @@ refuses (`x_tolerance: "1"`, `bbox: ["a", 0, 10, 10]`) raises Python's
 error where Python raises it.
 
 An object of a result given back as an argument (`explicit_*_lines` of a
-table setting, which pdfplumber reads `x0`, `top`... of) crosses by value:
-an integral float crosses as an `int` (the same JavaScript number in every
-result; visible only in texts, `to_json`) and pdfminer objects inside it
-cross as dicts until BOUNDARY decodes them as the objects they stand for.
+table setting, which pdfplumber reads `x0`, `top`... of; a word's
+coordinates as a `bbox`) crosses by value: an integral float crosses as an
+`int` (the same JavaScript number in every result; visible only in texts,
+`to_json`), a tuple as a list, and the pdfminer objects inside it as the
+objects they stand for (`PSLiteral` and `PSKeyword` interned again,
+`PDFObjRef` bound to the document of the call's target, `PageRef` and a
+`PDFStream` by reference as the core's page and stream).
+
+Options objects (`extractText(options)`, `search(pattern, options)`...)
+are dicts as well: a plain object or a `Map`; a value that is not a mapping
+(`null`) goes to Python as it is, which raises its `TypeError` ("argument
+after ** must be a mapping"), except for `open()`, where `null` is no
+option.
 
 ### Aliases
 
@@ -193,9 +206,13 @@ reverse: `extractText`/`extract_text`, `extractTextSimple`/
 `toJson`/`to_json`, `toCsv`/`to_csv`, `structureTree`/`structure_tree`,
 `horizontalEdges`/`horizontal_edges`, `verticalEdges`/`vertical_edges`,
 `rectEdges`/`rect_edges`, `curveEdges`/`curve_edges`,
-`pageNumber`/`page_number`, `initialDoctop`/`initial_doctop`. Both names
-are one member (one implementation); option names and object keys stay
-pdfplumber's (snake_case).
+`pageNumber`/`page_number`, `initialDoctop`/`initial_doctop`, and on the
+structure tree and streams `findAll`/`find_all`, `elementBbox`/
+`element_bbox`, `allMcids`/`all_mcids`, `getData`/`get_data`,
+`getRawdata`/`get_rawdata` (an element's `alt_text`, `actual_text`,
+`page_number` fields have the getters `altText`, `actualText`,
+`pageNumber`). Both names are one member (one implementation); option
+names and object keys stay pdfplumber's (snake_case).
 
 ## Document (`PDFPlumberDocument`)
 
@@ -207,7 +224,7 @@ pdfplumber's (snake_case).
 | `chars`, `rects`, `lines`, `curves`, `images`, `edges`, `rect_edges`, `curve_edges`, `horizontal_edges`, `vertical_edges`, `textboxhorizontals`, `textboxverticals`, `textlinehorizontals`, `textlineverticals` | `getattr(pdf, name)` |
 | `annots`, `hyperlinks` | `pdf.annots`, `pdf.hyperlinks` |
 | `structure_tree` | `pdf.structure_tree` (the elements' `to_dict()`) |
-| `structTree(page?)` **pending** | `PDFStructTree(pdf, page)` |
+| `structTree(page?)` | `PDFStructTree(pdf, page)` (`page`: a page or derived page of this document) |
 | `toDict(objectTypes?)` | `pdf.to_dict(object_types)` |
 | `toJson(options?)`, `toCsv(options?)` | `pdf.to_json(**options)`, `pdf.to_csv(**options)` (`stream: null`: the text) |
 | `page(ref)` | the page of a `PageRef` |
@@ -241,7 +258,7 @@ All object coordinates use pdfplumber's top-left page coordinate convention:
 | `filter(test)` | `page.filter(test)` (below) |
 | `dedupeChars(options?)` | `page.dedupe_chars(**options)` |
 | `findTables(settings?)`, `findTable`, `extractTables`, `extractTable` | `page.find_tables(table_settings)`... |
-| `debugTablefinder(settings?)` **pending** | `page.debug_tablefinder(table_settings)` |
+| `debugTablefinder(settings?)` | `page.debug_tablefinder(table_settings)` |
 | `toDict(objectTypes?)`, `toJson(options?)`, `toCsv(options?)` | `page.to_dict(object_types)`... |
 | `close()` | `page.close()` (flushes the page's caches; it stays usable) |
 
@@ -326,28 +343,43 @@ and `text_*` options forwarded to cell text extraction. `settings` absent
 is `table_settings=None`; any value is resolved as `TableSettings.resolve`
 resolves it (Python's `ValueError` for anything else).
 
-**Pending** (BOUNDARY `page_debug_tablefinder`): `debugTablefinder(settings)`
-resolves to a `TableFinderResult`: `edges`, `intersections` (the items of
-Python's dict: `[[x, top], {v, h}]`), `cells`, `tables` (`Table` objects),
-`settings` (the resolved `TableSettings` as a dict).
+`debugTablefinder(settings)` resolves to a `TableFinderResult`: `edges`,
+`intersections` (the items of Python's dict: `[[x, top], {v, h}]`),
+`cells`, `tables` (`Table` objects), `settings` (the resolved
+`TableSettings`, its fields as a dict).
 
 ## Structure Tree
 
 `structure_tree` (document and page) is pdfplumber's list of the elements'
-`to_dict()`. **Pending** (BOUNDARY, `struct_*` operations):
-`pdf.structTree(page?)` resolves to a `PDFStructTree` (`PDFStructTree(pdf,
-page)`; `StructTreeMissing` rejects it): `children` (`PDFStructElement`
-objects: `type`, `revision`, `id`, `lang`, `alt_text`, `actual_text`,
-`title`, `page_number`, `attributes`, `mcids`, `children`), `findAll(matcher)`
-and `find(matcher)` (a tag name, a `RegExp` run on the element's type as
-`re.match` does — JavaScript semantics, anchored at the start — or a
-function of an element, run on every element in Python's order, in the
-same job, like `filter`), `elementBbox(el)`; an element's `allMcids()`
-(`[[page_number, mcid], ...]`) and `repr()` (`repr(el)`).
+`to_dict()`. `pdf.structTree(page?)` resolves to a `PDFStructTree`
+(`PDFStructTree(pdf, page)`, `page` a page or a derived page of the
+document; `StructTreeMissing` rejects it): `pdf`, `page` (`null` for the
+document's tree), `children` (`PDFStructElement` objects: the dataclass's
+fields `type`, `revision`, `id`, `lang`, `alt_text`, `actual_text`,
+`title`, `page_number`, `attributes`, `mcids`, and `children`; an element
+reached twice in a tree that is not a tree, a DAG, is two objects),
+`findAll(matcher)` and `find(matcher)`, and `elementBbox(el)`. An element
+has `findAll(matcher)` and `find(matcher)` over its subtree, `allMcids()`
+(`list(el.all_mcids())`: `[[page_number, mcid], ...]`) and `repr()`
+(`repr(el)`). A matcher is a tag name, a `RegExp` run on each element's
+type as `re.match` runs (JavaScript semantics, anchored at the start: the
+pattern runs sticky from 0, `g` and `y` dropped), or a function of an
+element; a `RegExp` or a function is run on every element of the tree, in
+the order of `_find_all` (depth-first, preorder), in the member's job (as
+`filter`'s), even where Python stops at the first match (`find`) or walks a
+subtree only: a function with side effects sees every element. Any other
+matcher reaches Python as it is (`TypeError: '...' object is not
+callable`). An element found is the element object of the tree at its
+path. `elementBbox` takes an element of this tree (`TypeError` otherwise;
+Python accepts any `PDFStructElement`).
 
-## PDFStream (pending, BOUNDARY)
+Each tree, like a derived page or a table, lives in the core while it is
+reachable (below, "Lifetime").
 
-A `PDFStream` in a result is a reference to the stream in the core:
+## PDFStream
+
+A `PDFStream` in a result is a reference to the stream in the core
+(workstream BOUNDARY, `js-runtime.md`):
 `objid`, `genno` and `attrs` are known (values); `rawdata` and `data` are
 promises reading the stream as it is when they are read (`stream.rawdata`,
 `stream.data`: `null` once decoded, resp. before), `getData()` and
@@ -369,10 +401,18 @@ document (released with it, or when unreachable).
 - `await using pdf = await open(...)` (`Symbol.asyncDispose`) is
   `close()` then `release()`.
 - A document that becomes unreachable is released by a
-  `FinalizationRegistry` (where the engine has one): a page or a table
-  holds its document. Releasing never changes a result (the core keeps no
-  Python-visible state of a released document); the order of the release
-  among other calls is the garbage collector's.
+  `FinalizationRegistry` (where the engine has one): a page, a table, a
+  structure tree or a stream holds its document. Releasing never changes a
+  result (the core keeps no Python-visible state of a released document);
+  the order of the release among other calls is the garbage collector's.
+- A derived page, a table or a structure tree that becomes unreachable has
+  its handle freed in the core (`free`, after the calls made before), while
+  its document lives (never once the document is released: its handles may
+  name other objects then). A derived page whose annotations were read
+  (`annots`, `hyperlinks`, `toDict`: their `data.P` names it) is kept by its
+  document instead, so that `pdf.page(ref)` gives it back. The pages of
+  `pdf.pages` are kept until `close()` (and the pages `pdf.page(ref)` made,
+  too).
 - After a `CoreCrash`, the documents of the crashed core are lost; the next
   `open()` starts a new core.
 
@@ -403,7 +443,7 @@ where a `RecursionError` happens through the API.
 | `pdf.toDict`, `toJson`, `toCsv` | `doc_to_dict`, `doc_to_json`, `doc_to_csv` (`obj.to_dict(**kwargs)`...) |
 | `pdf.close()` | `doc_close` (`obj.close()`) |
 | `pdf.release()` | `free` (no statement) |
-| `pdf.page(ref)` | none for a known page, else `page_info` |
+| `pdf.page(ref)` | a job: none when the API holds an object of that page (the ref's handle's, or the current `pdf.pages` list's for a ref read since the last `close()`), else `page_info` |
 | `page.objects`, `structure_tree` | `page_objects`, `page_structure_tree` |
 | `page.chars` ..., `annots`, `hyperlinks` | `page_attr` (`getattr(obj, name)`) |
 | `extractText`, `extractTextSimple`, `extractWords`, `extractTextLines` | `page_extract_text`, `page_extract_text_simple`, `page_extract_words`, `page_extract_text_lines` (`obj.method(*args, **kwargs)`) |
@@ -413,9 +453,12 @@ where a `RecursionError` happens through the API.
 | `findTables`, `findTable`, `extractTables`, `extractTable` | `page_find_tables`... (`obj.find_tables(*args)`) |
 | `table.extract` | `table_extract` (`obj.extract(**kwargs)`) |
 | `page.toDict`, `toJson`, `toCsv`, `close` | `page_to_dict`, `page_to_json`, `page_to_csv`, `page_close` |
-| `debugTablefinder` (pending) | `page_debug_tablefinder` (`obj.debug_tablefinder(*args)`) |
-| `structTree`, `findAll`, `find`, `elementBbox`, `allMcids`, `repr` (pending) | `struct_tree`, `struct_find_all`, `struct_find`, `struct_element_bbox`, `struct_all_mcids`, `struct_element_repr` |
-| `PDFStream.rawdata`, `data`, `getData`, `getRawdata` (pending) | `stream_rawdata`, `stream_data`, `stream_get_data`, `stream_get_rawdata` |
+| `debugTablefinder` | `page_debug_tablefinder` (`obj.debug_tablefinder(*args)`) |
+| `pdf.structTree(page?)` | `struct_tree` (`PDFStructTree(obj, page)`) |
+| tree's or element's `findAll`, `find` | `struct_find_all` (`list(x.find_all(m))`), `struct_find` (`x.find(m)`); a `RegExp` or a function as the truth of each element (the mask), run in the job first |
+| `elementBbox`, element's `allMcids`, `repr` | `struct_element_bbox` (`tree.element_bbox(el)`), `struct_all_mcids` (`list(el.all_mcids())`), `struct_element_repr` (`repr(el)`) |
+| `PDFStream.rawdata`, `data`, `getData`, `getRawdata` | `stream_rawdata`, `stream_data`, `stream_get_data`, `stream_get_rawdata` (a job of the stream's document) |
+| a derived page's, table's, tree's finalizer | `free` (no statement) |
 
 Depth: each operation of the core runs as one statement at the top level of
 a Python script (a property read at a site of its own, a method called with
@@ -536,16 +579,18 @@ class name or qualified name.
 
 Other errors:
 
-- `NotImplemented` (a `PDFPlumberError`): a member whose boundary
-  operation has not landed yet, or a core path marked "not ported"
-  (`NotPorted`, whose module and class it keeps).
+- `NotImplemented` (a `PDFPlumberError`): a core path marked "not ported"
+  (`NotPorted`, whose module and class it keeps; "Not Ported" above).
 - `DocumentReleased`: a member of a released document (`release()`,
   `await using`, `FinalizationRegistry`).
 - `CoreCrash`: the WebAssembly core stopped on an internal error (a bug);
   its documents are lost, the next `open()` starts a new core.
 - `Error` and `TypeError`: input adaptation failures (a missing file, a
   failed HTTP fetch, an unsupported input type, an argument that contains
-  itself), and failures to load the module or a CMap file.
+  itself, a function or a symbol in an argument, `pdf.page()` of something
+  that is not a `PageRef`, `structTree()` of a page of another document,
+  `elementBbox()` of an element of another tree), and failures to load the
+  module or a CMap file.
 
 Callers should branch on `error.name` (or `isInstance`) and treat the message
 as diagnostic text.
