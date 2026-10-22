@@ -1158,6 +1158,60 @@ fn open_reports_what_is_not_modelled_as_not_ported() {
     assert_eq!(ok_open.status, 0);
 }
 
+/// The library's methods bind their keyword arguments as the boundary's
+/// statements do (`self` is bound already): called directly with the same
+/// keywords, each raises the `TypeError` the boundary raises (which the
+/// `documents` session of `js_runtime_unit` compares with Python's).
+#[test]
+fn library_methods_bind_self_as_the_boundary_does() {
+    use pdfplumber::pdf::{OpenOptions, Source, PDF};
+    let mut core = Core::new();
+    let grid: &[u8] = b"BT /F1 10 Tf 20 20 Td (a) Tj ET 10 10 m 110 10 l 10 60 m 110 60 l 10 110 m 110 110 l \
+        10 10 m 10 110 l 60 10 m 60 110 l 110 10 m 110 110 l S";
+    let pdf_bytes = tiny_pdf(grid);
+    let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(pdf_bytes.clone()))) else { panic!() };
+    let Js::Arr(pages) = ok(call(&mut core, "doc_pages", doc as u32, list(vec![]), None)) else { panic!() };
+    let Js::Obj(items) = &pages[0] else { panic!() };
+    let Js::Num(page_handle) = items[0].1 else { panic!() };
+    let Js::Arr(tables) = ok(call(&mut core, "page_find_tables", page_handle as u32, list(vec![]), None)) else {
+        panic!()
+    };
+    let Js::Obj(items) = &tables[0] else { panic!() };
+    let Js::Num(table_handle) = items[0].1 else { panic!() };
+    let selfish = || Obj::from_pairs([("self", PyValue::from(1_i64))]);
+    let boundary =
+        |core: &mut Core, op: &str, h: f64, args: Vec<PyValue>| error_name(&call(core, op, h as u32, list(args), None));
+    let data: Rc<[u8]> = Rc::from(pdf_bytes);
+    let kind = pdfminer::pdfparser::FileKind::BytesIO;
+    let pdf = PDF::open(Source::Stream { data, kind }, OpenOptions::new()).unwrap();
+    let page = pdf.pages().unwrap()[0].clone();
+    let lib = |r: pycompat::PyResult<()>| {
+        let e = r.expect_err("a TypeError");
+        (e.kind.trace_name(), e.message.clone())
+    };
+    let kw = PyValue::Dict(selfish());
+    let cases: Vec<(&str, f64, Vec<PyValue>, pycompat::PyResult<()>)> = vec![
+        ("page_extract_text", page_handle, vec![kw.clone()], page.extract_text(&selfish()).map(drop)),
+        ("page_extract_text_simple", page_handle, vec![kw.clone()], page.extract_text_simple(&selfish()).map(drop)),
+        ("page_extract_words", page_handle, vec![kw.clone()], page.extract_words(&selfish()).map(drop)),
+        ("page_dedupe_chars", page_handle, vec![kw.clone()], page.dedupe_chars(&selfish()).map(drop)),
+        ("page_search_text", page_handle, vec![kw.clone()], page.search_text(&selfish()).map(drop)),
+        (
+            "page_extract_text_lines",
+            page_handle,
+            vec![PyValue::Bool(true), PyValue::Bool(true), kw.clone()],
+            page.extract_text_lines(true, true, &selfish()).map(drop),
+        ),
+        ("table_extract", table_handle, vec![kw.clone()], {
+            let tables = page.find_tables(&PyValue::None).unwrap();
+            tables[0].extract(&*page, &selfish()).map(drop)
+        }),
+    ];
+    for (op, h, args, direct) in cases {
+        assert_eq!(lib(direct), boundary(&mut core, op, h, args), "{op}");
+    }
+}
+
 /// A chain of derived pages, each the crop of the previous one, is freed
 /// without recursion (`Drop for Page`), as CPython frees it: a recursive
 /// drop overflowed the native stack after about 12 000 pages under
