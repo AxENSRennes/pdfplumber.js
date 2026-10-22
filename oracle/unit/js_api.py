@@ -113,8 +113,8 @@ GEOMETRY = ["page_number", "initial_doctop", "rotation", "mediabox", "cropbox", 
 UNRESOLVED = Named("Unresolved", {})
 
 
-#: ``str(valid_dirs)`` in the messages of pdfplumber/utils/text.py:78
-#: ``validate_directions``: a ``set``, whose order changes with
+#: ``str(valid_dirs)`` in the messages of
+#: pdfplumber/utils/text.py:78 validate_directions: a ``set``, whose order changes with
 #: ``PYTHONHASHSEED``; written in the port's order, as the ``plumber_*``
 #: stages write it (``plumber_objects.VALID_DIRS_REPR``)
 _DIRS = re.compile(r"\{'(?:ttb|btt|ltr|rtl)', '(?:ttb|btt|ltr|rtl)', '(?:ttb|btt|ltr|rtl)', '(?:ttb|btt|ltr|rtl)'\}")
