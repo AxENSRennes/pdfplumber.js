@@ -365,7 +365,16 @@ Lecture :
     d'`adv-pages`, 23 d'`adv-objects`, `adv-plumber` 94 (`plumber_objects`,
     `plumber_text`), 72 (`plumber_doc`), 68 (`plumber_tables`),
     `adv-structure` 64 × 2 ; build `dist`, `tsc`, 42 tests Node, budget de
-    taille ; 47 auto-tests de l'oracle). CHECK_RESULTS.
+    taille ; 47 auto-tests de l'oracle) ; `pdftrace` compilé en Wasm
+    (`dist`) donne les traces natives sur `quick` pour les 13 étapes
+    (`oracle.wasm_parity`, 150 fichiers chacune) ;
+    `scripts/check-browsers.sh` : 111 tests verts (Chromium, Firefox,
+    WebKit, dans la page et en worker) après une correction du paquet JS :
+    le test des sessions de la frontière (~400 cœurs neufs) dépassait les
+    5 Go de `heavy.sh`, chaque nouveau cœur recompilant le module Wasm et
+    `dropCore()` laissant vivre le worker de l'ancien ; le module compilé
+    est désormais réutilisé et le worker arrêté (`js-runtime.md`,
+    « Paquet JS »).
 - **Vague suivante** : **vague 5**, l'API JS publique
   (`PDFPlumberDocument`, `PDFPlumberPage`), construite sur les opérations
   de la frontière que la vague 4 a vérifiées (`js-runtime.md`,
@@ -389,8 +398,7 @@ Lecture :
   - les flux d'images par référence (aujourd'hui `rawdata`/`data` sont
     copiés entiers dans chaque résultat : un nouveau format de fil, une
     classe JS et une durée de vie de handle) ;
-  - `scripts/check-browsers.sh` et les mesures JS sur l'API finale ;
-    le point chaud de la bibliothèque est `page.objects`
+  - les mesures JS (`js/bench/`) sur l'API finale ; le point chaud de la bibliothèque est `page.objects`
     (`process_object`, la moitié du temps sans trace).
   Restent ouverts, documentés (`public-api.md`, `architecture.md`) : la
   copie profonde d'un document lu depuis des octets par `structure_tree`

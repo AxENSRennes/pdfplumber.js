@@ -39,6 +39,9 @@ export interface CallOptions {
 export interface Core {
   call(op: string, handle: number, args: unknown, options?: CallOptions): Promise<unknown>;
   readonly crashed: boolean;
+  /** Stops a core that holds more than references (a worker); a core in
+   * the page is freed with its last reference. */
+  terminate?(): void;
 }
 
 export const STATUS_OK = 0;

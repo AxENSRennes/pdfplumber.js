@@ -41,7 +41,34 @@ export function configure(options: RuntimeOptions): void {
  * runtime options (a new Python process: the tests replaying sessions of
  * oracle/unit/js_pages_run.py). */
 export function dropCore(): void {
+  const previous = corePromise;
   corePromise = undefined;
+  // the documents of the dropped process are never used again: stop its
+  // worker, which would otherwise keep its WebAssembly memory alive (one
+  // per session: browsers then fail to allocate a new instance)
+  previous?.then(
+    (core) => core.terminate?.(),
+    () => {},
+  );
+}
+
+/** The compiled module of the last fetched WebAssembly source (the
+ * default URL or a URL given as a string or `URL`): a new core (after a
+ * crash, `configure()` or `dropCore()`) instantiates it again instead of
+ * fetching and compiling the module once more. */
+let compiled: { key: string | undefined; module: Promise<WebAssembly.Module> } | undefined;
+
+function compileWasm(source: RuntimeOptions["wasm"]): Promise<WebAssembly.Module> {
+  const p = platform();
+  if (source !== undefined && typeof source !== "string" && !(source instanceof URL)) return p.compileWasm(source);
+  const key = source instanceof URL ? source.href : source;
+  if (compiled && compiled.key === key) return compiled.module;
+  const entry = { key, module: p.compileWasm(source) };
+  compiled = entry;
+  entry.module.catch(() => {
+    if (compiled === entry) compiled = undefined;
+  });
+  return entry.module;
 }
 
 /** The core the next document opens in (a new one after a crash). */
@@ -53,7 +80,7 @@ export async function getCore(): Promise<Core> {
   const options = runtimeOptions;
   corePromise = (async () => {
     const p = platform();
-    const module = await p.compileWasm(options.wasm);
+    const module = await compileWasm(options.wasm);
     if (options.worker) {
       if (!p.workerCore) throw new Error("worker mode is available in browsers only");
       return p.workerCore(module, options);

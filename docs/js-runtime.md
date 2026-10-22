@@ -431,6 +431,17 @@ js/src/search.ts              motifs de search() (RegExp JS → spans, voir publ
 js/src/internal.ts            API interne des tests et du benchmark (pdfplumber-js/internal)
 ```
 
+Un nouveau cœur (après un plantage, `configure()`, ou `dropCore()` des
+tests, qui rejouent chaque session de `js_pages_run.py` dans un processus
+neuf) instancie le module déjà compilé de la même source (URL par défaut,
+chaîne ou `URL` ; des octets ou un `WebAssembly.Module` donnés passent
+tels quels) au lieu de le télécharger et de le compiler de nouveau, et
+`dropCore()` arrête le worker du cœur abandonné. Sans cela, les ~400
+cœurs du test des sessions gardaient chacun leur code compilé (Firefox)
+ou leur worker (Chromium, WebKit) jusqu'au ramasse-miettes : le test
+dépassait les 5 Go de `heavy.sh` (`check-browsers.sh` de l'intégration de
+la vague 4).
+
 Build : `node scripts/build.mjs` = `build-wasm.mjs` (cargo `--profile dist`,
 puis `wasm-opt -O3` du paquet npm `binaryen`, `--no-opt` pour l'éviter),
 `build-cmaps.mjs`, `build-js.mjs` (`tsc` → `dist/src` avec les `.d.ts` ;
