@@ -921,6 +921,10 @@ fn documents_handles_formats_and_the_benchmark() {
 
 fn documents_handles_formats_and_the_benchmark_body() {
     let mut core = Core::new();
+    // a CMap that is never handed over: calls can be void, the history is
+    // kept (the CMaps of the thread are those of the tests before, under
+    // WebAssembly, where every test runs on one thread)
+    ok(call(&mut core, "cmap_configure", 0, list(vec![PyValue::str("UniJIS-UCS2-H")]), None));
     let opts = PyValue::Dict(Obj::from_pairs([("password", PyValue::str("pw"))]));
     let Js::Num(h) = ok(call(&mut core, "doc_open", 0, opts, Some(tiny_pdf(b"")))) else { panic!("a handle") };
     let h = h as u32;

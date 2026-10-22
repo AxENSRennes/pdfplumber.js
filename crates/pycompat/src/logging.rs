@@ -139,9 +139,8 @@ impl Logger {
             Level::Error => crate::diagnostics::Level::Error,
         };
         if crate::diagnostics::enabled(lvl) {
-            if let Ok(text) = message() {
-                crate::diagnostics::emit(self.name, lvl, || text);
-            }
+            let mut message = Some(message);
+            emit_record(self.name, lvl, &mut || message.take().map_or_else(|| Ok(String::new()), |m| m()));
         }
         Ok(())
     }
@@ -149,6 +148,18 @@ impl Logger {
     /// `self.warning(msg, *args)` with its text ([`Logger::log`]).
     pub fn warning_with(&self, message: impl FnOnce() -> PyResult<String>) -> PyResult<()> {
         self.log(Level::Warning, message)
+    }
+}
+
+/// Formats and emits a record, out of line: the formatting of the many
+/// call sites (a `repr` of operands...) stays out of the stack frames of
+/// the ported functions, which recurse (a frame that grows lowers the
+/// deepest recursion a thread's stack holds).
+#[inline(never)]
+#[cold]
+fn emit_record(name: &str, level: crate::diagnostics::Level, message: &mut dyn FnMut() -> PyResult<String>) {
+    if let Ok(text) = message() {
+        crate::diagnostics::emit(name, level, || text);
     }
 }
 
