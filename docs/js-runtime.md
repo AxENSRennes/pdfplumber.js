@@ -98,6 +98,18 @@ et par les tests aléatoires de `crates/wasm/tests/boundary.rs`).
   valeurs publiques ; la valeur typée du dernier résultat est
   `core.lastTyped`. C'est le format du harnais qui écrit les traces des
   étapes par l'API (`js/trace/`), jamais celui de l'API.
+- **Flux par référence** (vague 5, BOUNDARY, protocole 1 : une sorte de
+  valeur ajoutée) : PJB1 `0x13` (`TAG_STREAM_REF`), JSON `"streamref"`,
+  `Writer::stream_ref` : le handle du flux, puis `objid`, `genno`,
+  `attrs` ; ses octets se lisent à la demande (« Documents et pages »,
+  flux). Un flux s'écrit par référence quand le cœur lui a donné un handle
+  (`set_stream_refs`, que le runtime JS demande), par valeur sinon
+  (`0x0f` : `rawdata` et `data` copiés) ; le format typé du harnais écrit
+  toujours par valeur. Les décodeurs JS font le `PDFStream` par le
+  « fabricant » du cœur qui décode (`withStreamRefs`, `StreamRefs`).
+- **Drapeaux de la réponse** : bit 0, le JSON demande la passe de
+  correction ; bit 1 (`FLAG_HISTORY_LONG`), l'historique des documents
+  dépasse sa limite (« Documents et pages », historique borné).
 
 ### Mesures
 
@@ -155,7 +167,8 @@ node js/bench/browsers.mjs --passes 5   # Chromium, WebKit, Firefox de Playwrigh
 | `bytes` | `Uint8Array` |
 | `list`, `tuple` | `Array` |
 | `dict` | objet ordinaire, clés dans l'ordre Python (sauf les clés « entières », que JS met en tête) ; `__proto__` est une propriété propre |
-| `PSLiteral`, `PSKeyword`, `PDFObjRef`, `PDFStream` | classes `PSLiteral`, `PSKeyword`, `PDFObjRef`, `PDFStream` |
+| `PSLiteral`, `PSKeyword`, `PDFObjRef` | classes `PSLiteral`, `PSKeyword`, `PDFObjRef` |
+| `PDFStream` | `PDFStream` par référence (`objid`, `genno`, `attrs` ; `rawdata`, `data`, `getData()`, `getRawdata()` lus à la demande), ou instantané (format typé, `new PDFStream(...)`) |
 | `Page` de pdfplumber (`annot["data"]["P"]`, `getattr(pdf, "pages")`) | `PageRef` (`handle`, `page_number`) |
 
 Une `Page` dans un résultat est écrite comme une sorte à elle (PJB1
@@ -170,6 +183,16 @@ Arguments (JS → Rust, PJB1 sans tables) : entier sûr → `int`, autre nombre
 → `float`, `bigint` → `int`, `PyFloat(x)` force un `float`, `PyTuple([...])`
 un `tuple`, tableau → `list`, objet ou `Map` à clés chaînes → `dict`
 (propriétés `undefined` omises), `Uint8Array`/`ArrayBuffer` → `bytes`.
+Les objets d'un résultat rendus en argument redeviennent les objets
+qu'ils représentent (vague 5, `binary::decode_args`, `Core::object_arg`) :
+un `PSLiteral` ou un `PSKeyword` est interné (`LIT`, `KWD` : le même objet
+que pdfminer a fait), un `PDFObjRef` est un nouveau `PDFObjRef` lié au
+document de la cible de la requête (le décodage est refait une fois
+celle-ci connue ; pdfminer n'en compare que l'identité, que rien ne lit),
+un `PageRef` est la page de son handle, un `PDFStream` par référence le
+flux de son handle (le même objet) ; un `PDFStream` instantané n'est pas
+un argument (`TypeError`). `oracle/unit/js_pages_run.py` fait de même
+(`bind_args` : `{"$obj": k}` pour un objet de la session).
 L'encodeur (`encodeValue`) n'est pas récursif : toute profondeur passe ; un
 conteneur qui se contient lui-même est une `TypeError` (le même objet deux
 fois ne l'est pas).
@@ -210,16 +233,31 @@ cause) : c'est l'`error.cause` du `PDFPlumberError`.
 
 `pycompat::diagnostics` est le canal des `logging` et des `warnings.warn`
 : un module porté appelle `diagnostics::emit(source, niveau, || message)`
-(le message n'est formaté que si quelqu'un écoute). Transmis aujourd'hui :
-les deux `logger.warning` de pdfplumber (métadonnées, classe d'attributs
-inconnue) et son `warnings.warn` (`Page.annots`), celui-ci par
+(le message n'est formaté que si quelqu'un écoute). Transmis : les deux
+`logger.warning` de pdfplumber (métadonnées, classe d'attributs
+inconnue), son `warnings.warn` (`Page.annots`), celui-ci par
 `pycompat::warnings`, qui suit les filtres par défaut de Python : montré
 une fois par texte, catégorie et ligne dans le processus (le registre est
-de l'état du processus : un appel nul le remet). Les `log.*` de pdfminer
-ne comptent que leurs cadres (`public-api.md`). `diagnostics.jsonl` de
+de l'état du processus : un appel nul le remet), et (vague 5, BOUNDARY,
+protocole 2) chaque `log.warning` de pdfminer (`pdfinterp`, `pdfdevice`,
+`pdffont`, `cmapdb`, `pdfpage`, `pdfdocument`, `pdftypes`) :
+`pycompat::logging::Logger::log` prend les cadres de l'appel comme avant
+(logging coupé : la référence, qui décide où tombe une `RecursionError`),
+puis donne le texte de l'enregistrement, `msg % args` comme
+`record.getMessage()` le formate (`%r` des opérandes par le `repr` porté,
+`pdfminer::log_text`), seulement si quelqu'un le collecte ; un texte dont
+le formatage lève n'est pas émis (`logging` jette l'enregistrement). Le
+texte ne change aucun résultat. Les `log.debug` de pdfminer (un par jeton,
+par opérateur, par objet lu) ne comptent que leurs cadres : ils ne sont
+pas transmis (`logLevel: "debug"` ne montre que les niveaux `info` et
+plus de pdfminer, aucun aujourd'hui). `diagnostics.jsonl` de
 `oracle/unit/js_runtime.py` (ce que Python montre, avertissements et
-enregistrements des loggers de pdfplumber, dans un processus neuf) est
-rejoué par `js_runtime_unit.rs`. La frontière exécute chaque requête dans un
+enregistrements des loggers de pdfplumber et de pdfminer au niveau
+`WARNING`, dans un processus neuf, pour des documents faits pour produire
+chaque sorte d'enregistrement : opérandes invalides, boîtes de page,
+polices, table xref, flux Flate corrompu) est rejoué par
+`js_runtime_unit.rs` et, par l'API publique (`onWarning`), par
+`js/test/shared/tests.mjs`. La frontière exécute chaque requête dans un
 `diagnostics::collect` au niveau demandé par JS (0 : rien n'est collecté ni
 formaté), au plus 1 000 entrées par appel (les autres sont comptées), et les
 renvoie avec la réponse, y compris quand l'appel lève. Un appel nul (CMaps
@@ -283,6 +321,27 @@ dans `check.sh`).
   Un nom hors de la liste est `CMapNotFound` sans requête réseau. Avec
   `cmaps: false`, toutes les CMaps sont absentes, comme une installation de
   pdfminer sans son dossier `cmap`.
+- **Préchargement** (vague 5, `crates/wasm/src/cmap_scan.rs`) : après
+  chaque ouverture (`doc_open`, `doc_open_file`, `oracle_doc_open`), le
+  runtime demande `doc_cmap_scan` : le cœur relit le document à part (un
+  nouveau `PDFDocument` des mêmes octets et du même mot de passe, chaque
+  objet de ses tables xref) et donne les CMaps prédéfinies que ses polices
+  nomment (l'`/Encoding` d'une police `Type0`, l'`/UseCMap` d'une CMap
+  embarquée, la carte unicode `to-unicode-<Registry>-<Ordering>` d'un
+  `/CIDSystemInfo`), parmi celles que JS peut fournir et n'a pas données ;
+  JS les récupère avant la requête suivante. Sans effet Python : l'état
+  du processus est remis après l'analyse, ses diagnostics sont jetés, ses
+  erreurs l'arrêtent avec ce qu'elle a trouvé, elle n'entre pas dans
+  l'historique et ne charge aucune CMap ; une CMap présente dès le départ
+  est Python avec toutes ses CMaps : résultats et récursion inchangés
+  (les sessions et les traces passent avec ou sans). C'est une estimation
+  : une CMap qu'elle manque est chargée paresseusement (appel nul), une
+  de trop l'est pour rien. `CallOptions.preload: false` garde le
+  chargement paresseux seul (les tests des appels nuls) ; en worker, le
+  worker précharge (`runToEnd`). Testé : `tests.mjs` ouvre les documents
+  CJK de `documents.jsonl` par l'API, vérifie que les CMaps de Python sont
+  récupérées par `open()`, puis le texte, sans aucun appel nul
+  (`WasmCore.voidCalls`).
 - Alternative écartée pour l'instant : un `PyErr` hors hiérarchie Python
   qui interromprait l'appel au lieu de le laisser finir. Elle éviterait de
   jeter un calcul, mais demande de changer le trait `CMapProvider` (autre
@@ -329,7 +388,9 @@ et ses pages derrière des handles.
   file côté appelant, le worker exécute ses messages un par un). Sans
   elle, un appel fait pendant qu'un autre attendait ses CMaps passait
   avant sa relance.
-- **Pages** : `page_info`, `page_objects`, `page_attr` (`getattr(page,
+- **Pages** : `page_info` (la géométrie, puis `width` et `height` lus
+  chacun dans une instruction : sa valeur, ou son exception sous
+  `width_error`/`height_error`, le dict d'`errors.rs`), `page_objects`, `page_attr` (`getattr(page,
   nom)` : `chars`, `rects`..., les arêtes, `annots`, `hyperlinks`,
   `objects`, les mêmes noms que `doc_attr`), `page_structure_tree`, `page_extract_text`,
   `page_extract_text_simple`, `page_extract_words`,
@@ -345,8 +406,39 @@ et ses pages derrière des handles.
   après un `flush_cache` du parent ne sont pas dans le masque, `NotPorted`),
   `page_dedupe_chars` (ces cinq donnent un handle de page dérivée),
   `page_find_tables`/`page_find_table` (un handle par table),
+`page_debug_tablefinder` (`obj.debug_tablefinder(*args)` : `edges`,
+`intersections` comme les éléments du dict de Python, `[[(x, top), {"v",
+"h"}], ...]`, `cells`, `tables` avec leurs handles, `settings`, les champs
+du `TableSettings` résolu),
   `page_extract_tables`/`page_extract_table`, `page_to_dict`/`to_json`/
   `to_csv`, `page_close`, et `table_extract` sur une table.
+- **Arbres de structure** (vague 5, `crates/wasm/src/structs.rs`) :
+  `struct_tree [page ou None]` sur un document (`PDFStructTree(obj,
+  page)` : le handle de l'arbre et ses éléments, chacun les champs du
+  dataclass, `children` compris, écrits sans récursion ; la page d'un
+  autre document est `NotPorted`), puis sur l'arbre, un élément nommé par
+  son chemin (les indices depuis `tree.children`) : `struct_find_all`
+  (`list(x.find_all(m))`), `struct_find` (`x.find(m)`) — `x` l'arbre ou un
+  élément, `m` un type (`match_tag`), `{"mask": [...]}` (la vérité de la
+  fonction ou de la `RegExp` que JS a évaluée sur chaque élément, dans
+  l'ordre de `_find_all`, lue par identité dans une fonction d'un cadre),
+  ou une autre valeur, appelée comme Python l'appelle (`TypeError` au
+  premier élément) ; les chemins des éléments trouvés —,
+  `struct_element_bbox` (`obj.element_bbox(el)`), `struct_all_mcids`
+  (`list(el.all_mcids())`), `struct_element_repr` (`repr(el)`).
+- **Flux** (vague 5, `crates/wasm/src/streams.rs`) : avec
+  `set_stream_refs`, chaque `PDFStream` d'un résultat reçoit un handle
+  (le premier handle vivant de ce flux, sinon un nouveau que l'opération
+  crée, dans l'ordre d'écriture, comme les pages : `Core::label_values`),
+  qui appartient au document et vit autant que lui ; `stream_rawdata`,
+  `stream_data` (`obj.rawdata`, `obj.data`), `stream_get_data`,
+  `stream_get_rawdata` (`obj.get_data()`, qui décode le flux, et
+  `obj.get_rawdata()`) atteignent son document (un rejeu refait le
+  décodage). Après `PDF.close()`, un flux garde ses octets, comme en
+  Python. En JS (`pdfobjects.ts`, `runtime.ts` `StreamRefs`), un
+  `PDFStream` par handle tant qu'il vit (`WeakRef`), lu dans les jobs de
+  son document (`CallOptions.owner`, le `PDFPlumberDocument`) : après
+  `release()`, `DocumentReleased`.
 - **Profondeur** : chaque requête est une instruction au niveau du module
   d'un script Python (`ENTRY_DEPTH` : un cadre, deux unités C, mesurés par
   le script) ; une propriété y est lue à un site qui lui est propre
@@ -407,6 +499,17 @@ et ses pages derrière des handles.
   libération : un document gardé longtemps garde chaque appel qui l'a
   atteint (ses arguments et un état du processus partagé avec les appels
   voisins), et un appel nul les rejoue tous.
+- **Historique borné** (vague 5) : une fois chaque CMap connue donnée au
+  cœur (`cmaps::complete` ; une installation sans CMaps l'est dès le
+  départ), aucun appel ne peut plus être nul : l'historique est vidé au
+  début de l'appel suivant et plus rien n'y est noté (les documents sont
+  marqués : si des noms de CMaps devenaient connus ensuite, un appel nul
+  sur eux les laisserait inutilisables, jamais différents). Au-delà de
+  `HISTORY_LIMIT` entrées (4 096), chaque réponse le signale (drapeau 1) et
+  le runtime donne toutes les CMaps (`WasmCore.loadAll`, ~3 Mo) : la
+  mémoire de l'historique est bornée, sans rien changer à Python. Testé
+  par `the_history_goes_once_every_cmap_is_handed_over` et dans
+  `tests.mjs` (`set_history_limit`).
 - **Tests** : `oracle/unit/js_runtime.py` exécute des sessions de cas
   dans un processus neuf chacune, au niveau du module de
   `js_pages_run.py` (`pages.jsonl`) : `documents` (toutes les opérations,
@@ -528,6 +631,18 @@ la couche page ajoutera l'interpréteur et les polices. Budget (brotli) :
   texte/mots/recherche (dont `main_group` contre `m.group()`)/tables contre
   pdfplumber, entrées et options de `open()` (`open.jsonl`), un PDF une
   seule fois en mémoire, absence de fuite de tampons.
+- **Sessions de la frontière, vague 5** (`pages.jsonl`) : `structure`
+  (arbres des fichiers étiquetés d'upstream et d'un cas sur deux
+  d'`adv-structure` : document, page, page rognée ; chaque matcher, les
+  chemins absents, `element_bbox`, `all_mcids`, `repr`, après
+  `doc_close`), `streams` (résultats qui tiennent des flux, lectures
+  avant et après décodage et après `doc_close`, `page_close` puis les
+  flux refaits, objets d'un résultat rendus en argument), et dans
+  `documents` `page_info` aux exceptions séparées, `debug_tablefinder`,
+  arguments `PSLiteral`/`PSKeyword`/`PDFObjRef`/page ; fenêtres de
+  profondeur de `debug_tablefinder` (unités C), de `PDFStructTree`
+  (récursion de `prune`, `str(s)` de `decode_text`) et de `repr(el)`
+  (cadres).
 - **API publique** (vague 5) : les sessions de `oracle/unit/js_api.py`
   (`sessions.jsonl`), rejouées par `js/test/shared/api-sessions.mjs` par
   l'API publique seulement, dans Node sur les sources (`api.test.ts`) et
