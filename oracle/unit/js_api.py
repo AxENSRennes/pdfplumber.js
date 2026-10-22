@@ -99,6 +99,12 @@ ALIASES = {
     "find_table": "findTable",
     "extract_tables": "extractTables",
     "extract_table": "extractTable",
+    "debug_tablefinder": "debugTablefinder",
+    "find_all": "findAll",
+    "element_bbox": "elementBbox",
+    "all_mcids": "allMcids",
+    "get_data": "getData",
+    "get_rawdata": "getRawdata",
 }
 
 #: The object lists read with ``getattr(container, name)`` (``doc_attr``,
@@ -223,6 +229,76 @@ class Collector(JSForm):
 
     def py(self, conv: Callable[[Any], Any]) -> Any:
         raise AssertionError("onWarning is not given to Python")
+
+
+class ObjArg(JSForm):
+    """An object of the API given as an argument (a page to
+    ``structTree``): the object itself, the session's object in Python
+    (``{"$obj": target}``, ``js_pages_run.arg_object``)."""
+
+    def __init__(self, obj: "Obj") -> None:
+        self.obj = obj
+
+    def json(self, enc: Callable[[Any], Any]) -> Any:
+        return {"$ref": self.obj.ref}
+
+    def py(self, conv: Callable[[Any], Any]) -> Any:
+        return {"$obj": self.obj.target}
+
+
+#: The fields of ``PDFStructElement`` (pdfplumber/structure.py:102), in
+#: order, ``children`` last.
+ELEMENT_FIELDS = ["type", "revision", "id", "lang", "alt_text", "actual_text", "title", "page_number", "attributes",
+                  "mcids"]
+
+
+def element_named(v: dict[str, Any]) -> Named:
+    """An element as ``struct_tree`` writes it, as the API gives it:
+    ``PDFStructElement{fields..., children}`` (without recursion)."""
+    out: list[Named] = []
+    stack: list[tuple[dict[str, Any], list[Any]]] = [(v, out)]
+    while stack:
+        e, into = stack.pop()
+        children: list[Any] = []
+        fields = {k: neutral(e[k]) for k in ELEMENT_FIELDS}
+        fields["children"] = children
+        into.append(Named("PDFStructElement", fields))
+        # (filled in order: the children pushed last first)
+        slots: list[list[Any]] = []
+        for c in e["children"]:
+            slot: list[Any] = []
+            slots.append(slot)
+            stack.append((c, slot))
+        children.extend(_Deferred(s) for s in slots)
+    return _resolve_deferred(out[0])
+
+
+class _Deferred:
+    def __init__(self, slot: list[Any]) -> None:
+        self.slot = slot
+
+
+def _resolve_deferred(root: Named) -> Named:
+    """``element_named``'s children, put in place (without recursion)."""
+    stack = [root]
+    while stack:
+        n = stack.pop()
+        kids = n.fields["children"]
+        for i, k in enumerate(kids):
+            if isinstance(k, _Deferred):
+                kids[i] = k.slot[0]
+            stack.append(kids[i])
+    return root
+
+
+def element_at_path(top: list[Any], path: list[int]) -> dict[str, Any]:
+    """The element value at a path (indices from the tree's children)."""
+    children, el = top, None
+    for i in path:
+        el = children[i]
+        children = el["children"]
+    assert el is not None
+    return el
 
 
 def encode_arg(a: Any) -> Any:
@@ -708,6 +784,102 @@ class Session:
         self._expect(cid, stream, lambda r: r.plain(c))
         return cid
 
+    # ------------------------------------------------------ the structure tree
+
+    def struct_tree(self, doc: Obj, page: Obj | None = None) -> Obj | None:
+        """``pdf.structTree(page?)``: ``struct_tree`` (``PDFStructTree(pdf,
+        page)``), a ``PDFStructTree{page, children}`` of
+        ``PDFStructElement{fields..., children}``."""
+        cid, skipped = self._async(doc, "call", "structTree", [] if page is None else [ObjArg(page)])
+        if skipped:
+            return None
+        c = self.case("struct_tree", doc.target, [None if page is None else ObjArg(page)])
+        self.plain_case(cid, c)
+
+        def value(r: Results) -> Any:
+            if page is not None and not page.alive(r):
+                return UNRESOLVED
+            if r.unresolved(c):
+                return UNRESOLVED
+            if r.failed(c):
+                return r.error(c)
+            g = None if page is None else Named("PDFPlumberPage", page.geometry(r))  # type: ignore[misc]
+            return Named("PDFStructTree", {"page": g, "children": [element_named(e) for e in r.value(c)["children"]]})
+
+        self._expect(cid, doc, value)
+        alive = (lambda r: doc.alive(r) and (page is None or page.alive(r)) and not r.unresolved(c)
+                 and not r.failed(c))
+        return Obj("tree", [cid], [c, 0], doc.doc, alive)
+
+    def element(self, tree: Obj, *path: int) -> Obj:
+        """The element of a tree at ``path`` (indices from its children)."""
+        steps: list[Any] = []
+        for i in path:
+            steps += ["children", i]
+        ref = Ref(tree.ref[0], *steps)
+        el = Obj("element", [tree.ref[0], *steps], tree.target, tree.doc, lambda r: tree.alive(r) and not self.ref_missing(r, ref))
+        el.parent = tree
+        el.path = list(path)  # type: ignore[attr-defined]
+        return el
+
+    def struct_find(self, on: Obj, name: str, matcher: tuple[str, Any]) -> None:
+        """``findAll``/``find`` (and ``find_all``) on a tree or an element:
+        ``struct_find_all``/``struct_find`` with the path of the element
+        (``None`` for the tree); ``matcher`` ``("tag", type)``, ``("regexp",
+        source)`` (a ``RegExp``), ``("predicate", name)`` (a function,
+        ``js_pages_run.ELEMENT_PREDICATES``) or ``("value", v)`` (any
+        value, as it is)."""
+        kind, m = matcher
+        extra: dict[str, Any] = {}
+        if kind == "tag" or kind == "value":
+            js_args, py_m = [m], m
+        elif kind == "regexp":
+            js_args, py_m = [{"regexp": m, "flags": ""}], {"regexp": m}
+        else:
+            js_args, py_m = [], {"predicate": m}
+            extra["element_predicate"] = m
+        cid, skipped = self._async(on, "call", name, js_args, **extra)
+        if skipped:
+            return
+        tree = on if on.kind == "tree" else on.parent
+        assert tree is not None
+        path = getattr(on, "path", None)
+        member = ALIASES.get(name, name)
+        c = self.case("struct_find_all" if member == "findAll" else "struct_find", tree.target, [path, py_m])
+        tree_case = self.case_of[tree.ref[0]]
+
+        def value(r: Results) -> Any:
+            if r.unresolved(c):
+                return UNRESOLVED
+            if r.failed(c):
+                return r.error(c)
+            top = r.value(tree_case)["children"]
+            v = r.value(c)
+            if member == "findAll":
+                return [element_named(element_at_path(top, p)) for p in v]
+            return None if v is None else element_named(element_at_path(top, v))
+
+        self._expect(cid, on, value)
+
+    def element_bbox(self, tree: Obj, el: Obj, name: str = "elementBbox") -> None:
+        """``tree.elementBbox(el)``: ``struct_element_bbox [path]``."""
+        steps = el.ref[1:]
+        ref = Ref(el.ref[0], *steps)
+        cid, skipped = self._async(tree, "call", name, [ref])
+        if skipped:
+            return
+        c = self.case("struct_element_bbox", tree.target, [el.path])  # type: ignore[attr-defined]
+        self._expect(cid, tree, lambda r: UNRESOLVED if self.ref_missing(r, ref) else r.plain(c))
+
+    def element_call(self, el: Obj, name: str) -> None:
+        """``el.allMcids()`` (``all_mcids``), ``el.repr()``."""
+        cid, skipped = self._async(el, "call", name, [])
+        if skipped:
+            return
+        op = {"allMcids": "struct_all_mcids", "repr": "struct_element_repr"}[ALIASES.get(name, name)]
+        c = self.case(op, el.target, [el.path])  # type: ignore[attr-defined]
+        self._expect(cid, el, lambda r: r.plain(c))
+
     def page_ref(self, doc: Obj, cid: int, *path: Any) -> Obj | None:
         """``pdf.page(ref)``, the ``PageRef`` at ``path`` in call ``cid``'s
         value (an annotation's ``data.P``): the page the API holds for its
@@ -883,7 +1055,7 @@ class Session:
             return []
         member = ALIASES.get(name, name)
         op = {"findTables": "page_find_tables", "findTable": "page_find_table", "extractTables": "page_extract_tables",
-              "extractTable": "page_extract_table"}[member]
+              "extractTable": "page_extract_table", "debugTablefinder": "page_debug_tablefinder"}[member]
         c = self.case(op, page.target, list(args))
 
         def value(r: Results) -> Any:
@@ -896,6 +1068,8 @@ class Session:
                 return [table_value(t) for t in v]
             if member == "findTable":
                 return None if v is None else table_value(v)
+            if member == "debugTablefinder":
+                return {k: [table_value(t) for t in x] if k == "tables" else neutral(x) for k, x in v.items()}
             return neutral(v)
 
         self._expect(cid, page, value)
@@ -904,6 +1078,8 @@ class Session:
             if not page.alive(r) or r.unresolved(c) or r.failed(c):
                 return False
             v = r.value(c)
+            if member == "debugTablefinder":
+                return i < len(v["tables"])
             return i < len(v) if member == "findTables" else v is not None
 
         if member in ("extractTables", "extractTable"):
@@ -911,6 +1087,8 @@ class Session:
         found: list[Obj] = []
         if member == "findTables":
             found = [Obj("table", [cid, i], [c, i], page.doc, lambda r, i=i: made(r, i)) for i in range(2)]
+        if member == "debugTablefinder":
+            found = [Obj("table", [cid, "tables", i], [c, i], page.doc, lambda r, i=i: made(r, i)) for i in range(2)]
         if member == "findTable":
             found = [Obj("table", [cid], [c, 0], page.doc, lambda r: made(r, 0))]
         for t in found:
@@ -929,12 +1107,12 @@ class Session:
             return
         ref = table.ref
         found = ref[0]
-        index = ref[1] if len(ref) > 1 else None
 
         def value(r: Results) -> Any:
             f = next(f for c, f in self.expect if c == found)
             t = f(r)
-            t = t[index] if index is not None else t
+            for k in ref[1:]:
+                t = t[k]
             return t.fields[name]
 
         self._expect(cid, table, value)
@@ -1126,6 +1304,10 @@ def file_session(k: int, rel: str) -> Session:
         s.tables(page, alias(k + 1, "findTable"), settings)
         s.tables(page, alias(k, "extractTables"), settings)
         s.tables(page, alias(k + 1, "extractTable"), settings)
+        for t in s.tables(page, alias(k, "debugTablefinder"), settings)[:1]:
+            for name in ("bbox", "rows", "page"):
+                s.table_get(t, name)
+            s.extract(t, {"x_tolerance": 2})
     # serialization
     s.serialize(page, alias(k, "toDict"))
     s.serialize(page, alias(k + 1, "toDict"), ["rect", "line"])
@@ -1365,6 +1547,11 @@ def lifetime_session() -> Session:
     pages = s.pages(doc)
     page = pages[0]
     s.page_get(pages[1], "annots")
+    # annotations given back as explicit table lines: their data (names,
+    # references, the page) cross as the objects they stand for
+    s.tables(page, "extractTables", {"vertical_strategy": "explicit", "horizontal_strategy": "explicit",
+                                     "explicit_vertical_lines": [Ref(annots, 0), Ref(annots, 1), 10, 600],
+                                     "explicit_horizontal_lines": [Ref(annots, 0), 10, 700]})
     # the page of pdf.pages is the page made above (the same object)
     again = s.page_get(page, "annots")
     s.page_ref(doc, again, 0, "data", "P")
@@ -1473,6 +1660,60 @@ def calls_session() -> Session:
     return s
 
 
+#: Files with a structure tree (real, then ``adv-structure``).
+STRUCTURE = ["upstream/pdfplumber-python/tests/pdfs/hello_structure.pdf",
+             "upstream/pdfplumber-python/tests/pdfs/word365_structure.pdf",
+             "upstream/pdfplumber-python/tests/pdfs/figure_structure.pdf",
+             "upstream/pdfplumber-python/tests/pdfs/image_structure.pdf",
+             "upstream/pdfplumber-python/tests/pdfs/pdf_structure.pdf"]
+ADV_STRUCTURE = ["000-basic.pdf", "001-no-struct-tree-root.pdf", "023-root-k-objr-element.pdf",
+                 "024-root-k-objr-other-page.pdf", "025-root-k-duplicate.pdf", "026-root-k-two-roots.pdf"]
+
+#: The matchers of the structure sessions (``Session.struct_find``).
+MATCHERS: list[tuple[str, Any]] = [("tag", "P"), ("tag", "Span"), ("regexp", "H[0-9]"), ("regexp", "S"),
+                                   ("regexp", ""), ("predicate", "starts-with-H"), ("predicate", "has-mcids"),
+                                   ("value", 5)]
+
+
+def structure_session(name: str, rel: str | None = None, data: bytes | None = None) -> Session:
+    """``pdf.structTree(page?)``: the document's tree, a page's, a cropped
+    page's; ``findAll``/``find`` with each kind of matcher on the tree and
+    on elements; ``elementBbox``, ``allMcids``, ``repr`` of the first
+    elements; after ``release()``."""
+    s = Session(name)
+    doc = s.open(rel, data=data)
+    trees = []
+    t = s.struct_tree(doc)
+    if t is not None:
+        trees.append(t)
+    page = s.pages(doc)[0]
+    t = s.struct_tree(doc, page)
+    if t is not None:
+        trees.append(t)
+    crop = s.derive(page, "crop", [0, 0, 300, 300])
+    if crop is not None:
+        t = s.struct_tree(doc, crop)
+        if t is not None:
+            trees.append(t)
+    for k, tree in enumerate(trees):
+        for matcher in MATCHERS:
+            s.struct_find(tree, "findAll" if k % 2 == 0 else "find_all", matcher)
+            s.struct_find(tree, "find", matcher)
+        for path in [(0,), (0, 0), (0, 1), (1,), (0, 0, 0)]:
+            el = s.element(tree, *path)
+            s.element_call(el, "allMcids" if len(path) % 2 else "all_mcids")
+            s.element_call(el, "repr")
+            s.element_bbox(tree, el, "elementBbox" if len(path) % 2 else "element_bbox")
+            s.struct_find(el, "findAll", ("predicate", "has-mcids"))
+            s.struct_find(el, "find", ("tag", "Span"))
+    s.release(doc)
+    if trees:
+        s.struct_find(trees[0], "find", ("tag", "P"))
+        s.element_call(s.element(trees[0], 0), "repr")
+    s.struct_tree(doc)
+    return s
+
+
 def streams_session(files: list[tuple[str, bytes]]) -> Session:
     """Streams by reference (``docs/public-api.md``, "PDFStream"): the
     data of an image's stream read as it is when read (``rawdata``, then
@@ -1488,6 +1729,11 @@ def streams_session(files: list[tuple[str, bytes]]) -> Session:
             st = s.stream(doc, images, i, "stream")
             for member in ("rawdata", "data", "getRawdata", "get_data", "rawdata", "data", "get_rawdata", "getData"):
                 s.stream_read(st, member)
+        # images given back as explicit table lines: their streams (and
+        # colour space names) cross as the objects they stand for
+        s.tables(page, "extractTables", {"vertical_strategy": "explicit", "horizontal_strategy": "explicit",
+                                         "explicit_vertical_lines": [Ref(images, 0), Ref(images, 1), Ref(images, 2)],
+                                         "explicit_horizontal_lines": [Ref(images, 0), Ref(images, 2)]})
         objects = s.page_get(page, "objects")
         s.stream_read(s.stream(doc, objects, "image", 0, "stream"), "data")
         s.stream_read(s.stream(doc, objects, "image", 3, "stream"), "getData")
@@ -1512,6 +1758,13 @@ def sessions() -> list[Session]:
             raise SystemExit(f"js_api: {path} is missing: generate adv-plumber first (python -m oracle.unit plumber)")
         out.append(adversarial_session(name, path.read_bytes()))
     out.append(streams_session([(n, (adv / n).read_bytes()) for n in ("078-image-kinds.pdf", "079-image-inline-many.pdf")]))
+    out += [structure_session(f"structure-{Path(rel).stem}", rel) for rel in STRUCTURE]
+    adv_structure = cache_dir() / "corpus" / "adv-structure"
+    for name in ADV_STRUCTURE:
+        path = adv_structure / name
+        if not path.is_file():
+            raise SystemExit(f"js_api: {path} is missing: generate adv-structure first (python -m oracle.unit structure)")
+        out.append(structure_session(f"structure-adv-{Path(name).stem}", data=path.read_bytes()))
     return out
 
 

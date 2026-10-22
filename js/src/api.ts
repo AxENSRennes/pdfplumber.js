@@ -12,12 +12,13 @@
  * it).
  */
 
-import { NotImplemented, fromPython, type PythonErrorInfo } from "./errors.js";
+import { fromPython, type PythonErrorInfo } from "./errors.js";
 import { WasmCore, type CallOptions, type Core, type CoreCall, type Diagnostic } from "./core/runtime.js";
 import { platform } from "./platform/platform.js";
 import { ORACLE, TYPED, type OracleOpen, type OracleSearch } from "./hooks.js";
 import { compilePattern, matchSpans } from "./search.js";
 import { PageRef } from "./pdfobjects.js";
+import { PDFStructTree, type TreeValue } from "./api/structure.js";
 import type {
   Bbox,
   CropOptions,
@@ -32,6 +33,7 @@ import type {
   SearchResult,
   SerializeOptions,
   TableAxisGroup,
+  TableFinderResult,
   TableOptions,
   TextLineOptions,
   Word,
@@ -533,11 +535,16 @@ export class PDFPlumberDocument {
   }
 
   /** `PDFStructTree(pdf, page)`: the structure tree of the document, or of
-   * one of its pages, with `findAll`, `find`, `elementBbox` and its
-   * elements' `allMcids`; waits for the boundary operations
-   * (docs/architecture.md, "Vague 5", BOUNDARY). */
-  structTree(_page?: PDFPlumberPage): Promise<never> {
-    return Promise.reject(new NotImplemented("PDFPlumberDocument.structTree"));
+   * one of its pages (`StructTreeMissing` when there is none), with
+   * `findAll`, `find`, `elementBbox`, and its elements' `allMcids` and
+   * `repr` (api/structure.ts). */
+  structTree(page?: PDFPlumberPage | null): Promise<PDFStructTree> {
+    if (page !== undefined && page !== null && !(page instanceof PDFPlumberPage && page.pdf === this))
+      return Promise.reject(new TypeError("structTree() takes a page of this document"));
+    return this.job(async (call) => {
+      const v = (await call("struct_tree", this.handle, [page ? page.handle : null], this.callOptions(page?.page_number))) as TreeValue;
+      return new PDFStructTree(this, page ?? null, v.handle, v.children);
+    });
   }
 
   /** `pdf.to_dict(object_types)` */
@@ -635,6 +642,15 @@ interface TableValue {
   cells: Bbox[];
   rows: TableAxisGroup[];
   columns: TableAxisGroup[];
+}
+
+/** `page_debug_tablefinder`'s value. */
+interface FinderValue {
+  edges: PDFObject[];
+  intersections: TableFinderResult<Table>["intersections"];
+  cells: Bbox[];
+  tables: TableValue[];
+  settings: Record<string, unknown>;
 }
 
 /** The options of `search` that `Page.search` takes itself (the others
@@ -979,12 +995,20 @@ export class PDFPlumberPage {
     return this.extractTable(settings);
   }
 
-  /** `page.debug_tablefinder(table_settings)`: waits for the boundary
-   * operation (docs/architecture.md, "Vague 5", BOUNDARY). */
-  debugTablefinder(_settings?: TableOptions | null): Promise<never> {
-    return Promise.reject(new NotImplemented("PDFPlumberPage.debugTablefinder"));
+  /** `page.debug_tablefinder(table_settings)`: the `TableFinder`'s edges,
+   * intersections (the items of its dict: `[[x, top], {v, h}]`), cells,
+   * tables (`Table` objects) and resolved settings (`TableSettings` as a
+   * dict). */
+  debugTablefinder(settings?: TableOptions | null): Promise<TableFinderResult<Table>> {
+    return this.#run<FinderValue>("page_debug_tablefinder", settings === undefined ? [] : [settings]).then((v) => ({
+      edges: v.edges,
+      intersections: v.intersections,
+      cells: v.cells,
+      tables: this.tables_(v.tables),
+      settings: v.settings,
+    }));
   }
-  debug_tablefinder(settings?: TableOptions | null): Promise<never> {
+  debug_tablefinder(settings?: TableOptions | null): Promise<TableFinderResult<Table>> {
     return this.debugTablefinder(settings);
   }
 

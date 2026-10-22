@@ -435,9 +435,11 @@ def cross(v):
     JavaScript argument is: an integral ``float`` a JavaScript safe integer
     crosses as an ``int``, a ``tuple`` as a ``list``, a ``dict`` with its
     integer-like keys first, two surrogates as the astral character they
-    make, and a pdfminer object as the plain object of its fields (a
-    ``PSLiteral`` as ``{"name": ...}``...) as the wave 5 base encodes it.
-    Iterative: values of any depth."""
+    make, and a pdfminer object as the object it stands for (``decode`` and
+    ``bind_args``: a ``PSLiteral`` or ``PSKeyword`` interned again, a
+    ``PDFObjRef`` bound to the document of the case's target, a ``Page`` and
+    a ``PDFStream`` by reference, the objects themselves). Iterative:
+    values of any depth."""
     out = []
     stack = [(v, out.append)]
     while stack:
@@ -455,16 +457,16 @@ def cross(v):
             put(items)
             for i, item in enumerate(x):
                 stack.append((item, lambda y, i=i, items=items: items.__setitem__(i, y)))
-        elif t is dict or t in (PSLiteral, PSKeyword, PDFObjRef, PDFStream):
-            if t is PSLiteral or t is PSKeyword:
-                pairs = [("name", x.name)]
-            elif t is PDFObjRef:
-                pairs = [("objid", x.objid)]
-            elif t is PDFStream:
-                pairs = [("objid", x.objid), ("genno", x.genno), ("attrs", x.attrs), ("rawdata", x.rawdata),
-                         ("data", x.data)]
-            else:
-                pairs = [(str(k), i) for k, i in x.items()]
+        elif t is PSLiteral:
+            put(LIT(x.name))
+        elif t is PSKeyword:
+            put(KWD(x.name))
+        elif t is PDFObjRef:
+            put(_Ref(x.objid))
+        elif t is PDFStream or isinstance(x, Page):
+            put(x)
+        elif t is dict:
+            pairs = [(str(k), i) for k, i in x.items()]
             index = sorted((k for k, _ in pairs if _is_index(k)), key=int)
             order = index + [k for k, _ in pairs if not _is_index(k)]
             values = dict(pairs)
@@ -474,7 +476,6 @@ def cross(v):
                 d[k] = None
                 stack.append((values[k], lambda y, k=k, d=d: d.__setitem__(k, y)))
         else:
-            # a Page: a PageRef, whose handle the core gives
             raise TypeError(f"cannot cross {t.__qualname__}")
     return out[0]
 

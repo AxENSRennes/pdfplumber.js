@@ -229,13 +229,21 @@ export interface SerializeOptions {
 
 /** `pdfplumber.table.TableFinder` (`page.debugTablefinder()`): the edges
  * the finder kept, the intersections (`[point, {v, h}]` items of Python's
- * dict, keyed by `(x, top)`), the cells and the tables. */
+ * dict, keyed by `(x, top)`), the cells, the tables, and the settings it
+ * resolved (`TableSettings`, its fields as a dict). */
 export interface TableFinderResult<T> {
   edges: PDFObject[];
   intersections: [[number, number], { v: PDFObject[]; h: PDFObject[] }][];
   cells: Bbox[];
   tables: T[];
+  settings: Record<string, unknown>;
 }
+
+/** What `PDFStructTree.findAll` and `find` match (pdfplumber/structure.py
+ * `_find_all`): an element type, a `RegExp` (JavaScript semantics,
+ * anchored at the start of the type, as `re.match`), or a function of an
+ * element (run on every element of the tree, in Python's order). */
+export type StructMatcher<E> = string | RegExp | ((element: E) => unknown);
 
 /** Runtime settings (`configure`). */
 export interface RuntimeOptions {

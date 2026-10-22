@@ -32,6 +32,19 @@ export const PREDICATES = {
   },
 };
 
+/** The functions given to a structure tree's `findAll`/`find`
+ * (oracle/unit/js_pages_run.py ELEMENT_PREDICATES), on the API's
+ * elements. */
+export const ELEMENT_PREDICATES = {
+  // el.type.startswith("H")
+  "starts-with-H": (el) => el.type.startsWith("H"),
+  // bool(el.mcids)
+  "has-mcids": (el) => el.mcids.length > 0,
+};
+
+/** The fields of a structure element, in the dataclass's order. */
+const ELEMENT_FIELDS = ["type", "revision", "id", "lang", "alt_text", "actual_text", "title", "page_number", "attributes", "mcids"];
+
 const UNRESOLVED = { $named: "Unresolved" };
 
 function setOwn(obj, key, value) {
@@ -126,6 +139,15 @@ function neutralValue(v, lib) {
     return { $named: "Table", bbox: v.bbox, cells: v.cells, rows: v.rows, columns: v.columns };
   }
   if (v instanceof lib.PDFPlumberDocument) return { $named: "PDFPlumberDocument" };
+  if (v instanceof lib.PDFStructTree) {
+    return { $named: "PDFStructTree", page: neutralValue(v.page, lib), children: neutralValue(v.children, lib) };
+  }
+  if (v instanceof lib.PDFStructElement) {
+    const o = { $named: "PDFStructElement" };
+    for (const k of ELEMENT_FIELDS) setOwn(o, k, neutralValue(v[k], lib));
+    setOwn(o, "children", neutralValue(v.children, lib));
+    return o;
+  }
   if (v instanceof lib.PDFStream) {
     // a stream by reference: its data is read on demand
     return { $named: "PDFStream", objid: v.objid, genno: v.genno, attrs: neutralValue(v.attrs, lib) };
@@ -198,7 +220,8 @@ function argument(j, lib, call, resolve, warnings) {
     return fromTyped(x, lib, true);
   };
   const v = go(j);
-  if (call.call === "search" && v && typeof v === "object" && "regexp" in v && Object.keys(v).length === 2)
+  const patterns = ["search", "findAll", "find_all", "find"];
+  if (patterns.includes(call.call) && v && typeof v === "object" && "regexp" in v && Object.keys(v).length === 2)
     return new RegExp(v.regexp, v.flags);
   return v;
 }
@@ -274,6 +297,7 @@ export async function replayApiSession(lib, line, env) {
         else if (call.call === "open") p = lib.open(inputs.get(call.id), ...args);
         else if (call.call === "filter") p = target.filter(PREDICATES[call.predicate]);
         else if (call.call === "asyncDispose") p = target[Symbol.asyncDispose]();
+        else if (call.element_predicate) p = target[call.call](ELEMENT_PREDICATES[call.element_predicate]);
         else p = target[call.call](...args);
       } catch (e) {
         p = Promise.reject(e);

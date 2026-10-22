@@ -1,6 +1,7 @@
 /** What both entry points export (docs/public-api.md). */
 
 export { open, configure, PDFPlumberDocument, PDFPlumberPage, Table, DocumentReleased } from "./api.js";
+export { PDFStructTree, PDFStructElement } from "./api/structure.js";
 export { PDFPlumberError, NotImplemented, CoreCrash } from "./errors.js";
 export { PSLiteral, PSKeyword, PDFObjRef, PDFStream, PageRef, PyFloat, PyTuple, pyFloat, pyTuple } from "./pdfobjects.js";
 export type {
@@ -23,6 +24,7 @@ export type {
   ExplicitTableLine,
   TableAxisGroup,
   TableFinderResult,
+  StructMatcher,
   SerializeOptions,
   Bbox,
   LAParams,
