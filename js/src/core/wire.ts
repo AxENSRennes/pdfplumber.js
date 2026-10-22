@@ -237,7 +237,8 @@ class Reader {
    * of the first `depth` levels (performance: the generic cells of a
    * table, points and paths, are small nested sequences, which the frames
    * of `value()` make slow); `value()` reads anything else, and what is
-   * deeper. */
+   * deeper. Only tables call it, which a typed block has none of: values
+   * are the plain ones. */
   item(depth: number): unknown {
     if (this.pos < this.u8.length) {
       const tag = this.u8[this.pos];
@@ -245,7 +246,7 @@ class Reader {
         // the scalars of points and paths, read as `value()` reads them
         case TAG.F64:
           this.pos++;
-          return this.typed ? new PyFloat(this.f64()) : this.f64();
+          return this.f64();
         case TAG.I32: {
           this.pos++;
           this.check(4);
@@ -264,7 +265,7 @@ class Reader {
           if (n > this.u8.length - this.pos) throw new WireError("list longer than its block");
           const arr = new Array<unknown>(n);
           for (let i = 0; i < n; i++) arr[i] = this.item(depth - 1);
-          return this.typed && tag === TAG.TUPLE ? new PyTuple(arr) : arr;
+          return arr;
         }
       }
     }
