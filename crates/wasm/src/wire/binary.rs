@@ -207,6 +207,14 @@ impl BinWriter {
         self.buf.extend_from_slice(&x.to_le_bytes());
     }
 
+    /// Appends `n` zero bytes and returns them, to be written in place
+    /// (performance: a column's numbers without a length check each).
+    fn extend_zeroed(&mut self, n: usize) -> &mut [u8] {
+        let start = self.buf.len();
+        self.buf.resize(start + n, 0);
+        &mut self.buf[start..]
+    }
+
     /// The index of the `str` of a string cell, `last` the previous cell's
     /// (`(address, index)`): the cells of a column often share one `str`
     /// (a font name, `object_type`), found again without validating and
@@ -243,23 +251,27 @@ impl BinWriter {
                     }
                 }
                 self.align(8);
-                for v in cells {
-                    self.f64(match v {
+                let out = self.extend_zeroed(8 * cells.len());
+                for (b, v) in out.chunks_exact_mut(8).zip(cells) {
+                    let x = match v {
                         Cell::Num(x) => *x,
                         // a None of an optional column
                         _ => 0.0,
-                    });
+                    };
+                    b.copy_from_slice(&x.to_le_bytes());
                 }
             }
             COL_STR | COL_OPT_STR => {
                 self.align(4);
+                let start = self.buf.len();
+                self.extend_zeroed(4 * cells.len());
                 let mut last = None;
-                for v in cells {
+                for (k, v) in cells.iter().enumerate() {
                     let i = match v {
                         Cell::Str(s) => self.intern_cell(s, &mut last),
                         _ => NO_STR,
                     };
-                    self.u32(i);
+                    self.buf[start + 4 * k..start + 4 * k + 4].copy_from_slice(&i.to_le_bytes());
                 }
             }
             COL_NUM_SEQ => {
@@ -271,10 +283,13 @@ impl BinWriter {
                     });
                 }
                 self.align(8);
+                let total = cells.iter().map(|v| if let Cell::Seq(items) = v { items.len() } else { 0 }).sum::<usize>();
+                let mut out = self.extend_zeroed(8 * total).chunks_exact_mut(8);
                 for v in cells {
                     if let Cell::Seq(items) = v {
                         for x in *items {
-                            self.f64(as_f64(x).expect("a number sequence"));
+                            let b = out.next().expect("room for every number");
+                            b.copy_from_slice(&as_f64(x).expect("a number sequence").to_le_bytes());
                         }
                     }
                 }

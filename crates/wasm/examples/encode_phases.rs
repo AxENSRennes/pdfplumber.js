@@ -3,8 +3,9 @@
 //! (`path<TAB>password` lines on stdin), `pdfplumber.open` with its first
 //! 20 pages, then for each page `page.objects` (not timed) and the `PJB1`
 //! block of what the `page_objects` operation returns (`objects_value`),
-//! written `PASSES` times. Writes, per file, `path pages encode bytes`
-//! (seconds, bytes of one pass).
+//! written `PASSES` times. Writes, per file, `path pages encode bytes
+//! digest` (seconds, bytes of one pass, FNV-1a of those bytes: two builds
+//! that encode alike give the same digests).
 //!
 //! ```sh
 //! cargo run --release -p pdfplumber-wasm --example encode_phases -- CMAP_DIR [PASSES] < list.tsv
@@ -42,11 +43,12 @@ fn run() {
         }
         o.pages = Some(PyValue::list((1..=20).map(PyValue::from)));
         let Ok(pdf) = PDF::open(Source::Path { data, path: PyStr::new("") }, o) else {
-            println!("{path}\t0\t0\t0");
+            println!("{path}\t0\t0\t0\t0");
             continue;
         };
         let pages = pdf.pages().unwrap_or_default();
         let (mut t, mut bytes) = (0f64, 0usize);
+        let mut digest: u64 = 0xcbf2_9ce4_8422_2325;
         for p in &pages {
             let Ok(objects) = p.objects() else { continue };
             let value = objects_value(&objects);
@@ -55,10 +57,14 @@ fn run() {
                 let block = encode(&value);
                 t += s.elapsed().as_secs_f64();
                 if pass == 0 {
-                    bytes += block.map_or(0, |b| b.len());
+                    let block = block.unwrap_or_default();
+                    bytes += block.len();
+                    for &b in &block {
+                        digest = (digest ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
+                    }
                 }
             }
         }
-        println!("{path}\t{}\t{t:.4}\t{bytes}", pages.len());
+        println!("{path}\t{}\t{t:.4}\t{bytes}\t{digest:016x}", pages.len());
     }
 }
