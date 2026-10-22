@@ -1790,6 +1790,7 @@ mod tests {
         py_symbols_reset([names[0]]);
         let root = py_symbols_snapshot();
         assert_eq!(root.len(), 1);
+        assert!(!root.is_empty());
         py_intern(names[1]).unwrap();
         py_intern(names[2]).unwrap();
         let left = py_symbols_snapshot();
@@ -1814,6 +1815,7 @@ mod tests {
         py_symbols_restore(left);
         assert_eq!(state(), [true, true, true, false]);
         py_symbols_reset([]);
+        assert!(py_symbols_snapshot().is_empty());
         py_symbols_restore(py_symbols_snapshot());
         assert_eq!(state(), [false; 4]);
         // a chain of 10^6 internings (addresses no symbol has) frees
