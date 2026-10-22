@@ -74,6 +74,11 @@ mod tests {
         let texts: Vec<(&str, &str)> = shown.entries.iter().map(|d| (d.source.as_str(), d.message.as_str())).collect();
         assert_eq!(texts, [("UserWarning", "x"), ("UserWarning", "y"), ("UserWarning", "x"), ("RuntimeWarning", "x")]);
         assert_eq!(snapshot().len(), 4);
+        let shown = snapshot();
+        // a new process has shown nothing
+        reset();
+        assert!(snapshot().is_empty());
+        restore(shown);
         let (_, collected) = diagnostics::collect(Level::Debug, 10, || warn("UserWarning", "a.py:1", "x".to_owned()));
         assert!(collected.entries.is_empty());
         restore(Vec::new());
