@@ -1085,7 +1085,7 @@ thread_local! {
     static DICT_ITEMS: RefCell<Vec<DictItem>> = const { RefCell::new(Vec::new()) };
     /// The last color space whose name [`colorspace_name`] made, and that
     /// name (the chars of a page share a few color spaces).
-    static LAST_COLORSPACE: RefCell<Option<(Rc<PDFColorSpace>, PyStr)>> = const { RefCell::new(None) };
+    static LAST_COLORSPACE: RefCell<Option<(std::rc::Weak<PDFColorSpace>, PyStr)>> = const { RefCell::new(None) };
     /// `object_type` of each class (`re.sub(lt_pat, "", name).lower()`),
     /// made once per thread: a `str` is immutable and its identity is not
     /// modeled.
@@ -1110,18 +1110,19 @@ fn path_command(cmd: char) -> PyStr {
 }
 
 /// `cs.name`, a `str`, made once for consecutive chars of one color space
-/// (performance; the cache holds the color space, whose address cannot
-/// name another one meanwhile).
+/// (performance). The cache holds a weak reference: it does not keep the
+/// color space (or what its `ncomponents` holds) alive, and its allocation
+/// stays reserved, so that the address never names another one.
 fn colorspace_name(cs: &Rc<PDFColorSpace>) -> PyStr {
     LAST_COLORSPACE.with(|last| {
         let mut last = last.borrow_mut();
         if let Some((c, name)) = &*last {
-            if Rc::ptr_eq(c, cs) {
+            if std::ptr::eq(c.as_ptr(), Rc::as_ptr(cs)) {
                 return name.clone();
             }
         }
         let name = PyStr::new(&cs.name);
-        *last = Some((cs.clone(), name.clone()));
+        *last = Some((Rc::downgrade(cs), name.clone()));
         name
     })
 }
