@@ -84,6 +84,11 @@ export class PDFStream {
     return this.#ref?.handle;
   }
 
+  /** @internal The values of a snapshot: `[rawdata, data]`. */
+  snapshot(): [Uint8Array | null, Uint8Array | null] {
+    return [this.#rawdata, this.#data];
+  }
+
   #read(op: string): Promise<Uint8Array | null> {
     const ref = this.#ref!;
     if (!ref.source) return Promise.reject(new Error("this stream was decoded outside its core: its data cannot be read"));

@@ -606,7 +606,7 @@ impl Core {
             "set_stream_refs" => {
                 // whether results hold their streams by reference
                 // (crate::streams); the typed format writes them by value
-                self.stream_refs = args.truthy();
+                self.stream_refs = arg(a()?, 0)?.truthy();
                 PyValue::None
             }
             "echo" => args.clone(),

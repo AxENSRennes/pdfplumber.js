@@ -13,7 +13,8 @@ time a site runs, ``pycompat::specialize::AttrSite``), a method with
 attribute by name with ``getattr``. ``OUT`` gets, for each case, its result
 (the value written by the boundary, handles as ``"#<k>"``: the ``k``-th
 object the session made) or its exception, and the depth of the top level
-(``depth``: frames, C units left), which ``ENTRY_DEPTH`` must be.
+(``depth``: frames, C units left), which ``ENTRY_DEPTH`` must be, and how
+many objects each case made (``made``).
 
 It imports nothing but the standard library and pdfplumber (whose import
 interns the symbols the port starts from), and decodes and encodes typed
@@ -86,6 +87,9 @@ def _str(s):
 #: The objects the session made (handles ``#k``), and those it freed.
 OBJS = []
 FREED = set()
+#: Whether results hold their streams by reference (``set_stream_refs``,
+#: ``crates/wasm/src/streams.rs``).
+STREAM_REFS = [False]
 
 
 def page_handle(page):
@@ -95,6 +99,15 @@ def page_handle(page):
         if o is page and k not in FREED:
             return f"#{k}"
     return handle(OBJS, page)
+
+
+def stream_handle(stream):
+    """The handle the boundary names a stream by (``set_stream_refs``), as
+    ``page_handle``."""
+    for k, o in enumerate(OBJS):
+        if o is stream and k not in FREED:
+            return f"#{k}"
+    return handle(OBJS, stream)
 
 
 def encode(v):
@@ -128,6 +141,11 @@ def encode(v):
     if t is PDFObjRef:
         return {"ref": v.objid if type(v.objid) is int else encode(v.objid)}
     if t is PDFStream:
+        if STREAM_REFS[0]:
+            # by reference: its handle, objid, genno and attrs, in this order
+            label = stream_handle(v)
+            return {"named": "StreamRef", "d": [["handle", label], ["objid", encode(v.objid)], ["genno", encode(v.genno)],
+                                                ["attrs", encode(v.attrs)]]}
         fields = [("objid", v.objid), ("genno", v.genno), ("attrs", v.attrs), ("rawdata", v.rawdata), ("data", v.data)]
         return {"stream": {k: encode(x) for k, x in fields}}
     if isinstance(v, BaseException):
@@ -509,6 +527,18 @@ if __name__ == "__main__":
             elif op == "struct_element_repr":
                 el = element_at(obj, args[0])
                 result = repr(el)
+            elif op == "set_stream_refs":
+                # the streams of the following results by reference
+                STREAM_REFS[0] = bool(args[0])
+                result = None
+            elif op == "stream_rawdata":
+                result = obj.rawdata
+            elif op == "stream_data":
+                result = obj.data
+            elif op == "stream_get_data":
+                result = obj.get_data(*args) if args else obj.get_data()
+            elif op == "stream_get_rawdata":
+                result = obj.get_rawdata(*args) if args else obj.get_rawdata()
             elif op == "free":
                 FREED.add(target)
                 result = None
@@ -546,4 +576,4 @@ if __name__ == "__main__":
         sys.setrecursionlimit(1000)
     sys.setrecursionlimit(20000)
     with open(sys.argv[2], "w") as f:
-        json.dump({"depth": top, "results": results, "causes": causes}, f)
+        json.dump({"depth": top, "results": results, "causes": causes, "made": [len(m) for m in made]}, f)

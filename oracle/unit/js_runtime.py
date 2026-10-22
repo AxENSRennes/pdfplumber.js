@@ -734,6 +734,88 @@ def _crop_box_of(data: Any) -> list[float]:
         return _crop_box(pdf.pages[0])
 
 
+#: Documents whose results hold streams (images: XObjects, inline,
+#: filtered, encrypted; annotations' appearance streams).
+STREAM_FILES: list[tuple[str, dict[str, Any]]] = [
+    ("corpus/micro/image-xobject.pdf", {}),
+    ("corpus/micro/images-advanced.pdf", {}),
+    ("corpus/micro/encrypted-password.pdf", {"password": "user"}),
+    ("upstream/pdfplumber-python/tests/pdfs/pdffill-demo.pdf", {}),
+    ("upstream/pdfplumber-python/tests/pdfs/image_structure.pdf", {}),
+]
+
+
+def _stream_labels(v: Any, out: list[int]) -> None:
+    """The objects (``#k``) of the streams a result holds by reference, in
+    order."""
+    stack = [v]
+    while stack:
+        x = stack.pop()
+        if isinstance(x, typed_json.Named):
+            if x.name == "StreamRef":
+                out.append(int(x.fields["handle"][1:]))
+            stack.extend(reversed(list(x.fields.values())))
+        elif isinstance(x, (list, tuple)):
+            stack.extend(reversed(x))
+        elif isinstance(x, dict):
+            stack.extend(reversed(list(x.values())))
+
+
+def streams_session() -> list[list[Any]]:
+    """Streams by reference (``set_stream_refs``, ``crates/wasm/src/streams.rs``):
+    the results that hold streams (each stream one handle: the first live
+    one), then the stream operations (``rawdata``, ``data``,
+    ``get_rawdata()``, ``get_data()``, which decodes it), some after
+    ``PDF.close()``, and the streams of a page interpreted again after
+    ``Page.close()``."""
+    s = Session()
+    s.add("set_stream_refs", None, True)
+    docs = []
+    out: dict[str, Any] = {}
+    for rel, options in STREAM_FILES:
+        n = _page_count(rel, options)
+        doc, pages = s.open(rel, options, pages=n)
+        docs.append((doc, pages))
+        for p in pages[:3]:
+            s.add("page_objects", p)
+            s.add("page_attr", p, "images")
+            s.add("page_to_dict", p, {"object_types": ["image"]})
+            s.add("page_attr", p, "annots")
+        s.add("doc_attr", doc, "images")
+        s.add("doc_annots", doc)
+        # the objects the results made (streams, the pages of annotations)
+        out = run_session(s.cases)
+        s.count = sum(out["made"])
+    labels: list[int] = []
+    for r, _ in out["results"]:
+        _stream_labels(r, labels)
+    streams = list(dict.fromkeys(labels))
+    assert streams, "no stream in the results"
+    first, second = streams[: len(streams) // 2], streams[len(streams) // 2:]
+    for k in first:
+        for op in ("stream_rawdata", "stream_data", "stream_get_rawdata", "stream_get_data", "stream_rawdata",
+                   "stream_data", "stream_get_data"):
+            s.add(op, k)
+        s.add("stream_get_data", k, 1)
+        s.add("stream_get_rawdata", k, 1)
+    # the documents closed: the streams keep their bytes
+    for doc, _ in docs:
+        s.add("doc_close", doc)
+    for k in second:
+        s.add("stream_data", k)
+        s.add("stream_get_data", k)
+        s.add("stream_rawdata", k)
+    # results after the decoding (the same handles), and after Page.close()
+    # (inline images are new streams, new handles), last: what they make is
+    # not counted
+    for doc, pages in docs:
+        for p in pages[:2]:
+            s.add("page_attr", p, "images")
+            s.add("page_close", p)
+            s.add("page_attr", p, "images")
+    return s.cases
+
+
 def cjk_session() -> list[list[Any]]:
     """CJK documents whose fonts use predefined CMaps: the boundary loads
     them lazily, voids the calls that missed one and replays the history of
@@ -940,7 +1022,8 @@ def run_session(cases: list[list[Any]]) -> dict[str, Any]:
         inp.write_text(json.dumps(typed_json.encode(runnable)))
         subprocess.run([sys.executable, "-I", js_pages_run.__file__, str(inp), str(out)], check=True, timeout=1200)
         raw = json.loads(out.read_text())
-    return {"depth": raw["depth"], "results": [[typed_json.decode(r), typed_json.decode(x)] for r, x in raw["results"]]}
+    return {"depth": raw["depth"], "results": [[typed_json.decode(r), typed_json.decode(x)] for r, x in raw["results"]],
+            "made": raw["made"]}
 
 
 def _recursion(results: dict[str, Any], last: bool = False) -> bool:
@@ -1091,7 +1174,8 @@ def page_cases() -> Iterator[tuple[list[Any], Any]]:
     """``pages.jsonl``: ``{"in": [name, cases], "out": {"depth": ...,
     "results": [[result, extra], ...]}}``, a session each (see
     ``js_pages_run.py``)."""
-    sessions = [("documents", documents_session()), ("cjk", cjk_session()), ("structure", structure_session())]
+    sessions = [("documents", documents_session()), ("cjk", cjk_session()), ("structure", structure_session()),
+                ("streams", streams_session())]
     sessions += list(depth_windows())
     for name, cases in sessions:
         out = run_session(cases)

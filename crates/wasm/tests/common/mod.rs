@@ -32,6 +32,9 @@ pub enum Js {
     Stream(Vec<Js>),
     /// A pdfplumber `Page`: its handle and `page_number` (`PageRef`).
     Page(Box<Js>, Box<Js>),
+    /// A `PDFStream` by reference: its handle, then `objid`, `genno`,
+    /// `attrs`.
+    StreamRef(Box<Js>, Vec<Js>),
 }
 
 impl PartialEq for Js {
@@ -50,6 +53,7 @@ impl PartialEq for Js {
             (Obj(a), Obj(b)) => a == b,
             (Lit(a), Lit(b)) | (Ref(a), Ref(b)) => a == b,
             (Page(a, n), Page(b, m)) => a == b && n == m,
+            (StreamRef(a, x), StreamRef(b, y)) => a == b && x == y,
             _ => false,
         }
     }
@@ -148,6 +152,16 @@ pub fn value_view(v: &Value) -> Js {
         ]),
         Value::Exception { class, message } => {
             obj(vec![("exception", s(class)), ("message", Js::Str(pystr_units(message)))])
+        }
+        // a stream by reference as `oracle/unit/js_pages_run.py` writes it
+        Value::Named { name, fields } if name == "StreamRef" => {
+            let field = |k: &str| {
+                fields.iter().find(|(f, _)| matches!(f, Value::Str(t) if t.as_str() == Some(k))).map(|(_, v)| v)
+            };
+            Js::StreamRef(
+                Box::new(value_view(field("handle").expect("a handle"))),
+                ["objid", "genno", "attrs"].iter().map(|k| value_view(field(k).expect("a field"))).collect(),
+            )
         }
         // a `Page` as `oracle/unit/js_pages_run.py` writes it
         Value::Named { name, fields } if name == "Page" => {
@@ -274,6 +288,10 @@ impl Dec<'_> {
             TAG_PAGE => {
                 let handle = self.value();
                 Js::Page(Box::new(handle), Box::new(self.value()))
+            }
+            TAG_STREAM_REF => {
+                let handle = self.value();
+                Js::StreamRef(Box::new(handle), (0..3).map(|_| self.value()).collect())
             }
             TAG_TABLE => self.table(),
             t => panic!("unknown tag {t}"),
@@ -553,6 +571,9 @@ pub fn fixup(v: Js) -> Js {
                 "ref" => Js::Ref(Box::new(fixup(sp[1].clone()))),
                 "stream" => Js::Stream(sp[1..].iter().cloned().map(fixup).collect()),
                 "page" => Js::Page(Box::new(fixup(sp[1].clone())), Box::new(fixup(sp[2].clone()))),
+                "streamref" => {
+                    Js::StreamRef(Box::new(fixup(sp[1].clone())), sp[2..].iter().cloned().map(fixup).collect())
+                }
                 t => panic!("unknown special {t}"),
             }
         }

@@ -294,7 +294,7 @@ export class WasmCore implements Core {
   configure(): void {
     if (this.configured) return;
     this.configured = true;
-    responseValue(this.callRaw("set_stream_refs", 0, true), "set_stream_refs");
+    responseValue(this.callRaw("set_stream_refs", 0, [true]), "set_stream_refs");
     const r = this.callRaw("cmap_configure", 0, this.cmaps ? [...this.cmaps.names] : []);
     responseValue(r, "cmap_configure");
   }

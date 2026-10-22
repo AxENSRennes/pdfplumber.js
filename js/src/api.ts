@@ -12,7 +12,7 @@
  * it).
  */
 
-import { NotImplemented } from "./errors.js";
+import { NotImplemented, fromPython, type PythonErrorInfo } from "./errors.js";
 import { WasmCore, type CallOptions, type Core, type CoreCall, type Diagnostic } from "./core/runtime.js";
 import { platform } from "./platform/platform.js";
 import { ORACLE, TYPED, type OracleOpen, type OracleSearch } from "./hooks.js";
@@ -200,6 +200,11 @@ interface Geometry {
   bbox: Bbox;
   width: number;
   height: number;
+  /** `page_info`: the exception `page.width` raised, instead of `width`
+   * (a crop box kept as given) */
+  width_error?: PythonErrorInfo;
+  /** `page_info`: the exception `page.height` raised */
+  height_error?: PythonErrorInfo;
 }
 
 /** The names `getattr(container, name)` reads (`doc_attr`, `page_attr`):
@@ -250,9 +255,10 @@ export class PDFPlumberDocument {
   }
 
   /** @internal The call options of a request on this document (its
-   * diagnostics, for page `page`). */
+   * diagnostics, for page `page`; the document as the owner of the streams
+   * of its results, which read their data in its jobs). */
   callOptions(page?: number): CallOptions {
-    return diagnosticsPolicy(this.options, page);
+    return { ...diagnosticsPolicy(this.options, page), owner: this };
   }
 
   /** @internal A page of this document from its geometry. */
@@ -504,7 +510,8 @@ export class PDFPlumberPage {
   readonly bbox: Bbox;
   readonly #width: number | undefined;
   readonly #height: number | undefined;
-  readonly #geometryError: unknown;
+  readonly #widthError: unknown;
+  readonly #heightError: unknown;
   /** @internal the typed geometry (hooks.ts) */
   readonly [TYPED]: unknown;
 
@@ -530,7 +537,10 @@ export class PDFPlumberPage {
     this.bbox = geometry.bbox;
     this.#width = geometry.width;
     this.#height = geometry.height;
-    this.#geometryError = geometryError;
+    // each its own exception (page_info reads them apart), or the error
+    // of the whole geometry
+    this.#widthError = geometry.width_error ? fromPython(geometry.width_error) : geometryError;
+    this.#heightError = geometry.height_error ? fromPython(geometry.height_error) : geometryError;
     this[TYPED] = typed;
   }
 
@@ -543,13 +553,13 @@ export class PDFPlumberPage {
 
   /** `page.width` (throws Python's error for a box it cannot subtract). */
   get width(): number {
-    if (this.#geometryError !== undefined) throw this.#geometryError;
+    if (this.#widthError !== undefined) throw this.#widthError;
     return this.#width!;
   }
 
   /** `page.height` */
   get height(): number {
-    if (this.#geometryError !== undefined) throw this.#geometryError;
+    if (this.#heightError !== undefined) throw this.#heightError;
     return this.#height!;
   }
 

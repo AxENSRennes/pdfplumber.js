@@ -70,7 +70,7 @@ export function project(root: unknown): unknown {
         todo: [["attrs", s.attrs]],
         i: 0,
         done: (o) =>
-          new PDFStream(s.objid, s.genno, (o as { attrs: Record<string, unknown> }).attrs, s.rawdata, s.data),
+          new PDFStream(s.objid, s.genno, (o as { attrs: Record<string, unknown> }).attrs, ...s.snapshot()),
       };
     }
     throw new TypeError(`not a typed value: ${Object.prototype.toString.call(v)}`);

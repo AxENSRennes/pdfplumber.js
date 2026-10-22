@@ -68,6 +68,13 @@ export function fromTyped(j, lib, input = false) {
     const fields = Object.fromEntries(j.d.map(([k, v]) => [go(k), go(v)]));
     return new lib.PageRef(fields.handle, fields.page_number);
   }
+  // a stream by reference, as oracle/unit/js_pages_run.py writes it: its
+  // handle label ("#k"), objid, genno, attrs (the tests write the
+  // PDFStream of a reference so: tests.mjs `relabelPages`)
+  if (keys.length === 2 && j.named === "StreamRef") {
+    const fields = Object.fromEntries(j.d.map(([k, v]) => [go(k), go(v)]));
+    return { $streamref: fields.handle, objid: fields.objid, genno: fields.genno, attrs: fields.attrs };
+  }
   throw new Error(`unknown typed JSON ${JSON.stringify(j).slice(0, 80)}`);
 }
 
@@ -94,6 +101,9 @@ export function difference(a, b, path = "$") {
       if (x.length !== y.length || x.some((v, i) => v !== y[i])) return `${p}: bytes differ`;
       continue;
     }
+    // a stream's data is not an own field (pdfobjects.ts PDFStream): the
+    // values of a snapshot are compared too
+    if (typeof x.snapshot === "function") stack.push([x.snapshot(), y.snapshot(), `${p}.snapshot`]);
     const kx = Object.keys(x);
     const ky = Object.keys(y);
     if (kx.length !== ky.length || kx.some((k, i) => k !== ky[i]))
