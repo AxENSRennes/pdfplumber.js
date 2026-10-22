@@ -91,6 +91,7 @@ use crate::cmaps;
 use crate::errors::write_error;
 use crate::handles::Handles;
 use crate::pages::{PageObj, TableObj};
+use crate::streams::StreamObj;
 use crate::structs::TreeObj;
 use crate::strings::PyStrRef;
 use crate::wire::binary::BinWriter;
@@ -186,6 +187,8 @@ pub enum Object {
     Table(TableObj),
     /// A structure tree (`PDFStructTree(pdf, page)`, `crate::structs`).
     StructTree(TreeObj),
+    /// A stream a result held by reference (`crate::streams`).
+    Stream(StreamObj),
     TextMap(TextMap),
     /// A value kept for the benchmark, or derived by a test operation.
     Value(PyValue),
@@ -199,6 +202,7 @@ impl Object {
             Object::Page(p) => Some(p.doc),
             Object::Table(t) => Some(t.doc),
             Object::StructTree(t) => Some(t.doc),
+            Object::Stream(t) => Some(t.doc),
             Object::TextMap(_) | Object::Value(_) => None,
         }
     }
@@ -211,6 +215,7 @@ impl Object {
             Object::Page(p) => p.page = None,
             Object::Table(t) => t.table = None,
             Object::StructTree(t) => t.tree = None,
+            Object::Stream(t) => t.stream = None,
             // computed from the arguments of the call that made it, with
             // no CMap: nothing to drop
             Object::TextMap(_) => {}
@@ -289,6 +294,12 @@ pub struct Core {
     /// The handles of the pages the results of the running call hold
     /// (`PageRef::id` -> handle: `crate::wire::with_page_handles`).
     pub(crate) page_values: FxHashMap<usize, u32>,
+    /// Whether results hold their streams by reference
+    /// (`set_stream_refs`, `crate::streams`).
+    pub(crate) stream_refs: bool,
+    /// The handles of the streams the results of the running call hold by
+    /// reference (`Rc::as_ptr` -> handle: `crate::wire::with_value_handles`).
+    pub(crate) stream_values: FxHashMap<usize, u32>,
 }
 
 impl Default for Core {
@@ -483,6 +494,8 @@ impl Core {
             next_oid: 1,
             ghosts: FxHashMap::default(),
             page_values: FxHashMap::default(),
+            stream_refs: false,
+            stream_values: FxHashMap::default(),
         }
     }
 
@@ -564,8 +577,18 @@ impl Core {
         }
     }
 
-    /// Runs one operation.
+    /// Runs one operation, then gives a handle to each page and stream
+    /// its result holds ([`Core::label_values`], `crate::streams`).
     pub fn op(&mut self, name: &str, h: u32, args: &PyValue, data: Option<Rc<[u8]>>) -> PyResult<Out> {
+        let out = self.run(name, h, args, data)?;
+        if let Out::Value(v) = &out {
+            self.label_values(v)?;
+        }
+        Ok(out)
+    }
+
+    /// The operation itself.
+    fn run(&mut self, name: &str, h: u32, args: &PyValue, data: Option<Rc<[u8]>>) -> PyResult<Out> {
         let a = || seq(args);
         Ok(Out::Value(match name {
             "info" => PyValue::Dict(Obj::from_pairs([
@@ -578,6 +601,12 @@ impl Core {
             ])),
             "set_format" => {
                 self.format = Format::parse(args)?;
+                PyValue::None
+            }
+            "set_stream_refs" => {
+                // whether results hold their streams by reference
+                // (crate::streams); the typed format writes them by value
+                self.stream_refs = args.truthy();
                 PyValue::None
             }
             "echo" => args.clone(),
@@ -870,6 +899,10 @@ impl Core {
                 Some(v) => v,
                 None => return Err(exc::ValueError(format!("unknown operation {name:?}"))),
             },
+            _ if name.starts_with("stream_") => match self.stream_op(name, h, args)? {
+                Some(out) => return Ok(out),
+                None => return Err(exc::ValueError(format!("unknown operation {name:?}"))),
+            },
             _ if name.starts_with("struct_") => match self.struct_op(name, h, args)? {
                 Some(out) => return Ok(out),
                 None => return Err(exc::ValueError(format!("unknown operation {name:?}"))),
@@ -951,8 +984,9 @@ impl Core {
             },
         };
         self.replay = Some(e.created.iter().copied().collect());
-        // (the pages of the results it labels are its own)
+        // (the pages and streams of the results it labels are its own)
         self.page_values.clear();
+        self.stream_values.clear();
         let outcome = with_depth(ENTRY_DEPTH, || self.op(&e.op, h, &e.args, e.data.clone())).map(|_| ());
         let left = self.replay.take().map_or(0, |q| q.len());
         self.op_doc = None;
@@ -1001,6 +1035,7 @@ impl Core {
         self.ghosts.clear();
         self.touched.clear();
         self.page_values.clear();
+        self.stream_values.clear();
         // every CMap the replayed calls asked for was handed over before
         // their first run
         let missed = cmaps::take_missing();
@@ -1028,6 +1063,7 @@ impl Core {
         self.created.clear();
         self.touched.clear();
         self.page_values.clear();
+        self.stream_values.clear();
         self.op_doc = None;
         self.calls += 1;
         let process = ProcessState::capture();
@@ -1063,8 +1099,11 @@ impl Core {
             return response(STATUS_NEED_CMAPS, FORMAT_BINARY, false, &encode_names(&missing), &none);
         }
         match result {
-            Ok(out) => match crate::wire::with_page_handles(std::mem::take(&mut self.page_values), || self.encode(out))
-            {
+            Ok(out) => match crate::wire::with_value_handles(
+                std::mem::take(&mut self.page_values),
+                std::mem::take(&mut self.stream_values),
+                || self.encode(out),
+            ) {
                 Ok((format, fixup, payload)) => response(STATUS_OK, format, fixup, &payload, &collected),
                 Err(e) => response(STATUS_ERROR, FORMAT_BINARY, false, &encode_error(&e), &collected),
             },

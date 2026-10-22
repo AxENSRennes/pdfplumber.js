@@ -814,62 +814,13 @@ impl Core {
             }
             _ => return Ok(None),
         };
-        self.label_pages(&value)?;
         Ok(Some(Out::Value(value)))
-    }
-
-    /// Gives a handle to each page the value holds (`annot["data"]["P"]`,
-    /// `getattr(pdf, "pages")`), which the result names it by: the first
-    /// live handle of that page, else a new one (made by the operation, so
-    /// that a replay makes it again), in the order the value is written.
-    fn label_pages(&mut self, value: &PyValue) -> PyResult<()> {
-        let mut stack = vec![value];
-        while let Some(v) = stack.pop() {
-            match v {
-                PyValue::List(items) | PyValue::Tuple(items) => stack.extend(items.iter().rev()),
-                PyValue::Dict(d) => stack.extend(d.items().iter().rev().map(|(_, v)| v)),
-                PyValue::Page(r) if !self.page_values.contains_key(&r.id()) => {
-                    let doc =
-                        self.op_doc.ok_or_else(|| PyErr::new(ExcKind::RuntimeError, "a page without a document"))?;
-                    let live = self
-                        .handles
-                        .iter()
-                        .filter_map(|(h, o)| match o {
-                            Object::Page(PageObj { doc: d, page: Some(p) }) if *d == doc && p.as_value().ptr_eq(r) => {
-                                Some((self.oids.get(&h).copied().unwrap_or(u64::MAX), h))
-                            }
-                            _ => None,
-                        })
-                        .min();
-                    let h = match live {
-                        Some((_, h)) => h,
-                        None => {
-                            let pdf = match self.handles.get(doc) {
-                                Some(Object::Document(d)) => d.state.pdf.clone(),
-                                _ => None,
-                            };
-                            let page = pdf
-                                .map(|pdf| pdf.cached_pages())
-                                .unwrap_or_default()
-                                .into_iter()
-                                .find(|p| p.as_value().ptr_eq(r))
-                                .ok_or_else(|| PyErr::new(ExcKind::RuntimeError, "a page value of no page"))?;
-                            u32::try_from(int_handle(&self.insert_page(doc, page)?)?)
-                                .map_err(|_| exc::ValueError("invalid handle"))?
-                        }
-                    };
-                    self.page_values.insert(r.id(), h);
-                }
-                _ => {}
-            }
-        }
-        Ok(())
     }
 }
 
 /// The handle an insertion returned (0 for an object a replay keeps out of
 /// the table).
-fn int_handle(v: &PyValue) -> PyResult<i64> {
+pub(crate) fn int_handle(v: &PyValue) -> PyResult<i64> {
     match v {
         PyValue::Int(i) => i.as_i64().ok_or_else(|| exc::ValueError("invalid handle")),
         _ => Ok(0),

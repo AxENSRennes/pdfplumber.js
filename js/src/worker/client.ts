@@ -9,7 +9,8 @@
 import { CoreCrash } from "../errors.js";
 import {
   Serial,
-  decodeResponse,
+  StreamRefs,
+  decodeWithRefs,
   encodeRequest,
   responseValue,
   type CallOptions,
@@ -34,6 +35,8 @@ export class WorkerCore implements Core {
   private dead: unknown = undefined;
   private readonly serial = new Serial();
   private typedValue: unknown = undefined;
+  /** The streams of the results, decoded here (`StreamRefs`). */
+  private readonly refs = new StreamRefs(this);
 
   private constructor(private readonly worker: Worker) {
     worker.onmessage = (e: MessageEvent<WorkerReply>) => {
@@ -100,7 +103,7 @@ export class WorkerCore implements Core {
       throw e;
     }
     if (!("response" in r)) throw new Error("unexpected worker reply");
-    const response = decodeResponse(r.response);
+    const response = decodeWithRefs(r.response, this.refs, options);
     this.typedValue = response.typed;
     if (response.diagnostics.length || response.dropped)
       options.onDiagnostics?.(response.diagnostics, response.dropped);
