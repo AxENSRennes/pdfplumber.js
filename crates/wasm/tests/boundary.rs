@@ -1400,3 +1400,42 @@ fn stream_handles_objects_as_arguments_and_their_errors() {
         assert_eq!(info[3].1, Js::Num(2.0), "the other document and its page: no stream handle");
     });
 }
+
+/// `page_info` gives the exception of `width` as a value, the dict of
+/// `errors.rs` (`error_value`): its class, MRO (`object` last) and message.
+#[test]
+fn page_info_gives_the_exception_of_width_as_a_value() {
+    big_stack(|| {
+        let mut core = Core::new();
+        let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(tiny_pdf(b"")))) else { panic!() };
+        let Js::Arr(pages) = ok(call(&mut core, "doc_pages", doc as u32, list(vec![]), None)) else { panic!() };
+        let Js::Obj(p) = &pages[0] else { panic!() };
+        let Js::Num(page) = p[0].1 else { panic!() };
+        let bbox = PyValue::list([PyValue::from(0_i64), PyValue::from(0_i64), PyValue::None, PyValue::from(10_i64)]);
+        let strict = PyValue::Dict(Obj::from_pairs([("strict", PyValue::Bool(false))]));
+        let Js::Obj(crop) = ok(call(&mut core, "page_crop", page as u32, list(vec![bbox, strict]), None)) else {
+            panic!()
+        };
+        let Js::Num(crop) = crop[0].1 else { panic!() };
+        let Js::Obj(info) = ok(call(&mut core, "page_info", crop as u32, list(vec![]), None)) else { panic!() };
+        let get =
+            |k: &str| info.iter().find(|(kk, _)| *kk == k.encode_utf16().collect::<Vec<_>>()).map(|(_, v)| v.clone());
+        assert_eq!(get("height"), Some(Js::Num(10.0)));
+        assert_eq!(get("width"), None);
+        let error = get("width_error").expect("the exception of width");
+        let r = Resp { status: 1, value: error.clone(), diagnostics: Js::Null };
+        assert_eq!(error_name(&r).0, "TypeError");
+        let Js::Obj(e) = error else { panic!() };
+        let mro = &e.iter().find(|(k, _)| *k == "mro".encode_utf16().collect::<Vec<_>>()).unwrap().1;
+        let Js::Arr(mro) = mro else { panic!() };
+        assert_eq!(mro.first(), Some(&s("builtins.TypeError")));
+        assert_eq!(mro.last(), Some(&s("builtins.object")));
+        let cause = &e.iter().find(|(k, _)| *k == "cause".encode_utf16().collect::<Vec<_>>()).unwrap().1;
+        assert_eq!(*cause, Js::Null);
+        // a NotPorted error is not a Python class: no `object` (the boundary's
+        // own mro, `errors.rs`)
+        let not_ported = pdfplumber_wasm::errors::error_value(&pycompat::PyErr::new(pycompat::ExcKind::NotPorted, "x"));
+        let PyValue::Dict(d) = &not_ported else { panic!() };
+        assert_eq!(d.get("mro").unwrap().repr(), "['pycompat.NotPorted']");
+    });
+}
