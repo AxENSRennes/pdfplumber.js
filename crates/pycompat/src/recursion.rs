@@ -66,6 +66,7 @@ thread_local! {
 }
 
 /// The current depth of this thread.
+#[inline]
 pub fn current() -> Depth {
     DEPTH.with(Cell::get)
 }
@@ -83,6 +84,7 @@ pub fn with_depth<R>(base: Depth, f: impl FnOnce() -> R) -> R {
     f()
 }
 
+#[cold]
 fn recursion_error(what: &str) -> PyErr {
     exc::RecursionError(format!("maximum recursion depth exceeded{what}"))
 }
@@ -97,6 +99,7 @@ pub struct Guard {
 }
 
 impl Drop for Guard {
+    #[inline]
     fn drop(&mut self) {
         DEPTH.with(|d| {
             let Depth { py, c } = d.get();
@@ -106,6 +109,7 @@ impl Drop for Guard {
     }
 }
 
+#[inline]
 fn take(py: u32, c: u32) -> Guard {
     DEPTH.with(|d| {
         let now = d.get();
@@ -116,6 +120,7 @@ fn take(py: u32, c: u32) -> Guard {
 
 /// A Python frame (`_Py_EnterRecursivePy`): raises `RecursionError` when the
 /// stack already has [`PY_RECURSION_LIMIT`] frames.
+#[inline]
 pub fn py_frame() -> PyResult<Guard> {
     if current().py >= PY_RECURSION_LIMIT {
         return Err(recursion_error(""));
@@ -126,6 +131,7 @@ pub fn py_frame() -> PyResult<Guard> {
 /// `n` nested Python frames entered at once, as a helper function and the
 /// ones it calls (`Logger.debug` -> `Logger.isEnabledFor`): raises if any
 /// of them would exceed the limit.
+#[inline]
 pub fn py_frames(n: u32) -> PyResult<Guard> {
     if current().py + n > PY_RECURSION_LIMIT {
         return Err(recursion_error(""));
@@ -136,6 +142,7 @@ pub fn py_frames(n: u32) -> PyResult<Guard> {
 /// `n` nested frames of calls that return at once (a leaf function and
 /// the ones it calls): only checked, as the call would raise
 /// `RecursionError` before doing anything.
+#[inline]
 pub fn leaf(n: u32) -> PyResult<()> {
     drop(py_frames(n)?);
     Ok(())
@@ -170,6 +177,7 @@ pub fn class_call_leaf() -> PyResult<()> {
 /// `Py_EnterRecursiveCall(what)`: one C unit, or `RecursionError` with
 /// `what` appended to the message (`" while getting the repr of an
 /// object"`) when all are in use.
+#[inline]
 pub fn c_call(what: &str) -> PyResult<Guard> {
     if current().c >= C_RECURSION_LIMIT {
         return Err(recursion_error(what));
@@ -181,6 +189,7 @@ pub fn c_call(what: &str) -> PyResult<Guard> {
 /// a Python function called by C code): two C units, before the function
 /// takes its frame ([`py_frame`]). Raises `RecursionError("maximum
 /// recursion depth exceeded")` when fewer than two units are left.
+#[inline]
 pub fn eval_entry() -> PyResult<Guard> {
     if current().c + 1 >= C_RECURSION_LIMIT {
         return Err(recursion_error(""));

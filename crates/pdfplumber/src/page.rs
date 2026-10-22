@@ -1353,6 +1353,11 @@ pub fn resolve_all_owned(mut x: PyValue) -> PyResult<PyValue> {
             return Ok(x);
         }
     }
+    if !matches!(x, PyValue::Pdf(_) | PyValue::Tuple(_) | PyValue::List(_) | PyValue::Dict(_)) {
+        // anything else is returned as it is, after the frame
+        let _frame = py_frame()?;
+        return Ok(x);
+    }
     resolve_all_value(&x)
 }
 
@@ -1740,11 +1745,18 @@ impl Page {
 
     // pdfplumber/page.py:349 Page.point2coord
     pub fn point2coord(&self, pt: &PyValue) -> PyResult<PyValue> {
+        self.point2coord_with(|i| index(pt, i))
+    }
+
+    /// [`Page::point2coord`] of the point whose `pt[i]` is `item(i)`
+    /// (performance: a point of `obj.original_path` is read without
+    /// making its tuple first).
+    fn point2coord_with(&self, item: impl Fn(usize) -> PyResult<PyValue>) -> PyResult<PyValue> {
         let _frame = py_frame()?;
         // See note below re. #1181 and mediabox-adjustment reversions
-        let x = index(&self.mediabox, 0)?.add(&index(pt, 0)?)?;
+        let x = index(&self.mediabox, 0)?.add(&item(0)?)?;
         let height = POINT2COORD_HEIGHT.get(self.class_name(), || self.height())?;
-        let y = index(&self.mediabox, 1)?.add(&height)?.sub(&index(pt, 1)?)?;
+        let y = index(&self.mediabox, 1)?.add(&height)?.sub(&item(1)?)?;
         Ok(PyValue::tuple([x, y]))
     }
 
@@ -1864,8 +1876,11 @@ impl Page {
                 for (cmd, pts) in original_path {
                     let mut items = Vec::with_capacity(pts.len() + 1);
                     items.push(PyValue::Str(path_command(*cmd)));
-                    let pts: Vec<PyValue> = pts.iter().map(point_value).collect();
-                    items.extend(self.points2coords(&pts)?);
+                    // *map(self.point2coord, pts), the map consumed from C
+                    for p in pts {
+                        let _entry = eval_entry()?;
+                        items.push(self.point2coord_with(|i| Ok(numv(&p[i])))?);
+                    }
                     path.push(PyValue::Tuple(items.into()));
                 }
                 attr.push_new(k.path.clone(), PyValue::List(path.into()));

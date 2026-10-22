@@ -174,6 +174,29 @@ impl<K: Key + ?Sized> Key for &K {
     }
 }
 
+thread_local! {
+    /// The `str`s [`static_str`] made, by the address and length of their
+    /// text.
+    static STATIC_STRS: RefCell<Vec<((usize, usize), PyStr)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The `str` of a literal of the port (`"h"`, `"rect_edge"`...), made once
+/// per thread and literal (performance: values that every edge or word
+/// holds or compares with; a `str` is immutable and its identity is not
+/// modeled). The literals are few: the table stays small.
+pub fn static_str(s: &'static str) -> PyValue {
+    let key = (s.as_ptr() as usize, s.len());
+    STATIC_STRS.with(|strs| {
+        let mut strs = strs.borrow_mut();
+        if let Some((_, v)) = strs.iter().find(|(k, _)| *k == key) {
+            return PyValue::Str(v.clone());
+        }
+        let v = PyStr::new(s);
+        strs.push((key, v.clone()));
+        PyValue::Str(v)
+    })
+}
+
 /// A shared copy of a dict key (keys repeat across thousands of objects).
 pub fn intern(key: &str) -> PyStr {
     if let Some(h) = Hot::of(key) {
@@ -853,6 +876,9 @@ impl PyValue {
                 CmpOp::Ge => a >= b,
             });
         }
+        if let Some((a, b)) = self.int_float_operands(other) {
+            return Ok(a.py_cmp(&b).is_some_and(|o| op.holds(o)));
+        }
         if let Some((a, b)) = self.as_python2(other) {
             return a.compare(&b, op);
         }
@@ -1028,11 +1054,27 @@ impl PyValue {
         })
     }
 
+    /// The numbers of two `int` or `float` operands (performance: what
+    /// [`PyValue::num_operands`] gives them, without its conversions of PDF
+    /// objects and its checks for sequences, which they are not).
+    #[inline]
+    fn int_float_operands(&self, other: &PyValue) -> Option<(Num, Num)> {
+        let num = |v: &PyValue| match v {
+            PyValue::Float(PyFloat(x)) => Some(Num::Float(*x)),
+            PyValue::Int(i) => Some(Num::Int(i.clone())),
+            _ => None,
+        };
+        Some((num(self)?, num(other)?))
+    }
+
     /// `a + b`
     #[inline]
     pub fn add(&self, other: &PyValue) -> PyResult<PyValue> {
         if let (PyValue::Float(PyFloat(a)), PyValue::Float(PyFloat(b))) = (self, other) {
             return Ok(PyValue::float(a + b));
+        }
+        if let Some((a, b)) = self.int_float_operands(other) {
+            return Ok(a.add(&b)?.into());
         }
         if let Some(r) = self.seq_concat(other) {
             return r;
@@ -1047,6 +1089,9 @@ impl PyValue {
         if let (PyValue::Float(PyFloat(a)), PyValue::Float(PyFloat(b))) = (self, other) {
             return Ok(PyValue::float(a - b));
         }
+        if let Some((a, b)) = self.int_float_operands(other) {
+            return Ok(a.sub(&b)?.into());
+        }
         let (a, b) = self.num_operands("-", other)?;
         Ok(a.sub(&b)?.into())
     }
@@ -1055,6 +1100,9 @@ impl PyValue {
     pub fn mul(&self, other: &PyValue) -> PyResult<PyValue> {
         if let (PyValue::Float(PyFloat(a)), PyValue::Float(PyFloat(b))) = (self, other) {
             return Ok(PyValue::float(a * b));
+        }
+        if let Some((a, b)) = self.int_float_operands(other) {
+            return Ok(a.mul(&b)?.into());
         }
         if let Some(r) = self.seq_repeat(other) {
             return r;

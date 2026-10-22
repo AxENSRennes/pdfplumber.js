@@ -239,15 +239,33 @@ class Reader {
    * of `value()` make slow); `value()` reads anything else, and what is
    * deeper. */
   item(depth: number): unknown {
-    if (depth > 0 && this.pos < this.u8.length) {
+    if (this.pos < this.u8.length) {
       const tag = this.u8[this.pos];
-      if (tag === TAG.LIST || tag === TAG.TUPLE) {
-        this.pos++;
-        const n = this.varint();
-        if (n > this.u8.length - this.pos) throw new WireError("list longer than its block");
-        const arr = new Array<unknown>(n);
-        for (let i = 0; i < n; i++) arr[i] = this.item(depth - 1);
-        return this.typed && tag === TAG.TUPLE ? new PyTuple(arr) : arr;
+      switch (tag) {
+        // the scalars of points and paths, read as `value()` reads them
+        case TAG.F64:
+          this.pos++;
+          return this.typed ? new PyFloat(this.f64()) : this.f64();
+        case TAG.I32: {
+          this.pos++;
+          this.check(4);
+          const v = this.view.getInt32(this.pos, true);
+          this.pos += 4;
+          return v;
+        }
+        case TAG.STR:
+          this.pos++;
+          return this.str();
+        case TAG.LIST:
+        case TAG.TUPLE: {
+          if (depth <= 0) break;
+          this.pos++;
+          const n = this.varint();
+          if (n > this.u8.length - this.pos) throw new WireError("list longer than its block");
+          const arr = new Array<unknown>(n);
+          for (let i = 0; i < n; i++) arr[i] = this.item(depth - 1);
+          return this.typed && tag === TAG.TUPLE ? new PyTuple(arr) : arr;
+        }
       }
     }
     return this.value();
