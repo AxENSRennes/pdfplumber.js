@@ -160,12 +160,13 @@ impl Core {
     /// by stream (the first one: the handles in order).
     fn live_streams(&self) -> FxHashMap<usize, u32> {
         let mut out = FxHashMap::default();
-        let Some(doc) = self.op_doc else { return out };
+        // (an operation that reached no document: a stream it was given)
+        let doc = self.op_doc;
         let mut handles: Vec<(u64, u32, usize)> = self
             .handles
             .iter()
             .filter_map(|(h, o)| match o {
-                Object::Stream(StreamObj { doc: d, stream: Some(s) }) if *d == doc => {
+                Object::Stream(StreamObj { doc: d, stream: Some(s) }) if doc.is_none_or(|doc| *d == doc) => {
                     Some((self.oids.get(&h).copied().unwrap_or(u64::MAX), h, Rc::as_ptr(s) as usize))
                 }
                 _ => None,
