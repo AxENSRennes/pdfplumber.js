@@ -841,6 +841,10 @@ export function encodeValue(value: unknown): Uint8Array {
       }
       case "string":
         return str(v);
+      case "function":
+      case "symbol":
+        // no Python value (docs/public-api.md, "Arguments")
+        throw new TypeError(`a ${typeof v} cannot cross to Python`);
     }
     if (v instanceof PyFloat) {
       w.u8(TAG.F64);
