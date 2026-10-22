@@ -1455,7 +1455,7 @@ impl Page {
                         // filters' registry, pycompat::warnings)
                         pycompat::warnings::warn(
                             "UserWarning",
-                            "pdfplumber/page.py:305",
+                            "pdfplumber.page:305",
                             format!("Could not decode {k} of annotation. {k} will be missing."),
                         );
                     }

@@ -18,7 +18,7 @@ use std::cell::RefCell;
 use crate::diagnostics::{self, Level};
 
 /// A registry key: the category, the line that issued the warning
-/// (`"pdfplumber/page.py:305"`) and the text.
+/// (module and line: `"pdfplumber.page:305"`) and the text.
 pub type Key = (&'static str, &'static str, String);
 
 thread_local! {
