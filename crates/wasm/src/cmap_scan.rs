@@ -178,3 +178,24 @@ fn system_info(font: &PDFDict, found: &mut BTreeSet<String>) {
         found.insert(format!("to-unicode-{registry}-{ordering}"));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pdfplumber::obj::Obj;
+
+    /// The scan opens an encrypted document with the password of `open()`
+    /// (`password-example.pdf`, upstream's: password `test`).
+    #[test]
+    fn the_scan_reads_an_encrypted_document_with_its_password() {
+        let root = std::path::PathBuf::from(std::env::var("PDFPLUMBER_ROOT").expect("PDFPLUMBER_ROOT"));
+        let data: Rc<[u8]> =
+            Rc::from(std::fs::read(root.join("upstream/pdfplumber-python/tests/pdfs/password-example.pdf")).unwrap());
+        let options = |p: PyValue| PyValue::Dict(Obj::from_pairs([("password", p)]));
+        let mut found = BTreeSet::new();
+        assert!(scan_objects(&data, &options(PyValue::str("test")), &mut found).is_ok());
+        assert!(scan_objects(&data, &options(PyValue::str("wrong")), &mut found).is_err());
+        assert!(scan_objects(&data, &options(PyValue::from(1_i64)), &mut found).is_err(), "not a str: \"\"");
+        assert!(scan_objects(&data, &PyValue::None, &mut found).is_err());
+    }
+}
