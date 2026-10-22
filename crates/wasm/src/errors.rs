@@ -3,8 +3,11 @@
 //! JavaScript gets the class (`type(e).__name__`, `__module__`,
 //! `__qualname__`), its method resolution order (`type(e).__mro__`, each
 //! class as `module.qualname`, so that `error.isInstance("PDFException")`
-//! answers like `isinstance(e, PDFException)`) and `str(e)`, and builds an
-//! `Error` whose `name` is the Python class name (`js/src/errors.ts`).
+//! answers like `isinstance(e, PDFException)`), `str(e)` and the exception
+//! it wraps (`cause`: pdfplumber's `PdfminerException(e)` and
+//! `MalformedPDFException(e)` keep `e`, `PyErr::cause`; `None` otherwise),
+//! and builds an `Error` whose `name` is the Python class name and whose
+//! `cause` is the wrapped exception's (`js/src/errors.ts`).
 
 use pycompat::{ExcKind, PyErr};
 
@@ -42,10 +45,11 @@ pub fn mro(kind: ExcKind) -> Vec<ExcKind> {
     }
 }
 
-/// Writes the error as the dict JavaScript reads.
+/// Writes the error as the dict JavaScript reads (its cause as the same
+/// dict, nested: a chain is as long as pdfplumber's wrapping, two at most).
 pub fn write_error<W: Writer>(w: &mut W, err: &PyErr) {
     let kind = err.kind;
-    w.dict(5);
+    w.dict(6);
     w.str("name");
     w.str(kind.name());
     w.str("module");
@@ -67,6 +71,11 @@ pub fn write_error<W: Writer>(w: &mut W, err: &PyErr) {
     // when the text holds a lone surrogate)
     w.str("message");
     crate::wire::write_str(w, &err.py_message()).expect("a PyStr is valid generalized UTF-8");
+    w.str("cause");
+    match err.cause() {
+        Some(cause) => write_error(w, cause),
+        None => w.none(),
+    }
 }
 
 #[cfg(test)]

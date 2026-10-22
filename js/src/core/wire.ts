@@ -5,6 +5,7 @@
  */
 
 import { PageRef, PDFObjRef, PDFStream, PSKeyword, PSLiteral, PyFloat, PyTuple } from "../pdfobjects.js";
+import { PyDict } from "./typed.js";
 
 export const TAG = {
   NONE: 0x00,
@@ -89,6 +90,9 @@ interface Frame {
   n: number;
   i: number;
   key?: string;
+  /** Typed mode: the frame is a tuple (`LIST`), the items of a dict. */
+  tuple?: boolean;
+  entries?: [string, unknown][];
 }
 
 class Reader {
@@ -99,6 +103,10 @@ class Reader {
   constructor(
     readonly u8: Uint8Array,
     readonly base: number,
+    /** Typed values (core/typed.ts): `float` → `PyFloat`, `tuple` →
+     * `PyTuple`, `dict` → `PyDict`; a block of the typed format has no
+     * table. */
+    readonly typed = false,
   ) {
     this.view = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
     this.pos = base;
@@ -250,8 +258,10 @@ class Reader {
           this.pos += 4;
           break;
         case TAG.INT_F64:
-        case TAG.F64:
           value = this.f64();
+          break;
+        case TAG.F64:
+          value = this.typed ? new PyFloat(this.f64()) : this.f64();
           break;
         case TAG.BIGINT: {
           const n = this.varint();
@@ -275,21 +285,23 @@ class Reader {
         case TAG.TUPLE: {
           const n = this.varint();
           if (n > u8.length - this.pos) throw new WireError("list longer than its block");
+          const tuple = this.typed && tag === TAG.TUPLE;
           if (n === 0) {
-            value = [];
+            value = tuple ? new PyTuple([]) : [];
             break;
           }
-          stack.push({ k: K.LIST, arr: new Array(n), n, i: 0 });
+          stack.push({ k: K.LIST, arr: new Array(n), n, i: 0, tuple });
           continue;
         }
         case TAG.DICT: {
           const n = this.varint();
           if (n > u8.length - this.pos) throw new WireError("dict longer than its block");
           if (n === 0) {
-            value = {};
+            value = this.typed ? new PyDict([]) : {};
             break;
           }
-          stack.push({ k: K.DICT, obj: {}, n, i: 0 });
+          if (this.typed) stack.push({ k: K.DICT, entries: [], n, i: 0 });
+          else stack.push({ k: K.DICT, obj: {}, n, i: 0 });
           continue;
         }
         case TAG.LITERAL:
@@ -308,6 +320,7 @@ class Reader {
           stack.push({ k: K.PAGE, arr: new Array(2), n: 2, i: 0 });
           continue;
         case TAG.TABLE:
+          if (this.typed) throw new WireError("a table in a typed block");
           value = this.table();
           break;
         default:
@@ -320,17 +333,18 @@ class Reader {
         if (top.k === K.LIST) {
           top.arr![top.i++] = value;
           if (top.i < top.n) break;
-          value = top.arr;
+          value = top.tuple ? new PyTuple(top.arr!) : top.arr;
         } else if (top.k === K.DICT) {
           if (top.key === undefined) {
             if (typeof value !== "string") throw new WireError("a dict key is not a str");
             top.key = value;
             break;
           }
-          setOwn(top.obj!, top.key, value);
+          if (top.entries) top.entries.push([top.key, value]);
+          else setOwn(top.obj!, top.key, value);
           top.key = undefined;
           if (++top.i < top.n) break;
-          value = top.obj;
+          value = top.entries ? new PyDict(top.entries) : top.obj;
         } else if (top.k === K.LITERAL) {
           value = new PSLiteral(value as string | Uint8Array);
         } else if (top.k === K.REF) {
@@ -537,8 +551,8 @@ export function setCodegen(allowed: boolean | undefined): void {
 }
 
 /** Decodes the PJB1 block at `offset` of `u8`. */
-export function decodeBinary(u8: Uint8Array, offset = 0): unknown {
-  const r = new Reader(u8, offset);
+export function decodeBinary(u8: Uint8Array, offset = 0, typed = false): unknown {
+  const r = new Reader(u8, offset, typed);
   r.check(HEADER_LEN);
   if (r.view.getUint32(offset, true) !== MAGIC) throw new WireError("bad PJB1 magic");
   const tableOffset = r.view.getUint32(offset + 8, true);
@@ -851,7 +865,11 @@ export function encodeValue(value: unknown): Uint8Array {
       return;
     }
     const entries: [unknown, unknown][] =
-      v instanceof Map ? [...v.entries()] : Object.entries(v as object).filter(([, x]) => x !== undefined);
+      v instanceof PyDict
+        ? v.entries
+        : v instanceof Map
+          ? [...v.entries()]
+          : Object.entries(v as object).filter(([, x]) => x !== undefined);
     w.u8(TAG.DICT);
     w.varint(entries.length);
     enter(v as object);

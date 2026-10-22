@@ -2,10 +2,20 @@
  * Worker mode, main-thread side: the requests are encoded here, run (with
  * their CMap reloads) in the worker, and the final response bytes come back
  * to be decoded here, so that results keep their classes (`PSLiteral`...).
+ * Requests and jobs are queued here as in the page (`Core`, FIFO); the
+ * worker runs the messages it gets one after the other too.
  */
 
 import { CoreCrash } from "../errors.js";
-import { decodeResponse, encodeRequest, responseValue, type CallOptions, type Core } from "../core/runtime.js";
+import {
+  Serial,
+  decodeResponse,
+  encodeRequest,
+  responseValue,
+  type CallOptions,
+  type Core,
+  type CoreCall,
+} from "../core/runtime.js";
 
 /** Messages from the worker. */
 export type WorkerReply =
@@ -22,6 +32,8 @@ export class WorkerCore implements Core {
   private next = 1;
   private readonly waiting = new Map<number, (r: WorkerReply) => void>();
   private dead: unknown = undefined;
+  private readonly serial = new Serial();
+  private typedValue: unknown = undefined;
 
   private constructor(private readonly worker: Worker) {
     worker.onmessage = (e: MessageEvent<WorkerReply>) => {
@@ -47,6 +59,10 @@ export class WorkerCore implements Core {
     return this.dead !== undefined;
   }
 
+  get lastTyped(): unknown {
+    return this.typedValue;
+  }
+
   /** Stops the worker. */
   terminate(): void {
     this.worker.terminate();
@@ -63,7 +79,15 @@ export class WorkerCore implements Core {
     });
   }
 
-  async call(op: string, handle: number, args: unknown, options: CallOptions = {}): Promise<unknown> {
+  call(op: string, handle: number, args: unknown, options: CallOptions = {}): Promise<unknown> {
+    return this.serial.run(() => this.callNow(op, handle, args, options));
+  }
+
+  exclusive<T>(f: (call: CoreCall) => Promise<T>): Promise<T> {
+    return this.serial.run(() => f((op, handle, args, options) => this.callNow(op, handle, args, options)));
+  }
+
+  private async callNow(op: string, handle: number, args: unknown, options: CallOptions = {}): Promise<unknown> {
     const request = encodeRequest(op, handle, args, options.minLevel ?? 0);
     const r = await this.post({ type: "call", id: 0, request, data: options.data }, [request.buffer]);
     if ("error" in r) {
@@ -77,6 +101,7 @@ export class WorkerCore implements Core {
     }
     if (!("response" in r)) throw new Error("unexpected worker reply");
     const response = decodeResponse(r.response);
+    this.typedValue = response.typed;
     if (response.diagnostics.length || response.dropped)
       options.onDiagnostics?.(response.diagnostics, response.dropped);
     return responseValue(response, op);

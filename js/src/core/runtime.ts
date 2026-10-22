@@ -5,6 +5,7 @@
  */
 
 import { CoreCrash, fromPython, type PythonErrorInfo } from "../errors.js";
+import { project } from "./typed.js";
 import { decodeBinary, decodeJson, encodeValue } from "./wire.js";
 
 /** Where the predefined CMaps come from. */
@@ -35,18 +36,56 @@ export interface CallOptions {
   onDiagnostics?: (entries: Diagnostic[], dropped: number) => void;
 }
 
-/** What `open()` and the pages call: a core in this thread or in a worker. */
+/** One request, inside a job (`Core.exclusive`). */
+export type CoreCall = (op: string, handle: number, args: unknown, options?: CallOptions) => Promise<unknown>;
+
+/** What `open()` and the pages call: a core in this thread or in a worker.
+ *
+ * Requests run one at a time, in the order they are made (FIFO), each to
+ * its end (the re-runs after a void call included) before the next starts:
+ * the core is one Python process running one statement after the other
+ * (docs/architecture.md, "Vague 5", "Contrat de l'API"). A job
+ * (`exclusive`) holds the core for several requests and the JavaScript
+ * between them (`search` runs its `RegExp` between two requests,
+ * `filter` its function): no other request runs in between. */
 export interface Core {
+  /** One request, queued after every request and job made before it. */
   call(op: string, handle: number, args: unknown, options?: CallOptions): Promise<unknown>;
+  /** A job: `f` runs when every earlier request and job has ended, with
+   * a `call` that runs at once (`f` must not use `Core.call`, which would
+   * wait for `f` itself). */
+  exclusive<T>(f: (call: CoreCall) => Promise<T>): Promise<T>;
   readonly crashed: boolean;
+  /** The typed value (core/typed.ts) of the last result, when the core
+   * writes the typed format (`set_format("typed")`: the harness of
+   * js/trace/); `undefined` otherwise. */
+  readonly lastTyped: unknown;
   /** Stops a core that holds more than references (a worker); a core in
    * the page is freed with its last reference. */
   terminate?(): void;
 }
 
+/** The FIFO of a core's requests and jobs (see `Core`). */
+export class Serial {
+  private tail: Promise<unknown> = Promise.resolve();
+
+  run<T>(f: () => Promise<T>): Promise<T> {
+    const result = this.tail.then(f, f);
+    // the next job waits for this one, whatever its outcome
+    this.tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+}
+
 export const STATUS_OK = 0;
 export const STATUS_ERROR = 1;
 export const STATUS_NEED_CMAPS = 2;
+
+/** The payload format of a typed result (crates/wasm/src/ops.rs). */
+export const FORMAT_TYPED = 2;
 
 interface Exports {
   memory: WebAssembly.Memory;
@@ -62,7 +101,11 @@ interface Exports {
 /** A decoded response. */
 export interface Response {
   status: number;
+  /** The value (public: for a typed payload, the projection of `typed`). */
   value: unknown;
+  /** The typed value of a payload in the typed format (`undefined`
+   * otherwise). */
+  typed?: unknown;
   diagnostics: Diagnostic[];
   dropped: number;
   /** Bytes of the payload (the benchmark). */
@@ -91,7 +134,8 @@ export function decodeResponse(u8: Uint8Array): Response {
   const diagOff = dv.getUint32(16, true);
   const diagLen = dv.getUint32(20, true);
   const payload = u8.subarray(payloadOff, payloadOff + payloadLen);
-  const value = format === 1 ? decodeJson(payload, fixup) : decodeBinary(payload);
+  const typed = format === FORMAT_TYPED ? decodeBinary(payload, 0, true) : undefined;
+  const value = format === FORMAT_TYPED ? project(typed) : format === 1 ? decodeJson(payload, fixup) : decodeBinary(payload);
   const diag = decodeBinary(u8.subarray(diagOff, diagOff + diagLen)) as {
     entries: [string, number, string][];
     dropped: number;
@@ -99,6 +143,7 @@ export function decodeResponse(u8: Uint8Array): Response {
   return {
     status,
     value,
+    typed,
     diagnostics: diag.entries.map(([source, level, message]) => ({ source, level, message })),
     dropped: diag.dropped,
     payloadBytes: payloadLen,
@@ -246,10 +291,27 @@ export class WasmCore implements Core {
     }
   }
 
-  /** A request, re-run after loading the CMaps it misses; resolves to its
-   * value or rejects with the Python exception it raised. Only the final
-   * run's diagnostics are forwarded. */
-  async call(op: string, handle: number, args: unknown, options: CallOptions = {}): Promise<unknown> {
+  private readonly serial = new Serial();
+  private typedValue: unknown = undefined;
+
+  /** The typed value of the last final response (`Core.lastTyped`). */
+  get lastTyped(): unknown {
+    return this.typedValue;
+  }
+
+  /** A request, queued (`Core.call`), re-run after loading the CMaps it
+   * misses; resolves to its value or rejects with the Python exception it
+   * raised. Only the final run's diagnostics are forwarded. */
+  call(op: string, handle: number, args: unknown, options: CallOptions = {}): Promise<unknown> {
+    return this.serial.run(() => this.callNow(op, handle, args, options));
+  }
+
+  /** `Core.exclusive` */
+  exclusive<T>(f: (call: CoreCall) => Promise<T>): Promise<T> {
+    return this.serial.run(() => f((op, handle, args, options) => this.callNow(op, handle, args, options)));
+  }
+
+  private async callNow(op: string, handle: number, args: unknown, options: CallOptions = {}): Promise<unknown> {
     this.configure();
     for (;;) {
       const r = this.callRaw(op, handle, args, options);
@@ -257,6 +319,7 @@ export class WasmCore implements Core {
         await this.loadMissing(r.value as string[]);
         continue;
       }
+      this.typedValue = r.typed;
       if (r.diagnostics.length || r.dropped) options.onDiagnostics?.(r.diagnostics, r.dropped);
       return responseValue(r, op);
     }

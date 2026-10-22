@@ -207,15 +207,26 @@ export interface TableAxisGroup {
   cells: (Bbox | null)[];
 }
 
-/** A table found on a page (`pdfplumber.table.Table`). */
-export interface Table {
-  bbox: Bbox;
+/** `to_json` / `to_csv` keyword arguments (pdfplumber/container.py);
+ * `to_dict` takes `object_types` only. `stream`: `null` (the default)
+ * returns the text; any other stream is not modelled (`NotImplemented`). */
+export interface SerializeOptions {
+  stream?: null;
+  object_types?: string[] | null;
+  include_attrs?: string[] | null;
+  exclude_attrs?: string[] | null;
+  precision?: number | null;
+  indent?: number | null;
+}
+
+/** `pdfplumber.table.TableFinder` (`page.debugTablefinder()`): the edges
+ * the finder kept, the intersections (`[point, {v, h}]` items of Python's
+ * dict, keyed by `(x, top)`), the cells and the tables. */
+export interface TableFinderResult<T> {
+  edges: PDFObject[];
+  intersections: [[number, number], { v: PDFObject[]; h: PDFObject[] }][];
   cells: Bbox[];
-  rows: TableAxisGroup[];
-  columns: TableAxisGroup[];
-  /** `Table.extract()`: the text of each cell, `null` where there is no
-   * cell. */
-  extract(options?: ExtractTextOptions): Promise<(string | null)[][]>;
+  tables: T[];
 }
 
 /** Runtime settings (`configure`). */

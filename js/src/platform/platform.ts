@@ -15,6 +15,11 @@ export interface Platform {
   cmapSource(option: RuntimeOptions["cmaps"]): CMapSource | null;
   /** The bytes of an input. */
   readInput(input: PDFInput): Promise<Uint8Array>;
+  /** The filesystem path of an input that names a file (Node: a path or
+   * a `file:` URL), which `open()` opens as `pdfplumber.open(path)` does
+   * (the `PDF` owns the file: `close()` closes it); `undefined` for any
+   * other input, opened as `pdfplumber.open(io.BytesIO(bytes))`. */
+  filePath?(input: PDFInput): string | undefined;
   /** A core in a worker, when the platform has workers. */
   workerCore?(module: WebAssembly.Module, options: RuntimeOptions): Promise<Core>;
 }

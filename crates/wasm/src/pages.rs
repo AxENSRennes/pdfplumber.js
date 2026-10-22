@@ -90,7 +90,26 @@ const OPEN: Signature<'static> = Signature {
 /// where it uses them). `gs_path` and `repair_setting` only matter with
 /// `repair=True`, which is out of scope (`NotPorted`).
 pub fn open(data: &Rc<[u8]>, options: &PyValue) -> PyResult<PDF> {
+    open_source(Source::Stream { data: data.clone(), kind: FileKind::BytesIO }, options, None)
+}
+
+/// `pdfplumber.open(path, **(options or {}))`: the file at `path` (whose
+/// bytes JavaScript read, Node's `open(path)`), opened by the `PDF`
+/// itself (`Source::Path`: `close()` closes it, and a later read raises
+/// `ValueError("seek of closed file")`, as in Python).
+pub fn open_file(data: &Rc<[u8]>, path: &PyValue, options: &PyValue) -> PyResult<PDF> {
+    let PyValue::Str(path) = path else {
+        return Err(exc::TypeError(format!("expected a str path, got {}", path.type_name())));
+    };
+    open_source(Source::Path { data: data.clone(), path: path.clone() }, options, None)
+}
+
+/// [`open`] and [`open_file`]; `ids`: the `IdSource` of each page's analysis
+/// (the oracle hooks of the harness, `crate::oracle`), `CreationOrder`
+/// otherwise.
+pub fn open_source(source: Source, options: &PyValue, ids: Option<pdfplumber::pdf::IdsFactory>) -> PyResult<PDF> {
     let mut o = OpenOptions::new();
+    o.ids = ids;
     let options = if options.truthy() { star_kwargs(options, "pdfplumber.pdf.PDF.open")? } else { Obj::new() };
     bind(OPEN, &options)?;
     for (k, v) in options.items() {
@@ -106,7 +125,7 @@ pub fn open(data: &Rc<[u8]>, options: &PyValue) -> PyResult<PDF> {
             _ => {}
         }
     }
-    PDF::open(Source::Stream { data: data.clone(), kind: FileKind::BytesIO }, o)
+    PDF::open(source, o)
 }
 
 /// The mapping of `f(**v)`: a dict, else CPython's `TypeError` (`func`:

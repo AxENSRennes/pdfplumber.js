@@ -16,6 +16,9 @@ export interface PythonErrorInfo {
   qualname: string;
   mro: string[];
   message: string;
+  /** The exception it wraps (`PdfminerException(e)`,
+   * `MalformedPDFException(e)`), absent or `null` otherwise. */
+  cause?: PythonErrorInfo | null;
 }
 
 /** A Python exception raised by the core. */
@@ -28,7 +31,8 @@ export class PDFPlumberError extends Error {
   readonly pythonMro: readonly string[];
 
   constructor(info: PythonErrorInfo) {
-    super(info.message);
+    // `cause`: the Python exception it wraps, as an error of its own
+    super(info.message, info.cause ? { cause: fromPython(info.cause) } : undefined);
     this.name = info.name;
     this.pythonModule = info.module;
     this.pythonQualname = info.qualname;

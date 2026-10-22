@@ -13,6 +13,11 @@ import type { Bbox, PDFObject, SearchResult, TableAxisGroup, Word } from "./type
 export { WasmCore, decodeResponse, encodeRequest, getCore, dropCore, diagnosticsPolicy };
 export { decodeBinary, decodeJson, encodeValue, encodeGeneralizedUtf8, decodeGeneralizedUtf8 } from "./core/wire.js";
 export { compilePattern, matchSpans, escapeRegExp } from "./search.js";
+// the hooks of the harness that writes stage traces through the public API
+// (hooks.ts, js/trace/) and typed values (core/typed.ts)
+export { ORACLE, TYPED } from "./hooks.js";
+export type { OracleOpen, OracleSearch } from "./hooks.js";
+export { PyDict, project } from "./core/typed.js";
 export { CMAP_NAMES } from "./generated/cmap-names.js";
 
 export interface InternalTable {

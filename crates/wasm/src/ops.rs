@@ -102,6 +102,11 @@ pub const STATUS_NEED_CMAPS: u8 = 2;
 
 pub const FORMAT_BINARY: u8 = 0;
 pub const FORMAT_JSON: u8 = 1;
+/// `PJB1` without tables (every value tagged: `int` and `float`, `list` and
+/// `tuple` stay apart), which JavaScript decodes into typed values: the
+/// format of the harness that writes stage traces through the public API
+/// (`js/trace/`, `docs/architecture.md`, "Vague 5"), never the API's.
+pub const FORMAT_TYPED: u8 = 2;
 
 /// The most diagnostics one call keeps (the others are counted).
 pub const MAX_DIAGNOSTICS: usize = 1000;
@@ -111,6 +116,8 @@ pub const MAX_DIAGNOSTICS: usize = 1000;
 pub enum Format {
     Binary,
     Json,
+    /// [`FORMAT_TYPED`]
+    Typed,
 }
 
 impl Format {
@@ -118,6 +125,7 @@ impl Format {
         match v.as_str() {
             Some("binary") => Ok(Format::Binary),
             Some("json") => Ok(Format::Json),
+            Some("typed") => Ok(Format::Typed),
             _ => Err(exc::ValueError(format!("unknown result format {}", v.repr()))),
         }
     }
@@ -154,6 +162,10 @@ pub struct DocState {
     /// CMaps by name, as fonts cache them (an empty `CMap()` for a name
     /// `CMapDB` did not find): the test operation `doc_cmap_decode`.
     pub cmaps: FxHashMap<String, Rc<dyn CMapBase>>,
+    /// What the oracle hooks of the harness keep with the document (the
+    /// `id()` rankings of `oracle_doc_open`, `crate::oracle`); `None`
+    /// without the `oracle-hooks` feature.
+    pub hooks: Option<Rc<dyn std::any::Any>>,
 }
 
 impl Document {
@@ -649,6 +661,21 @@ impl Core {
                 self.reach(handle(&h)?)?;
                 h
             }
+            "doc_open_file" => {
+                // [path, options]: pdfplumber.open(path, **options), the file
+                // whose bytes JavaScript read (Node's open(path))
+                let data = data.ok_or_else(|| exc::TypeError("doc_open_file needs the PDF bytes"))?;
+                let a = a()?;
+                let pdf = {
+                    let _call = pycompat::recursion::eval_entry()?;
+                    crate::pages::open_file(&data, arg(a, 0)?, a.get(1).unwrap_or(&PyValue::None))?
+                };
+                let state = DocState { pdf: Some(Rc::new(pdf)), ..DocState::default() };
+                let options = a.get(1).cloned().unwrap_or(PyValue::None);
+                let h = self.insert(Object::Document(Document { data, options, state }))?;
+                self.reach(handle(&h)?)?;
+                h
+            }
             "doc_cmap_decode" => {
                 // [document, name, code]: `cmap.decode(code)` with the CMap
                 // the document caches for `name`, as a font of the document
@@ -827,6 +854,11 @@ impl Core {
                 };
                 return Ok(Out::Encoded(format, v));
             }
+            #[cfg(feature = "oracle-hooks")]
+            _ if name.starts_with("oracle_") => match self.oracle_op(name, h, args, data)? {
+                Some(v) => v,
+                None => return Err(exc::ValueError(format!("unknown operation {name:?}"))),
+            },
             _ => match self.page_op(name, h, args)? {
                 Some(out) => return Ok(out),
                 None => return Err(exc::ValueError(format!("unknown operation {name:?}"))),
@@ -1036,6 +1068,11 @@ impl Core {
                         f(&mut w)?;
                         Ok((FORMAT_BINARY, false, w.finish()))
                     }
+                    Format::Typed => {
+                        let mut w = BinWriter::without_tables();
+                        f(&mut w)?;
+                        Ok((FORMAT_TYPED, false, w.finish()))
+                    }
                     Format::Json => {
                         let mut w = JsonWriter::new();
                         f(&mut w)?;
@@ -1047,6 +1084,11 @@ impl Core {
         };
         match format {
             Format::Binary => Ok((FORMAT_BINARY, false, binary::encode(&value)?)),
+            Format::Typed => {
+                let mut w = BinWriter::without_tables();
+                crate::wire::write_value(&mut w, &value)?;
+                Ok((FORMAT_TYPED, false, w.finish()))
+            }
             Format::Json => {
                 let (text, fixup) = crate::wire::json::encode(&value)?;
                 Ok((FORMAT_JSON, fixup, text))

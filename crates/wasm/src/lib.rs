@@ -21,6 +21,8 @@ pub mod cmaps;
 pub mod errors;
 pub mod handles;
 pub mod ops;
+#[cfg(feature = "oracle-hooks")]
+pub mod oracle;
 pub mod pages;
 pub mod strings;
 pub mod wire;
