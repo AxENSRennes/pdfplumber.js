@@ -175,8 +175,57 @@ enum Work<'a> {
     Exit(usize),
 }
 
+/// Whether `v` is a scalar (`None`, `bool`, `int`, `float`, `str`,
+/// `bytes`), or a `list` or `tuple` of such values nested at most `depth`
+/// levels.
+fn is_shallow(v: &PyValue, depth: u32) -> bool {
+    match v {
+        PyValue::None
+        | PyValue::Bool(_)
+        | PyValue::Int(_)
+        | PyValue::Float(_)
+        | PyValue::Str(_)
+        | PyValue::Bytes(_) => true,
+        PyValue::List(items) | PyValue::Tuple(items) => depth > 0 && items.iter().all(|x| is_shallow(x, depth - 1)),
+        _ => false,
+    }
+}
+
+/// Writes a value [`is_shallow`] accepts, as the loop of [`write_value`]
+/// writes it (a list of scalars or sequences is never a table: its items
+/// are not dicts).
+fn write_shallow<W: Writer + ?Sized>(w: &mut W, v: &PyValue) -> PyResult<()> {
+    match v {
+        PyValue::None => w.none(),
+        PyValue::Bool(b) => w.bool(*b),
+        PyValue::Int(i) => w.int(i),
+        PyValue::Float(x) => w.float(x.get()),
+        PyValue::Str(s) => write_str(w, s)?,
+        PyValue::Bytes(b) => w.bytes(b),
+        PyValue::List(items) | PyValue::Tuple(items) => {
+            if matches!(v, PyValue::List(_)) {
+                w.list(items.len());
+            } else {
+                w.tuple(items.len());
+            }
+            for x in items.iter() {
+                write_shallow(w, x)?;
+            }
+        }
+        _ => unreachable!("is_shallow accepts no other value"),
+    }
+    Ok(())
+}
+
 /// Writes a pdfplumber value (see the module documentation).
 pub fn write_value<W: Writer + ?Sized>(w: &mut W, v: &PyValue) -> PyResult<()> {
+    // Performance: a scalar or a few levels of sequences of scalars (a
+    // point, a curve's `pts` and `path`: the cells of a table's generic
+    // columns) are written without the work list, recursing at most
+    // `3` levels.
+    if is_shallow(v, 3) {
+        return write_shallow(w, v);
+    }
     let mut stack: Vec<Work<'_>> = vec![Work::Py(v)];
     // the PDF containers being written (Python lists and dicts are mutable)
     let mut active: FxHashSet<usize> = FxHashSet::default();

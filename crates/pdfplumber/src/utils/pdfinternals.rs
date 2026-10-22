@@ -181,6 +181,9 @@ pub fn decode_text_value(s: &PyValue) -> PyResult<PyStr> {
             return Ok(PyStr::from(text));
         }
     }
+    if let PyValue::Str(text) = s {
+        return decode_text_pystr(s, text);
+    }
     // `ords = (... for c in s)`: iter(s) runs where the generator
     // expression is created
     let items = match py_iter(s) {
@@ -231,6 +234,49 @@ pub fn decode_text_value(s: &PyValue) -> PyResult<PyStr> {
             out.push(u32::from(PDF_DOC_ENCODING[index as usize]));
         }
         (!index_error).then(|| out.finish())
+    };
+    match joined {
+        Some(text) => Ok(text),
+        None => decode_text_str(s),
+    }
+}
+
+/// [`decode_text_value`] of a `str` (`s` is `PyValue::Str(text)`), after
+/// its frame: the same checks and result as the general path, whose items
+/// would be the one-character strings of `text` (`ord(c)` is a code point,
+/// never negative, so an `IndexError` is a code point past 255), without
+/// making them. Performance (`docs/architecture.md`, "Vague 5", PERF): a
+/// `str` that PDFDocEncoding maps to itself (the color space names
+/// `process_object` decodes for every char) is returned as it is (a
+/// `str` is immutable and its identity is not modeled).
+fn decode_text_pystr(s: &PyValue, text: &PyStr) -> PyResult<PyStr> {
+    let joined = {
+        // the two generators created, then resumed by "".join from C (see
+        // the general path)
+        let _entry = eval_entry()?;
+        pycompat::recursion::leaf(2)?;
+        let mut same = true;
+        let mut index_error = false;
+        for c in text.code_points() {
+            match PDF_DOC_ENCODING.get(c as usize) {
+                Some(&d) => same &= u32::from(d) == c,
+                None => {
+                    index_error = true;
+                    break;
+                }
+            }
+        }
+        if index_error {
+            None
+        } else if same {
+            Some(text.clone())
+        } else {
+            let mut out = PyStrBuilder::with_capacity(text.as_bytes().len());
+            for c in text.code_points() {
+                out.push(u32::from(PDF_DOC_ENCODING[c as usize]));
+            }
+            Some(out.finish())
+        }
     };
     match joined {
         Some(text) => Ok(text),

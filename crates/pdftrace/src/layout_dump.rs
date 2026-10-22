@@ -135,7 +135,7 @@ pub fn graphic_state(gs: &PDFGraphicState) -> Value {
 /// `LTChar.fontname`.
 pub fn fontname(f: &FontName) -> Value {
     match f {
-        FontName::Str(s) => Value::str(s.clone()),
+        FontName::Str(s) => Value::str(s.to_string_lossy()),
         FontName::Obj(o) => obj(o),
     }
 }
@@ -144,7 +144,7 @@ pub fn fontname(f: &FontName) -> Value {
 pub fn attr(a: &MarkedContentAttr) -> Value {
     match a {
         MarkedContentAttr::Mcid(o) => obj(o),
-        MarkedContentAttr::Tag(t) => t.as_ref().map_or(Value::None, |t| Value::str(t.clone())),
+        MarkedContentAttr::Tag(t) => t.as_ref().map_or(Value::None, |t| Value::str(t.to_string_lossy())),
     }
 }
 

@@ -207,37 +207,56 @@ impl BinWriter {
         self.buf.extend_from_slice(&x.to_le_bytes());
     }
 
-    fn column(&mut self, rows: &[&Obj], c: usize) -> PyResult<()> {
-        let cells: Vec<&PyValue> = rows.iter().map(|d| &d.items()[c].1).collect();
-        let kind = column_kind(&cells);
+    /// The index of the `str` of a string cell, `last` the previous cell's
+    /// (`(address, index)`): the cells of a column often share one `str`
+    /// (a font name, `object_type`), found again without validating and
+    /// hashing its text. The rows are borrowed for the whole table: an
+    /// address cannot name another `str` meanwhile.
+    fn intern_cell(&mut self, s: &PyStr, last: &mut Option<(*const u8, u32)>) -> u32 {
+        let addr = s.as_bytes().as_ptr();
+        if let Some((a, i)) = *last {
+            if a == addr {
+                return i;
+            }
+        }
+        let i = self.intern_str(s);
+        *last = Some((addr, i));
+        i
+    }
+
+    /// Writes column `c` of `rows`, whose cells `cells` holds (see
+    /// [`Cell`]) and whose kinds of cell are `seen` ([`column_kind`]).
+    fn column(&mut self, rows: &[&Obj], c: usize, cells: &[Cell<'_>], seen: u8) -> PyResult<()> {
+        let kind = kind_of(seen);
         self.buf.push(kind);
         match kind {
             COL_NONE => {}
             COL_BOOL => {
-                for v in &cells {
-                    self.buf.push(u8::from(matches!(v, PyValue::Bool(true))));
+                for v in cells {
+                    self.buf.push(u8::from(matches!(v, Cell::Bool(true))));
                 }
             }
-            COL_F64 => {
-                self.align(8);
-                for v in &cells {
-                    self.f64(as_f64(v).expect("a number column"));
-                }
-            }
-            COL_OPT_F64 => {
-                for v in &cells {
-                    self.buf.push(u8::from(!v.is_none()));
+            COL_F64 | COL_OPT_F64 => {
+                if kind == COL_OPT_F64 {
+                    for v in cells {
+                        self.buf.push(u8::from(!matches!(v, Cell::None)));
+                    }
                 }
                 self.align(8);
-                for v in &cells {
-                    self.f64(as_f64(v).unwrap_or(0.0));
+                for v in cells {
+                    self.f64(match v {
+                        Cell::Num(x) => *x,
+                        // a None of an optional column
+                        _ => 0.0,
+                    });
                 }
             }
             COL_STR | COL_OPT_STR => {
                 self.align(4);
-                for v in &cells {
+                let mut last = None;
+                for v in cells {
                     let i = match v {
-                        PyValue::Str(s) => self.intern_str(s),
+                        Cell::Str(s) => self.intern_cell(s, &mut last),
                         _ => NO_STR,
                     };
                     self.u32(i);
@@ -245,23 +264,82 @@ impl BinWriter {
             }
             COL_NUM_SEQ => {
                 // the lengths, then every number, aligned (a Float64Array view)
-                for v in &cells {
-                    self.buf.push(v.as_seq().map_or(NO_SEQ, |items| items.len() as u8));
+                for v in cells {
+                    self.buf.push(match v {
+                        Cell::Seq(items) => items.len() as u8,
+                        _ => NO_SEQ,
+                    });
                 }
                 self.align(8);
-                for v in &cells {
-                    for x in v.as_seq().unwrap_or(&[]) {
-                        self.f64(as_f64(x).expect("a number sequence"));
+                for v in cells {
+                    if let Cell::Seq(items) = v {
+                        for x in *items {
+                            self.f64(as_f64(x).expect("a number sequence"));
+                        }
                     }
                 }
             }
             _ => {
-                for v in &cells {
-                    write_value(self, v)?;
+                for d in rows {
+                    write_value(self, &d.items()[c].1)?;
                 }
             }
         }
         Ok(())
+    }
+}
+
+/// A cell of a table as the column writer needs it, read from the rows
+/// once, row by row (performance: the columns are then written from these
+/// contiguous cells, not by visiting every row again for each column).
+#[derive(Clone, Copy)]
+enum Cell<'a> {
+    None,
+    Bool(bool),
+    Num(f64),
+    Str(&'a PyStr),
+    Seq(&'a [PyValue]),
+    /// Written as a value ([`COL_GENERIC`]).
+    Other,
+}
+
+const SEEN_NONE: u8 = 1;
+const SEEN_BOOL: u8 = 2;
+const SEEN_NUM: u8 = 4;
+const SEEN_STR: u8 = 8;
+const SEEN_SEQ: u8 = 16;
+const SEEN_OTHER: u8 = 32;
+
+/// The kind of a cell (a `SEEN_*` flag) and its [`Cell`].
+#[inline]
+fn classify(v: &PyValue) -> (u8, Cell<'_>) {
+    match v {
+        PyValue::None => (SEEN_NONE, Cell::None),
+        PyValue::Bool(b) => (SEEN_BOOL, Cell::Bool(*b)),
+        PyValue::Str(s) => (SEEN_STR, Cell::Str(s)),
+        v => match as_f64(v) {
+            Some(x) => (SEEN_NUM, Cell::Num(x)),
+            None => match v {
+                PyValue::Tuple(items) | PyValue::List(items) if is_num_seq(v) => (SEEN_SEQ, Cell::Seq(items)),
+                _ => (SEEN_OTHER, Cell::Other),
+            },
+        },
+    }
+}
+
+/// The narrowest column type that holds every cell of kinds `seen`
+/// exactly.
+fn kind_of(seen: u8) -> u8 {
+    // (`|` and `^` are the same in these patterns: the flags are distinct bits)
+    match seen {
+        SEEN_NONE => COL_NONE,
+        SEEN_BOOL => COL_BOOL,
+        SEEN_NUM => COL_F64,
+        x if x == SEEN_NUM | SEEN_NONE => COL_OPT_F64,
+        SEEN_STR => COL_STR,
+        x if x == SEEN_STR | SEEN_NONE => COL_OPT_STR,
+        x if x & !SEEN_NONE == SEEN_SEQ => COL_NUM_SEQ,
+        _ => COL_GENERIC,
     }
 }
 
@@ -284,33 +362,7 @@ fn is_num_seq(v: &PyValue) -> bool {
 /// The narrowest column type that holds every cell exactly, in one pass:
 /// the kinds of cell seen, then the column type that allows them all.
 pub fn column_kind(cells: &[&PyValue]) -> u8 {
-    const NONE: u8 = 1;
-    const BOOL: u8 = 2;
-    const NUM: u8 = 4;
-    const STR: u8 = 8;
-    const SEQ: u8 = 16;
-    let mut seen = 0u8;
-    for v in cells {
-        seen |= match v {
-            PyValue::None => NONE,
-            PyValue::Bool(_) => BOOL,
-            v if as_f64(v).is_some() => NUM,
-            PyValue::Str(_) => STR,
-            v if is_num_seq(v) => SEQ,
-            _ => return COL_GENERIC,
-        };
-    }
-    // (`|` and `^` are the same in these patterns: the flags are distinct bits)
-    match seen {
-        NONE => COL_NONE,
-        BOOL => COL_BOOL,
-        NUM => COL_F64,
-        x if x == NUM | NONE => COL_OPT_F64,
-        STR => COL_STR,
-        x if x == STR | NONE => COL_OPT_STR,
-        x if x & !NONE == SEQ => COL_NUM_SEQ,
-        _ => COL_GENERIC,
-    }
+    kind_of(cells.iter().fold(0, |seen, v| seen | classify(v).0))
 }
 
 impl Writer for BinWriter {
@@ -423,8 +475,19 @@ impl Writer for BinWriter {
                 let i = self.intern_str(k);
                 self.varint(i as usize);
             }
-            for c in 0..first.len() {
-                self.column(&group, c)?;
+            // the cells, column by column, read row by row
+            let (n, width) = (group.len(), first.len());
+            let mut cells = vec![Cell::None; n * width];
+            let mut seen = vec![0u8; width];
+            for (r, d) in group.iter().enumerate() {
+                for (c, (_, v)) in d.items().iter().enumerate() {
+                    let (flag, cell) = classify(v);
+                    seen[c] |= flag;
+                    cells[c * n + r] = cell;
+                }
+            }
+            for c in 0..width {
+                self.column(&group, c, &cells[c * n..(c + 1) * n], seen[c])?;
             }
         }
         if shapes.first.len() > 1 {

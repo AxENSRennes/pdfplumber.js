@@ -402,13 +402,29 @@ impl Default for PyValue {
 // flat one (docs/architecture.md, "Profondeur de récursion"); PDF objects
 // have their own (pdfminer::pdftypes).
 impl Drop for PyValue {
+    #[inline]
     fn drop(&mut self) {
-        let mut stack = Vec::new();
-        take_items(self, &mut stack);
-        while let Some(mut v) = stack.pop() {
-            take_items(&mut v, &mut stack);
-            // `v` holds nothing of its own now: dropping it is shallow
+        // performance: a scalar, or a container another value still holds,
+        // frees nothing that could nest
+        let unique = match self {
+            PyValue::Tuple(items) | PyValue::List(items) => Rc::strong_count(items) == 1,
+            PyValue::Dict(d) => Rc::strong_count(&d.0) == 1,
+            _ => false,
+        };
+        if unique {
+            drop_nested(self);
         }
+    }
+}
+
+/// The drop of a container `v` is the last owner of (see above).
+#[inline(never)]
+fn drop_nested(v: &mut PyValue) {
+    let mut stack = Vec::new();
+    take_items(v, &mut stack);
+    while let Some(mut v) = stack.pop() {
+        take_items(&mut v, &mut stack);
+        // `v` holds nothing of its own now: dropping it is shallow
     }
 }
 
@@ -1302,6 +1318,12 @@ pub fn py_getitem_index(v: &PyValue, i: usize) -> PyResult<PyValue> {
     if let PyValue::Pdf(PDFObject::Stream(stream)) = v {
         return Err(stream_missing_attribute(stream, &i.to_string()));
     }
+    // a PDF list (a page's `mediabox`, read for every object and point):
+    // its item, without converting the whole list first (same result as
+    // below)
+    if let PyValue::Pdf(PDFObject::List(l)) = v {
+        return l.get(i).map(PyValue::from_pdf).ok_or_else(|| exc::IndexError("list index out of range"));
+    }
     if let Some(p) = v.as_python() {
         return py_getitem_index(&p, i);
     }
@@ -1507,6 +1529,24 @@ impl Obj {
     /// `{}`
     pub fn new() -> Obj {
         Obj(Rc::new(ObjData { items: Vec::new(), hot: [0; HOT_N] }))
+    }
+
+    /// `{}` with room for `n` items (a capacity: the same empty dict).
+    pub fn with_capacity(n: usize) -> Obj {
+        Obj(Rc::new(ObjData { items: Vec::with_capacity(n), hot: [0; HOT_N] }))
+    }
+
+    /// `obj[key] = value` for a `key` the dict does not hold (checked in
+    /// debug builds): the item is appended without looking the key up
+    /// (performance: `Page.process_object` builds its dicts so).
+    pub fn push_new(&mut self, key: PyStr, value: PyValue) {
+        debug_assert!(!self.contains(&key), "push_new of a key the dict holds");
+        let hot = Hot::of_bytes(key.as_bytes());
+        let data = Rc::make_mut(&mut self.0);
+        data.items.push((key, value));
+        if let Some(h) = hot {
+            data.hot[h as usize] = data.items.len() as u32;
+        }
     }
 
     /// `dict(pairs)`: a repeated key keeps its first position and its last
