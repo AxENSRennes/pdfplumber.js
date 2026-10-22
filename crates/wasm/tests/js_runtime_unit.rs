@@ -99,6 +99,8 @@ fn exception_classes_have_python_s_mro() {
             ("qualname", s(&kind.qualname())),
             ("mro", Js::Arr(expected.iter().map(|n| s(n)).collect())),
             ("message", s("m")),
+            // (`raise` makes an exception that wraps none)
+            ("cause", Js::Null),
         ]);
         assert_eq!(Js::Obj(items.clone()), expected_js, "{q}");
     }
@@ -918,4 +920,29 @@ fn a_void_call_rebuilds_its_document_by_replaying_its_history() {
     assert!(matches!(lazy[9], Js::Num(n) if n >= 12.0), "{:?}", lazy[9]);
     assert_eq!(lazy[10], Js::Num(2.0));
     assert_eq!(lazy[11], exc("ValueError", "invalid handle"));
+}
+
+/// An exception of pdfplumber that wraps another one carries it as
+/// `cause` (`PdfminerException(e)`: what `error.cause` is in JavaScript),
+/// in both `open` operations; `cause` of the wrapped one is `None`.
+#[test]
+fn a_wrapping_exception_carries_its_cause() {
+    let field = |v: &Js, k: &str| -> Js {
+        let Js::Obj(items) = v else { panic!("an error dict: {v:?}") };
+        items.iter().find(|(kk, _)| *kk == k.encode_utf16().collect::<Vec<_>>()).expect(k).1.clone()
+    };
+    let mut core = Core::new();
+    let bad = b"%PDF-1.4\nnot a pdf".to_vec();
+    for (op, args) in [
+        ("doc_open", PyValue::Dict(pdfplumber::obj::Obj::new())),
+        ("doc_open_file", PyValue::list([PyValue::str("bad.pdf"), PyValue::None])),
+    ] {
+        let r = call(&mut core, op, 0, args, Some(bad.clone()));
+        assert_eq!(r.status, 1, "{op}");
+        assert_eq!(field(&r.value, "name"), s("PdfminerException"), "{op}");
+        let cause = field(&r.value, "cause");
+        assert_eq!(field(&cause, "name"), s("PDFSyntaxError"), "{op}");
+        assert_eq!(field(&cause, "message"), field(&r.value, "message"), "{op}: str(e) is the cause's");
+        assert_eq!(field(&cause, "cause"), Js::Null, "{op}");
+    }
 }
