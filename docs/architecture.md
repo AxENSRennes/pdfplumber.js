@@ -1975,7 +1975,13 @@ tests/performances/Wasm), chaque constat revérifié :
   (12) diffèrent par l'ordre de coordonnées NaN dans `cluster_objects`
   (écart documenté, `public-api.md`) ; étapes `psparser` à
   `interp_text` identiques sur `quick` (150) ; rejeux de la frontière
-  (`js_runtime_unit`, 2 formats) identiques.
+  (`js_runtime_unit`, 2 formats) identiques. Revue de l'intégration
+  (`8fdcf2d`) : les quatre étapes `plumber_*` repassées sur `quick` (150),
+  `adv-plumber` (199) et `adv-structure` (441) avec un cache d'oracle neuf
+  (traces Python régénérées), toutes identiques, et `plumber_doc` sur `all`
+  (1 853/1 853), qui confirme la résolution de la fusion PAGE × DOC
+  (`f3fb6e3` : les cadres de `PDF.annots`/`hyperlinks` et d'`apply_crop_fn`
+  de PAGE, `_crop_fn` et la fonction d'`utils` comptés une fois chacun).
 - **Mutations** (lignes changées depuis `wave4/join`, `--in-diff`) :
   frontière 62 mutants, 54 détectés, 6 non viables, 2 manqués (le bras
   `strict_metadata` d'`open`, tué depuis par une session ; la garde de
