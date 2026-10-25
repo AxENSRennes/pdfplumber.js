@@ -2343,9 +2343,146 @@ jamais). Taille : `node scripts/size.mjs`.
   98 s pour `plumber_objects` sur `quick`, 75 s `plumber_text`, 63 s
   `plumber_tables`, 213 s `plumber_doc` (format typé, sans tables,
   canon en JavaScript).
-- Mesures dans les navigateurs : à faire par PERF (`js/bench/browsers.mjs`
-  mesure l'encodage seul aujourd'hui) ; Firefox de Playwright (Nightly) n'est
-  pas une référence de vitesse (`port-strategy.md`).
+- Mesures dans les navigateurs : `js/bench/browser-phases.mjs` (chantier
+  PERF, ci-dessous) ; Firefox de Playwright (Nightly) n'est pas une
+  référence de vitesse (`port-strategy.md`).
+
+### Chantier PERF : réalisation (branche `wave5/perf`)
+
+Branche `wave5/perf`, depuis `wave5/base` (`acf9fa6`). Aucune optimisation
+ne change une trace : chacune garde le même calcul, les mêmes contrôles de
+cadres et d'unités C dans le même ordre, et le même résultat ; ce qu'elle
+retire, ce sont des copies, des allocations et des recherches. L'invariant
+qui le garantit est écrit en commentaire à chaque site (« Performance: »
+ou « performance: »).
+
+**Méthode.** `perf` n'est pas permis sur la machine
+(`perf_event_paranoid` = 4) : les profils natifs viennent de
+`scripts/perf/sprof.c`, un échantillonneur chargé par `LD_PRELOAD`
+(SIGPROF sur le temps CPU, pile par pointeurs de cadre : build
+`RUSTFLAGS="-C force-frame-pointers=yes"`, lignes avec
+`CARGO_PROFILE_RELEASE_DEBUG=line-tables-only`, tampon fixe de 32 Mio),
+lus par `sprof_report.py` et `sprof_lines.py` ; les allocations, de
+`scripts/perf/mcount.c` (nombre d'appels à `malloc`/`realloc`, pile d'un
+appel sur 16) ; le Wasm dans Node, de `node --cpu-prof` sur un `dist` dont
+le module garde ses noms (`wasm-opt -O3 -g`), lu par `prof_sum.py` et
+`prof_callees.py`. Chaque mesure tourne sous `prlimit` ou dans le cgroup
+de `heavy.sh`. Les phases : `plumber_phases.rs` (natif ; `PLUMBER_PHASES`
+choisit les phases, pour compter les allocations d'une phase),
+`js/bench/phases.mjs` (Node, API publique, `dist`),
+`js/bench/browser-phases.mjs` + `phases.html` (nouveau : les mêmes phases
+par l'API du paquet navigateur, dans Chromium, Firefox et WebKit, dans la
+page et en worker), `crates/wasm/examples/encode_phases.rs` (nouveau :
+l'encodage PJB1 des objets d'une page seul, avec une empreinte FNV-1a des
+blocs). Avant et après se mesurent dans le même créneau de `heavy.sh`, en
+alternant les deux builds (`wave5/base` reconstruit à part, avec les seuls
+outils de mesure en plus), médiane de 3 passes ; les deux `dist` sont
+optimisés (`wasm-opt -O3`, `node scripts/build.mjs` ; `check.sh` construit
+le sien sans `wasm-opt`).
+
+**Ce qui a changé** (par ordre de gain) :
+
+- `Page.process_object` (`page.rs`), la moitié du temps natif : le dict
+  est construit avec sa capacité, et une clé qu'il ne peut pas encore
+  tenir (un attribut du `__dict__`, dont les clés sont distinctes ; une
+  clé que `process_object` ajoute et qu'aucune classe de layout n'a) est
+  ajoutée sans recherche (`Obj::push_new`, vérifié en debug) ; les clés
+  sont faites une fois par fil (`AttrKeys`), `object_type`, les commandes
+  de chemin et les littéraux du port aussi (`obj::static_str`) ;
+  `resolve_all` d'une valeur que seul l'appelant tient (un tuple qu'il
+  vient de faire) se fait sur place (`resolve_all_owned` : mêmes cadres ;
+  Python fait un nouveau tuple, dont nul ne peut comparer l'identité avec
+  celle de l'ancien, que lui seul tenait) ; le tampon des items est
+  réutilisé ; les points de `original_path` passent par `point2coord` sans
+  leur tuple (`point2coord_with`, mêmes cadres) ; `decode_text` d'une `str`
+  ne fait plus une `str` par caractère et rend la même `str` quand
+  PDFDocEncoding l'envoie sur elle-même (`decode_text_pystr`) ; le nom de
+  l'espace de couleur est partagé entre les caractères consécutifs (cache
+  d'une référence faible : il ne garde pas l'espace en vie, et son adresse
+  ne peut pas en nommer un autre) ; `mediabox[i]` lit l'item d'une liste
+  PDF sans convertir la liste (`py_getitem_index`).
+- Valeurs partagées au lieu de copiées : `FontName::Str` et
+  `MarkedContentAttr::Tag` (et `cur_tag`) tiennent une `PyStr` (tous les
+  caractères d'une police tiennent la même, comme en Python) ; `ExtraAttrs`
+  garde `mcid` et `tag` sans allocation (`Attrs`, deux attributs en
+  ligne) ; `Unichr::to_pystr` partage les textes courts récents. L'identité
+  d'une `str` n'est pas modélisée (immuable, jamais comparée par `is` dans
+  le code porté).
+- Interpréteur : la méthode d'un opérateur sans les trois remplacements
+  quand son mot-clé n'a ni `*`, ni `"`, ni `'` (`keyword_op`) ; un seul
+  vecteur par segment de chemin ; `int_hash` d'un petit entier sans
+  vecteur d'octets (chaque recherche de largeur hachait un `Vec`).
+- Arithmétique : `add`, `sub`, `mul` et les comparaisons d'un `int` et
+  d'un `float` vont droit à `Num` (le résultat du chemin général, sans
+  ses conversions d'objets PDF ni ses tests de séquence) ; les compteurs
+  de `pycompat::recursion` sont `#[inline]` (l'erreur `#[cold]`).
+- Libération : le `Drop` de `PyValue` sort tout de suite pour un scalaire
+  ou un conteneur encore partagé, et la liste de travail des conteneurs
+  imbriqués est gardée entre deux libérations. Allocations sur 30 fichiers
+  de `quick`, toutes phases : 41,5 M `malloc` + 6,56 M `realloc` → 12,4 M
+  + 0,83 M.
+- Frontière (`crates/wasm/src/wire`, `js/src/core/wire.ts`) : les tables
+  PJB1 lisent leurs cellules une fois, rangée par rangée (`Cell`),
+  écrivent nombres et indices d'une colonne en place, et retrouvent la
+  `str` d'une cellule par son adresse quand les cellules voisines la
+  partagent (`intern_cell`) ; une valeur faite de scalaires et de
+  séquences sur trois niveaux au plus (points, chemins) s'écrit sans liste
+  de travail (`write_shallow`). Le format ne change pas : les blocs de
+  `page_objects` des 150 fichiers de `quick` sont identiques octet pour
+  octet entre `wave5/base` et `wave5/perf` (`encode_phases`). Côté
+  JavaScript, `Reader.item` lit les cellules génériques (scalaires, listes
+  et tuples sur trois niveaux) sans les cadres de `value()`
+  (`js/test/node/wire.test.ts` : mêmes valeurs que `value()` pour chaque
+  sorte, imbriquées au-delà de trois niveaux et sur 100 000 niveaux).
+
+**Résultats** (`quick`, 302 pages, ms par page, médiane de 3 passes, même
+créneau ; « frontière » = seconde lecture de `page.objects`) :
+
+| ms par page | ouverture | layout | objects | texte | mots | tables | total | frontière |
+|---|---|---|---|---|---|---|---|---|
+| natif, base | 0,32 | 5,60 | 13,14 | 2,13 | 1,61 | 1,79 | 24,59 | — |
+| natif, PERF | 0,28 | 4,50 | 5,17 | 1,54 | 1,25 | 1,59 | **14,33** | — |
+| Node, API, base | 1,12 | (dans objects) | 23,62 | 2,10 | 1,87 | 1,76 | 30,47 | 4,21 |
+| Node, API, PERF | 1,06 | (dans objects) | 13,87 | 1,63 | 1,52 | 1,39 | **19,47** | 2,88 |
+
+- Natif ×1,72 (objects ×2,5, layout ×1,24, texte ×1,38, mots ×1,29,
+  tables ×1,13) ; Node par l'API ×1,56 (objects ×1,70, frontière ×1,46).
+  Rapport à Python (144,8 ms, référence ci-dessus) : natif ×10, API dans
+  Node ×7,4. Le Wasm calcule à ×1,14 du natif (objects sans la frontière,
+  10,99 ms, contre layout + objects natifs, 9,67 ms).
+- Mémoire : RSS maximale native 366 → 318 Mio ; Node 588 → 557 Mio ;
+  mémoire linéaire du Wasm à la fin 295 → 266 Mio (309 002 240 → 279 117 824
+  octets).
+- Navigateurs (`browser-phases.mjs`, une passe, objects / frontière en
+  ms par page, base → PERF) : Chromium 148 page 26,67 → 14,17 / 4,57 →
+  2,79, worker 25,68 → 14,83 / 4,89 → 3,11 ; WebKit 26.4 page 24,98 →
+  14,67 / 3,89 → 2,86, worker 25,35 → 14,59 / 4,54 → 3,25 ; Firefox 150
+  (Nightly de Playwright) page 139,7 → 78,8 / 16,5 → 11,8, worker 140,3 →
+  76,7 / 16,5 → 11,6. Texte, mots, tables : −13 à −35 % partout.
+- Encodage seul (`js/bench/node.mjs --passes 5`, corpus de
+  `js-runtime.md`, Node 26.12) : PJB1 un appel par page 602 → 425 ms
+  (cœur 365 → 236, décodage 236 → 189), tout en un appel 820 → 577 ms ;
+  JSON inchangé (2 847 → 2 786).
+- Taille (`dist`, `wasm-opt -O3`) : `pdfplumber.wasm` 2 416 107 →
+  2 466 476 octets bruts (+2,1 %), 628 778 → 632 096 brotli (+0,5 %).
+
+**Ce qui reste** (profil natif sur les fichiers les plus lents, après
+PERF) : l'allocateur (≈ 20 % des échantillons, `malloc`, `free` et leurs
+fonctions internes), les copies et libérations de `PyValue` (≈ 9 %),
+`process_object` lui-même (≈ 5 %), l'analyseur PostScript des flux de
+contenu (`Lexer::parse1`, `nextobject` : ≈ 4 %), l'extraction des mots
+(≈ 5 %, `extract_wordmap`, `char_begins_new_word`, `cluster_objects`). Le
+gros des allocations restantes vient des dicts d'objets eux-mêmes (un
+`Rc` par dict, un tuple par `matrix`, `pts`, couleur) : un arena ou des
+dicts à forme fixe changeraient le modèle de valeurs de `crates/pdfplumber`
+(hors de ce chantier). La frontière coûte encore ≈ 20 % de
+`page.objects` dans Node (2,9 ms sur 13,9).
+
+**Vérification** (commit de ce chantier) : `scripts/check.sh` vert ;
+`scripts/check-browsers.sh` vert (345 tests) ; les 13 étapes identiques
+sur `quick` (150/150 chacune) ; `oracle.wasm_parity` sur `quick`, 13
+étapes, 0 différence, `dist wasm = native` ; `plumber_objects` et
+`plumber_text` par l'API (`--engine js-api`) 150/150 sur `quick`.
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 
