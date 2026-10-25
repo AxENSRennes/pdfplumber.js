@@ -1391,6 +1391,9 @@ fn stream_handles_objects_as_arguments_and_their_errors() {
         let Js::Arr(others) = ok(call(&mut core, "doc_pages", other, list(vec![]), None)) else { panic!() };
         let Js::Obj(p) = &others[0] else { panic!() };
         let Js::Num(other_page) = p[0].1 else { panic!() };
+        // the tree of one document with the page of another: not modelled
+        // (an operation reaches one document)
+        assert_eq!(err(&mut core, "struct_tree", doc, list(vec![PyValue::from(other_page as i64)])).0, "NotPorted");
         let req = hand_request("page_debug_tablefinder", other_page as u32, |w| {
             w.list(1);
             w.dict(4);
