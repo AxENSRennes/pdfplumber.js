@@ -548,7 +548,7 @@ export class PDFPlumberDocument {
 
   /** `pdf.to_dict(object_types)` */
   toDict(objectTypes?: string[] | null): Promise<Record<string, unknown>> {
-    return this.#get("doc_to_dict", [objectTypes === undefined ? {} : { object_types: objectTypes }], "doc_dict");
+    return this.#get("doc_to_dict", [{ object_types: objectTypes }], "doc_dict");
   }
   to_dict(objectTypes?: string[] | null): Promise<Record<string, unknown>> {
     return this.toDict(objectTypes);
@@ -972,14 +972,14 @@ export class PDFPlumberPage {
 
   /** `page.find_tables(table_settings)` */
   findTables(settings?: TableOptions | null): Promise<Table[]> {
-    return this.#run<TableValue[]>("page_find_tables", settings === undefined ? [] : [settings]).then((v) => this.tables_(v));
+    return this.#run<TableValue[]>("page_find_tables", [settings ?? null]).then((v) => this.tables_(v));
   }
   find_tables(settings?: TableOptions | null): Promise<Table[]> {
     return this.findTables(settings);
   }
   /** `page.find_table(table_settings)` */
   findTable(settings?: TableOptions | null): Promise<Table | null> {
-    return this.#run<TableValue | null>("page_find_table", settings === undefined ? [] : [settings]).then((v) =>
+    return this.#run<TableValue | null>("page_find_table", [settings ?? null]).then((v) =>
       v === null ? null : this.tables_([v])[0],
     );
   }
@@ -987,13 +987,13 @@ export class PDFPlumberPage {
     return this.findTable(settings);
   }
   extractTables(settings?: TableOptions | null): Promise<(string | null)[][][]> {
-    return this.#run("page_extract_tables", settings === undefined ? [] : [settings]);
+    return this.#run("page_extract_tables", [settings ?? null]);
   }
   extract_tables(settings?: TableOptions | null): Promise<(string | null)[][][]> {
     return this.extractTables(settings);
   }
   extractTable(settings?: TableOptions | null): Promise<(string | null)[][] | null> {
-    return this.#run("page_extract_table", settings === undefined ? [] : [settings]);
+    return this.#run("page_extract_table", [settings ?? null]);
   }
   extract_table(settings?: TableOptions | null): Promise<(string | null)[][] | null> {
     return this.extractTable(settings);
@@ -1004,7 +1004,7 @@ export class PDFPlumberPage {
    * tables (`Table` objects) and resolved settings (`TableSettings` as a
    * dict). */
   debugTablefinder(settings?: TableOptions | null): Promise<TableFinderResult<Table>> {
-    return this.#run<FinderValue>("page_debug_tablefinder", settings === undefined ? [] : [settings]).then((v) => ({
+    return this.#run<FinderValue>("page_debug_tablefinder", [settings ?? null]).then((v) => ({
       edges: v.edges,
       intersections: v.intersections,
       cells: v.cells,
@@ -1020,7 +1020,7 @@ export class PDFPlumberPage {
   toDict(objectTypes?: string[] | null): Promise<Record<string, unknown>> {
     // the annotations it may hold name this page (`annots`)
     this.pdf.pin(this);
-    return this.#run("page_to_dict", [objectTypes === undefined ? {} : { object_types: objectTypes }], "page_dict");
+    return this.#run("page_to_dict", [{ object_types: objectTypes }], "page_dict");
   }
   to_dict(objectTypes?: string[] | null): Promise<Record<string, unknown>> {
     return this.toDict(objectTypes);

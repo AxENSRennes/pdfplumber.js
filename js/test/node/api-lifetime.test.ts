@@ -216,9 +216,16 @@ describe("public API identities and lifetimes", () => {
     const ref = annots[0].data.P;
     annots = undefined;
     await collect();
-    const crop = await pdf.page(ref);
-    expect(crop.parent).toBe(page);
-    expect((await crop.chars).length).toBeGreaterThan(0);
+    const check = async () => {
+      const crop = await pdf.page(ref);
+      expect(crop.parent).toBe(page);
+      expect((await crop.chars).length).toBeGreaterThan(0);
+    };
+    await check();
+    // close() flushes pdf.pages, not the derived pages the document keeps
+    await pdf.close();
+    await collect();
+    await check();
     await pdf.release();
   });
 
