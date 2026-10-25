@@ -52,7 +52,6 @@ const mutants = [
   [A, "    if (this.#life.released) return Promise.reject(new DocumentReleased());\n    return this.core.exclusive(f);", "    return this.core.exclusive(f);"],
   [A, "if (page.parent === undefined || this.#byHandle.get(page.handle) === page) return;", "return;"],
   [A, "    registry?.unregister(page);\n", ""],
-  [A, "    const known = this.#known(handle);\n    if (known) return known;\n", ""],
   [A, "      this.#weak.set(handle, new WeakRef(page));\n      this.track(page, handle);", "      this.#weak.set(handle, new WeakRef(page));"],
   [A, "    const weak = this.#weak.get(handle)?.deref();\n    if (weak) return weak;\n", ""],
   [A, "const page = this.#current.get(g.page_number) ?? this.page_(g, g.handle!, typed?.[i]);", "const page = this.page_(g, g.handle!, typed?.[i]);"],

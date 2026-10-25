@@ -355,8 +355,6 @@ export class PDFPlumberDocument {
 
   /** @internal A page of this document from its geometry. */
   page_(geometry: Geometry, handle: number, typed: unknown, parent?: PDFPlumberPage, geometryError?: unknown): PDFPlumberPage {
-    const known = this.#known(handle);
-    if (known) return known;
     const page = new PDFPlumberPage(this, handle, geometry, typed, parent, geometryError);
     if (parent === undefined) {
       this.#byHandle.set(handle, page);

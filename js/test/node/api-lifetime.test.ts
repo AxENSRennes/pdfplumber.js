@@ -8,10 +8,12 @@
 import { join } from "node:path";
 import v8 from "node:v8";
 import vm from "node:vm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import * as api from "../../src/index.js";
-import { internals } from "../../src/internal.js";
+import { getCore, internals } from "../../src/internal.js";
+
+const lib = { getCore };
 import { PDFPLUMBER_ROOT } from "../oracle-data.mjs";
 
 const pdfs = join(PDFPLUMBER_ROOT, "upstream/pdfplumber-python/tests/pdfs");
@@ -69,6 +71,26 @@ describe("public API identities and lifetimes", () => {
     expect(await pdf.page(annots[0].data.P)).toBe(pages[1]);
     await pdf.release();
     await expect(pdf.page(now[0].data.P)).rejects.toThrow(api.DocumentReleased);
+  });
+
+  it("pdf.pages is the same array until close(); a reference read before close() never names a page of the new list", async () => {
+    api.configure({});
+    const pdf = await api.open(ANNOTATED);
+    // the document's annotations, no page object made yet
+    const annots = (await pdf.annots) as unknown as Annot[];
+    const first = await pdf.pages;
+    expect(await pdf.pages).toBe(first);
+    await pdf.close();
+    const fresh = await pdf.pages;
+    expect(fresh).not.toBe(first);
+    expect(await pdf.pages).toBe(fresh);
+    // Python: annot["data"]["P"] is a page of the list close() flushed,
+    // not pdf.pages[0]
+    const old = await pdf.page(annots[0].data.P);
+    expect(old.page_number).toBe(annots[0].data.P.page_number);
+    expect(fresh).not.toContain(old);
+    expect(await pdf.page(annots[0].data.P)).toBe(old);
+    await pdf.release();
   });
 
   it("a reference whose handle the API does not hold is the current page of its number", async () => {
@@ -198,6 +220,47 @@ describe("public API identities and lifetimes", () => {
     expect(crop.parent).toBe(page);
     expect((await crop.chars).length).toBeGreaterThan(0);
     await pdf.release();
+  });
+
+  it("no finalizer sends a free once its document is released or collected", async () => {
+    api.configure({});
+    const core = await lib.getCore();
+    const frees: Promise<unknown>[] = [];
+    const call = core.call.bind(core);
+    const spy = vi.spyOn(core, "call").mockImplementation((op, ...rest) => {
+      const r = call(op, ...rest);
+      if (op === "free") frees.push(r);
+      return r;
+    });
+    try {
+      // released: the finalizers of its derived pages free nothing
+      const a = await api.open(join(pdfs, "nics-background-checks-2015-11.pdf"));
+      const [pa] = await a.pages;
+      let crops: unknown[] | undefined = [];
+      for (let i = 0; i < 10; i++) crops.push(await pa.crop([0, 0, 200 + i, 200]));
+      await a.release();
+      expect(frees.length).toBe(1);
+      crops = undefined;
+      await collect();
+      expect(frees.length).toBe(1);
+      void crops;
+      // collected with its derived pages: no free of a handle the
+      // document's free already took along (it would be refused)
+      const make = async () => {
+        const b = await api.open(join(pdfs, "nics-background-checks-2015-11.pdf"));
+        const [pb] = await b.pages;
+        const kept = [];
+        for (let i = 0; i < 10; i++) kept.push(await pb.crop([0, 0, 200 + i, 200]));
+        return kept.length;
+      };
+      expect(await make()).toBe(10);
+      await collect();
+      const outcomes = await Promise.allSettled(frees);
+      expect(outcomes.length).toBeGreaterThan(1);
+      expect(outcomes.filter((o) => o.status === "rejected")).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("finalizers never free a handle of a released document", async () => {
