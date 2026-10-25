@@ -808,11 +808,12 @@ def _indirect_filter_pdf() -> bytes:
              "ColorSpace": Name("DeviceGray"), "BitsPerComponent": 8}
     indirect = b.stream(zlib.compress(b"\x10\x80"), **image, Filter=flate, DecodeParms=parms)
     direct = b.stream(zlib.compress(b"\x20\x90"), **image, Filter=Name("FlateDecode"))
-    # an annotation whose appearance streams are in a dict and a list
+    # an annotation whose appearance streams are in a dict, a list and a
+    # dict in a list
     # (Page.annots: its data, resolve_all of the annotation)
     ap = b.stream(b"0 0 1 1 re f")
     annot = b.obj({"Type": Name("Annot"), "Subtype": Name("Square"), "Rect": [0, 0, 5, 5],
-                   "AP": {"N": ap}, "X": [ap, [direct]]})
+                   "AP": {"N": ap}, "X": [ap, [direct], {"N": ap}]})
     b.page(b"q 10 0 0 10 0 0 cm /A Do Q q 10 0 0 10 20 0 cm /B Do Q", {"XObject": {"A": indirect, "B": direct}},
            Annots=[annot])
     return b.build()
