@@ -15,10 +15,11 @@ contract of wave 5, its workstreams and its harness in
 > by the sessions of `oracle/unit/js_api.py` (every member, option, alias,
 > error path and lifetime case, on real and adversarial PDFs; replayed in
 > Node on the sources and on the dist build, and in Chromium, Firefox and
-> WebKit, in the page and in worker mode), by
-> `js/test/node/api-lifetime.test.ts` (identities and the garbage
-> collector), and by the four `plumber_*` stage traces written through this
-> API (`oracle.verify --engine js-api`) on `all` and the adversarial sets.
+> WebKit, in the page and in worker mode; and the 448 depth windows of the
+> adversarial sets, in Node), by `js/test/node/api-lifetime.test.ts`
+> (identities and the garbage collector) and `api-runtime.test.ts`, and by
+> the four `plumber_*` stage traces written through this API
+> (`oracle.verify --engine js-api`) on `all` and the adversarial sets.
 > `NotImplemented` remains only for the paths marked "not ported" below.
 
 ## Entrypoint
@@ -325,7 +326,12 @@ the derived page's objects are computed, on the same objects: the results
 are the same, unless the parent's cache is flushed in between (`close()`),
 which the core reports as `NotImplemented` (its objects are new ones). A
 function that throws rejects the `filter()` promise (Python raises at the
-first read of the derived page's objects).
+first read of the derived page's objects). So do the parent's objects
+when they cannot be computed (a corrupt content stream...): `filter()`
+rejects with their error, where Python's `page.filter()` returns the
+`FilteredPage` and raises that error at the first read of its objects
+(`objects`, `chars`, `extract_text`...); its `bbox`, `width`, `height`
+are the parent's.
 
 ## Tables
 
