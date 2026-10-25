@@ -246,8 +246,8 @@ class ObjArg(JSForm):
         return {"$obj": self.obj.target}
 
 
-#: The fields of ``PDFStructElement`` (pdfplumber/structure.py:102), in
-#: order, ``children`` last.
+#: The fields of the dataclass, in order, ``children`` last
+#: (pdfplumber/structure.py:102 ``PDFStructElement``).
 ELEMENT_FIELDS = ["type", "revision", "id", "lang", "alt_text", "actual_text", "title", "page_number", "attributes",
                   "mcids"]
 
