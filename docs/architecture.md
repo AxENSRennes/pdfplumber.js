@@ -2465,13 +2465,27 @@ créneau ; « frontière » = seconde lecture de `page.objects`) :
   JSON inchangé (2 847 → 2 786).
 - Taille (`dist`, `wasm-opt -O3`) : `pdfplumber.wasm` 2 416 107 →
   2 466 476 octets bruts (+2,1 %), 628 778 → 632 096 brotli (+0,5 %).
+- `all` en natif (1 853 fichiers, 3 654 pages, une passe de chaque build) :
+  24,65 → 14,38 ms par page (×1,71 ; objects 12,34 → 4,79), RSS maximale
+  546 → 501 Mio.
+- Les 12 fichiers les plus lents de `all` (natif, base ; 176 pages :
+  `cms-1500.pdf`, `pdfjs-issue19281.pdf`, `pdfjs-issue5509.pdf`,
+  `i1040nr.pdf`, `pdfjs-hudsonsurvey.pdf`...), médiane de 3 passes : natif
+  109,0 → 69,1 ms par page (×1,58 ; objects 53,1 → 23,3, layout 28,6 →
+  23,4, tables 12,9 → 10,7) ; Node par l'API 139,5 → 88,6 (×1,58 ;
+  frontière 23,1 → 15,6). Ce sont des formulaires et des plans denses en
+  chemins : le layout et les tables y pèsent plus, et y gagnent moins.
 
 **Ce qui reste** (profil natif sur les fichiers les plus lents, après
 PERF) : l'allocateur (≈ 20 % des échantillons, `malloc`, `free` et leurs
 fonctions internes), les copies et libérations de `PyValue` (≈ 9 %),
 `process_object` lui-même (≈ 5 %), l'analyseur PostScript des flux de
 contenu (`Lexer::parse1`, `nextobject` : ≈ 4 %), l'extraction des mots
-(≈ 5 %, `extract_wordmap`, `char_begins_new_word`, `cluster_objects`). Le
+(≈ 5 %, `extract_wordmap`, `char_begins_new_word`, `cluster_objects`).
+Sur les fichiers les plus lents, `find_tables` est surtout `page.edges`
+(les arêtes de chaque courbe, `curve_to_edges`) et `merge_edges` : des
+dicts faits et copiés, pas un algorithme à revoir (Python fait le même
+travail, dans le même ordre). Le
 gros des allocations restantes vient des dicts d'objets eux-mêmes (un
 `Rc` par dict, un tuple par `matrix`, `pts`, couleur) : un arena ou des
 dicts à forme fixe changeraient le modèle de valeurs de `crates/pdfplumber`
