@@ -472,8 +472,13 @@ def documents_session() -> list[list[Any]]:
     s.add("page_extract_text", p, {"x_tolerance": KWD(b"BT")})
     s.add("page_extract_text", p, {"x_tolerance": {"$obj": p}})
     s.add("page_extract_words", p, {"extra_attrs": [LIT("fontname")]})
+    # (one literal twice: cluster_list sorts set(xs), whose order for a
+    # literal and a number follows the literal's address, id(): which of
+    # the two TypeErrors of the comparison Python raises changes from run
+    # to run)
     s.add("page_extract_tables", p, {"vertical_strategy": "explicit", "horizontal_strategy": "explicit",
-                                     "explicit_vertical_lines": [LIT("x"), 1], "explicit_horizontal_lines": [1, 2]})
+                                     "explicit_vertical_lines": [LIT("x"), LIT("x")],
+                                     "explicit_horizontal_lines": [1, 2]})
     s.add("page_crop", p, [0, 0, 10, 10], {"bbox": 1})
     s.add("page_extract_text", p, [1, 2])
     s.add("page_extract_text", p, None)

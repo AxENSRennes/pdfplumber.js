@@ -648,7 +648,11 @@ la couche page ajoutera l'interpréteur et les polices. Budget (brotli) :
   avant et après décodage et après `doc_close`, `page_close` puis les
   flux refaits, objets d'un résultat rendus en argument), et dans
   `documents` `page_info` aux exceptions séparées, `debug_tablefinder`,
-  arguments `PSLiteral`/`PSKeyword`/`PDFObjRef`/page ; fenêtres de
+  arguments `PSLiteral`/`PSKeyword`/`PDFObjRef`/page (jamais un littéral
+  mêlé à des nombres dans ce que pdfplumber met dans un `set` :
+  `cluster_list` trie `set(xs)`, dont l'ordre suit alors l'adresse du
+  littéral, `id()`, et le `TypeError` de Python change d'un processus à
+  l'autre ; non portable, comme l'ordre des NaN) ; fenêtres de
   profondeur de `debug_tablefinder` (unités C), de `PDFStructTree`
   (récursion de `prune`, `str(s)` de `decode_text`) et de `repr(el)`
   (cadres).

@@ -2316,6 +2316,14 @@ Détails dans [`js-runtime.md`](js-runtime.md) (« Format des résultats »,
   `js-runtime.md` ; aucun résultat ni aucune récursion ne change
   (relecture à part, état du processus remis ; historique vidé seulement
   quand plus aucun appel ne peut être nul).
+- **Vérification** : le rejeu de `pages.jsonl` passe aussi en collectant
+  tous les diagnostics (le texte des `log.*` ne change ni résultat ni
+  récursion, fenêtres de profondeur comprises) ; la session `streams`
+  ouvre un document par chemin (`doc_open_file`) dont les flux d'image ont
+  un `/Filter` indirect : `get_data()` après `PDF.close()` lève
+  `ValueError("seek of closed file")` comme Python (un document ouvert
+  d'octets garde ses flux lisibles, `BytesIO` n'étant pas fermé par
+  pdfplumber).
 
 **Pour le chantier API et la jonction** (changements hors de la propriété
 de BOUNDARY, faits pour que la frontière soit vérifiable par l'API, raison
