@@ -890,6 +890,18 @@ class Session:
         c = self.case("struct_element_bbox", tree.target, [el.path])  # type: ignore[attr-defined]
         self._expect(cid, tree, lambda r: UNRESOLVED if self.ref_missing(r, ref) else r.plain(c))
 
+    def element_get(self, el: Obj, name: str) -> None:
+        """A field of an element (``type``, ``alt_text``..., or the getters
+        ``altText``, ``actualText``, ``pageNumber``): synchronous, the
+        dataclass's field in the tree's value."""
+        cid = self._call(el, "get", name, [])
+        field = {"altText": "alt_text", "actualText": "actual_text", "pageNumber": "page_number"}.get(name, name)
+        tree = el.parent
+        assert tree is not None
+        tree_case = self.case_of[tree.ref[0]]
+        path = el.path  # type: ignore[attr-defined]
+        self._expect(cid, el, lambda r: element_at_path(r.value(tree_case)["children"], path)[field])
+
     def element_call(self, el: Obj, name: str) -> None:
         """``el.allMcids()`` (``all_mcids``), ``el.repr()``."""
         cid, skipped = self._async(el, "call", name, [])
@@ -1695,6 +1707,9 @@ def calls_session() -> Session:
     s.serialize(doc, "toCsv", {"precision": 2})
     s.serialize(doc, "to_csv")
     s.serialize(doc, "toDict", ["char"])
+    for name in ["rectEdges", "curveEdges", "horizontalEdges", "verticalEdges", "structureTree"]:
+        s.page_get(page, name)
+        s.doc_get(doc, name)
     for name in ["textboxhorizontals", "textlinehorizontals", "curves", "images", "rect_edges", "curve_edges"]:
         s.doc_get(doc, name)
     s.close(page)
@@ -1747,6 +1762,8 @@ def structure_session(name: str, rel: str | None = None, data: bytes | None = No
             el = s.element(tree, *path)
             s.element_call(el, "allMcids" if len(path) % 2 else "all_mcids")
             s.element_call(el, "repr")
+            for name in pick(["altText", "actualText", "pageNumber", "alt_text", "page_number", "type", "mcids"], len(path) + k, 3):
+                s.element_get(el, name)
             s.element_bbox(tree, el, "elementBbox" if len(path) % 2 else "element_bbox")
             s.struct_find(el, "findAll", ("predicate", "has-mcids"))
             s.struct_find(el, "find", ("tag", "Span"))
