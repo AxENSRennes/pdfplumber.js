@@ -1257,6 +1257,27 @@ EXPLICIT = {"vertical_strategy": "explicit", "horizontal_strategy": "explicit",
             "explicit_vertical_lines": [1, 50, 100], "explicit_horizontal_lines": [1, 50, 100]}
 
 
+def _corrupt_flate_chain(n: int) -> bytes:
+    """Forms 1 to ``n``, each drawing the next; the last one's content is a
+    FlateDecode stream whose checksum is wrong: pdfminer decompresses it
+    byte by byte and logs the loss of data. Nothing is decoded beforehand,
+    so the deepest point is that decoding and its ``log.warning``."""
+    import zlib
+
+    b = adv_interp.Builder()
+    refs = [b.reserve() for _ in range(n)]
+    data = zlib.compress(b"0 0 m 1 1 l S")
+    data = data[:-1] + bytes([data[-1] ^ 0xFF])
+    form = {"Type": Name("XObject"), "Subtype": Name("Form"), "BBox": [0, 0, 10, 10]}
+    for i, ref in enumerate(refs):
+        if i + 1 < n:
+            b.put(ref, {**form, "Resources": {"XObject": {"X": refs[i + 1]}}}, b"0 0 m 1 1 l /X Do")
+        else:
+            b.put(ref, {**form, "Filter": Name("FlateDecode")}, data)
+    b.page(b"/X Do", {"XObject": {"X": refs[0]}})
+    return b.build()
+
+
 def depth_session(make: Any, ops: list[tuple[str, tuple[Any, ...]]], n: int) -> list[list[Any]]:
     """A document of nesting ``n`` and the operations, on its page (``doc:``
     before a name: on the document; ``table:``: on the first table the
@@ -1295,6 +1316,11 @@ def depth_windows() -> Iterator[tuple[str, list[list[Any]]]]:
         # the filter's mask_of: a frame above page.objects
         ("figures-filter", figures, [("page_filter", ("upright",))], 2, 1200),
         ("dash-json", dash, [("page_to_json", ({"object_types": ["rect"]},))], 2, 1200),
+        # the deepest point logs a warning: the decoding of the last form's
+        # corrupted data (pdfminer/pdftypes.py decompress_corrupted, then
+        # log.warning's frames, logging disabled), from two depths
+        ("flate-warning-objects", _corrupt_flate_chain, [("page_objects", ())], 2, 1200),
+        ("flate-warning-tables", _corrupt_flate_chain, [("page_find_tables", ())], 2, 1200),
         ("climit-tf-list-objects", climit["tf-list"], [("page_objects", ())], 9000, 10100),
         ("climit-tf-list-chars", climit["tf-list"], [("page_attr", ("chars",))], 9000, 10100),
         ("climit-tf-list-text", climit["tf-list"], [("page_extract_text", ({},))], 9000, 10100),
