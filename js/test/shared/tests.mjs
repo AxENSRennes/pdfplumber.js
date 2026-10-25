@@ -124,7 +124,7 @@ async function replaySession(lib, input, out, readFile) {
     return v;
   };
   const makers = new Set([
-    "doc_open", "doc_pages", "page_crop", "page_within_bbox", "page_outside_bbox", "page_filter",
+    "doc_open", "doc_open_file", "doc_pages", "page_crop", "page_within_bbox", "page_outside_bbox", "page_filter",
     "page_dedupe_chars", "page_find_tables", "page_find_table",
   ]);
   // the script's process writes streams by value until a case says
@@ -147,6 +147,9 @@ async function replaySession(lib, input, out, readFile) {
       if (op === "doc_open") {
         const data = typeof dataT === "string" ? await readFile(dataT) : fromTyped(dataT, lib);
         got = await t.call("doc_open", args[0], 0, { data });
+      } else if (op === "doc_open_file") {
+        // [name, options] and the file's bytes (JavaScript read it)
+        got = await t.call("doc_open_file", args, 0, { data: fromTyped(dataT, lib) });
       } else if (op === "search") {
         const [, options] = args;
         const kw = {};

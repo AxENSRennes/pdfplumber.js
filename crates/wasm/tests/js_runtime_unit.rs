@@ -200,6 +200,19 @@ fn errors_as_exceptions(v: Js) -> Js {
     }
 }
 
+thread_local! {
+    /// The level at which [`call_cmaps`] collects diagnostics (0: none).
+    static LEVEL: std::cell::Cell<i64> = const { std::cell::Cell::new(0) };
+}
+
+/// The passes of the `pages.jsonl` replay: a format and the level at which
+/// its requests collect diagnostics. Collecting (`onWarning`: every
+/// record formatted, pdfminer's `%r` of operands too) changes no result
+/// and no recursion (`pycompat::logging::Logger::log`): one pass at the
+/// lowest level, `debug`, shows it, the depth windows included.
+const PASSES: &[(&str, i64)] =
+    if cfg!(target_family = "wasm") { &[("binary", 0), ("binary", 10)] } else { &[("binary", 0), ("json", 10)] };
+
 /// Runs a request, handing over the CMaps it misses (each once), as
 /// `WasmCore.call` does; returns the result and the names loaded.
 fn call_with_cmaps(core: &mut Core, op: &str, args: PyValue, dir: &std::path::Path, loaded: &mut Vec<String>) -> Js {
@@ -666,8 +679,9 @@ impl Objs {
 /// `WasmCore.call` does: the call is void, the core rebuilds the documents
 /// it reached, and the same request runs again.
 fn call_cmaps(core: &mut Core, op: &str, h: u32, args: PyValue, data: Option<Vec<u8>>, dir: &std::path::Path) -> Js {
+    let level = LEVEL.with(std::cell::Cell::get);
     for _ in 0..16 {
-        let r = call(core, op, h, args.clone(), data.clone());
+        let r = call_level(core, op, h, args.clone(), data.clone(), level);
         if r.status != 2 {
             return result(r);
         }
@@ -724,7 +738,8 @@ fn replay_session(format: &str, name: &str, cases: &[Value], out: &Value) -> usi
         let h = objs.target(&case[1]);
         let Value::List(args) = &case[2] else { panic!("args") };
         let (want, extra) = (value_view(&expected[0]), &expected[1]);
-        let where_ = format!("{format} {name} {op} {:?}", case[2]);
+        let where_ =
+            format!("{format} (diagnostics level {}) {name} {op} {:?}", LEVEL.with(std::cell::Cell::get), case[2]);
         let got = match op {
             "doc_open" => {
                 let data = match &case[3] {
@@ -733,6 +748,16 @@ fn replay_session(format: &str, name: &str, cases: &[Value], out: &Value) -> usi
                     other => panic!("a PDF: {other:?}"),
                 };
                 let r = call_cmaps(&mut core, op, 0, py(&args[0]), Some(data), &dir);
+                if matches!(r, Js::Num(_)) {
+                    objs.relabel(r)
+                } else {
+                    r
+                }
+            }
+            "doc_open_file" => {
+                // [name, options] and the file's bytes (JavaScript read it)
+                let Value::Bytes(data) = &case[3] else { panic!("the bytes of the file") };
+                let r = call_cmaps(&mut core, op, 0, list(args.iter().map(py).collect()), Some(data.clone()), &dir);
                 if matches!(r, Js::Num(_)) {
                     objs.relabel(r)
                 } else {
@@ -819,17 +844,18 @@ fn replay_session(format: &str, name: &str, cases: &[Value], out: &Value) -> usi
 fn page_operations_match_pdfplumber_through_the_boundary() {
     let sessions = data().cases("pages");
     assert!(sessions.len() >= 10, "{} sessions", sessions.len());
-    for &format in FORMATS {
+    for &(format, level) in PASSES {
         let mut checked = 0;
         for (input, out) in &sessions {
             let (input, out) = (input.clone(), out.clone());
             checked += on_thread(1 << 30, move || {
+                LEVEL.with(|l| l.set(level));
                 let name = input[0].as_str().unwrap();
                 let Value::List(cases) = &input[1] else { panic!("cases") };
                 replay_session(format, name, cases, &out)
             });
         }
-        assert!(checked > 250, "{format}: {checked} operations");
+        assert!(checked > 250, "{format} at level {level}: {checked} operations");
     }
 }
 

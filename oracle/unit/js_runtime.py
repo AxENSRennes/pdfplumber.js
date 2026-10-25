@@ -359,8 +359,9 @@ class Session:
         return doc, list(range(first, first + pages))
 
 
-def _page_count(rel: str, options: dict[str, Any] | None = None) -> int:
-    with pdfplumber.open(corpus_root() / rel, **(options or {})) as pdf:
+def _page_count(rel: str | bytes, options: dict[str, Any] | None = None) -> int:
+    src = io.BytesIO(rel) if isinstance(rel, bytes) else corpus_root() / rel
+    with pdfplumber.open(src, **(options or {})) as pdf:
         return len(pdf.pages)
 
 
@@ -757,6 +758,53 @@ STREAM_FILES: list[tuple[str, dict[str, Any]]] = [
 ]
 
 
+_SCRATCH: list[Path] = []
+
+
+def _scratch_file(name: str, data: bytes) -> str:
+    """A file of this run holding ``data`` (removed when the generator
+    exits): the path of a ``doc_open_file`` case, which the written case
+    replaces by the file's name and bytes (``_portable``)."""
+    import atexit
+    import shutil
+
+    if not _SCRATCH:
+        _SCRATCH.append(Path(tempfile.mkdtemp(prefix="js_runtime-")))
+        atexit.register(shutil.rmtree, _SCRATCH[0], True)
+    path = _SCRATCH[0] / name
+    path.write_bytes(data)
+    return str(path)
+
+
+def _portable(case: list[Any]) -> list[Any]:
+    """A case as the replays run it: a ``doc_open_file`` case gives its
+    file's name and bytes (JavaScript reads the file, the core gets its
+    bytes: ``crates/wasm/src/pages.rs`` ``open_file``)."""
+    op, target, args, data, js = case
+    if op == "doc_open_file":
+        path = Path(data)
+        return [op, target, [path.name, *args[1:]], path.read_bytes(), js]
+    return case
+
+
+def _indirect_filter_pdf() -> bytes:
+    """Image XObjects whose ``/Filter`` and ``/DecodeParms`` are indirect
+    objects that nothing reads before ``get_data()`` (``PDFStream.decode``
+    resolves them: after ``PDF.close()``, from a closed file), next to one
+    whose filter is direct."""
+    import zlib
+
+    b = adv_interp.Builder()
+    flate = b.obj(Name("FlateDecode"))
+    parms = b.obj({"Predictor": 1})
+    image = {"Type": Name("XObject"), "Subtype": Name("Image"), "Width": 2, "Height": 1,
+             "ColorSpace": Name("DeviceGray"), "BitsPerComponent": 8}
+    indirect = b.stream(zlib.compress(b"\x10\x80"), **image, Filter=flate, DecodeParms=parms)
+    direct = b.stream(zlib.compress(b"\x20\x90"), **image, Filter=Name("FlateDecode"))
+    b.page(b"q 10 0 0 10 0 0 cm /A Do Q q 10 0 0 10 20 0 cm /B Do Q", {"XObject": {"A": indirect, "B": direct}})
+    return b.build()
+
+
 def _stream_labels(v: Any, out: list[int]) -> None:
     """The objects (``#k``) of the streams a result holds by reference, in
     order."""
@@ -798,9 +846,18 @@ def streams_session() -> list[list[Any]]:
     s.add("set_stream_refs", None, True)
     docs = []
     out: dict[str, Any] = {}
-    for rel, options in STREAM_FILES:
-        n = _page_count(rel, options)
-        doc, pages = s.open(rel, options, pages=n)
+    for rel, options in [*STREAM_FILES, (_indirect_filter_pdf(), "file")]:
+        if options == "file":
+            # pdfplumber.open(path): PDF.close() closes the file, and a
+            # later read of the document raises (doc_open_file)
+            path = _scratch_file("indirect-filter.pdf", rel)
+            doc = s.add("doc_open_file", None, path, {}, data=path, makes=1)
+            n = _page_count(rel)
+            first = s.add("doc_pages", doc, makes=n)
+            pages = list(range(first, first + n))
+        else:
+            n = _page_count(rel, options)
+            doc, pages = s.open(rel, options, pages=n)
         docs.append((doc, pages))
         for p in pages[:3]:
             s.add("page_objects", p)
@@ -1333,7 +1390,7 @@ def page_cases() -> Iterator[tuple[list[Any], Any]]:
         limit = sys.getrecursionlimit()
         sys.setrecursionlimit(max(limit, 20000))
         try:
-            yield [name, cases], {"depth": out["depth"], "results": out["results"]}
+            yield [name, [_portable(c) for c in cases]], {"depth": out["depth"], "results": out["results"]}
         finally:
             sys.setrecursionlimit(limit)
 

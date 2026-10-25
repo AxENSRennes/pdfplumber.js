@@ -247,15 +247,20 @@ puis donne le texte de l'enregistrement, `msg % args` comme
 `record.getMessage()` le formate (`%r` des opérandes par le `repr` porté,
 `pdfminer::log_text`), seulement si quelqu'un le collecte ; un texte dont
 le formatage lève n'est pas émis (`logging` jette l'enregistrement). Le
-texte ne change aucun résultat. Les `log.debug` de pdfminer (un par jeton,
+texte ne change aucun résultat ni aucune récursion : le rejeu de
+`pages.jsonl` passe une fois sans collecte et une fois en collectant tout
+(niveau `debug`, fenêtres de profondeur comprises ; en natif le second
+format, sous WASI le binaire deux fois). Les `log.debug` de pdfminer (un par jeton,
 par opérateur, par objet lu) ne comptent que leurs cadres : ils ne sont
 pas transmis (`logLevel: "debug"` ne montre que les niveaux `info` et
 plus de pdfminer, aucun aujourd'hui). `diagnostics.jsonl` de
 `oracle/unit/js_runtime.py` (ce que Python montre, avertissements et
 enregistrements des loggers de pdfplumber et de pdfminer au niveau
 `WARNING`, dans un processus neuf, pour des documents faits pour produire
-chaque sorte d'enregistrement : opérandes invalides, boîtes de page,
-polices, table xref, flux Flate corrompu) est rejoué par
+chaque sorte d'enregistrement : opérandes invalides et étiquettes
+valides, qui n'écrivent rien, boîtes de page, y compris celles dont
+l'analyse lève une autre erreur que `PDFValueError`, que pdfminer laisse
+passer, polices, table xref, flux Flate corrompu) est rejoué par
 `js_runtime_unit.rs` et, par l'API publique (`onWarning`), par
 `js/test/shared/tests.mjs`. La frontière exécute chaque requête dans un
 `diagnostics::collect` au niveau demandé par JS (0 : rien n'est collecté ni
@@ -544,7 +549,8 @@ du `TableSettings` résolu),
   la dernière échoue, met les objets de la page en cache, et la dernière
   ne descend plus. Rejouées par `js_runtime_unit.rs`
   (`page_operations_match_pdfplumber_through_the_boundary`, deux formats,
-  un fil neuf par session) et par JS (Node, navigateurs, cœur direct et
+  l'un sans collecte de diagnostics, l'autre au niveau `debug`, un fil
+  neuf par session) et par JS (Node, navigateurs, cœur direct et
   worker) avec la `RegExp` de JS pour `search`, dont les spans doivent être
   ceux de `re` ; `a_void_call_rebuilds_its_document_by_replaying_its_history`
   compare une session aux appels nuls (pages dérivées, page libérée,
