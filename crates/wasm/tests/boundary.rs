@@ -1384,8 +1384,72 @@ fn stream_handles_objects_as_arguments_and_their_errors() {
             };
             d as u32
         };
+        // a stream of the first document in a result of the other one (a
+        // rect line of debug_tablefinder holding it, given back in its
+        // settings): a handle of the other document, which outlives the
+        // first one
+        let Js::Arr(others) = ok(call(&mut core, "doc_pages", other, list(vec![]), None)) else { panic!() };
+        let Js::Obj(p) = &others[0] else { panic!() };
+        let Js::Num(other_page) = p[0].1 else { panic!() };
+        let req = hand_request("page_debug_tablefinder", other_page as u32, |w| {
+            w.list(1);
+            w.dict(4);
+            for (k, v) in [("vertical_strategy", "explicit"), ("horizontal_strategy", "explicit")] {
+                w.str(k);
+                w.str(v);
+            }
+            w.str("explicit_vertical_lines");
+            w.list(2);
+            w.dict(11);
+            w.str("object_type");
+            w.str("rect");
+            for (k, v) in [
+                ("x0", 0),
+                ("x1", 1),
+                ("top", 0),
+                ("bottom", 1),
+                ("width", 1),
+                ("height", 1),
+                ("y0", 0),
+                ("y1", 1),
+                ("doctop", 0),
+            ] {
+                w.str(k);
+                w.int(&PyInt::from(v));
+            }
+            w.str("stream");
+            w.stream_ref();
+            w.int(&PyInt::from(i64::from(stream)));
+            w.none();
+            w.none();
+            w.dict(0);
+            w.int(&PyInt::from(5));
+            w.str("explicit_horizontal_lines");
+            w.list(2);
+            w.int(&PyInt::from(0));
+            w.int(&PyInt::from(10));
+        });
+        let r = response(&core.call(&req, None));
+        assert_eq!(r.status, 0, "{:?}", r.value);
+        let mut refs = Vec::new();
+        let mut stack = vec![r.value];
+        while let Some(v) = stack.pop() {
+            match v {
+                Js::StreamRef(h, _) => refs.push(*h),
+                Js::Arr(items) => stack.extend(items),
+                Js::Obj(items) => stack.extend(items.into_iter().map(|(_, v)| v)),
+                _ => {}
+            }
+        }
+        assert!(!refs.is_empty(), "the stream is in the result");
+        assert!(refs.iter().all(|h| *h == refs[0]), "one handle: {refs:?}");
+        let Js::Num(theirs) = refs[0] else { panic!() };
+        assert_ne!(theirs as u32, stream, "a handle of the other document");
         ok(call(&mut core, "free", doc, PyValue::None, None));
         assert_eq!(err(&mut core, "stream_rawdata", stream, PyValue::None).1, "invalid handle");
+        assert_eq!(ok(call(&mut core, "stream_data", theirs as u32, PyValue::None, None)), Js::Bytes(vec![0xff, 0x20]));
+        ok(call(&mut core, "free", theirs as u32, PyValue::None, None));
+        ok(call(&mut core, "free", other_page as u32, PyValue::None, None));
         ok(call(&mut core, "set_stream_refs", 0, list(vec![PyValue::Bool(false)]), None));
         let Js::Arr(pages) = ok(call(&mut core, "doc_pages", other, list(vec![]), None)) else { panic!() };
         let Js::Obj(p) = &pages[0] else { panic!() };

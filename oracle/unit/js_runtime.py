@@ -796,7 +796,7 @@ def _indirect_filter_pdf() -> bytes:
     """Image XObjects whose ``/Filter`` and ``/DecodeParms`` are indirect
     objects that nothing reads before ``get_data()`` (``PDFStream.decode``
     resolves them: after ``PDF.close()``, from a closed file), next to one
-    whose filter is direct."""
+    whose filter is direct, and an annotation holding streams."""
     import zlib
 
     b = adv_interp.Builder()
@@ -806,7 +806,13 @@ def _indirect_filter_pdf() -> bytes:
              "ColorSpace": Name("DeviceGray"), "BitsPerComponent": 8}
     indirect = b.stream(zlib.compress(b"\x10\x80"), **image, Filter=flate, DecodeParms=parms)
     direct = b.stream(zlib.compress(b"\x20\x90"), **image, Filter=Name("FlateDecode"))
-    b.page(b"q 10 0 0 10 0 0 cm /A Do Q q 10 0 0 10 20 0 cm /B Do Q", {"XObject": {"A": indirect, "B": direct}})
+    # an annotation whose appearance streams are in a dict and a list
+    # (Page.annots: its data, resolve_all of the annotation)
+    ap = b.stream(b"0 0 1 1 re f")
+    annot = b.obj({"Type": Name("Annot"), "Subtype": Name("Square"), "Rect": [0, 0, 5, 5],
+                   "AP": {"N": ap}, "X": [ap, [direct]]})
+    b.page(b"q 10 0 0 10 0 0 cm /A Do Q q 10 0 0 10 20 0 cm /B Do Q", {"XObject": {"A": indirect, "B": direct}},
+           Annots=[annot])
     return b.build()
 
 
