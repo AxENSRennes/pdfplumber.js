@@ -2343,6 +2343,96 @@ documentée ici) :
   (lectures de `rawdata`/`data` après les appels), `public-api.md`
   (statuts « pending » à retirer).
 
+#### Réalisation API (branche `wave5/api`)
+
+Contrat : [`public-api.md`](public-api.md) (statut « implémenté », plus
+aucun membre en attente). Branche partie de `wave5/base`, avec
+`wave5/boundary` fusionnée deux fois (à `24954dc` puis à `936aebd`) pour
+vérifier les nouveaux membres sur les opérations de BOUNDARY.
+
+- **Membres** : `page.debugTablefinder(settings)` (`settings` du
+  `TableFinder` en plus, `TableFinderResult.settings`) ;
+  `pdf.structTree(page?)` (`js/src/api/structure.ts`, nouveau module :
+  `PDFStructTree` {`pdf`, `page`, `children`, `findAll`/`find_all`, `find`,
+  `elementBbox`/`element_bbox`}, `PDFStructElement` {champs du dataclass,
+  `altText`/`actualText`/`pageNumber`, `findAll`, `find`,
+  `allMcids`/`all_mcids`, `repr`}) : une `RegExp` (collante depuis 0,
+  `re.match`) ou une fonction est évaluée dans le job sur chaque élément de
+  l'arbre dans l'ordre de `_find_all` (le masque de `structs.rs`), toute
+  autre valeur passe telle quelle (`TypeError` de Python) ; un élément
+  trouvé est l'objet de l'arbre à son chemin ; `elementBbox` prend un
+  élément de cet arbre. Les flux par référence sont ceux de BOUNDARY
+  (`pdfobjects.ts`), le document leur propriétaire (`owner`).
+- **Durée de vie** : `FinalizationRegistry` des pages dérivées, des tables
+  et des arbres (leur handle libéré une fois injoignables), gardé par la
+  vie du document (`Life` : jamais un handle d'un document libéré, que le
+  cœur a pu redonner ; le finaliseur d'un document marque sa vie libérée
+  d'abord). Une page dérivée dont on a lu les annotations (`annots`,
+  `hyperlinks`, `toDict` : `data.P` la nomme) est épinglée par le document.
+  Un job mis en file avant `release()` s'exécute (le cœur libère après lui,
+  dans l'ordre des appels) ; un membre appelé après rejette
+  `DocumentReleased`.
+- **`pdf.page(ref)`** (décision prise quand le job s'exécute) : la page du
+  handle de la référence, sinon, pour une référence lue depuis le dernier
+  `close()` (`readRefs` : époque de chaque `PageRef` des résultats qui
+  tiennent des annotations), la page de ce numéro dans la liste courante de
+  `pdf.pages` (`#current`), sinon `page_info` ; `pdf.pages` réutilise la
+  page qu'un `page(ref)` a faite. Une valeur nomme une page par son premier
+  handle vivant, qui n'est pas forcément celui que `pdf.pages` a donné
+  (lecture de `pdf.annots` avant `pdf.pages`) : sans cette règle,
+  `page(ref) === pages[i]` (Python : `annot["data"]["P"] is
+  pdf.pages[i]`) serait faux. Après `close()`, les pages d'avant restent ce
+  que nomment les références d'avant, tant qu'elles vivent (`#weak`).
+- **Options** : un `Map` est un dict (`open`, `search`,
+  `extractTextLines` le découpent aussi) ; une valeur qui n'est pas un
+  mapping va au cœur telle quelle (`TypeError` de Python, « argument after
+  ** must be a mapping ») ; `open(x, null)` est `open(x)`. Une fonction ou
+  un symbole dans un argument est une `TypeError` (`encodeValue`, deux cas
+  dans `wire.ts`, fichier de PERF : commit à part `8ab0e97`, à garder à la
+  jonction).
+- **Harnais** (`js_pages_run.py`, ajouts du harnais seulement, à côté des
+  instructions de BOUNDARY) : cible `{"at": [cas, chemin...]}` (la page
+  qu'une valeur nomme, avec le handle que la frontière lui a donné ; ou la
+  valeur : un flux), argument `{"$cross": [cas, chemin...]}` (une valeur
+  d'un résultat rendue en argument, traversée comme JS la traverse :
+  `cross`), `api_page` (`page(ref)` : `page_info` sauf si l'API tient un
+  objet de la même page, par identité), `api_pages` (relecture de
+  `pdf.pages` : `doc_pages` seulement après une lecture qui a levé),
+  prédicats `text` et `raises`. `js_api.py` : formes d'arguments
+  JavaScript (`Num`, `Big`, `JSMap`, `Undefined`, `Ref`, `Refused`,
+  `Collector`, `ObjArg`), flux par référence (`set_stream_refs` en tête de
+  session, `PDFStream{objid, genno, attrs}` des deux côtés), arbres de
+  structure (`PDFStructTree{page, children}`, éléments sans récursion).
+- **Sessions** : SESSIONS sessions, CALLS appels : les dix fichiers réels
+  (chaque membre et alias, `debugTablefinder` en plus), options
+  d'ouverture, `open(path)`, ordre d'attente (dont `release()` entre deux
+  appels en vol), CJK, `open-inputs` (`Blob`, `ArrayBuffer`, vue décalée,
+  options `null`, `Map`, `undefined`, `logLevel`/`onWarning`, option
+  refusée), `open-file-url` (Node), `arguments` (nombres entiers ou non,
+  `PyFloat`, `PyTuple`, `bigint`, `-0`, NaN, `Map`, `undefined`, objets
+  rendus : lignes explicites, mots ; refus ; options qui ne sont pas des
+  mappings), `lifetime` (`page(ref)` avant et après `pdf.pages`, d'une page
+  recadrée, après `close()`, après `release()` ; `pdf`, `parent`,
+  `table.page` ; `close()` et `release()` deux fois ; `await using`),
+  `calls` (chaque option et erreur de `search`, recadrages hors de la page,
+  prédicats, options de déduplication et de sérialisation), `streams`
+  (lectures de `rawdata`, `data`, `getData`, `getRawdata` et alias, après
+  `close()` et `release()`, images rendues en lignes de table), onze
+  sessions de structure (cinq fichiers réels, six d'`adv-structure` : arbres
+  du document, d'une page, d'une page recadrée ; chaque sorte de matcher
+  sur l'arbre et sur des éléments ; `allMcids`, `repr`, `elementBbox`), et
+  les 26 PDF d'`adv-plumber` (relecture de `pdf.pages` en plus).
+  `js/test/node/api-lifetime.test.ts` : ce que les valeurs ne montrent pas
+  (identités de `page(ref)`, des flux et des éléments ; handles libérés par
+  le ramasse-miettes, `gc` exposé par `v8.setFlagsFromString` ; jamais un
+  handle d'un document libéré).
+- **Mutants** (`scripts/js-api-mutants.mjs`, Stryker n'étant pas
+  disponible hors ligne) : MUTANTS mutants à la main des branches de
+  `api.ts`, `api/structure.ts`, `search.ts`, `errors.ts`, chacun lancé sur
+  les sessions et les tests d'identité (le test des diagnostics du runtime
+  pour la politique de diagnostics) ; SURVIVORS
+- **Vérification** : VERIFICATION
+
 **Chantier PERF** : chemins chauds de `crates/pdfplumber`,
 `crates/pdfminer`, `crates/pycompat` (`page.objects`/`process_object` :
 `resolve_all`, dicts d'attributs, conversions ; texte, mots, tables de la
