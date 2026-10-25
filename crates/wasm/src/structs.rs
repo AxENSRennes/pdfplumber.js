@@ -68,8 +68,8 @@ fn preorder(tree: &PDFStructTree) -> PyResult<Vec<Rc<PDFStructElement>>> {
 /// children hold an ancestor never ends (pdfplumber's own walks would
 /// loop, or raise `RecursionError`, first), and a DAG whose walk reaches
 /// this many elements took pdfplumber as many steps to build
-/// (pdfplumber/structure.py:419 `_resolve_children` queues a child once
-/// per parent that lists it).
+/// (pdfplumber/structure.py:419 `PDFStructTree._resolve_children` queues
+/// a child once per parent that lists it).
 const MAX_ELEMENTS: usize = 1 << 24;
 
 /// The elements of a tree as values: each `PDFStructElement`'s fields in
