@@ -34,7 +34,7 @@ use pdfminer::process_state::ProcessState;
 use pdfminer::psparser::LiteralName;
 use pdfplumber::obj::PyValue;
 use pycompat::diagnostics::{self, Level};
-use pycompat::PyResult;
+use pycompat::{PyResult, PyStr};
 use rustc_hash::FxHashSet;
 
 /// The most nodes of the page tree a scan reads.
@@ -148,13 +148,17 @@ fn font_cmaps(obj: &PDFObject, found: &mut BTreeSet<String>) {
 
 /// The unicode map of a CID font's `/CIDSystemInfo`
 /// (pdfminer/pdffont.py:1102 PDFCIDFont, `get_unicode_map(cidcoding)`:
-/// the registry and ordering are `bytes`).
+/// the registry and ordering are `bytes`, decoded as Latin-1 and
+/// stripped).
 fn system_info(font: &PDFDict, found: &mut BTreeSet<String>) {
     let Some(info) = font.get("CIDSystemInfo").as_ref().and_then(resolved).as_ref().and_then(dict_of) else {
         return;
     };
     let text = |k: &str| match info.get(k).as_ref().and_then(resolved) {
-        Some(PDFObject::Bytes(b)) => Some(b.iter().map(|&c| char::from(c)).collect::<String>()),
+        Some(PDFObject::Bytes(b)) => {
+            let text = b.iter().map(|&c| char::from(c)).collect::<String>();
+            Some(PyStr::from(text.as_str()).strip().to_string_lossy())
+        }
         _ => None,
     };
     if let (Some(registry), Some(ordering)) = (text("Registry"), text("Ordering")) {
@@ -166,6 +170,47 @@ fn system_info(font: &PDFDict, found: &mut BTreeSet<String>) {
 mod tests {
     use super::*;
     use pdfplumber::obj::Obj;
+
+    /// What the scan finds in a page tree (no xref table: pdfminer's
+    /// fallback reads the objects): the `/Encoding` name of each `Type0`
+    /// font, resolved, and the unicode map of each descendant's
+    /// `/CIDSystemInfo` (Latin-1, stripped), in the fonts of every node
+    /// (the tree's own resources too, a node met twice read once); nothing
+    /// from a font of another subtype, an encoding that is not a name, a
+    /// system info whose registry is not a string.
+    #[test]
+    fn the_scan_lists_the_names_the_fonts_of_the_page_tree_give() {
+        let objects = [
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R 4 0 R 3 0 R] /Count 2 /Resources << /Font << /T 9 0 R >> >> >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << /Font << /A 5 0 R /B 6 0 R >> >> >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources 10 0 R >>",
+            "<< /Type /Font /Subtype /Type0 /Encoding 11 0 R /DescendantFonts [7 0 R] >>",
+            "<< /Type /Font /Subtype /Type1 /Encoding /UniJIS-UCS2-H /DescendantFonts [7 0 R] >>",
+            "<< /Subtype /CIDFontType0 /CIDSystemInfo << /Registry (\\240Adobe ) /Ordering ( GB1\\n) >> >>",
+            "<< /Subtype /CIDFontType2 /CIDSystemInfo << /Registry /Adobe /Ordering (Korea1) >> >>",
+            "<< /Type /Font /Subtype /Type0 /Encoding (UniCNS-UCS2-H) /DescendantFonts [8 0 R] >>",
+            "<< /Font << /C 12 0 R >> >>",
+            "/UniGB-UCS2-H",
+            "<< /Type /Font /Subtype /Type0 /Encoding /Identity-V /DescendantFonts 13 0 R >>",
+            "[<< /CIDSystemInfo << /Registry (Adobe) /Ordering (Japan1) >> >>]",
+        ];
+        let mut pdf = String::from("%PDF-1.4\n");
+        for (k, o) in objects.iter().enumerate() {
+            pdf.push_str(&format!("{} 0 obj\n{o}\nendobj\n", k + 1));
+        }
+        pdf.push_str("trailer\n<< /Root 1 0 R /Size 14 >>\n%%EOF\n");
+        let data: Rc<[u8]> = Rc::from(pdf.into_bytes());
+        let mut found = BTreeSet::new();
+        assert!(scan_objects(&data, &PyValue::None, &mut found).is_ok());
+        let found: Vec<&str> = found.iter().map(String::as_str).collect();
+        assert_eq!(found, ["Identity-V", "UniGB-UCS2-H", "to-unicode-Adobe-GB1", "to-unicode-Adobe-Japan1"], "found");
+        // `known` filters them, sorted
+        assert_eq!(
+            scan(&data, &PyValue::None, &|n| n.starts_with("to-")),
+            ["to-unicode-Adobe-GB1", "to-unicode-Adobe-Japan1"]
+        );
+    }
 
     /// The scan opens an encrypted document with the password of `open()`
     /// (`password-example.pdf`, upstream's: password `test`).

@@ -1049,6 +1049,8 @@ _BAD_OPERATORS = (
     b"/DeviceGray CS /q SCN /DeviceRGB cs 1 /r 0 scn /DeviceCMYK cs 0 0 0 /s scn "
     b"/DeviceGray cs 1 2 sc /Pattern CS 0.5 SCN /Pattern cs [1] scn "
     b"1 MP (t) BMC 3 << >> DP [4] << >> BDC "
+    # and valid tags, which log nothing
+    b"/ta MP /tb BMC EMC /tc << >> DP /td << >> BDC EMC "
     b"BT /F1 /s Tf /t Tc /u Tw /v Tz (w) TL /x Ts /y Tr 1 0 0 1 0 /z Tm "
     b"[(a) /lit 3 [1]] TJ ET "
 )
@@ -1060,9 +1062,12 @@ def _interp_warnings_pdf() -> bytes:
 
 def _page_boxes_pdfs() -> list[bytes]:
     """Pages whose boxes pdfminer replaces (a MediaBox missing or invalid,
-    a CropBox invalid), one document each."""
+    a CropBox invalid), one document each; and boxes whose parsing raises
+    another error than ``PDFValueError`` (``float`` of a name: a
+    ``TypeError``), which pdfminer does not catch."""
     out = []
-    for attrs in ({"MediaBox": None}, {"MediaBox": [0, 0, Name("a"), 10]}, {"CropBox": [0, b"x", 1, 1]}):
+    for attrs in ({"MediaBox": None}, {"MediaBox": [0, 0, Name("a"), 10]}, {"CropBox": [0, b"x", 1, 1]},
+                  {"MediaBox": [0, 0, 10]}, {"CropBox": [0, Name("a"), 1, 1]}):
         b = adv_interp.Builder()
         font = b.obj(adv_interp.HELVETICA)
         b.page(b"BT /F1 12 Tf 10 10 Td (a) Tj ET", {"Font": {"F1": font}}, **attrs)

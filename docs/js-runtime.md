@@ -328,9 +328,10 @@ dans `check.sh`).
   octets et du même mot de passe, son arbre de pages et les polices des
   ressources de chaque nœud ; aucun flux de contenu ni XObject, dont les
   données seraient copiées pour rien) et ajoute aux noms manquants
-  l'`/Encoding` de chaque police `Type0` (ou l'`/UseCMap` d'une CMap
-  embarquée) et la carte unicode `to-unicode-<Registry>-<Ordering>` de
-  chaque `/CIDSystemInfo`, parmi celles que JS peut fournir et n'a pas
+  l'`/Encoding` de chaque police `Type0` (son `/Subtype`, comme
+  `PDFResourceManager.get_font` le lit) et la carte unicode
+  `to-unicode-<Registry>-<Ordering>` du `/CIDSystemInfo` de chacune de ses
+  descendantes (chaînes Latin-1 sans espaces autour, comme `PDFCIDFont`), parmi celles que JS peut fournir et n'a pas
   données. Un appel nul par document au lieu d'un par CMap ; un document
   qui n'en manque aucune ne coûte rien (mesuré sur
   `pdfjs-pdf-reference-1-7.pdf`, 1 310 pages : une analyse à l'ouverture
