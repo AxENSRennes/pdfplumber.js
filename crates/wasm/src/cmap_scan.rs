@@ -8,9 +8,9 @@
 //! page tree and the fonts of each node's resources: no content stream or
 //! XObject, whose data would be copied for nothing; a font used only in a
 //! Form XObject is loaded lazily), and lists the names of the predefined
-//! CMaps its fonts name: the `/Encoding` of a `Type0` font
-//! (or the `/UseCMap` of an embedded CMap), and the unicode map of a CID
-//! font's `/CIDSystemInfo` (`to-unicode-<Registry>-<Ordering>`, what
+//! CMaps its fonts name: the `/Encoding` of a `Type0` font, and the unicode
+//! map of each of its descendants' `/CIDSystemInfo`
+//! (`to-unicode-<Registry>-<Ordering>`, what
 //! `CMapDB.get_unicode_map` loads), among those JavaScript can provide
 //! and has not handed over yet. A guess: a name it misses is still loaded
 //! lazily, a name it adds is loaded for nothing.
@@ -110,11 +110,10 @@ fn name(o: &PDFObject) -> Option<String> {
     }
 }
 
-/// A dict of an object (the dict itself, or a stream's).
+/// A dict.
 fn dict_of(o: &PDFObject) -> Option<PDFDict> {
     match o {
         PDFObject::Dict(d) => Some(d.clone()),
-        PDFObject::Stream(s) => Some(s.attrs.clone()),
         _ => None,
     }
 }
@@ -127,54 +126,59 @@ fn resolved(x: &PDFObject) -> Option<PDFObject> {
     }
 }
 
-/// The CMaps a font object names (see the module documentation).
+/// The CMaps a font names (see the module documentation): a `Type0`
+/// font (its `/Subtype`, as `PDFResourceManager.get_font` reads it), its
+/// `/Encoding` name and the unicode map of each descendant font.
 fn font_cmaps(obj: &PDFObject, found: &mut BTreeSet<String>) {
     let Some(d) = dict_of(obj) else { return };
-    // an embedded CMap that uses a predefined one
-    if let Some(n) = d.get("UseCMap").as_ref().and_then(name) {
-        found.insert(n);
-    }
-    if d.get("Type").as_ref().and_then(name).as_deref() != Some("Font") {
+    if d.get("Subtype").as_ref().and_then(name).as_deref() != Some("Type0") {
         return;
     }
-    match d.get("Subtype").as_ref().and_then(name).as_deref() {
-        Some("Type0") => {
-            if let Some(enc) = d.get("Encoding").as_ref().and_then(resolved) {
-                match name(&enc) {
-                    Some(n) => {
-                        found.insert(n);
-                    }
-                    None => {
-                        if let Some(n) = dict_of(&enc).and_then(|e| e.get("UseCMap")).as_ref().and_then(name) {
-                            found.insert(n);
-                        }
-                    }
-                }
-            }
-            if let Some(PDFObject::List(fonts)) = d.get("DescendantFonts").as_ref().and_then(resolved) {
-                for f in fonts.to_vec() {
-                    if let Some(f) = resolved(&f).as_ref().and_then(dict_of) {
-                        system_info(&f, found);
-                    }
-                }
+    if let Some(n) = d.get("Encoding").as_ref().and_then(resolved).as_ref().and_then(name) {
+        found.insert(n);
+    }
+    if let Some(PDFObject::List(fonts)) = d.get("DescendantFonts").as_ref().and_then(resolved) {
+        for f in fonts.to_vec() {
+            if let Some(f) = resolved(&f).as_ref().and_then(dict_of) {
+                system_info(&f, found);
             }
         }
-        Some("CIDFontType0" | "CIDFontType2") => system_info(&d, found),
-        _ => {}
     }
 }
 
-/// The unicode map of a CID font's `/CIDSystemInfo`.
+/// The unicode map of a CID font's `/CIDSystemInfo`
+/// (pdfminer/pdffont.py:1102 PDFCIDFont, `get_unicode_map(cidcoding)`:
+/// the registry and ordering are `bytes`).
 fn system_info(font: &PDFDict, found: &mut BTreeSet<String>) {
     let Some(info) = font.get("CIDSystemInfo").as_ref().and_then(resolved).as_ref().and_then(dict_of) else {
         return;
     };
     let text = |k: &str| match info.get(k).as_ref().and_then(resolved) {
         Some(PDFObject::Bytes(b)) => Some(b.iter().map(|&c| char::from(c)).collect::<String>()),
-        Some(o) => name(&o),
-        None => None,
+        _ => None,
     };
     if let (Some(registry), Some(ordering)) = (text("Registry"), text("Ordering")) {
         found.insert(format!("to-unicode-{registry}-{ordering}"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pdfplumber::obj::Obj;
+
+    /// The scan opens an encrypted document with the password of `open()`
+    /// (`password-example.pdf`, upstream's: password `test`).
+    #[test]
+    fn the_scan_reads_an_encrypted_document_with_its_password() {
+        let root = std::path::PathBuf::from(std::env::var("PDFPLUMBER_ROOT").expect("PDFPLUMBER_ROOT"));
+        let data: Rc<[u8]> =
+            Rc::from(std::fs::read(root.join("upstream/pdfplumber-python/tests/pdfs/password-example.pdf")).unwrap());
+        let options = |p: PyValue| PyValue::Dict(Obj::from_pairs([("password", p)]));
+        let mut found = BTreeSet::new();
+        assert!(scan_objects(&data, &options(PyValue::str("test")), &mut found).is_ok());
+        assert!(scan_objects(&data, &options(PyValue::str("wrong")), &mut found).is_err());
+        assert!(scan_objects(&data, &options(PyValue::from(1_i64)), &mut found).is_err(), "not a str: \"\"");
+        assert!(scan_objects(&data, &PyValue::None, &mut found).is_err());
     }
 }

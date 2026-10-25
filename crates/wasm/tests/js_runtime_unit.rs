@@ -1186,3 +1186,45 @@ fn the_first_void_call_of_a_document_asks_for_every_cmap_its_fonts_name() {
         assert_eq!(call(&mut core, "page_extract_text", p as u32, empty(), None).status, 0);
     });
 }
+
+/// The scan reads the whole page tree: in a document whose pages use a
+/// Korean and a Japanese font (the `replay-cmap` sessions of
+/// `pages.jsonl`), the first void call, made by the Korean page, asks for
+/// the Japanese CMaps too.
+#[test]
+#[cfg_attr(target_family = "wasm", ignore = "loads CMaps: run alone, one process per test, by scripts/check.sh")]
+fn the_scan_reads_every_page_of_the_document() {
+    on_thread(1 << 30, || {
+        let dir = cmap_dir();
+        let (input, _) = data()
+            .cases("pages")
+            .into_iter()
+            .find(|(i, _)| i[0].as_str().is_some_and(|n| n.starts_with("depth-replay-cmap-")))
+            .expect("a replay-cmap session");
+        let Value::List(cases) = &input[1] else { panic!() };
+        let Value::List(open) = &cases[0] else { panic!() };
+        let Value::Bytes(pdf) = &open[3] else { panic!("the PDF of the session") };
+        let names: Vec<PyValue> =
+            fs::read_to_string(dir.join("names.txt")).unwrap().lines().map(PyValue::str).collect();
+        let mut core = Core::new();
+        ok(call(&mut core, "cmap_configure", 0, list(names), None));
+        let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(pdf.clone()))) else { panic!() };
+        let Js::Arr(pages) = ok(call(&mut core, "doc_pages", doc as u32, list(vec![]), None)) else { panic!() };
+        let Js::Obj(korean) = &pages[1] else { panic!() };
+        let Js::Num(korean) = korean[0].1 else { panic!() };
+        let r = call(
+            &mut core,
+            "page_extract_text",
+            korean as u32,
+            list(vec![PyValue::Dict(pdfplumber::obj::Obj::new())]),
+            None,
+        );
+        assert_eq!(r.status, 2, "a void call");
+        let Js::Arr(asked) = r.value else { panic!() };
+        let asked: Vec<String> =
+            asked.iter().map(|n| if let Js::Str(u) = n { String::from_utf16(u).unwrap() } else { panic!() }).collect();
+        for name in ["UniKS-UCS2-H", "to-unicode-Adobe-Korea1", "UniJIS-UCS2-H", "to-unicode-Adobe-Japan1"] {
+            assert!(asked.iter().any(|a| a == name), "{name} in {asked:?}");
+        }
+    });
+}

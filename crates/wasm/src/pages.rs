@@ -244,7 +244,7 @@ fn table_value(handle: PyValue, t: &Table) -> PyResult<PyValue> {
     ])))
 }
 
-/// The fields of a resolved `TableSettings` (pdfplumber/table.py:486, a
+/// The fields of a resolved pdfplumber/table.py:486 TableSettings (a
 /// dataclass), in order: `{f.name: getattr(s, f.name) for f in
 /// dataclasses.fields(s)}` (`__post_init__` set every `UNSET` one).
 fn settings_value(s: &TableSettings) -> Obj {

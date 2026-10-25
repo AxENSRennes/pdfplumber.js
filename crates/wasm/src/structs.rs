@@ -1,5 +1,5 @@
-//! pdfplumber's structure trees (pdfplumber/structure.py:151
-//! `PDFStructTree`) as JavaScript reaches them (`docs/js-runtime.md`,
+//! pdfplumber's structure trees, pdfplumber/structure.py:151 PDFStructTree
+//! as JavaScript reaches them (`docs/js-runtime.md`,
 //! "Documents et pages"; the `PDFStructTree` of `docs/public-api.md`).
 //!
 //! `struct_tree` (on a document, with a page handle or `None`) makes the
@@ -70,7 +70,7 @@ fn preorder(tree: &PDFStructTree) -> PyResult<Vec<Rc<PDFStructElement>>> {
 const MAX_ELEMENTS: usize = 1 << 24;
 
 /// The elements of a tree as values: each `PDFStructElement`'s fields in
-/// order (pdfplumber/structure.py:102, a dataclass), `children` the values
+/// order (pdfplumber/structure.py:102 PDFStructElement, a dataclass), `children` the values
 /// of its children (built without recursion: any depth).
 fn elements_value(children: &[Rc<PDFStructElement>]) -> PyResult<PyValue> {
     struct Frame {
