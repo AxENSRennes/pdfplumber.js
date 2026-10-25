@@ -19,6 +19,11 @@ Writes ``<cache>/unit/js_api/<fingerprint>/sessions.jsonl``
 
     {"in": [session], "out": [expectation, ...]}
 
+and, in the same form, ``depth.jsonl``: a session for each depth window
+(``depth-*``, ``climit-*``) of the adversarial sets ``DEPTH_SETS``, where
+Python's ``RecursionError`` happens through the API's statements (replayed
+in Node by ``js/test/node/api-depth.test.ts``).
+
     session     = {"name": str, "node_only": bool, "steps": [step, ...]}
     step        = {"calls": [call, ...], "await": [k, ...]}
                   the calls are made in this order without waiting, then
@@ -1472,6 +1477,57 @@ def adversarial_session(name: str, data: bytes) -> Session:
     return s
 
 
+#: The adversarial sets whose depth windows (``depth-*``, ``climit-*``
+#: files) ``depth.jsonl`` holds: where Python's ``RecursionError`` happens
+#: through the API's statements, which the stage traces cannot show (their
+#: oracle calls pdfplumber from nested generators: docs/verification.md).
+DEPTH_SETS = ["adv-plumber", "adv-structure", "adv-interp", "adv-objects", "adv-pages"]
+
+
+def depth_session(aset: str, path: Path) -> Session:
+    """A depth window of an adversarial set: the members of
+    ``adversarial_session``, the metadata, and the structure tree (the
+    document's tree, an element's ``repr``, ``allMcids``,
+    ``elementBbox``)."""
+    s = Session(f"depth-{aset}-{path.stem}")
+    root = corpus_root()
+    try:
+        doc = s.open(str(path.relative_to(root)))
+    except ValueError:
+        doc = s.open(data=path.read_bytes())
+    s.doc_get(doc, "metadata")
+    page = s.pages(doc)[0]
+    s.pages(doc)
+    s.page_get(page, "objects")
+    s.text(page, "extractText", None)
+    s.text(page, "extractWords", None)
+    s.search(page, "e", "e", {"return_chars": False})
+    s.tables(page, "findTables")
+    s.page_get(page, "annots")
+    s.derive(page, "crop", [0, 0, 100, 100], {"strict": False})
+    s.serialize(page, "toDict")
+    s.page_get(page, "structure_tree")
+    s.doc_get(doc, "structure_tree")
+    tree = s.struct_tree(doc)
+    if tree is not None:
+        s.struct_find(tree, "findAll", ("tag", "P"))
+        el = s.element(tree, 0)
+        s.element_call(el, "repr")
+        s.element_call(el, "allMcids")
+        s.element_bbox(tree, el)
+    return s
+
+
+def depth_sessions() -> list[Session]:
+    out = []
+    for aset in DEPTH_SETS:
+        d = cache_dir() / "corpus" / aset
+        if not d.is_dir():
+            raise SystemExit(f"js_api: {d} is missing: generate {aset} first (python -m oracle.unit)")
+        out += [depth_session(aset, p) for p in sorted(d.glob("*.pdf")) if re.search(r"(^|-)(depth|climit)-", p.stem)]
+    return out
+
+
 def inputs_session() -> Session:
     """The forms of ``open()``'s input (bytes as a ``Blob``, an
     ``ArrayBuffer``, a view at an offset of a larger buffer), ``null``
@@ -1841,8 +1897,19 @@ def main() -> None:
             n_sessions += 1
             n_calls += len(out["expect"])
     tmp.replace(path)
-    write_meta(MODULE, cases={"sessions": n_sessions, "calls": n_calls})
-    print(f"{MODULE}: {n_sessions} sessions, {n_calls} calls")
+    # the depth windows of the adversarial sets (Node only: js/test/node/api-depth.test.ts)
+    depth = unit_dir(MODULE) / "depth.jsonl"
+    tmp = depth.with_name(f".{depth.name}.tmp")
+    n_depth = n_depth_calls = 0
+    with open(tmp, "w", encoding="ascii") as f:
+        for s in depth_sessions():
+            out = s.run()
+            f.write(json.dumps({"in": [out["session"]], "out": out["expect"]}, ensure_ascii=True, separators=(",", ":")) + "\n")
+            n_depth += 1
+            n_depth_calls += len(out["expect"])
+    tmp.replace(depth)
+    write_meta(MODULE, cases={"sessions": n_sessions, "calls": n_calls, "depth_sessions": n_depth, "depth_calls": n_depth_calls})
+    print(f"{MODULE}: {n_sessions} sessions, {n_calls} calls; depth windows: {n_depth} sessions, {n_depth_calls} calls")
 
 
 if __name__ == "__main__":

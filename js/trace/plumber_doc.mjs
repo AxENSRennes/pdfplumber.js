@@ -61,13 +61,17 @@ function paths(children, max) {
 
 async function treeLines(lines, label, getList, makeTree, pdf) {
   const t = tables();
+  let elements;
   try {
     await getList();
-    const elements = typed(pdf);
-    lines.push(`${label} ${elements.length} ` + digest(elements));
-    elements.slice(0, t.DOC_MAX_ELEMENTS).forEach((el, i) => lines.push(bounded(`struct ${i}`, el)));
+    elements = typed(pdf);
   } catch (e) {
     lines.push(`${label} ` + exc(e));
+  }
+  // (outside the try, as Python's `else:` clause)
+  if (elements !== undefined) {
+    lines.push(`${label} ${elements.length} ` + digest(elements));
+    elements.slice(0, t.DOC_MAX_ELEMENTS).forEach((el, i) => lines.push(bounded(`struct ${i}`, el)));
   }
   let tree;
   try {
@@ -148,14 +152,18 @@ async function derivedLines(lines, page, steps) {
   } catch (e) {
     lines.push("dobjects " + exc(e));
   }
+  let annots;
   try {
     await d.annots;
-    const annots = typed(d.pdf);
-    const names = new Names();
-    lines.push(`dannots ${annots.length} ` + digest(annots.map((a) => annotValue(a, names))));
+    annots = typed(d.pdf);
   } catch (e) {
     lines.push("dannots " + exc(e));
+    return;
   }
+  // (outside the try, as Python's `else:` clause: an annotation the
+  // harness cannot write raises out of the stage)
+  const names = new Names();
+  lines.push(`dannots ${annots.length} ` + digest(annots.map((a) => annotValue(a, names))));
 }
 
 /** `page_dict(value, names)` */
@@ -249,14 +257,16 @@ async function optionLines(lines, file, options) {
     }
     for (const page of pages) {
       const n = geometry(page).get("page_number");
+      let annots;
       try {
         await page.annots;
-        const annots = typed(pdf);
-        const names = new Names();
-        lines.push(`annots ${n} ${annots.length} ` + digest(annots.map((a) => annotValue(a, names))));
+        annots = typed(pdf);
       } catch (e) {
         lines.push(`annots ${n} ` + exc(e));
+        continue;
       }
+      const names = new Names();
+      lines.push(`annots ${n} ${annots.length} ` + digest(annots.map((a) => annotValue(a, names))));
     }
   } finally {
     await pdf.release();

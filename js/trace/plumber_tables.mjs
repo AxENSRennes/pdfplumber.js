@@ -78,12 +78,15 @@ async function finderLines(lines, page, i, settings) {
     ["extract_tables", "extractTables"],
     ["extract_table", "extractTable"],
   ]) {
+    let value;
     try {
       await page[method](settings);
-      lines.push(bounded(name, i, typed(page.pdf)));
+      value = typed(page.pdf);
     } catch (e) {
       lines.push(`${name} ${i} ` + exc(e));
+      continue;
     }
+    lines.push(bounded(name, i, value));
   }
 }
 
