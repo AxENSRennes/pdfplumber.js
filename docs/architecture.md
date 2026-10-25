@@ -2412,7 +2412,7 @@ BOUNDARY.
   `Collector`, `ObjArg`), flux par référence (`set_stream_refs` en tête de
   session, `PDFStream{objid, genno, attrs}` des deux côtés), arbres de
   structure (`PDFStructTree{page, children}`, éléments sans récursion).
-- **Sessions** : 57 sessions, 3 607 appels : les dix fichiers réels
+- **Sessions** : 57 sessions, 4 112 appels : les dix fichiers réels
   (chaque membre et alias, `debugTablefinder` en plus), options
   d'ouverture, `open(path)`, ordre d'attente (dont `release()` entre deux
   appels en vol), CJK, `open-inputs` (`Blob`, `ArrayBuffer`, vue décalée,
@@ -2431,7 +2431,9 @@ BOUNDARY.
   `close()` et `release()`, images rendues en lignes de table), onze
   sessions de structure (cinq fichiers réels, six d'`adv-structure` : arbres
   du document, d'une page, d'une page recadrée ; chaque sorte de matcher
-  sur l'arbre et sur des éléments ; `allMcids`, `repr`, `elementBbox`), et
+  sur l'arbre et sur des éléments ; `allMcids`, `repr`, `elementBbox`,
+  champs des éléments et leurs getters `altText`, `actualText`,
+  `pageNumber`), et
   les 26 PDF d'`adv-plumber` (relecture de `pdf.pages` en plus).
   `js/test/node/api-lifetime.test.ts` : ce que les valeurs ne montrent pas
   (identités de `page(ref)`, des flux et des éléments ; handles libérés par
