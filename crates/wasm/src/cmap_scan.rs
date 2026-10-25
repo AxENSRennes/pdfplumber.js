@@ -47,7 +47,8 @@ pub fn scan(data: &Rc<[u8]>, options: &PyValue, known: &dyn Fn(&str) -> bool) ->
     let process = ProcessState::capture();
     let mut found = BTreeSet::new();
     // its diagnostics are collected here, and dropped
-    let (_, _) = diagnostics::collect(Level::Critical, 0, || drop(scan_objects(data, options, &mut found)));
+    let (_, _) =
+        diagnostics::collect(Level::Critical, 0, || drop(scan_objects(data, options, MAX_OBJECTS, &mut found)));
     process.restore();
     found.into_iter().filter(|n| known(n)).collect()
 }
@@ -64,7 +65,9 @@ fn password(options: &PyValue) -> String {
     }
 }
 
-fn scan_objects(data: &Rc<[u8]>, options: &PyValue, found: &mut BTreeSet<String>) -> PyResult<()> {
+/// The CMaps the fonts of the first `max_nodes` nodes of the page tree
+/// name, into `found`.
+fn scan_objects(data: &Rc<[u8]>, options: &PyValue, max_nodes: usize, found: &mut BTreeSet<String>) -> PyResult<()> {
     let doc = PDFDocument::open(data.clone(), FileKind::BytesIO, &password(options))?;
     // the page tree, from the catalog: the fonts of each node's resources
     // (no content stream, no XObject is read: their data would be copied
@@ -79,7 +82,7 @@ fn scan_objects(data: &Rc<[u8]>, options: &PyValue, found: &mut BTreeSet<String>
             }
         }
         nodes += 1;
-        if nodes > MAX_OBJECTS {
+        if nodes > max_nodes {
             break;
         }
         let Some(d) = resolved(&node).as_ref().and_then(dict_of) else { continue };
@@ -202,9 +205,16 @@ mod tests {
         pdf.push_str("trailer\n<< /Root 1 0 R /Size 14 >>\n%%EOF\n");
         let data: Rc<[u8]> = Rc::from(pdf.into_bytes());
         let mut found = BTreeSet::new();
-        assert!(scan_objects(&data, &PyValue::None, &mut found).is_ok());
+        assert!(scan_objects(&data, &PyValue::None, MAX_OBJECTS, &mut found).is_ok());
         let found: Vec<&str> = found.iter().map(String::as_str).collect();
         assert_eq!(found, ["Identity-V", "UniGB-UCS2-H", "to-unicode-Adobe-GB1", "to-unicode-Adobe-Japan1"], "found");
+        // the first nodes only (a node met twice counts once): the root
+        // (its font T names nothing), page 3 (A), page 4 (C)
+        for (max, n) in [(1, 0), (2, 2), (3, 4)] {
+            let mut first = BTreeSet::new();
+            assert!(scan_objects(&data, &PyValue::None, max, &mut first).is_ok());
+            assert_eq!(first.len(), n, "{max} nodes: {first:?}");
+        }
         // `known` filters them, sorted
         assert_eq!(
             scan(&data, &PyValue::None, &|n| n.starts_with("to-")),
@@ -221,9 +231,12 @@ mod tests {
             Rc::from(std::fs::read(root.join("upstream/pdfplumber-python/tests/pdfs/password-example.pdf")).unwrap());
         let options = |p: PyValue| PyValue::Dict(Obj::from_pairs([("password", p)]));
         let mut found = BTreeSet::new();
-        assert!(scan_objects(&data, &options(PyValue::str("test")), &mut found).is_ok());
-        assert!(scan_objects(&data, &options(PyValue::str("wrong")), &mut found).is_err());
-        assert!(scan_objects(&data, &options(PyValue::from(1_i64)), &mut found).is_err(), "not a str: \"\"");
-        assert!(scan_objects(&data, &PyValue::None, &mut found).is_err());
+        assert!(scan_objects(&data, &options(PyValue::str("test")), MAX_OBJECTS, &mut found).is_ok());
+        assert!(scan_objects(&data, &options(PyValue::str("wrong")), MAX_OBJECTS, &mut found).is_err());
+        assert!(
+            scan_objects(&data, &options(PyValue::from(1_i64)), MAX_OBJECTS, &mut found).is_err(),
+            "not a str: \"\""
+        );
+        assert!(scan_objects(&data, &PyValue::None, MAX_OBJECTS, &mut found).is_err());
     }
 }
