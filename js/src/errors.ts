@@ -46,22 +46,12 @@ export class PDFPlumberError extends Error {
   }
 }
 
-/** A feature of the API whose Rust core is not ported yet (the page
- * layer), or a core path marked "not ported" (`NotPorted`). */
+/** A core path marked "not ported" (`NotPorted`: docs/public-api.md,
+ * "Not Ported"), whose module, class and message the error keeps; its
+ * `name` is `NotImplemented`. */
 export class NotImplemented extends PDFPlumberError {
-  /** `what`: the member not implemented yet; `info`: the core's
-   * `NotPorted` (a path of the port marked "not ported"), whose module,
-   * class and message the error keeps. */
-  constructor(what: string, info?: PythonErrorInfo) {
-    super(
-      info ?? {
-        name: "NotImplemented",
-        module: "pdfplumber-js",
-        qualname: "NotImplemented",
-        mro: ["pdfplumber-js.NotImplemented"],
-        message: `${what} is not implemented yet (wave 5 of the port, docs/architecture.md)`,
-      },
-    );
+  constructor(info: PythonErrorInfo) {
+    super(info);
     this.name = "NotImplemented";
   }
 }
@@ -77,6 +67,6 @@ export class CoreCrash extends Error {
 
 /** The error of a core exception. */
 export function fromPython(info: PythonErrorInfo): PDFPlumberError {
-  if (info.module === "pycompat" && info.name === "NotPorted") return new NotImplemented("", info);
+  if (info.module === "pycompat" && info.name === "NotPorted") return new NotImplemented(info);
   return new PDFPlumberError(info);
 }

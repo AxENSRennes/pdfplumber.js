@@ -19,7 +19,8 @@ const root = process.argv[2];
 const only = new Set(process.argv.slice(3));
 
 const API = ["js/test/node/api.test.ts", "js/test/node/api-lifetime.test.ts"];
-const DIAG = ["js/test/node/runtime.test.ts", "-t", "onWarning"];
+const DIAG = ["js/test/node/runtime.test.ts", "-t", "onWarning|diagnostics reach"];
+const API_OPTS = ["js/test/node/api-runtime.test.ts"];
 
 const A = "js/src/api.ts";
 const S = "js/src/api/structure.ts";
@@ -135,7 +136,24 @@ const mutants = [
   // errors
   [E, "super(info.message, info.cause ? { cause: fromPython(info.cause) } : undefined);", "super(info.message);"],
   [E, "this.name = info.name;", 'this.name = "PDFPlumberError";'],
-  [E, 'if (info.module === "pycompat" && info.name === "NotPorted") return new NotImplemented("", info);', ""],
+  [E, 'if (info.module === "pycompat" && info.name === "NotPorted") return new NotImplemented(info);', ""],
+  [E, "return this.pythonMro.some((q) => q === cls || q.slice(q.lastIndexOf(\".\") + 1) === cls);", "return this.pythonMro.some((q) => q === cls);"],
+  // added on resuming: branches the first list left out
+  [A, 'if (logLevel === "debug" || (logLevel === "warning" && d.level >= 30)) {', "if (false) {", API_OPTS],
+  [A, "const log = d.level >= 30 ? console.warn : console.debug;", "const log = console.debug;", API_OPTS],
+  [A, '      if (dropped) options.onWarning?.({ source: "pdfplumber-js", level: "warning", message: `${dropped} more diagnostics dropped` });\n', "", API_OPTS],
+  [A, "if (core && !core.crashed) return core;", "if (core) return core;", API_OPTS],
+  [A, "if (compiled && compiled.key === key) return compiled.module;", "", API_OPTS],
+  [A, "        error = e;\n", "        throw e;\n"],
+  [A, 'return this.#derive("page_within_bbox", [bbox, options]);', 'return this.#derive("page_outside_bbox", [bbox, options]);'],
+  [A, 'return this.#derive("page_dedupe_chars", [options]);', 'return this.#derive("page_dedupe_chars", [{}]);'],
+  [A, 'return this.#run("page_extract_text_simple", [options]);', 'return this.#run("page_extract_text", [options]);'],
+  [A, 'async (call) => (await call("table_extract", this.handle, [options], doc.callOptions(this.page.page_number))) as (string | null)[][],', 'async (call) => (await call("table_extract", this.handle, [{}], doc.callOptions(this.page.page_number))) as (string | null)[][],'],
+  [A, "const value = await call(op, this.handle, args, this.pdf.callOptions(this.page_number));", "const value = await call(op, this.handle, args, this.pdf.callOptions());", DIAG],
+  [A, "    } finally {\n      await this.release();\n    }", "    } finally {\n    }"],
+  [A, "const known = this.#known(ref.handle) ?? (current ? this.#current.get(n) : undefined);\n      if (known) return known;", "const known = undefined;\n      if (known) return known;"],
+  [S, "if (matcher instanceof RegExp) {", "if (false) {"],
+  [S, 'if (typeof matcher === "function") return', 'if (false) return'],
 ];
 
 const run = (tests) => {
