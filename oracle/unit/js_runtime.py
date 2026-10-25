@@ -645,7 +645,9 @@ STRUCTURE_FILES = [f"upstream/pdfplumber-python/tests/pdfs/{n}_structure.pdf"
 #: predicates (functions), patterns whose ``re.match`` and ``RegExp`` (at
 #: the start of the type) agree, values Python calls (``TypeError``).
 STRUCT_MATCHERS: list[Any] = ["Span", "Nope", {"predicate": "starts-with-H"}, {"predicate": "has-mcids"},
-                              {"regexp": "H[0-9]"}, {"regexp": "[A-Z][a-z]+"}, None, 5]
+                              {"regexp": "H[0-9]"}, {"regexp": "[A-Z][a-z]+"}, None, 5,
+                              # dicts Python calls (TypeError), not the boundary's mask
+                              {"x": 1}, {"mask": [True], "x": 1}]
 
 
 def _tree_shape(data: Any, page: int | None, crop: bool = False) -> list[list[int]] | None:
