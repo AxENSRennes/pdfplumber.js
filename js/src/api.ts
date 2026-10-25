@@ -354,8 +354,8 @@ export class PDFPlumberDocument {
   }
 
   /** @internal A page of this document from its geometry. */
-  page_(geometry: Geometry, handle: number, typed: unknown, parent?: PDFPlumberPage, geometryError?: unknown): PDFPlumberPage {
-    const page = new PDFPlumberPage(this, handle, geometry, typed, parent, geometryError);
+  page_(geometry: Geometry, handle: number, typed: unknown, parent?: PDFPlumberPage): PDFPlumberPage {
+    const page = new PDFPlumberPage(this, handle, geometry, typed, parent);
     if (parent === undefined) {
       this.#byHandle.set(handle, page);
     } else {
@@ -697,7 +697,6 @@ export class PDFPlumberPage {
     typed: unknown,
     /** The page it derives from (`DerivedPage.parent_page`), for a derived page. */
     readonly parent?: PDFPlumberPage,
-    geometryError?: unknown,
   ) {
     this.page_number = geometry.page_number;
     this.initial_doctop = geometry.initial_doctop;
@@ -710,10 +709,9 @@ export class PDFPlumberPage {
     this.bbox = geometry.bbox;
     this.#width = geometry.width;
     this.#height = geometry.height;
-    // each its own exception (page_info reads them apart), or the error
-    // of the whole geometry
-    this.#widthError = geometry.width_error ? fromPython(geometry.width_error) : geometryError;
-    this.#heightError = geometry.height_error ? fromPython(geometry.height_error) : geometryError;
+    // each its own exception (page_info reads them apart)
+    this.#widthError = geometry.width_error ? fromPython(geometry.width_error) : undefined;
+    this.#heightError = geometry.height_error ? fromPython(geometry.height_error) : undefined;
     this[TYPED] = typed;
   }
 
@@ -906,19 +904,10 @@ export class PDFPlumberPage {
       const opts = this.pdf.callOptions(this.page_number);
       const a = before ? await before(call) : args;
       const made = (await call(op, this.handle, a, opts)) as { handle: number; page_number: number; bbox: Bbox };
-      let geometry: Geometry;
-      let typed: unknown;
-      let error: unknown;
-      try {
-        geometry = (await call("page_info", made.handle, null, opts)) as Geometry;
-        typed = this.pdf.core.lastTyped;
-      } catch (e) {
-        // `page.width` raises: the geometry made by the derivation, its
-        // width and height throwing
-        geometry = { ...(this as unknown as Geometry), page_number: made.page_number, bbox: made.bbox, width: NaN, height: NaN };
-        error = e;
-      }
-      return this.pdf.page_(geometry, made.handle, typed, this, error);
+      // (`page_info` raises nothing: the exceptions of `page.width` and
+      // `page.height` are values of its result, width_error and height_error)
+      const geometry = (await call("page_info", made.handle, null, opts)) as Geometry;
+      return this.pdf.page_(geometry, made.handle, this.pdf.core.lastTyped, this);
     });
   }
 

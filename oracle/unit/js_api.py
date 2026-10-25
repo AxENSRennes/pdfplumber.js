@@ -1659,6 +1659,11 @@ def calls_session() -> Session:
         ("[.]", "[.]", {"regex": False}),
         ("justice", "justice", {"case": False, "return_chars": False, "return_groups": False}),
         ("zzzz", "zzzz", None),
+        # a string pattern is compiled with `u` (and `i`): \u{...} escapes
+        ("J", r"\u{4A}", None),
+        ("j", r"\u{6A}", {"case": False}),
+        # a name, for a pattern without named groups: IndexError
+        ("(J)", "(J)", {"main_group": "w"}),
     ]:
         s.search(page, py, js, options)
     s.search(page, {"$compiled": "J"}, {"regexp": "J", "flags": "y"}, {"return_chars": False})

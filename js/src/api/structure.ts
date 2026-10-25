@@ -56,11 +56,11 @@ function preorder(children: readonly PDFStructElement[]): PDFStructElement[] {
   return out;
 }
 
-/** What the core takes for a matcher: a tag (`str`), the truth of a
- * `RegExp` or a function on every element of the tree (`{mask}`), or any
- * other value as it is (Python calls it: `TypeError`, not callable). */
+/** What the core takes for a matcher: the truth of a `RegExp` or a
+ * function on every element of the tree (`{mask}`), or any other value as
+ * it is (a tag, a `str`; anything else Python calls: `TypeError`, not
+ * callable). */
 function matcherArg(tree: PDFStructTree, matcher: unknown): unknown {
-  if (typeof matcher === "string") return matcher;
   if (matcher instanceof RegExp) {
     // `matcher.match(x.type)`: a match at the start (sticky, from 0)
     const re = new RegExp(matcher.source, matcher.flags.replace(/[gy]/g, "") + "y");

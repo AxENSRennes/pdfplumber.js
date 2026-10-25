@@ -128,3 +128,66 @@ describe("public API cores", () => {
     api.configure({});
   });
 });
+
+describe("public API errors and diagnostics attribution", () => {
+  it("a path marked not ported is NotImplemented, keeping the core's class; isInstance answers by name or qualified name", async () => {
+    api.configure({});
+    const bytes = new Uint8Array(await readFile(join(PDFPLUMBER_ROOT, "corpus/micro/text-operators.pdf")));
+    const e = await api.open(bytes, { repair: true }).then(
+      () => undefined,
+      (x: unknown) => x,
+    );
+    expect(e).toBeInstanceOf(api.NotImplemented);
+    const ni = e as api.NotImplemented;
+    expect(ni.name).toBe("NotImplemented");
+    expect(ni.pythonQualname).toBe("NotPorted");
+    expect(ni.isInstance("NotPorted")).toBe(true);
+    // a wrapped pdfminer exception: PdfminerException(PDFSyntaxError(...))
+    const bad = await api.open(new TextEncoder().encode("not a PDF")).then(
+      () => undefined,
+      (x: unknown) => x,
+    );
+    expect(bad).toBeInstanceOf(api.PDFPlumberError);
+    const pe = bad as api.PDFPlumberError;
+    expect(pe.name).toBe("PdfminerException");
+    expect(pe.isInstance("PdfminerException")).toBe(true);
+    expect(pe.isInstance(pe.pythonMro[0])).toBe(true);
+    expect(pe.isInstance(`${pe.pythonModule}.${pe.pythonQualname}`)).toBe(true);
+    expect(pe.isInstance("Exception")).toBe(true);
+    expect(pe.isInstance("PDFSyntaxError")).toBe(false);
+    const cause = pe.cause as api.PDFPlumberError;
+    expect(cause).toBeInstanceOf(api.PDFPlumberError);
+    expect(cause.isInstance("PDFException")).toBe(true);
+    expect(cause.isInstance("PdfminerException")).toBe(false);
+  });
+
+  it("the diagnostics of a page's call carry its page number (page members, its structure tree's members)", async () => {
+    api.configure({});
+    const pdf = await api.open(join(PDFPLUMBER_ROOT, "upstream/pdfplumber-python/tests/pdfs/word365_structure.pdf"));
+    const [page] = await pdf.pages;
+    const seen: (number | undefined)[] = [];
+    const callOptions = pdf.callOptions.bind(pdf);
+    const spy = vi.spyOn(pdf, "callOptions").mockImplementation((n?: number) => {
+      seen.push(n);
+      return callOptions(n);
+    });
+    try {
+      await page.chars;
+      expect(seen).toEqual([page.page_number]);
+      const tree = await pdf.structTree(page);
+      seen.length = 0;
+      await tree.findAll("P");
+      await tree.find("P");
+      await tree.elementBbox(tree.children[0]);
+      await tree.children[0].allMcids();
+      expect(seen).toEqual([1, 1, 1, 1].map(() => page.page_number));
+      const docTree = await pdf.structTree();
+      seen.length = 0;
+      await docTree.findAll("P");
+      expect(seen).toEqual([undefined]);
+    } finally {
+      spy.mockRestore();
+      await pdf.release();
+    }
+  });
+});

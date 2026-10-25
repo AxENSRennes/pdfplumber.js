@@ -18,7 +18,7 @@ import { join } from "node:path";
 const root = process.argv[2];
 const only = new Set(process.argv.slice(3));
 
-const API = ["js/test/node/api.test.ts", "js/test/node/api-lifetime.test.ts"];
+const API = ["js/test/node/api.test.ts", "js/test/node/api-lifetime.test.ts", "js/test/node/api-runtime.test.ts"];
 const DIAG = ["js/test/node/runtime.test.ts", "-t", "onWarning|diagnostics reach"];
 const API_OPTS = ["js/test/node/api-runtime.test.ts"];
 
@@ -85,8 +85,8 @@ const mutants = [
   [A, "if (!this.#life.released && !this.core.crashed) await this.close();", ""],
   // the page
   [A, 'if ("trimbox" in geometry) this.trimbox = geometry.trimbox;', ""],
-  [A, "this.#widthError = geometry.width_error ? fromPython(geometry.width_error) : geometryError;", "this.#widthError = geometryError;"],
-  [A, "this.#heightError = geometry.height_error ? fromPython(geometry.height_error) : geometryError;", "this.#heightError = geometry.width_error ? fromPython(geometry.width_error) : geometryError;"],
+  [A, "this.#widthError = geometry.width_error ? fromPython(geometry.width_error) : undefined;", "this.#widthError = undefined;"],
+  [A, "this.#heightError = geometry.height_error ? fromPython(geometry.height_error) : undefined;", "this.#heightError = geometry.width_error ? fromPython(geometry.width_error) : undefined;"],
   [A, "return `<Page:${this.page_number}>`;", "return `<Page ${this.page_number}>`;"],
   [A, "    this.pdf.pin(this);\n    return this.#list(\"annots\");", "    return this.#list(\"annots\");"],
   [A, "return this.#run(\"page_extract_text_lines\", [own.strip ?? true, own.return_chars ?? true, kw]);", "return this.#run(\"page_extract_text_lines\", [own.strip ?? false, own.return_chars ?? true, kw]);"],
@@ -96,7 +96,7 @@ const mutants = [
   [A, "own.return_groups ?? true, own.return_chars ?? true, own.main_group ?? 0,", "own.return_groups ?? false, own.return_chars ?? true, own.main_group ?? 0,"],
   [A, "compilePattern(pattern, { regex: own.regex as boolean, case: own.case as boolean })", "compilePattern(pattern, { regex: own.regex as boolean })"],
   [A, "const a = before ? await before(call) : args;", "const a = args;"],
-  [A, "return this.pdf.page_(geometry, made.handle, typed, this, error);", "return this.pdf.page_(geometry, made.handle, typed, undefined, error);"],
+  [A, "return this.pdf.page_(geometry, made.handle, this.pdf.core.lastTyped, this);", "return this.pdf.page_(geometry, made.handle, this.pdf.core.lastTyped, undefined);"],
   [A, "mask[kind] = objs.map((o) => Boolean(test(o)));", "mask[kind] = objs.map((o) => !test(o));"],
   [A, "      this.pdf.track(table, t.handle);\n", ""],
   [A, 'return this.#run<TableValue[]>("page_find_tables", [settings ?? null])', 'return this.#run<TableValue[]>("page_find_tables", [null])'],
@@ -108,7 +108,6 @@ const mutants = [
   [S, 'const re = new RegExp(matcher.source, matcher.flags.replace(/[gy]/g, "") + "y");', 'const re = new RegExp(matcher.source, matcher.flags.replace(/[gy]/g, ""));'],
   [S, "        re.lastIndex = 0;\n", ""],
   [S, "return { mask: preorder(tree.children).map((el) => Boolean(matcher(el))) };", "return { mask: preorder(tree.children).map((el) => !matcher(el)) };"],
-  [S, 'if (typeof matcher === "string") return matcher;', ""],
   [S, "    for (let i = el.children.length - 1; i >= 0; i--) stack.push(el.children[i]);", "    for (let i = 0; i < el.children.length; i++) stack.push(el.children[i]);"],
   [S, "      for (let i = value.children.length - 1; i >= 0; i--) stack.push([value.children[i], [...path, i], el.children]);", "      for (let i = value.children.length - 1; i >= 0; i--) stack.push([value.children[i], [i], el.children]);"],
   [S, "    stack.reverse();\n", ""],
@@ -142,7 +141,6 @@ const mutants = [
   [A, '      if (dropped) options.onWarning?.({ source: "pdfplumber-js", level: "warning", message: `${dropped} more diagnostics dropped` });\n', "", API_OPTS],
   [A, "if (core && !core.crashed) return core;", "if (core) return core;", API_OPTS],
   [A, "if (compiled && compiled.key === key) return compiled.module;", "", API_OPTS],
-  [A, "        error = e;\n", "        throw e;\n"],
   [A, 'return this.#derive("page_within_bbox", [bbox, options]);', 'return this.#derive("page_outside_bbox", [bbox, options]);'],
   [A, 'return this.#derive("page_dedupe_chars", [options]);', 'return this.#derive("page_dedupe_chars", [{}]);'],
   [A, 'return this.#run("page_extract_text_simple", [options]);', 'return this.#run("page_extract_text", [options]);'],
