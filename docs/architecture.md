@@ -2347,8 +2347,9 @@ documentée ici) :
 
 Contrat : [`public-api.md`](public-api.md) (statut « implémenté », plus
 aucun membre en attente). Branche partie de `wave5/base`, avec
-`wave5/boundary` fusionnée deux fois (à `24954dc` puis à `936aebd`) pour
-vérifier les nouveaux membres sur les opérations de BOUNDARY.
+`wave5/boundary` fusionnée trois fois (à `24954dc`, `936aebd` puis
+`b2e6128`) pour vérifier les nouveaux membres sur les opérations de
+BOUNDARY.
 
 - **Membres** : `page.debugTablefinder(settings)` (`settings` du
   `TableFinder` en plus, `TableFinderResult.settings`) ;
@@ -2371,7 +2372,15 @@ vérifier les nouveaux membres sur les opérations de BOUNDARY.
   `hyperlinks`, `toDict` : `data.P` la nomme) est épinglée par le document.
   Un job mis en file avant `release()` s'exécute (le cœur libère après lui,
   dans l'ordre des appels) ; un membre appelé après rejette
-  `DocumentReleased`.
+  `DocumentReleased`. Le cœur refuse de lui-même un handle périmé
+  (`handles.rs` : génération de 12 bits par emplacement) ; la garde `Life`
+  évite d'envoyer ces `free` et couvre le cas d'un emplacement redonné
+  4 096 fois. Une page dérivée est faite par sa dérivation puis
+  `page_info`, qui ne lève rien (les exceptions de `page.width` et
+  `page.height` sont des valeurs de son résultat) : une erreur de la
+  dérivation rejette sa promesse, une erreur de géométrie est levée à la
+  lecture de `width` ou `height`. `NotImplemented` n'est plus que le
+  `NotPorted` du cœur (plus aucun membre en attente).
 - **`pdf.page(ref)`** (décision prise quand le job s'exécute) : la page du
   handle de la référence, sinon, pour une référence lue depuis le dernier
   `close()` (`readRefs` : époque de chaque `PageRef` des résultats qui
@@ -2403,7 +2412,7 @@ vérifier les nouveaux membres sur les opérations de BOUNDARY.
   `Collector`, `ObjArg`), flux par référence (`set_stream_refs` en tête de
   session, `PDFStream{objid, genno, attrs}` des deux côtés), arbres de
   structure (`PDFStructTree{page, children}`, éléments sans récursion).
-- **Sessions** : SESSIONS sessions, CALLS appels : les dix fichiers réels
+- **Sessions** : 57 sessions, 3 607 appels : les dix fichiers réels
   (chaque membre et alias, `debugTablefinder` en plus), options
   d'ouverture, `open(path)`, ordre d'attente (dont `release()` entre deux
   appels en vol), CJK, `open-inputs` (`Blob`, `ArrayBuffer`, vue décalée,
@@ -2414,7 +2423,9 @@ vérifier les nouveaux membres sur les opérations de BOUNDARY.
   mappings), `lifetime` (`page(ref)` avant et après `pdf.pages`, d'une page
   recadrée, après `close()`, après `release()` ; `pdf`, `parent`,
   `table.page` ; `close()` et `release()` deux fois ; `await using`),
-  `calls` (chaque option et erreur de `search`, recadrages hors de la page,
+  `calls` (chaque option et erreur de `search`, dont les échappements
+  `\u{4A}` d'un motif chaîne, compilé avec `u`, et un nom de groupe pour
+  un motif sans groupes nommés ; recadrages hors de la page,
   prédicats, options de déduplication et de sérialisation), `streams`
   (lectures de `rawdata`, `data`, `getData`, `getRawdata` et alias, après
   `close()` et `release()`, images rendues en lignes de table), onze
@@ -2425,12 +2436,45 @@ vérifier les nouveaux membres sur les opérations de BOUNDARY.
   `js/test/node/api-lifetime.test.ts` : ce que les valeurs ne montrent pas
   (identités de `page(ref)`, des flux et des éléments ; handles libérés par
   le ramasse-miettes, `gc` exposé par `v8.setFlagsFromString` ; jamais un
-  handle d'un document libéré).
-- **Mutants** (`scripts/js-api-mutants.mjs`, Stryker n'étant pas
-  disponible hors ligne) : MUTANTS mutants à la main des branches de
-  `api.ts`, `api/structure.ts`, `search.ts`, `errors.ts`, chacun lancé sur
-  les sessions et les tests d'identité (le test des diagnostics du runtime
-  pour la politique de diagnostics) ; SURVIVORS
+  `free` après la libération ou la collecte du document ; `pdf.pages` le
+  même tableau jusqu'à `close()` ; une page dérivée nommée par `annots`,
+  `toDict` ou `hyperlinks` gardée à travers `close()`) ;
+  `js/test/node/api-runtime.test.ts` : ce qui entoure le cœur
+  (`logLevel` vers `console.warn`/`console.debug`, sur la politique et par
+  `open()` sur les cas de diagnostics de `js_runtime` ; le compte des
+  diagnostics abandonnés ; un cœur neuf après un crash ; le module compilé
+  réutilisé ; `NotImplemented` et `isInstance` ; le numéro de page des
+  diagnostics des membres d'une page et de son arbre).
+- **Mutants** (`scripts/js-api-mutants.mjs`, Stryker n'étant pas dans
+  `node_modules` hors ligne) : 114 mutants à la main des branches de
+  `api.ts`, `api/structure.ts`, `search.ts`, `errors.ts` (finaliseurs,
+  options, caches et identités du document, géométrie, membres et leurs
+  opérations, matchers, motifs, erreurs, politique de diagnostics, cœurs),
+  chacun lancé sur les sessions (sources), `api-lifetime` et `api-runtime`
+  (et le test des diagnostics du runtime pour la politique) dans une copie
+  du checkout, sous `heavy.sh`. Premier passage (117 mutants) : 21
+  survivants, chacun tué par un test ajouté (finaliseurs après
+  libération, cache de `pdf.pages`, références d'avant `close()`, pages
+  dérivées gardées, `NotImplemented`, `isInstance`, page des diagnostics,
+  drapeau `u`) ou retiré avec le code mort qu'il montrait (le `catch` de
+  `page_info`, la recherche d'un handle connu dans `page_`, le cas chaîne
+  des matchers) ou avec une forme équivalente du même appel
+  (`find_tables()` et `find_tables(None)`, `to_dict()` et
+  `to_dict(object_types=None)`). Second passage, sur le code final : 4
+  survivants, équivalents :
+  - `registry?.unregister(page)` de `pin` : une page épinglée est tenue
+    par `#byHandle` jusqu'à `release()` (son entrée trouve alors la vie
+    libérée) ou jusqu'à la collecte du document (son `free` précède alors
+    celui du document, valide) ;
+  - `registry?.unregister(this.#token)` de `release()` : l'entrée du
+    document trouve sa vie libérée et ne fait rien ;
+  - le `close()` d'`await using` avant `release()` : rien d'un document
+    libéré n'est observable (le contrat garde `close()` puis `release()`,
+    comme `with` appelle `close()`) ;
+  - `named: null` de `matchSpans` pour un motif sans groupes nommés : le
+    cœur lit `null` et une liste de dicts vides de la même façon
+    (`ops.rs`, `group_index` : `no_such_group`, l'`IndexError` de
+    Python ; session `main_group: "w"` sur `(J)`).
 - **Vérification** : VERIFICATION
 
 **Chantier PERF** : chemins chauds de `crates/pdfplumber`,
