@@ -148,6 +148,7 @@ const mutants = [
   [A, "const value = await call(op, this.handle, args, this.pdf.callOptions(this.page_number));", "const value = await call(op, this.handle, args, this.pdf.callOptions());", DIAG],
   [A, "    } finally {\n      await this.release();\n    }", "    } finally {\n    }"],
   [A, "const known = this.#known(ref.handle) ?? (current ? this.#current.get(n) : undefined);\n      if (known) return known;", "const known = undefined;\n      if (known) return known;"],
+  [A, '    this.pdf.pin(this);\n    return this.#list("hyperlinks");', '    return this.#list("hyperlinks");'],
   [S, "if (matcher instanceof RegExp) {", "if (false) {"],
   [S, 'if (typeof matcher === "function") return', 'if (false) return'],
 ];

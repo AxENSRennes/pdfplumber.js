@@ -210,23 +210,31 @@ describe("public API identities and lifetimes", () => {
 
   it("a derived page a value names is kept (its handle is not freed)", async () => {
     api.configure({});
-    const pdf = await api.open(ANNOTATED);
-    const [page] = await pdf.pages;
-    let annots: Annot[] | undefined = (await (await page.crop([0, 0, page.width, page.height])).annots) as unknown as Annot[];
-    const ref = annots[0].data.P;
-    annots = undefined;
-    await collect();
-    const check = async () => {
-      const crop = await pdf.page(ref);
-      expect(crop.parent).toBe(page);
-      expect((await crop.chars).length).toBeGreaterThan(0);
-    };
-    await check();
-    // close() flushes pdf.pages, not the derived pages the document keeps
-    await pdf.close();
-    await collect();
-    await check();
-    await pdf.release();
+    for (const read of ["annots", "toDict", "hyperlinks"] as const) {
+      // (a link whose /P names its page, on the first page)
+      const pdf = await api.open(read === "hyperlinks" ? join(PDFPLUMBER_ROOT, "upstream/pdfjs/test/pdfs/alphatrans.pdf") : ANNOTATED);
+      const [page] = await pdf.pages;
+      // (in a function of its own: the frame of a suspended async function
+      // may keep its last values)
+      const reference = async () => {
+        const crop = await page.crop([0, 0, page.width, page.height]);
+        const annots = (read === "toDict" ? (await crop.toDict()).annots : await crop[read]) as Annot[];
+        return annots[0]?.data.P;
+      };
+      const ref = await reference();
+      await collect();
+      const check = async () => {
+        const crop = await pdf.page(ref);
+        expect(crop.parent).toBe(page);
+        expect((await crop.chars).length).toBeGreaterThan(0);
+      };
+      await check();
+      // close() flushes pdf.pages, not the derived pages the document keeps
+      await pdf.close();
+      await collect();
+      await check();
+      await pdf.release();
+    }
   });
 
   it("no finalizer sends a free once its document is released or collected", async () => {
