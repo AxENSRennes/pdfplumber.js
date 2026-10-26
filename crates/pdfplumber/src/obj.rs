@@ -1792,6 +1792,19 @@ mod tests {
         drop(v);
         assert_eq!(shared.as_seq().map(|s| s[0].type_name()), Some("list"));
         drop(shared);
+        // each kind of container alone (the fast path of `Drop` decides per
+        // kind whether the value is the last owner of what it holds)
+        for kind in 0..3 {
+            let mut v = PyValue::None;
+            for _ in 0..1_000_000 {
+                v = match kind {
+                    0 => PyValue::list([v]),
+                    1 => PyValue::tuple([v]),
+                    _ => PyValue::Dict(Obj::from_pairs([("k", v)])),
+                };
+            }
+            drop(v);
+        }
     }
 
     #[test]
