@@ -1517,10 +1517,15 @@ def depth_session(aset: str, path: Path) -> Session:
     ``adversarial_session``, the metadata, and the structure tree (the
     document's tree, an element's ``repr``, ``allMcids``,
     ``elementBbox``)."""
-    s = Session(f"depth-{aset}-{path.stem}")
+    # opened by path, as the stages open them: from bytes, the deep copy of
+    # `structure_tree` (dataclasses.asdict) copies the whole document
+    # through an attribute that is a reference, which the core does not
+    # model (docs/public-api.md, "Not Ported"); from a file, Python raises
+    # the TypeError the core raises
+    s = Session(f"depth-{aset}-{path.stem}", node_only=True)
     root = corpus_root()
     try:
-        doc = s.open(str(path.relative_to(root)))
+        doc = s.open(str(path.relative_to(root)), by_path=True)
     except ValueError:
         doc = s.open(data=path.read_bytes())
     s.doc_get(doc, "metadata")

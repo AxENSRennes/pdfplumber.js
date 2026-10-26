@@ -51,25 +51,47 @@ function setOwn(obj, key, value) {
   Object.defineProperty(obj, key, { value, writable: true, enumerable: true, configurable: true });
 }
 
+/** A value made by `expand` without recursion (the values of a depth
+ * window are nested deeper than the JavaScript stack): `expand(x)` gives
+ * `[value]` for a leaf, or `[container, [[key, child], ...]]`, the
+ * children expanded in turn (`Leaf` wraps a child that is already a
+ * value). Keys keep their order. */
+class Leaf {
+  constructor(value) {
+    this.value = value;
+  }
+}
+
+function build(root, expand) {
+  const out = [undefined];
+  const put = (holder, key, value) => (Array.isArray(holder) ? (holder[key] = value) : setOwn(holder, key, value));
+  const stack = [[root, out, 0]];
+  while (stack.length) {
+    const [x, holder, key] = stack.pop();
+    const r = x instanceof Leaf ? [x.value] : expand(x);
+    put(holder, key, r[0]);
+    if (r.length === 1) continue;
+    const [container, entries] = r;
+    for (const [k] of entries) put(container, k, null);
+    for (let i = entries.length - 1; i >= 0; i--) stack.push([entries[i][1], container, entries[i][0]]);
+  }
+  return out[0];
+}
+
 /** An expected value (typed JSON, output mapping): a Named value is
  * `{ $named, ...fields }`. */
-function expected(j, lib) {
-  if (j !== null && typeof j === "object" && !Array.isArray(j) && "named" in j && "d" in j && Object.keys(j).length === 2) {
-    const o = { $named: j.named };
-    for (const [k, v] of j.d) setOwn(o, fromTyped(k, lib), expected(v, lib));
-    return o;
-  }
-  if (Array.isArray(j)) return j.map((x) => expected(x, lib));
-  if (j !== null && typeof j === "object" && Object.keys(j).length === 1) {
-    const [k] = Object.keys(j);
-    if (k === "t") return j.t.map((x) => expected(x, lib));
-    if (k === "d") {
-      const o = {};
-      for (const [kk, vv] of j.d) setOwn(o, fromTyped(kk, lib), expected(vv, lib));
-      return o;
+function expected(root, lib) {
+  return build(root, (j) => {
+    if (j !== null && typeof j === "object" && !Array.isArray(j) && "named" in j && "d" in j && Object.keys(j).length === 2)
+      return [{ $named: j.named }, j.d.map(([k, v]) => [fromTyped(k, lib), v])];
+    if (Array.isArray(j)) return [new Array(j.length), j.map((x, i) => [i, x])];
+    if (j !== null && typeof j === "object" && Object.keys(j).length === 1) {
+      const [k] = Object.keys(j);
+      if (k === "t") return [new Array(j.t.length), j.t.map((x, i) => [i, x])];
+      if (k === "d") return [{}, j.d.map(([kk, vv]) => [fromTyped(kk, lib), vv])];
     }
-  }
-  return fromTyped(j, lib);
+    return [fromTyped(j, lib)];
+  });
 }
 
 const GEOMETRY = ["page_number", "initial_doctop", "rotation", "mediabox", "cropbox", "trimbox", "bleedbox", "artbox", "bbox"];
@@ -96,10 +118,9 @@ function inlineNames(root, lib) {
     (o.stream instanceof lib.PDFStream || o.stream?.$named === "PDFStream") &&
     o.stream.objid === null &&
     /^inline-(0|[1-9][0-9]*)$/.test(o.name);
-  const go = (x) => {
-    if (Array.isArray(x)) return x.map(go);
-    if (x === null || typeof x !== "object" || Object.getPrototypeOf(x) !== Object.prototype) return x;
-    const o = {};
+  return build(root, (x) => {
+    if (Array.isArray(x)) return [new Array(x.length), x.map((v, i) => [i, v])];
+    if (x === null || typeof x !== "object" || Object.getPrototypeOf(x) !== Object.prototype) return [x];
     const inline = isInline(x);
     let names;
     if (inline) {
@@ -107,10 +128,8 @@ function inlineNames(root, lib) {
       names = seen.get(x.page_number);
       if (!names.has(x.name)) names.set(x.name, names.size);
     }
-    for (const k of Object.keys(x)) setOwn(o, k, inline && k === "name" ? `<inline ${names.get(x.name)}>` : go(x[k]));
-    return o;
-  };
-  return go(root);
+    return [{}, Object.keys(x).map((k) => [k, inline && k === "name" ? new Leaf(`<inline ${names.get(x.name)}>`) : x[k]])];
+  });
 }
 
 /** A result of the API as a session writes it. */
@@ -118,47 +137,41 @@ export function neutral(v, lib) {
   return inlineNames(neutralValue(v, lib), lib);
 }
 
-function neutralValue(v, lib) {
-  if (v === undefined) return null;
-  if (v === null || typeof v !== "object") return v;
-  if (v instanceof Error) return errorValue(v);
-  if (Array.isArray(v)) return v.map((x) => neutralValue(x, lib));
-  if (v instanceof lib.PDFPlumberPage) {
-    const o = { $named: "PDFPlumberPage" };
-    for (const k of GEOMETRY) if (k in v && v[k] !== undefined) setOwn(o, k, neutralValue(v[k], lib));
-    for (const k of ["width", "height"]) {
-      try {
-        setOwn(o, k, v[k]);
-      } catch (e) {
-        setOwn(o, k, errorValue(e));
+function neutralValue(root, lib) {
+  return build(root, (v) => {
+    if (v === undefined) return [null];
+    if (v === null || typeof v !== "object") return [v];
+    if (v instanceof Error) return [errorValue(v)];
+    if (Array.isArray(v)) return [new Array(v.length), v.map((x, i) => [i, x])];
+    if (v instanceof lib.PDFPlumberPage) {
+      const entries = GEOMETRY.filter((k) => k in v && v[k] !== undefined).map((k) => [k, v[k]]);
+      for (const k of ["width", "height"]) {
+        try {
+          entries.push([k, new Leaf(v[k])]);
+        } catch (e) {
+          entries.push([k, new Leaf(errorValue(e))]);
+        }
       }
+      return [{ $named: "PDFPlumberPage" }, entries];
     }
-    return o;
-  }
-  if (v instanceof lib.Table) {
-    return { $named: "Table", bbox: v.bbox, cells: v.cells, rows: v.rows, columns: v.columns };
-  }
-  if (v instanceof lib.PDFPlumberDocument) return { $named: "PDFPlumberDocument" };
-  if (v instanceof lib.PDFStructTree) {
-    return { $named: "PDFStructTree", page: neutralValue(v.page, lib), children: neutralValue(v.children, lib) };
-  }
-  if (v instanceof lib.PDFStructElement) {
-    const o = { $named: "PDFStructElement" };
-    for (const k of ELEMENT_FIELDS) setOwn(o, k, neutralValue(v[k], lib));
-    setOwn(o, "children", neutralValue(v.children, lib));
-    return o;
-  }
-  if (v instanceof lib.PDFStream) {
-    // a stream by reference: its data is read on demand
-    return { $named: "PDFStream", objid: v.objid, genno: v.genno, attrs: neutralValue(v.attrs, lib) };
-  }
-  if (v instanceof lib.PageRef) return { $named: "Page", page_number: v.page_number };
-  if (Object.getPrototypeOf(v) === Object.prototype) {
-    const o = {};
-    for (const k of Object.keys(v)) setOwn(o, k, neutralValue(v[k], lib));
-    return o;
-  }
-  return v;
+    if (v instanceof lib.Table) {
+      return [{ $named: "Table", bbox: v.bbox, cells: v.cells, rows: v.rows, columns: v.columns }];
+    }
+    if (v instanceof lib.PDFPlumberDocument) return [{ $named: "PDFPlumberDocument" }];
+    if (v instanceof lib.PDFStructTree) {
+      return [{ $named: "PDFStructTree" }, [["page", v.page], ["children", v.children]]];
+    }
+    if (v instanceof lib.PDFStructElement) {
+      return [{ $named: "PDFStructElement" }, [...ELEMENT_FIELDS.map((k) => [k, v[k]]), ["children", v.children]]];
+    }
+    if (v instanceof lib.PDFStream) {
+      // a stream by reference: its data is read on demand
+      return [{ $named: "PDFStream", objid: v.objid, genno: v.genno }, [["attrs", v.attrs]]];
+    }
+    if (v instanceof lib.PageRef) return [{ $named: "Page", page_number: v.page_number }];
+    if (Object.getPrototypeOf(v) === Object.prototype) return [{}, Object.keys(v).map((k) => [k, v[k]])];
+    return [v];
+  });
 }
 
 /** Drops the messages the session leaves open (`message: null`). */
