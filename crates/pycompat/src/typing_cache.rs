@@ -168,7 +168,7 @@ mod tests {
         reset();
         let s = Subscription::new("Tuple[c, test]", 1, 1).with_c(&["", "", " in comparison"], &["", " while x"]);
         let spare = |n: u32| Depth { py: 0, c: C_RECURSION_LIMIT - n };
-        let msg = |r: PyResult<()>| r.err().map(|e| e.message);
+        let msg = |r: PyResult<()>| r.err().map(|e| e.message.clone());
         assert_eq!(msg(with_depth(spare(0), || s.eval())).as_deref(), Some("maximum recursion depth exceeded"));
         assert_eq!(
             msg(with_depth(spare(2), || s.eval())).as_deref(),

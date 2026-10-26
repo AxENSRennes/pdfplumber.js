@@ -2866,7 +2866,8 @@ correctif de la première cause (unité transitoire dans les trois
 `resolve_all` et les deux `isinstance` de `process_object`) aligne les
 rectangles et les lignes ; il n'est pas dans cette branche (il change le
 comptage, donc toute la vérification) : à faire avec les deux autres, puis
-`PLUMBER_FRAMES_C` par défaut.
+`PLUMBER_FRAMES_C` par défaut. **Corrigé à la jonction** (les trois
+causes ; « Jonction (branche `wave5/join`) » ci-dessous).
 
 **Tests de mutation** (`cargo mutants --in-diff` sur le diff de
 `wave5/base`, `--profile mutants -j 1`, `heavy.sh`) :
