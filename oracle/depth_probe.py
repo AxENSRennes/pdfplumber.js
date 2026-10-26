@@ -41,6 +41,14 @@ argument that is itself an alias), and the first time after every other
 subscription of the list was evaluated (the misses do not depend on one
 another when it equals the first). Each one is measured in a process
 forked from this one, which imported pdfplumber as the unit generators do.
+
+``typing-c``: the C units of the subscriptions ``pycompat::typing_cache``
+models, as a *staircase*: the ``where`` of the ``RecursionError`` each one
+raises with 0, 1, 2... C units to spare, up to the units it needs (a hit:
+the evaluation loop entered for ``_tp_cache``'s ``inner``, the
+``lru_cache`` called, the comparisons of its key, the ``__hash__`` of an
+argument that is an alias; a miss: the alias built), measured with the
+nested list comparisons of ``oracle/unit/plumber_frames.py``.
 """
 
 from __future__ import annotations
@@ -215,6 +223,92 @@ def typing_depths() -> list[dict[str, Any]]:
     return out
 
 
+#: ``(module, subscription, subscriptions evaluated before it)``: the
+#: subscriptions ``pycompat::typing_cache`` models (``Subscription`` in
+#: ``crates/pdfplumber``), each after what the annotations evaluate before
+#: it (``process_attr``'s return annotation after its parameter's).
+TYPING_C_SUBSCRIPTIONS: list[tuple[str, str, tuple[str, ...]]] = [
+    ("pdfplumber.page", "Tuple[str, Any]", ()),
+    ("pdfplumber.page", "Optional[Tuple[str, Any]]", ("Tuple[str, Any]",)),
+    ("pdfplumber.page", "Tuple[int, T_num, T_num]", ()),
+    ("pdfplumber.page", "Tuple[float, float]", ()),
+    ("pdfplumber.pdf", "Generator[PDFPage, None, None]", ()),
+]
+
+
+def _staircase(f: Any, pre: Any) -> list[str]:
+    """The C units ``f()`` needs beyond a call that does nothing, as the
+    ``where`` of the ``RecursionError`` it raises with each number of units
+    to spare (``[0]``: none to spare...; its length: the units it needs).
+    Each attempt runs ``pre()`` then ``f()`` under nested list comparisons
+    (``oracle/unit/plumber_frames.py``: one C unit per level), in a process
+    forked for it."""
+    from .unit.plumber_frames import forked, under_c
+
+    def attempt(n: int, g: Any) -> str | None:
+        def run() -> str | None:
+            pre()
+            try:
+                under_c(n, g)
+                return None
+            except RecursionError as e:
+                return str(e)
+
+        return forked(run)
+
+    def deepest(g: Any) -> int:
+        lo, hi = 0, 10000
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if attempt(mid, g) is None:
+                lo = mid
+            else:
+                hi = mid - 1
+        return lo
+
+    base = deepest(lambda: None)
+    d = deepest(f)
+    prefix = "maximum recursion depth exceeded"
+    out = []
+    for spare in range(base - d):
+        msg = attempt(base - spare, f)
+        assert msg is not None and msg.startswith(prefix), msg
+        out.append(msg[len(prefix):])
+    return out
+
+
+def typing_c_staircases() -> list[dict[str, Any]]:
+    """The C staircase (``_staircase``) of each of ``TYPING_C_SUBSCRIPTIONS``
+    the first time a process evaluates it (a miss) and the next times (a
+    hit), each from a process forked from one that imported pdfplumber."""
+    import importlib
+
+    import pdfplumber  # noqa: F401  (the state the generators fork from)
+
+    out = []
+    for module, expr, before in TYPING_C_SUBSCRIPTIONS:
+        namespace = vars(importlib.import_module(module))
+        f = eval(compile(f"lambda: {expr}", "<annotation>", "eval"), namespace)  # noqa: S307
+        earlier = [eval(compile(f"lambda: {e}", "<annotation>", "eval"), namespace) for e in before]  # noqa: S307
+
+        def miss_state(earlier: list[Any] = earlier) -> None:
+            for g in earlier:
+                g()
+
+        def hit_state(earlier: list[Any] = earlier, f: Any = f) -> None:
+            miss_state(earlier)
+            f()
+
+        out.append({"module": module, "expr": expr, "miss": _staircase(f, miss_state),
+                    "hit": _staircase(f, hit_state)})
+    return out
+
+
+def typing_c() -> None:
+    for d in typing_c_staircases():
+        print(f"{d['module']} {d['expr']}: miss {d['miss']}, hit {d['hit']}")
+
+
 def open_() -> None:
     for p in ("/tmp/a.pdf", "/tmp/b/c.pdf", "rel.pdf", "/"):
         depth, path = deepest_path(pathlib.Path, p)
@@ -228,9 +322,9 @@ def typing_() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(prog="python -m oracle.depth_probe")
-    ap.add_argument("what", choices=["cmaps", "structure", "open", "typing"])
+    ap.add_argument("what", choices=["cmaps", "structure", "open", "typing", "typing-c"])
     args = ap.parse_args()
-    {"cmaps": cmaps, "structure": structure, "open": open_, "typing": typing_}[args.what]()
+    {"cmaps": cmaps, "structure": structure, "open": open_, "typing": typing_, "typing-c": typing_c}[args.what]()
 
 
 if __name__ == "__main__":

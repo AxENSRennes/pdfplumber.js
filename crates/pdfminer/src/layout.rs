@@ -269,12 +269,59 @@ pub trait LTPayload: Clone + 'static {
 /// are then replaced in place. Only raw objects (chars, curves, images,
 /// figures) are tagged: the analysis runs later. The names are never those
 /// of the class's own attributes.
+///
+/// Performance (`docs/architecture.md`, "Vague 5", PERF): the two
+/// attributes pdfplumber sets on every object are held without an
+/// allocation of their own ([`Attrs`]).
 #[derive(Clone)]
-pub struct ExtraAttrs<V>(RefCell<Vec<(&'static str, V)>>);
+pub struct ExtraAttrs<V>(RefCell<Attrs<V>>);
+
+/// The storage of [`ExtraAttrs`]: up to two attributes inline, more in a
+/// vector, in the order they were first set.
+#[derive(Clone)]
+enum Attrs<V> {
+    Empty,
+    One([(&'static str, V); 1]),
+    Two([(&'static str, V); 2]),
+    Many(Vec<(&'static str, V)>),
+}
+
+impl<V> Attrs<V> {
+    fn as_slice(&self) -> &[(&'static str, V)] {
+        match self {
+            Attrs::Empty => &[],
+            Attrs::One(a) => a,
+            Attrs::Two(a) => a,
+            Attrs::Many(v) => v,
+        }
+    }
+
+    fn as_mut_slice(&mut self) -> &mut [(&'static str, V)] {
+        match self {
+            Attrs::Empty => &mut [],
+            Attrs::One(a) => a,
+            Attrs::Two(a) => a,
+            Attrs::Many(v) => v,
+        }
+    }
+
+    /// Appends an attribute.
+    fn push(&mut self, item: (&'static str, V)) {
+        *self = match std::mem::replace(self, Attrs::Empty) {
+            Attrs::Empty => Attrs::One([item]),
+            Attrs::One([a]) => Attrs::Two([a, item]),
+            Attrs::Two([a, b]) => Attrs::Many(vec![a, b, item]),
+            Attrs::Many(mut v) => {
+                v.push(item);
+                Attrs::Many(v)
+            }
+        };
+    }
+}
 
 impl<V> Default for ExtraAttrs<V> {
     fn default() -> ExtraAttrs<V> {
-        ExtraAttrs(RefCell::new(Vec::new()))
+        ExtraAttrs(RefCell::new(Attrs::Empty))
     }
 }
 
@@ -283,7 +330,7 @@ impl<V: Clone> ExtraAttrs<V> {
     /// place in `__dict__`, a new one comes last.
     pub fn set(&self, name: &'static str, value: V) {
         let mut attrs = self.0.borrow_mut();
-        match attrs.iter_mut().find(|(k, _)| *k == name) {
+        match attrs.as_mut_slice().iter_mut().find(|(k, _)| *k == name) {
             Some((_, v)) => *v = value,
             None => attrs.push((name, value)),
         }
@@ -291,7 +338,14 @@ impl<V: Clone> ExtraAttrs<V> {
 
     /// The names and values, in `__dict__` order.
     pub fn items(&self) -> Vec<(&'static str, V)> {
-        self.0.borrow().clone()
+        self.0.borrow().as_slice().to_vec()
+    }
+
+    /// `f` of the names and values, in `__dict__` order, without copying
+    /// them (performance: `Page.process_object` reads them for every
+    /// object).
+    pub fn with_items<R>(&self, f: impl FnOnce(&[(&'static str, V)]) -> R) -> R {
+        f(self.0.borrow().as_slice())
     }
 }
 

@@ -73,19 +73,45 @@ async function replaySession(lib, input, out, readFile) {
     handles.push(h);
     return `#${handles.length - 1}`;
   };
+  // the objects of the labels an argument can name ({"$obj": k}): pages,
+  // streams by reference
+  const objects = new Map();
   const relabel = (v) => {
     if (typeof v === "number") return label(v);
     if (Array.isArray(v)) return v.map(relabel);
-    if (v && typeof v === "object" && "handle" in v) return { ...v, handle: label(v.handle) };
+    if (v && typeof v === "object" && "handle" in v) {
+      const l = label(v.handle);
+      if ("page_number" in v) objects.set(l, new lib.PageRef(v.handle, v.page_number));
+      return { ...v, handle: l };
+    }
     return v;
   };
-  // the pages a result holds (PageRef): their handles as labels, a handle
-  // labelled before keeping its label
+  const withObjects = (v) => {
+    if (Array.isArray(v)) return v.map(withObjects);
+    if (v && typeof v === "object" && Object.getPrototypeOf(v) === Object.prototype) {
+      const keys = Object.keys(v);
+      if (keys.length === 1 && keys[0] === "$obj" && typeof v.$obj === "number") return objects.get(`#${v.$obj}`);
+      const o = {};
+      for (const k of keys) {
+        Object.defineProperty(o, k, { value: withObjects(v[k]), writable: true, enumerable: true, configurable: true });
+      }
+      return o;
+    }
+    return v;
+  };
+  // the pages a result holds (PageRef) and its streams by reference: their
+  // handles as labels, a handle labelled before keeping its label
+  const labelOf = (h) => {
+    let k = handles.indexOf(h);
+    if (k < 0) k = handles.push(h) - 1;
+    return `#${k}`;
+  };
   const relabelPages = (v) => {
-    if (v instanceof lib.PageRef) {
-      let k = handles.indexOf(v.handle);
-      if (k < 0) k = handles.push(v.handle) - 1;
-      return new lib.PageRef(`#${k}`, v.page_number);
+    if (v instanceof lib.PageRef) return new lib.PageRef(labelOf(v.handle), v.page_number);
+    if (v instanceof lib.PDFStream && v.handle !== undefined) {
+      const label = labelOf(v.handle);
+      objects.set(label, v);
+      return { $streamref: label, objid: v.objid, genno: v.genno, attrs: relabelPages(v.attrs) };
     }
     if (Array.isArray(v)) return v.map(relabelPages);
     if (v && typeof v === "object" && Object.getPrototypeOf(v) === Object.prototype) {
@@ -98,23 +124,32 @@ async function replaySession(lib, input, out, readFile) {
     return v;
   };
   const makers = new Set([
-    "doc_open", "doc_pages", "page_crop", "page_within_bbox", "page_outside_bbox", "page_filter",
+    "doc_open", "doc_open_file", "doc_pages", "page_crop", "page_within_bbox", "page_outside_bbox", "page_filter",
     "page_dedupe_chars", "page_find_tables", "page_find_table",
   ]);
+  // the script's process writes streams by value until a case says
+  // otherwise (`set_stream_refs`); the runtime asks for references
+  await t.call("set_stream_refs", [false]);
   let checked = 0;
   for (let i = 0; i < cases.length; i++) {
     const [opT, targetT, argsT, dataT, jsT] = cases[i];
     const op = fromTyped(opT, lib);
     const target = fromTyped(targetT, lib);
-    const handle = target === null ? 0 : handles[target];
-    const args = fromTyped(argsT, lib, true);
     const [want, extra] = results[i];
+    // the object of the case was not made (an operation that raised made
+    // none): nothing runs
+    if (want && typeof want === "object" && Object.keys(want).length === 1 && want.$unresolved === true) continue;
+    const handle = target === null ? 0 : handles[target];
+    const args = op === "struct_tree" ? fromTyped(argsT, lib, true) : withObjects(fromTyped(argsT, lib, true));
     const where = `${name} #${i} ${op} ${JSON.stringify(fromTyped(argsT, lib), (k, v) => (typeof v === "bigint" ? `${v}n` : v))}`;
     let got;
     try {
       if (op === "doc_open") {
         const data = typeof dataT === "string" ? await readFile(dataT) : fromTyped(dataT, lib);
         got = await t.call("doc_open", args[0], 0, { data });
+      } else if (op === "doc_open_file") {
+        // [name, options] and the file's bytes (JavaScript read it)
+        got = await t.call("doc_open_file", args, 0, { data: fromTyped(dataT, lib) });
       } else if (op === "search") {
         const [, options] = args;
         const kw = {};
@@ -135,6 +170,23 @@ async function replaySession(lib, input, out, readFile) {
         );
       } else if (op === "page_filter") {
         got = await t.call(op, [extra], handle);
+      } else if (op === "struct_tree") {
+        // [page]: an object of the session ({"$obj": k}) or null
+        const page = args[0] && typeof args[0] === "object" && "$obj" in args[0] ? handles[args[0].$obj] : args[0];
+        got = relabel(await t.call(op, [page], handle));
+      } else if (op === "struct_find_all" || op === "struct_find") {
+        // a predicate or a pattern: the mask the script computed, in its
+        // own argument
+        got = await t.call(op, extra === null ? [args[0], args[1]] : [args[0], null, extra], handle);
+      } else if (op === "page_debug_tablefinder") {
+        got = await t.call(op, args, handle);
+        got = { ...got, tables: relabel(got.tables) };
+      } else if (op === "page_info") {
+        got = await t.call(op, args, handle);
+        // an exception read as a value (width_error, height_error)
+        for (const k of ["width_error", "height_error"]) {
+          if (k in got) got[k] = { exception: got[k].name, message: got[k].message };
+        }
       } else {
         got = await t.call(op, args, handle);
       }
@@ -144,11 +196,31 @@ async function replaySession(lib, input, out, readFile) {
       if (!(e instanceof lib.PDFPlumberError)) throw e;
       got = { exception: e.name, message: e.message };
     }
-    assertSame(got, want, where);
+    assertSame(inlineNames(got, lib), inlineNames(want, lib), where);
     checked++;
   }
   lib.dropCore();
   return checked;
+}
+
+/** `v` with the name of each inline image as `"<inline>"`: pdfminer names
+ * one `str(id(stream))`, the port `inline-<k>` (docs/public-api.md, "Not
+ * Ported"). */
+function inlineNames(v, lib) {
+  if (Array.isArray(v)) return v.map((x) => inlineNames(x, lib));
+  if (v === null || typeof v !== "object" || Object.getPrototypeOf(v) !== Object.prototype) return v;
+  const s = v.stream;
+  const inline = v.object_type === "image" && s && typeof s === "object" && s.objid === null;
+  const o = {};
+  for (const k of Object.keys(v)) {
+    Object.defineProperty(o, k, {
+      value: inline && k === "name" ? "<inline>" : inlineNames(v[k], lib),
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+  }
+  return o;
 }
 
 function assert(cond, message) {
@@ -395,7 +467,7 @@ export const tests = [
         const info = await t.info();
         assert(info.handles === 1 && !t.core.crashed, JSON.stringify(info));
       } finally {
-        await pdf.close();
+        await pdf.release();
       }
     },
   },
@@ -761,22 +833,30 @@ export const tests = [
     },
   },
   {
-    name: "open() reads every input kind; page features are not implemented yet",
+    name: "open() reads every input kind; the document is closed, then released",
     async run({ lib, readFile, fileInput, missingInput }) {
       const rel = "corpus/micro/text-operators.pdf";
       const bytes = await readFile(rel);
       const inputs = [bytes, bytes.slice().buffer, new Blob([bytes]), fileInput(rel)];
       if (typeof fileInput(rel) === "string") inputs.push(new URL(fileInput(rel), globalThis.location?.href ?? "file:///"));
+      let text;
       for (const input of inputs) {
         const pdf = await lib.open(input);
         try {
           // lazy, as pdfplumber's: open() resolves, the pages are a promise
-          await rejects(pdf.pages, (e) => assert(e instanceof lib.NotImplemented, e.name), "pages");
-          await rejects(pdf.annots, (e) => assert(e instanceof lib.NotImplemented, e.name), "annots");
+          const pages = await pdf.pages;
+          assert(pages.length === 1 && pages[0] === (await pdf.pages)[0], "the same pages");
+          const t = await pages[0].extractText();
+          assert(text === undefined || t === text, "the same text from every input");
+          text = t;
+          assert(Array.isArray(await pdf.annots), "annots");
         } finally {
           await pdf.close();
           await pdf.close();
+          await pdf.release();
+          await pdf.release();
         }
+        await rejects(pdf.pages, (e) => assert(e instanceof lib.DocumentReleased, e.name), "released");
       }
       await rejects(lib.open(missingInput()), (e) => assert(e instanceof Error && !(e instanceof lib.PDFPlumberError), e.name), "missing file");
       await rejects(lib.open(42), (e) => assert(e instanceof TypeError, e.name), "bad input");
@@ -792,7 +872,7 @@ export const tests = [
         const where = `open(${path}, ${JSON.stringify(fromTyped(optionsT, lib), (k, v) => (v instanceof Uint8Array ? [...v] : v))})`;
         assert(out === null, `${where}: Python raised; replayed once the page layer lands`);
         const pdf = await lib.open(await readFile(path), options);
-        await pdf.close();
+        await pdf.release();
         checked++;
       }
       assert(checked >= 9, `${checked} cases`);
@@ -807,7 +887,7 @@ export const tests = [
       const before = t.core.memoryBytes();
       const pdf = await lib.open(pdfWithStream(size));
       const grown = t.core.memoryBytes() - before;
-      await pdf.close();
+      await pdf.release();
       assert(grown < 1.5 * size, `memory grew by ${grown} bytes for ${size}`);
     },
   },
@@ -838,7 +918,12 @@ export const tests = [
         const text = await t.call("page_extract_text", [{}], pages[number - 1].handle);
         assertSame(text, expected.text, rel);
         const want = [...expected.cmaps, ...expected.umaps.map((u) => `to-unicode-${u}`)].sort();
-        assertSame([...loads].sort(), want, `${rel}: the CMaps fetched`);
+        // those of the page (and those the document's other fonts name)
+        for (const n of want) assert(loads.includes(n), `${rel}: ${n} fetched (${loads})`);
+        assertSame([...new Set(loads)].length, loads.length, `${rel}: each CMap fetched once`);
+        // the first void call of the document asks for every CMap its fonts
+        // name (crates/wasm/src/cmap_scan.rs): one void call
+        assert(t.core.voidCalls === 1, `${rel}: ${t.core.voidCalls} void calls`);
         await t.free(doc);
         checked++;
       }
@@ -853,6 +938,130 @@ export const tests = [
         checked += await replaySession(lib, input, out, readFile);
       }
       assert(checked > 250, `${checked} operations`);
+    },
+  },
+  {
+    name: "the streams of results are references: their data read on demand, one object per stream, released with the document",
+    async run({ lib, oracle, readFile }) {
+      // the first document of the streams session (corpus/micro/image-xobject.pdf):
+      // what Python reads of its image's stream
+      const [streams] = (await oracle("pages")).filter((l) => fromTyped(l.in[0], lib) === "streams");
+      const cases = streams.in[1];
+      const { results } = fromTyped(streams.out, lib);
+      const first = (op) => results[cases.findIndex((c) => fromTyped(c[0], lib) === op)][0];
+      const rawdata = first("stream_rawdata");
+      const decoded = results[cases.findIndex((c, i) => fromTyped(c[0], lib) === "stream_data" && i > 0 && results[i][0] !== null)][0];
+      const pdf = await lib.open(await readFile("corpus/micro/image-xobject.pdf"));
+      const [page] = await pdf.pages;
+      const [image] = await page.images;
+      const s = image.stream;
+      assert(s instanceof lib.PDFStream && typeof s.handle === "number", "a stream by reference");
+      // the same stream is the same object, in every result
+      assert((await page.objects).image[0].stream === s, "one object per stream");
+      assert((await pdf.images)[0].stream === s, "through the document");
+      assertSame(Object.keys(s), ["objid", "genno", "attrs"], "its values");
+      assertSame(await s.rawdata, rawdata, "rawdata before decoding");
+      assertSame(await s.data, null, "data before decoding");
+      assertSame(await s.getRawdata(), rawdata, "get_rawdata()");
+      assertSame(await s.getData(), decoded, "get_data() decodes");
+      assertSame(await s.rawdata, null, "rawdata once decoded");
+      assertSame(await s.data, decoded, "data once decoded");
+      assertSame(await s.get_data(), decoded, "get_data() again");
+      // the JSON results hold the same references
+      const t = await lib.internals();
+      await t.setFormat("json");
+      try {
+        assert((await page.images)[0].stream === s, "a reference in a JSON result");
+      } finally {
+        await t.setFormat("binary");
+      }
+      // the same stream in a result of the core itself (no document): another
+      // object, read through the core
+      const viaCore = await t.call("page_attr", ["images"], page.handle);
+      assert(viaCore[0].stream !== s && viaCore[0].stream.handle === s.handle, "another owner, another object");
+      assertSame(await viaCore[0].stream.data, decoded, "read through the core");
+      if (t.core.run) {
+        // a response decoded outside its core: a stream that cannot be read
+        const view = t.core.run(lib.encodeRequest("page_attr", page.handle, ["images"], 0));
+        const outside = lib.decodeResponse(view).value;
+        t.core.release();
+        await rejects(outside[0].stream.rawdata, (e) => assert(/outside its core/.test(e.message), e.message), "outside");
+      }
+      // PDF.close(): the stream keeps its bytes, as in Python
+      await pdf.close();
+      assertSame(await s.data, decoded, "after close()");
+      await pdf.release();
+      await rejects(s.rawdata, (e) => assert(e instanceof lib.DocumentReleased, e.name), "released");
+      await rejects(s.getData(), (e) => assert(e instanceof lib.DocumentReleased, e.name), "released");
+      // a snapshot (a stream made from its values): its values themselves
+      const snap = new lib.PDFStream(1, 0, {}, new Uint8Array([1]), null);
+      assertSame(snap.rawdata, new Uint8Array([1]), "a snapshot's rawdata");
+      assertSame(await snap.getRawdata(), new Uint8Array([1]), "a snapshot's get_rawdata()");
+      await rejects(snap.getData(), (e) => assert(e instanceof Error, e.name), "a snapshot not decoded");
+      // a typed stream (the harness's format) projected: its values kept
+      const projected = lib.project(new lib.PDFStream(1, 0, new lib.PyDict([]), new Uint8Array([2]), null));
+      assertSame(projected.rawdata, new Uint8Array([2]), "projected rawdata");
+      assertSame(projected.data, null, "projected data");
+    },
+  },
+  {
+    name: "pdfplumber's and pdfminer's records and warnings reach onWarning as Python shows them",
+    async run({ lib, oracle }) {
+      const LEVELS = { debug: 10, info: 20, warning: 30, error: 40, critical: 50 };
+      let checked = 0;
+      let entries = 0;
+      for (const { in: input, out } of await oracle("diagnostics")) {
+        const [nameT, pdfT, optionsT, opsT] = input;
+        const name = fromTyped(nameT, lib);
+        const expected = fromTyped(out, lib);
+        // a new core: a new Python process (the registry of warnings.warn)
+        lib.dropCore();
+        const shown = [];
+        const pdf = await lib.open(fromTyped(pdfT, lib), {
+          ...fromTyped(optionsT, lib, true),
+          onWarning: (w) => shown.push([w.source, LEVELS[w.level], w.message]),
+        });
+        const settle = (p) => Promise.resolve(p).catch(() => undefined);
+        for (const op of fromTyped(opsT, lib)) {
+          if (op === "page_annots" || op === "page_objects") {
+            const pages = await settle(pdf.pages);
+            for (const page of pages ?? []) await settle(op === "page_annots" ? page.annots : page.objects);
+          } else if (op === "pages") await settle(pdf.pages);
+          else if (op === "doc_annots") await settle(pdf.annots);
+          else if (op === "doc_structure_tree") await settle(pdf.structure_tree);
+          else throw new Error(`unknown operation ${op}`);
+        }
+        await pdf.release();
+        assertSame(shown, expected, name);
+        entries += expected.length;
+        checked++;
+      }
+      lib.dropCore();
+      assert(checked >= 9 && entries >= 40, `${checked} cases, ${entries} records`);
+    },
+  },
+  {
+    name: "a long history makes the runtime hand over every CMap, after which the history goes",
+    only: "direct",
+    async run({ lib, oracle, readFile, readCMap }) {
+      const [{ in: input, out }] = (await oracle("documents")).filter((l) => fromTyped(l.in[0], lib).endsWith("pr-136-example.pdf"));
+      const expected = fromTyped(out, lib);
+      lib.configure({ cmaps: { load: (name) => readCMap(name) } });
+      try {
+        const t = await lib.internals();
+        await t.call("set_history_limit", [2]);
+        const pdf = await lib.open(await readFile(fromTyped(input[0], lib)), { onWarning() {} });
+        const page = (await pdf.pages)[fromTyped(input[1], lib) - 1];
+        // the third entry: every CMap is handed over after this call
+        assertSame(await page.extractText(), expected.text, "the text");
+        await page.chars;
+        assert((await t.info()).history === 0, "the history went");
+        assertSame(await page.extractText(), expected.text, "the text again");
+        assert((await t.info()).history === 0, "nothing is recorded any more");
+        await pdf.release();
+      } finally {
+        lib.configure({});
+      }
     },
   },
   {

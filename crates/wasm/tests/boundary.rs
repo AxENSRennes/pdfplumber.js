@@ -921,6 +921,10 @@ fn documents_handles_formats_and_the_benchmark() {
 
 fn documents_handles_formats_and_the_benchmark_body() {
     let mut core = Core::new();
+    // a CMap that is never handed over: calls can be void, the history is
+    // kept (the CMaps of the thread are those of the tests before, under
+    // WebAssembly, where every test runs on one thread)
+    ok(call(&mut core, "cmap_configure", 0, list(vec![PyValue::str("UniJIS-UCS2-H")]), None));
     let opts = PyValue::Dict(Obj::from_pairs([("password", PyValue::str("pw"))]));
     let Js::Num(h) = ok(call(&mut core, "doc_open", 0, opts, Some(tiny_pdf(b"")))) else { panic!("a handle") };
     let h = h as u32;
@@ -936,6 +940,8 @@ fn documents_handles_formats_and_the_benchmark_body() {
         ("pdfplumber", s("0.11.9")),
         ("handles", Js::Num(1.0)),
         ("history", Js::Num(1.0)),
+        // the size of the request of its one entry (doc_open)
+        ("history_bytes", Js::Num(80.0)),
     ]);
     assert_eq!(info, expected);
     assert_eq!(ok(call(&mut core, "free", h, PyValue::None, None)), Js::Null);
@@ -1238,4 +1244,267 @@ fn a_long_chain_of_derived_pages_drops_without_recursion() {
     } else {
         std::thread::Builder::new().stack_size(256 << 10).spawn(run).unwrap().join().unwrap();
     }
+}
+
+/// A request block written by hand (`[op, handle, args, 0]`, `args` by
+/// `f`): values JavaScript gives that a `PyValue` cannot hold.
+fn hand_request(op: &str, h: u32, f: impl Fn(&mut BinWriter)) -> Vec<u8> {
+    let mut w = BinWriter::without_tables();
+    w.list(4);
+    w.str(op);
+    w.int(&PyInt::from(i64::from(h)));
+    f(&mut w);
+    w.int(&PyInt::from(0));
+    w.finish()
+}
+
+/// Streams by reference (`crates/wasm/src/streams.rs`), the objects of a
+/// document given back as arguments (`binary::decode_args`), and the
+/// errors of the operations of wave 5 that no Python session can reach.
+#[test]
+fn stream_handles_objects_as_arguments_and_their_errors() {
+    big_stack(|| {
+        let mut core = Core::new();
+        ok(call(&mut core, "set_stream_refs", 0, list(vec![PyValue::Bool(true)]), None));
+        let content: &[u8] = b"q 10 0 0 10 0 0 cm BI /W 1 /H 1 /CS /G /BPC 8 ID \xff EI Q";
+        let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(tiny_pdf(content)))) else { panic!() };
+        let doc = doc as u32;
+        let Js::Arr(pages) = ok(call(&mut core, "doc_pages", doc, list(vec![]), None)) else { panic!() };
+        let Js::Obj(p) = &pages[0] else { panic!() };
+        let Js::Num(page) = p[0].1 else { panic!() };
+        let page = page as u32;
+        let stream_of = |v: Js| -> (u32, Vec<Js>) {
+            let Js::Arr(images) = v else { panic!("images: {v:?}") };
+            let Js::Obj(image) = &images[0] else { panic!() };
+            let s = &image.iter().find(|(k, _)| *k == "stream".encode_utf16().collect::<Vec<_>>()).unwrap().1;
+            let Js::StreamRef(h, fields) = s else { panic!("a stream by reference: {s:?}") };
+            let Js::Num(h) = **h else { panic!() };
+            (h as u32, fields.clone())
+        };
+        let images = |core: &mut Core| ok(call(core, "page_attr", page, list(vec![PyValue::str("images")]), None));
+        let (stream, fields) = stream_of(images(&mut core));
+        assert_eq!(fields[0], Js::Null, "an inline image has no objid");
+        // the same stream, the same handle
+        assert_eq!(stream_of(images(&mut core)).0, stream);
+        let read = |core: &mut Core, op: &str| ok(call(core, op, stream, PyValue::None, None));
+        assert_eq!(read(&mut core, "stream_rawdata"), Js::Bytes(vec![0xff, 0x20]));
+        assert_eq!(read(&mut core, "stream_data"), Js::Null);
+        assert_eq!(read(&mut core, "stream_get_rawdata"), Js::Bytes(vec![0xff, 0x20]));
+        assert_eq!(read(&mut core, "stream_get_data"), Js::Bytes(vec![0xff, 0x20]));
+        assert_eq!(read(&mut core, "stream_rawdata"), Js::Null);
+        assert_eq!(read(&mut core, "stream_data"), Js::Bytes(vec![0xff, 0x20]));
+        for op in ["stream_get_data", "stream_get_rawdata"] {
+            let (name, message) = err(&mut core, op, stream, list(vec![PyValue::from(1_i64)]));
+            assert_eq!(name, "TypeError");
+            assert!(message.ends_with("takes 1 positional argument but 2 were given"), "{message}");
+        }
+        assert_eq!(err(&mut core, "stream_data", page, PyValue::None).1, "invalid handle");
+        assert_eq!(err(&mut core, "stream_nope", stream, PyValue::None).1, "unknown operation \"stream_nope\"");
+        // the objects of a document given back: what they stand for
+        let echo =
+            |core: &mut Core, f: &dyn Fn(&mut BinWriter)| response(&core.call(&hand_request("echo", 0, f), None));
+        let r = echo(&mut core, &|w| {
+            w.stream_ref();
+            w.int(&PyInt::from(i64::from(stream)));
+            w.none();
+            w.none();
+            w.dict(0);
+        });
+        let Js::StreamRef(h, _) = r.value else { panic!("{:?}", r.value) };
+        assert_eq!(*h, Js::Num(f64::from(stream)), "the stream itself");
+        let r = echo(&mut core, &|w| {
+            w.list(3);
+            w.literal();
+            w.str("A");
+            w.literal();
+            w.bytes(b"\xff");
+            w.keyword(b"BT");
+        });
+        assert_eq!(
+            r.value,
+            Js::Arr(vec![Js::Lit(Box::new(s("A"))), Js::Lit(Box::new(Js::Bytes(vec![0xff]))), Js::Kw(b"BT".to_vec())])
+        );
+        let r = echo(&mut core, &|w| {
+            w.objref();
+            w.int(&PyInt::from(7));
+        });
+        assert_eq!(r.value, Js::Ref(Box::new(Js::Num(7.0))));
+        type Args<'a> = &'a dyn Fn(&mut BinWriter);
+        let bad: [(&str, Args<'_>); 5] = [
+            ("invalid handle", &|w| {
+                w.stream_ref();
+                w.int(&PyInt::from(999));
+                w.none();
+                w.none();
+                w.dict(0);
+            }),
+            ("invalid handle", &|w| {
+                w.page();
+                w.int(&PyInt::from(i64::from(stream)));
+                w.int(&PyInt::from(1));
+            }),
+            ("a PDFObjRef objid is an int, not str", &|w| {
+                w.objref();
+                w.str("x");
+            }),
+            ("a PSLiteral name is a str, not int", &|w| {
+                w.literal();
+                w.int(&PyInt::from(1));
+            }),
+            ("a PSLiteral name with a lone surrogate", &|w| {
+                w.literal();
+                w.py_str(PyStrRef::Utf16(&[0xd800])).unwrap();
+            }),
+        ];
+        for (message, f) in bad {
+            let r = echo(&mut core, f);
+            assert_eq!(error_name(&r).1, message);
+        }
+        // plain decoding refuses the objects of a document
+        let block = {
+            let mut w = BinWriter::without_tables();
+            w.objref();
+            w.int(&PyInt::from(1));
+            w.finish()
+        };
+        assert!(binary::decode(&block).is_err());
+        // structure trees and the scan
+        assert_eq!(err(&mut core, "struct_tree", doc, list(vec![PyValue::None])).0, "StructTreeMissing");
+        assert_eq!(
+            err(&mut core, "struct_tree", doc, list(vec![PyValue::from(i64::from(stream))])).1,
+            "invalid handle"
+        );
+        assert_eq!(
+            err(&mut core, "struct_find", page, list(vec![PyValue::None, PyValue::str("P")])).1,
+            "invalid handle"
+        );
+        assert_eq!(err(&mut core, "struct_nope", page, PyValue::None).1, "unknown operation \"struct_nope\"");
+        // a stream goes with its document; by value without references
+        let other = {
+            let Js::Num(d) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(tiny_pdf(content)))) else {
+                panic!()
+            };
+            d as u32
+        };
+        // a stream of the first document in a result of the other one (a
+        // rect line of debug_tablefinder holding it, given back in its
+        // settings): a handle of the other document, which outlives the
+        // first one
+        let Js::Arr(others) = ok(call(&mut core, "doc_pages", other, list(vec![]), None)) else { panic!() };
+        let Js::Obj(p) = &others[0] else { panic!() };
+        let Js::Num(other_page) = p[0].1 else { panic!() };
+        // the tree of one document with the page of another: not modelled
+        // (an operation reaches one document)
+        assert_eq!(err(&mut core, "struct_tree", doc, list(vec![PyValue::from(other_page as i64)])).0, "NotPorted");
+        let req = hand_request("page_debug_tablefinder", other_page as u32, |w| {
+            w.list(1);
+            w.dict(4);
+            for (k, v) in [("vertical_strategy", "explicit"), ("horizontal_strategy", "explicit")] {
+                w.str(k);
+                w.str(v);
+            }
+            w.str("explicit_vertical_lines");
+            w.list(2);
+            w.dict(11);
+            w.str("object_type");
+            w.str("rect");
+            for (k, v) in [
+                ("x0", 0),
+                ("x1", 1),
+                ("top", 0),
+                ("bottom", 1),
+                ("width", 1),
+                ("height", 1),
+                ("y0", 0),
+                ("y1", 1),
+                ("doctop", 0),
+            ] {
+                w.str(k);
+                w.int(&PyInt::from(v));
+            }
+            w.str("stream");
+            w.stream_ref();
+            w.int(&PyInt::from(i64::from(stream)));
+            w.none();
+            w.none();
+            w.dict(0);
+            w.int(&PyInt::from(5));
+            w.str("explicit_horizontal_lines");
+            w.list(2);
+            w.int(&PyInt::from(0));
+            w.int(&PyInt::from(10));
+        });
+        let r = response(&core.call(&req, None));
+        assert_eq!(r.status, 0, "{:?}", r.value);
+        let mut refs = Vec::new();
+        let mut stack = vec![r.value];
+        while let Some(v) = stack.pop() {
+            match v {
+                Js::StreamRef(h, _) => refs.push(*h),
+                Js::Arr(items) => stack.extend(items),
+                Js::Obj(items) => stack.extend(items.into_iter().map(|(_, v)| v)),
+                _ => {}
+            }
+        }
+        assert!(!refs.is_empty(), "the stream is in the result");
+        assert!(refs.iter().all(|h| *h == refs[0]), "one handle: {refs:?}");
+        let Js::Num(theirs) = refs[0] else { panic!() };
+        assert_ne!(theirs as u32, stream, "a handle of the other document");
+        ok(call(&mut core, "free", doc, PyValue::None, None));
+        assert_eq!(err(&mut core, "stream_rawdata", stream, PyValue::None).1, "invalid handle");
+        assert_eq!(ok(call(&mut core, "stream_data", theirs as u32, PyValue::None, None)), Js::Bytes(vec![0xff, 0x20]));
+        ok(call(&mut core, "free", theirs as u32, PyValue::None, None));
+        ok(call(&mut core, "free", other_page as u32, PyValue::None, None));
+        ok(call(&mut core, "set_stream_refs", 0, list(vec![PyValue::Bool(false)]), None));
+        let Js::Arr(pages) = ok(call(&mut core, "doc_pages", other, list(vec![]), None)) else { panic!() };
+        let Js::Obj(p) = &pages[0] else { panic!() };
+        let Js::Num(page) = p[0].1 else { panic!() };
+        let Js::Arr(images) = ok(call(&mut core, "page_attr", page as u32, list(vec![PyValue::str("images")]), None))
+        else {
+            panic!()
+        };
+        let Js::Obj(image) = &images[0] else { panic!() };
+        assert!(image.iter().any(|(_, v)| matches!(v, Js::Stream(_))), "by value");
+        let Js::Obj(info) = ok(call(&mut core, "info", 0, PyValue::None, None)) else { panic!() };
+        assert_eq!(info[3].1, Js::Num(2.0), "the other document and its page: no stream handle");
+    });
+}
+
+/// `page_info` gives the exception of `width` as a value, the dict of
+/// `errors.rs` (`error_value`): its class, MRO (`object` last) and message.
+#[test]
+fn page_info_gives_the_exception_of_width_as_a_value() {
+    big_stack(|| {
+        let mut core = Core::new();
+        let Js::Num(doc) = ok(call(&mut core, "doc_open", 0, PyValue::None, Some(tiny_pdf(b"")))) else { panic!() };
+        let Js::Arr(pages) = ok(call(&mut core, "doc_pages", doc as u32, list(vec![]), None)) else { panic!() };
+        let Js::Obj(p) = &pages[0] else { panic!() };
+        let Js::Num(page) = p[0].1 else { panic!() };
+        let bbox = PyValue::list([PyValue::from(0_i64), PyValue::from(0_i64), PyValue::None, PyValue::from(10_i64)]);
+        let strict = PyValue::Dict(Obj::from_pairs([("strict", PyValue::Bool(false))]));
+        let Js::Obj(crop) = ok(call(&mut core, "page_crop", page as u32, list(vec![bbox, strict]), None)) else {
+            panic!()
+        };
+        let Js::Num(crop) = crop[0].1 else { panic!() };
+        let Js::Obj(info) = ok(call(&mut core, "page_info", crop as u32, list(vec![]), None)) else { panic!() };
+        let get =
+            |k: &str| info.iter().find(|(kk, _)| *kk == k.encode_utf16().collect::<Vec<_>>()).map(|(_, v)| v.clone());
+        assert_eq!(get("height"), Some(Js::Num(10.0)));
+        assert_eq!(get("width"), None);
+        let error = get("width_error").expect("the exception of width");
+        let r = Resp { status: 1, value: error.clone(), diagnostics: Js::Null };
+        assert_eq!(error_name(&r).0, "TypeError");
+        let Js::Obj(e) = error else { panic!() };
+        let mro = &e.iter().find(|(k, _)| *k == "mro".encode_utf16().collect::<Vec<_>>()).unwrap().1;
+        let Js::Arr(mro) = mro else { panic!() };
+        assert_eq!(mro.first(), Some(&s("builtins.TypeError")));
+        assert_eq!(mro.last(), Some(&s("builtins.object")));
+        let cause = &e.iter().find(|(k, _)| *k == "cause".encode_utf16().collect::<Vec<_>>()).unwrap().1;
+        assert_eq!(*cause, Js::Null);
+        // a NotPorted error is not a Python class: no `object` (the boundary's
+        // own mro, `errors.rs`)
+        let not_ported = pdfplumber_wasm::errors::error_value(&pycompat::PyErr::new(pycompat::ExcKind::NotPorted, "x"));
+        let PyValue::Dict(d) = &not_ported else { panic!() };
+        assert_eq!(d.get("mro").unwrap().repr(), "['pycompat.NotPorted']");
+    });
 }

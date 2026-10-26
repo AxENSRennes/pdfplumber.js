@@ -91,7 +91,9 @@ use crate::cmaps;
 use crate::errors::write_error;
 use crate::handles::Handles;
 use crate::pages::{PageObj, TableObj};
+use crate::streams::StreamObj;
 use crate::strings::PyStrRef;
+use crate::structs::TreeObj;
 use crate::wire::binary::BinWriter;
 use crate::wire::json::JsonWriter;
 use crate::wire::{binary, write_value, Writer};
@@ -102,15 +104,38 @@ pub const STATUS_NEED_CMAPS: u8 = 2;
 
 pub const FORMAT_BINARY: u8 = 0;
 pub const FORMAT_JSON: u8 = 1;
+/// `PJB1` without tables (every value tagged: `int` and `float`, `list` and
+/// `tuple` stay apart), which JavaScript decodes into typed values: the
+/// format of the harness that writes stage traces through the public API
+/// (`js/trace/`, `docs/architecture.md`, "Vague 5"), never the API's.
+pub const FORMAT_TYPED: u8 = 2;
 
 /// The most diagnostics one call keeps (the others are counted).
 pub const MAX_DIAGNOSTICS: usize = 1000;
+
+/// Bit 1 of the flags of a response: the history of the documents is
+/// longer than [`Core::history_limit`] or larger than
+/// [`Core::history_bytes_limit`] (see the module documentation, "Freed
+/// handles"): JavaScript bounds it by handing over every CMap (those it
+/// cannot provide marked unavailable: `cmaps::mark_unavailable`).
+pub const FLAG_HISTORY_LONG: u8 = 2;
+
+/// The length of the history past which the core asks for every CMap.
+pub const HISTORY_LIMIT: usize = 4096;
+
+/// The size of the history (the bytes of the requests of its entries)
+/// past which the core asks for every CMap: an entry keeps its request's
+/// arguments, which can be large (the mask of a `filter`, one truth per
+/// object of the page).
+pub const HISTORY_BYTES_LIMIT: usize = 4 << 20;
 
 /// A result encoding.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Format {
     Binary,
     Json,
+    /// [`FORMAT_TYPED`]
+    Typed,
 }
 
 impl Format {
@@ -118,6 +143,7 @@ impl Format {
         match v.as_str() {
             Some("binary") => Ok(Format::Binary),
             Some("json") => Ok(Format::Json),
+            Some("typed") => Ok(Format::Typed),
             _ => Err(exc::ValueError(format!("unknown result format {}", v.repr()))),
         }
     }
@@ -137,6 +163,12 @@ pub struct Document {
     pub data: Rc<[u8]>,
     pub options: PyValue,
     pub state: DocState,
+    /// Whether calls that reached it were not recorded (every CMap was
+    /// handed over: `cmaps::complete`): its history cannot rebuild it.
+    pub unrecorded: bool,
+    /// Whether the CMaps its fonts name were looked for (at its first void
+    /// call: `crate::cmap_scan`).
+    pub scanned: bool,
 }
 
 /// The state a document derives from its bytes.
@@ -154,6 +186,10 @@ pub struct DocState {
     /// CMaps by name, as fonts cache them (an empty `CMap()` for a name
     /// `CMapDB` did not find): the test operation `doc_cmap_decode`.
     pub cmaps: FxHashMap<String, Rc<dyn CMapBase>>,
+    /// What the oracle hooks of the harness keep with the document (the
+    /// `id()` rankings of `oracle_doc_open`, `crate::oracle`); `None`
+    /// without the `oracle-hooks` feature.
+    pub hooks: Option<Rc<dyn std::any::Any>>,
 }
 
 impl Document {
@@ -171,6 +207,10 @@ pub enum Object {
     Page(PageObj),
     /// A table a page found (`Table.extract` runs on it).
     Table(TableObj),
+    /// A structure tree (`PDFStructTree(pdf, page)`, `crate::structs`).
+    StructTree(TreeObj),
+    /// A stream a result held by reference (`crate::streams`).
+    Stream(StreamObj),
     TextMap(TextMap),
     /// A value kept for the benchmark, or derived by a test operation.
     Value(PyValue),
@@ -183,6 +223,8 @@ impl Object {
             Object::Document(_) => Some(handle),
             Object::Page(p) => Some(p.doc),
             Object::Table(t) => Some(t.doc),
+            Object::StructTree(t) => Some(t.doc),
+            Object::Stream(t) => Some(t.doc),
             Object::TextMap(_) | Object::Value(_) => None,
         }
     }
@@ -194,6 +236,8 @@ impl Object {
             Object::Document(d) => d.reset(),
             Object::Page(p) => p.page = None,
             Object::Table(t) => t.table = None,
+            Object::StructTree(t) => t.tree = None,
+            Object::Stream(t) => t.stream = None,
             // computed from the arguments of the call that made it, with
             // no CMap: nothing to drop
             Object::TextMap(_) => {}
@@ -229,6 +273,9 @@ pub struct Entry {
     pub process: ProcessState,
     /// How it ended: its replay must end so.
     pub outcome: Result<(), PyErr>,
+    /// The size of the request it belongs to (its arguments: what it
+    /// keeps), counted against [`Core::history_bytes_limit`].
+    pub bytes: usize,
 }
 
 /// A value written by hand.
@@ -272,6 +319,20 @@ pub struct Core {
     /// The handles of the pages the results of the running call hold
     /// (`PageRef::id` -> handle: `crate::wire::with_page_handles`).
     pub(crate) page_values: FxHashMap<usize, u32>,
+    /// Whether results hold their streams by reference
+    /// (`set_stream_refs`, `crate::streams`).
+    pub(crate) stream_refs: bool,
+    /// The handles of the streams the results of the running call hold by
+    /// reference (`Rc::as_ptr` -> handle: `crate::wire::with_value_handles`).
+    pub(crate) stream_values: FxHashMap<usize, u32>,
+    /// The length of the history past which responses ask for every CMap
+    /// ([`FLAG_HISTORY_LONG`]; `set_history_limit`, for the tests).
+    pub(crate) history_limit: usize,
+    /// The size of the history past which responses ask for every CMap
+    /// ([`HISTORY_BYTES_LIMIT`]; `set_history_limit`, for the tests).
+    pub(crate) history_bytes_limit: usize,
+    /// The size of the running call's request ([`Entry::bytes`]).
+    pub(crate) request_bytes: usize,
 }
 
 impl Default for Core {
@@ -422,6 +483,12 @@ impl Utf16Index {
         Utf16Index { cp }
     }
 
+    /// Offsets that are already code point offsets of `s` (Python's own
+    /// matches, `page_search` with `code_points`).
+    pub(crate) fn identity(s: &PyStr) -> Utf16Index {
+        Utf16Index { cp: (0..=s.code_points().count()).map(Some).collect() }
+    }
+
     /// A JavaScript span (`[start, end]`, or `None`).
     pub(crate) fn span(&self, s: &PyValue) -> PyResult<Option<(usize, usize)>> {
         match s {
@@ -460,6 +527,11 @@ impl Core {
             next_oid: 1,
             ghosts: FxHashMap::default(),
             page_values: FxHashMap::default(),
+            stream_refs: false,
+            stream_values: FxHashMap::default(),
+            history_limit: HISTORY_LIMIT,
+            history_bytes_limit: HISTORY_BYTES_LIMIT,
+            request_bytes: 0,
         }
     }
 
@@ -541,8 +613,18 @@ impl Core {
         }
     }
 
-    /// Runs one operation.
+    /// Runs one operation, then gives a handle to each page and stream
+    /// its result holds ([`Core::label_values`], `crate::streams`).
     pub fn op(&mut self, name: &str, h: u32, args: &PyValue, data: Option<Rc<[u8]>>) -> PyResult<Out> {
+        let out = self.run(name, h, args, data)?;
+        if let Out::Value(v) = &out {
+            self.label_values(v)?;
+        }
+        Ok(out)
+    }
+
+    /// The operation itself.
+    fn run(&mut self, name: &str, h: u32, args: &PyValue, data: Option<Rc<[u8]>>) -> PyResult<Out> {
         let a = || seq(args);
         Ok(Out::Value(match name {
             "info" => PyValue::Dict(Obj::from_pairs([
@@ -552,9 +634,26 @@ impl Core {
                 ("handles", PyValue::from(self.handles.len() as i64)),
                 // the calls the documents' replays would run
                 ("history", PyValue::from(self.history.len() as i64)),
+                ("history_bytes", PyValue::from(self.history_bytes() as i64)),
             ])),
             "set_format" => {
                 self.format = Format::parse(args)?;
+                PyValue::None
+            }
+            "set_history_limit" => {
+                // [entries, bytes?] (the tests of the bounded history)
+                let a = a()?;
+                let limit = |v: &PyValue| usize::try_from(int(v)?).map_err(|_| exc::ValueError("a limit"));
+                self.history_limit = limit(arg(a, 0)?)?;
+                if let Some(bytes) = a.get(1) {
+                    self.history_bytes_limit = limit(bytes)?;
+                }
+                PyValue::None
+            }
+            "set_stream_refs" => {
+                // whether results hold their streams by reference
+                // (crate::streams); the typed format writes them by value
+                self.stream_refs = arg(a()?, 0)?.truthy();
                 PyValue::None
             }
             "echo" => args.clone(),
@@ -597,6 +696,13 @@ impl Core {
             "cmap_add" => {
                 let data = data.ok_or_else(|| exc::TypeError("cmap_add needs the file"))?;
                 cmaps::add(str_arg(args)?, &data)?;
+                PyValue::None
+            }
+            "cmap_unavailable" => {
+                // [names]: what JavaScript could not provide when a long
+                // history asked for every CMap (cmaps::mark_unavailable)
+                let names = a()?.iter().map(|n| str_arg(n).map(str::to_owned)).collect::<PyResult<Vec<_>>>()?;
+                cmaps::mark_unavailable(names);
                 PyValue::None
             }
             "cmap_decode" => {
@@ -645,7 +751,34 @@ impl Core {
                     crate::pages::open(&data, args)?
                 };
                 let state = DocState { pdf: Some(Rc::new(pdf)), ..DocState::default() };
-                let h = self.insert(Object::Document(Document { data, options: args.clone(), state }))?;
+                let h = self.insert(Object::Document(Document {
+                    data,
+                    options: args.clone(),
+                    state,
+                    unrecorded: false,
+                    scanned: false,
+                }))?;
+                self.reach(handle(&h)?)?;
+                h
+            }
+            "doc_open_file" => {
+                // [path, options]: pdfplumber.open(path, **options), the file
+                // whose bytes JavaScript read (Node's open(path))
+                let data = data.ok_or_else(|| exc::TypeError("doc_open_file needs the PDF bytes"))?;
+                let a = a()?;
+                let pdf = {
+                    let _call = pycompat::recursion::eval_entry()?;
+                    crate::pages::open_file(&data, arg(a, 0)?, a.get(1).unwrap_or(&PyValue::None))?
+                };
+                let state = DocState { pdf: Some(Rc::new(pdf)), ..DocState::default() };
+                let options = a.get(1).cloned().unwrap_or(PyValue::None);
+                let h = self.insert(Object::Document(Document {
+                    data,
+                    options,
+                    state,
+                    unrecorded: false,
+                    scanned: false,
+                }))?;
                 self.reach(handle(&h)?)?;
                 h
             }
@@ -827,6 +960,19 @@ impl Core {
                 };
                 return Ok(Out::Encoded(format, v));
             }
+            #[cfg(feature = "oracle-hooks")]
+            _ if name.starts_with("oracle_") => match self.oracle_op(name, h, args, data)? {
+                Some(v) => v,
+                None => return Err(exc::ValueError(format!("unknown operation {name:?}"))),
+            },
+            _ if name.starts_with("stream_") => match self.stream_op(name, h, args)? {
+                Some(out) => return Ok(out),
+                None => return Err(exc::ValueError(format!("unknown operation {name:?}"))),
+            },
+            _ if name.starts_with("struct_") => match self.struct_op(name, h, args)? {
+                Some(out) => return Ok(out),
+                None => return Err(exc::ValueError(format!("unknown operation {name:?}"))),
+            },
             _ => match self.page_op(name, h, args)? {
                 Some(out) => return Ok(out),
                 None => return Err(exc::ValueError(format!("unknown operation {name:?}"))),
@@ -843,7 +989,18 @@ impl Core {
         let target = self.oids.get(&h).map_or(Target::Handle(h), |&oid| Target::Object(oid));
         let process = ProcessState::capture();
         let result = self.op(name, h, args, data.clone());
-        if let Some(doc) = self.op_doc.take() {
+        // once every CMap was handed over, no call can be void: the
+        // history is not needed (see the module documentation)
+        let recorded = self.op_doc.take().filter(|&doc| {
+            let complete = cmaps::complete();
+            if complete {
+                if let Some(Object::Document(d)) = self.handles.get_mut(doc) {
+                    d.unrecorded = true;
+                }
+            }
+            !complete
+        });
+        if let Some(doc) = recorded {
             let created = self.created[start..].iter().filter_map(|h| self.oids.get(h).copied()).collect();
             let call = self.calls;
             let outcome = result.as_ref().map(|_| ()).map_err(PyErr::clone);
@@ -857,10 +1014,16 @@ impl Core {
                 call,
                 process,
                 outcome,
+                bytes: self.request_bytes,
             });
         }
         self.op_doc = outer;
         result
+    }
+
+    /// The size of the history ([`Entry::bytes`]).
+    pub(crate) fn history_bytes(&self) -> usize {
+        self.history.iter().map(|e| e.bytes).sum()
     }
 
     /// `free`: a document goes with its pages, tables and history; a page
@@ -904,8 +1067,9 @@ impl Core {
             },
         };
         self.replay = Some(e.created.iter().copied().collect());
-        // (the pages of the results it labels are its own)
+        // (the pages and streams of the results it labels are its own)
         self.page_values.clear();
+        self.stream_values.clear();
         let outcome = with_depth(ENTRY_DEPTH, || self.op(&e.op, h, &e.args, e.data.clone())).map(|_| ());
         let left = self.replay.take().map_or(0, |q| q.len());
         self.op_doc = None;
@@ -938,14 +1102,18 @@ impl Core {
             .into_iter()
             .filter(|d| matches!(self.handles.get(*d), Some(Object::Document(_))))
             .collect();
+        // a document some calls of which were not recorded cannot be
+        // rebuilt (only reached when CMaps become known after every known
+        // one was handed over)
+        let unrecorded = docs.iter().any(|d| matches!(self.handles.get(*d), Some(Object::Document(x)) if x.unrecorded));
         for (k, o) in self.handles.iter_mut() {
             if o.document(k).is_some_and(|d| docs.contains(&d)) {
                 o.reset();
             }
         }
         let entries: Vec<Entry> = self.history.iter().filter(|e| docs.contains(&e.doc)).cloned().collect();
-        let mut failed = None;
-        for e in &entries {
+        let mut failed = unrecorded.then(|| "calls that reached it were not recorded".to_owned());
+        for e in entries.iter().filter(|_| !unrecorded) {
             if let Err(reason) = self.replay_entry(e) {
                 failed = Some(reason);
                 break;
@@ -954,6 +1122,7 @@ impl Core {
         self.ghosts.clear();
         self.touched.clear();
         self.page_values.clear();
+        self.stream_values.clear();
         // every CMap the replayed calls asked for was handed over before
         // their first run
         let missed = cmaps::take_missing();
@@ -981,11 +1150,22 @@ impl Core {
         self.created.clear();
         self.touched.clear();
         self.page_values.clear();
+        self.stream_values.clear();
         self.op_doc = None;
         self.calls += 1;
+        self.request_bytes = request.len();
+        if cmaps::complete() && !self.history.is_empty() {
+            // no call can be void any more: the history goes
+            self.history = Vec::new();
+            for (_, o) in self.handles.iter_mut() {
+                if let Object::Document(d) = o {
+                    d.unrecorded = true;
+                }
+            }
+        }
         let process = ProcessState::capture();
         let (result, collected) = {
-            let parsed = binary::decode(request).and_then(|req| {
+            let parsed = self.decode_request(request).and_then(|req| {
                 let r = seq(&req)?.to_vec();
                 let op = str_arg(arg(&r, 0)?)?.to_owned();
                 h = match arg(&r, 1)? {
@@ -1007,21 +1187,102 @@ impl Core {
                 }
             }
         };
-        let missing = cmaps::take_missing();
+        let mut missing = cmaps::take_missing();
         if !missing.is_empty() {
             // the re-run emits its own diagnostics: Python's, once
             drop((result, collected));
+            // the first void call of a document asks for every CMap its
+            // fonts name too (crate::cmap_scan): one void call where each
+            // of its CMaps would make one
+            for doc in self.touched.clone() {
+                if let Some(Object::Document(d)) = self.handles.get_mut(doc) {
+                    if !d.scanned {
+                        d.scanned = true;
+                        let (data, options) = (d.data.clone(), d.options.clone());
+                        let known =
+                            |n: &str| cmaps::is_known(n) && !cmaps::is_loaded(n) && !missing.iter().any(|m| m == n);
+                        let found = crate::cmap_scan::scan(&data, &options, &known);
+                        missing.extend(found);
+                    }
+                }
+            }
             self.void(process);
             let none = diagnostics::Collected::default();
             return response(STATUS_NEED_CMAPS, FORMAT_BINARY, false, &encode_names(&missing), &none);
         }
-        match result {
-            Ok(out) => match crate::wire::with_page_handles(std::mem::take(&mut self.page_values), || self.encode(out))
-            {
+        let mut out = match result {
+            Ok(out) => match crate::wire::with_value_handles(
+                std::mem::take(&mut self.page_values),
+                std::mem::take(&mut self.stream_values),
+                || self.encode(out),
+            ) {
                 Ok((format, fixup, payload)) => response(STATUS_OK, format, fixup, &payload, &collected),
                 Err(e) => response(STATUS_ERROR, FORMAT_BINARY, false, &encode_error(&e), &collected),
             },
             Err(e) => response(STATUS_ERROR, FORMAT_BINARY, false, &encode_error(&e), &collected),
+        };
+        if self.history.len() > self.history_limit || self.history_bytes() > self.history_bytes_limit {
+            out[6] |= FLAG_HISTORY_LONG;
+        }
+        out
+    }
+
+    /// The request block (`[op, handle, args, level]`), the objects of a
+    /// document its arguments hold made as the objects they stand for
+    /// ([`Core::object_arg`]): a `PDFObjRef` is bound to the document of
+    /// the request's target (decoded again once that is known, when the
+    /// arguments hold one).
+    fn decode_request(&self, request: &[u8]) -> PyResult<PyValue> {
+        let mut refs = false;
+        let first = binary::decode_args(request, &mut |o| self.object_arg(o, None, &mut refs))?;
+        if !refs {
+            return Ok(first);
+        }
+        let doc = seq(&first)
+            .ok()
+            .and_then(|r| r.get(1).cloned())
+            .and_then(|h| handle(&h).ok())
+            .and_then(|h| self.handles.get(h).and_then(|o| o.document(h)))
+            .and_then(|d| match self.handles.get(d) {
+                Some(Object::Document(d)) => d
+                    .state
+                    .pdf
+                    .as_ref()
+                    .map(|pdf| Rc::downgrade(&pdf.core.doc) as std::rc::Weak<dyn pdfminer::pdftypes::PDFResolver>),
+                _ => None,
+            });
+        binary::decode_args(request, &mut |o| self.object_arg(o, doc.clone(), &mut refs))
+    }
+
+    /// The object an argument stands for (`binary::ObjectArg`): a
+    /// `PDFObjRef` of `doc` (a new one, equal to the one of the result:
+    /// pdfminer's has no other identity than its own); the page of a page
+    /// handle (`PageRef`), the stream of a stream handle (the same objects).
+    fn object_arg(
+        &self,
+        o: binary::ObjectArg,
+        doc: Option<std::rc::Weak<dyn pdfminer::pdftypes::PDFResolver>>,
+        refs: &mut bool,
+    ) -> PyResult<PyValue> {
+        match o {
+            binary::ObjectArg::Ref(objid) => {
+                *refs = true;
+                let PyValue::Int(objid) = &objid else {
+                    return Err(exc::TypeError(format!("a PDFObjRef objid is an int, not {}", objid.type_name())));
+                };
+                let objid = objid.clone();
+                Ok(PyValue::Pdf(pdfminer::pdftypes::PDFObject::Ref(pdfminer::pdftypes::PDFObjRef::new(doc, objid))))
+            }
+            binary::ObjectArg::Page(h, _) => match self.handles.get(handle(&h)?) {
+                Some(Object::Page(PageObj { page: Some(p), .. })) => Ok(PyValue::Page(p.as_value())),
+                _ => Err(exc::ValueError("invalid handle")),
+            },
+            binary::ObjectArg::Stream(h) => match self.handles.get(handle(&h)?) {
+                Some(Object::Stream(StreamObj { stream: Some(s), .. })) => {
+                    Ok(PyValue::Pdf(pdfminer::pdftypes::PDFObject::Stream(s.clone())))
+                }
+                _ => Err(exc::ValueError("invalid handle")),
+            },
         }
     }
 
@@ -1036,6 +1297,11 @@ impl Core {
                         f(&mut w)?;
                         Ok((FORMAT_BINARY, false, w.finish()))
                     }
+                    Format::Typed => {
+                        let mut w = BinWriter::without_tables();
+                        f(&mut w)?;
+                        Ok((FORMAT_TYPED, false, w.finish()))
+                    }
                     Format::Json => {
                         let mut w = JsonWriter::new();
                         f(&mut w)?;
@@ -1047,6 +1313,11 @@ impl Core {
         };
         match format {
             Format::Binary => Ok((FORMAT_BINARY, false, binary::encode(&value)?)),
+            Format::Typed => {
+                let mut w = BinWriter::without_tables();
+                crate::wire::write_value(&mut w, &value)?;
+                Ok((FORMAT_TYPED, false, w.finish()))
+            }
             Format::Json => {
                 let (text, fixup) = crate::wire::json::encode(&value)?;
                 Ok((FORMAT_JSON, fixup, text))

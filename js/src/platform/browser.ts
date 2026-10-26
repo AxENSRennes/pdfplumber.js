@@ -1,6 +1,6 @@
 /** Browsers (and workers): everything through `fetch`. */
 
-import type { PDFInput, RuntimeOptions } from "../types.js";
+import type { PDFInput, RuntimeOptions, WasmModule } from "../types.js";
 import { fetchBytes, fetchCMapSource, loaderCMapSource, memoryInput, type Platform } from "./platform.js";
 import { WorkerCore } from "../worker/client.js";
 
@@ -41,8 +41,7 @@ export const browserPlatform: Platform = {
     throw new TypeError("unsupported input: expected bytes, a Blob or a URL");
   },
 
-  async workerCore(module: WebAssembly.Module, options: RuntimeOptions) {
-    const url = options.worker === true || options.worker === undefined ? new URL("./worker.js", import.meta.url) : toUrl(options.worker as string | URL);
+  async workerCore(module: WasmModule, options: RuntimeOptions) {
     if (options.cmaps && options.cmaps.load) throw new Error("worker mode cannot use a CMap loader function: give a baseUrl");
     const cmapBase =
       options.cmaps === false
@@ -50,6 +49,13 @@ export const browserPlatform: Platform = {
         : options.cmaps?.baseUrl !== undefined
           ? toUrl(options.cmaps.baseUrl).href
           : new URL("../cmaps/", import.meta.url).href;
-    return WorkerCore.start(new Worker(url, { type: "module" }), module, cmapBase);
+    if (options.worker === true || options.worker === undefined) {
+      // the form bundlers recognize (Vite, webpack, Parcel: the worker is
+      // bundled as an entry of its own); unbundled, dist/browser/worker.js
+      const url = new URL("./worker.js", import.meta.url);
+      return WorkerCore.start(new Worker(new URL("./worker.js", import.meta.url), { type: "module" }), module, cmapBase, url.href);
+    }
+    const url = toUrl(options.worker as string | URL);
+    return WorkerCore.start(new Worker(url, { type: "module" }), module, cmapBase, url.href);
   },
 };

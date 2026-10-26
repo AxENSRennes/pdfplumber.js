@@ -2011,6 +2011,1334 @@ tests/performances/Wasm), chaque constat revérifié :
   le texte des `log.*` de pdfminer, la copie profonde d'un document lu
   depuis des octets par `structure_tree`.
 
+## Vague 5 : l'API JavaScript publique
+
+Base commune : branche `wave5/base` (depuis `rewrite/rust-core` à
+`73b88b9`). Trois chantiers parallèles, API, BOUNDARY et PERF, partent de
+cette base et ne modifient pas le contrat ci-dessous sans accord écrit
+(une note datée dans cette section, sur la branche qui le change).
+
+### Ce que contient la base
+
+- **Le contrat** : [`public-api.md`](public-api.md) (membres, options,
+  asynchronie, valeurs, arguments, alias, durée de vie, mode worker,
+  erreurs, table « Operations » : membre → opérations de la frontière →
+  instructions de `oracle/unit/js_pages_run.py`) et `js/src/types.ts`.
+- **L'épine de l'API** (`js/src/api.ts`) : chaque membre est un *job* du
+  cœur, implémenté sur les opérations de `crates/wasm/src/pages.rs` ;
+  documents (`pages` gardées jusqu'à `close()`, `metadata`, listes,
+  `annots`, `structure_tree`, sérialisations, `close`, `release`,
+  `asyncDispose`, `page(ref)`), pages (géométrie, listes, texte, mots,
+  lignes, `search` en un job, pages dérivées puis leur `page_info`,
+  `filter` en un job, tables et `Table`, sérialisations, `close`).
+  En attente (rejettent `NotImplemented`) : `debugTablefinder`,
+  `structTree` (`PDFStructTree`), `PDFStream` par référence.
+- **Changements partagés faits dans la base** (frontière et paquet) :
+  file FIFO des requêtes et des jobs par cœur (`Core.exclusive`,
+  `Serial`, dans la page et dans le worker : sans elle, la relance d'un
+  appel nul laissait passer un appel fait après lui) ; les erreurs portent
+  l'exception qu'elles enveloppent (`cause`, `errors.rs` → `error.cause`) ;
+  `doc_open_file` (`open(path)` de Node = `pdfplumber.open(path)`,
+  `Source::Path`) ; `open()` transmet toute option sauf `logLevel` et
+  `onWarning` ; format de résultat typé (`set_format("typed")`,
+  `FORMAT_TYPED` : PJB1 sans tables, décodé en valeurs typées,
+  `js/src/core/typed.ts`) ; crochets d'oracle (feature `oracle-hooks`,
+  `crates/wasm/src/oracle.rs`, `dist/pdfplumber-oracle.wasm`, jamais
+  livré) ; `page_search` prend des spans en points de code
+  (`code_points`) ; `NotImplemented` d'un `NotPorted` garde module et
+  classe.
+- **Le harnais** (ci-dessous) : sessions `oracle/unit/js_api.py` et leur
+  rejoueur, traces des étapes `plumber_*` par l'API (`js/trace/`,
+  `oracle.verify --engine js-api`).
+- **Les mesures de référence** (« Référence PERF », ci-dessous) et leurs
+  outils : `crates/pdftrace/examples/plumber_phases.py` (jumeau Python de
+  `plumber_phases.rs`), `js/bench/phases.mjs` (les mêmes phases par l'API
+  publique, build `dist`).
+
+### Contrat de l'API (décisions)
+
+- **Un job par membre, FIFO.** Le cœur est un processus Python qui
+  exécute une instruction après l'autre : chaque membre est un job mis en
+  file au moment de l'appel (`Core.exclusive`), ses opérations
+  s'exécutent dans l'ordre des appels quel que soit l'ordre des `await`,
+  chacune jusqu'au bout (relances d'appel nul comprises). `search` (la
+  `RegExp` entre `page_search_text` et `page_search`) et `filter` (la
+  fonction entre `page_objects` et `page_filter`) sont un job chacun. Un
+  membre ne lève jamais de façon synchrone (promesse rejetée), hors la
+  géométrie (`width`, `height`), propriété synchrone comme en Python.
+- **Instruction et récursion.** Le plan d'un membre est sa ligne de la
+  table « Operations » ; chaque opération est une instruction au niveau du
+  module de `js_pages_run.py` (`ENTRY_DEPTH`) : une `RecursionError`
+  arrive par l'API là où elle arrive dans ce script, ce que les sessions
+  vérifient (fenêtres de profondeur d'`adv-plumber`). Les étapes de
+  l'oracle appellent pdfplumber depuis des générateurs imbriqués
+  (cadres et sites de chargement à eux) : sur les fenêtres de profondeur
+  des corpus adverses, une trace écrite par l'API peut lever plus loin ou
+  moins loin que la trace de l'étape, par construction ; la parité de ces
+  fichiers par l'API est celle des sessions.
+- **Caches.** `pdf.pages` : le tableau de la première lecture résolue,
+  jusqu'à `close()` (qui vide `_pages` en Python) ; une lecture rejetée
+  n'est pas gardée. Les autres getters exécutent leur instruction à chaque
+  lecture ; un chantier peut garder les valeurs résolues (jamais les
+  rejets : la seconde exécution d'une instruction qui a levé peut réussir,
+  un site spécialisé tenant deux unités C de moins), à condition que le
+  plan (les sessions) le dise.
+- **Durée de vie.** `close()` = `PDF.close()` / `Page.close()` (le document
+  reste utilisable, comme en Python) ; `release()` libère le document dans
+  le cœur (pages, tables, flux, historique) ; ensuite tout membre qui a
+  besoin du cœur rejette `DocumentReleased` (erreur JavaScript, sans
+  équivalent Python) ; `await using` = `close()` puis `release()` ; un
+  `FinalizationRegistry` libère un document injoignable (une page, une
+  table le retiennent). Libérer ne change aucun résultat.
+- **Valeurs et arguments** : ceux de `js-runtime.md` (« Valeurs ») ; une
+  `Page` dans un résultat est un `PageRef`, `pdf.page(ref)` donne le même
+  `PDFPlumberPage` que `pdf.pages` ; un objet de résultat rendu en argument
+  traverse par valeur (un flottant entier devient un `int`, visible
+  seulement dans un texte).
+- **Alias** : tout nom pdfplumber à `_` a son alias camelCase (et
+  l'inverse), un seul membre ; options et clés restent celles de
+  pdfplumber.
+- **Erreurs** : `PDFPlumberError` (`name` = classe Python, `cause` =
+  l'exception enveloppée), `NotImplemented` (membre en attente ou
+  `NotPorted`), `DocumentReleased`, `CoreCrash`.
+- **Mode worker** : même API ; jobs en file dans le thread appelant, la
+  fonction de `filter` et la `RegExp` de `search` y tournent aussi ; le
+  worker exécute ses messages un par un (`Serial`).
+- **Journalisation** : la configuration de référence reste « logging
+  coupé » pour les résultats et la récursion ; le texte transmis à
+  `onWarning` est un diagnostic seulement.
+- **Hors périmètre** : `display.py`/`to_image`, `repair.py`, `cli.py`.
+
+### Harnais
+
+**Sessions (spécification de l'API).** `oracle/unit/js_api.py`
+(générateur à empreinte, `python -m oracle.unit js_api`, après `plumber`
+dont il lit `adv-plumber`) écrit `<cache>/unit/js_api/<fp>/sessions.jsonl`,
+une session par ligne :
+
+```
+{"in": [session], "out": [{"id": n, "value": JSON typé}, ...]}
+session = {"name", "node_only", "steps": [{"calls": [appel...], "await": [k...]}]}
+appel   = {"id", "on": [id d'appel, index...] | null, "get"|"call": membre,
+           "args": [JSON typé...], "input": {"bytes_of": rel}|{"bytes": hex}|{"path": rel},
+           "predicate": nom (filter)}
+```
+
+Les appels d'une étape sont faits sans attendre, puis attendus dans
+l'ordre de `await`. Le générateur traduit chaque appel en instructions de
+`js_pages_run.py` selon la table « Operations » (le plan des membres est
+écrit là, une fois), exécute la session dans un processus neuf
+(`js_pages_run.py` : cibles `[cas, index]`, `doc_open_file`, `causes`,
+motifs compilés `{"$compiled": source}`), et déduit des résultats ce que
+chaque appel doit donner : une valeur, une `Error{name, message, cause}`
+(Python, ou de l'API : `DocumentReleased`), `Unresolved{}` (un appel sur
+un objet jamais fait : aucun côté ne l'exécute). Valeurs neutres : un objet
+de l'API est un `Named` (`PDFPlumberPage{géométrie}`, `Table{bbox, cells,
+rows, columns}`, `PDFPlumberDocument{}`, `Page{page_number}`), le nom
+d'une image en ligne `"<inline k>"` des deux côtés (rang par page ;
+l'écart `str(id())`/`inline-<k>` est documenté et vérifié par les traces),
+l'ensemble des directions de `validate_directions` dans l'ordre du port.
+Couverture de la base : 40 sessions, 1 595 appels (dix fichiers réels
+avec chaque membre et alias de la première page et du document, chaînes
+de pages dérivées, prédicats, tables et `Table`, sérialisations,
+`close` puis pages refaites, `release` puis `DocumentReleased` ; options
+d'ouverture et mots de passe ; `open(path)` (Node) ; ordre d'attente
+inversé ; pages CJK aux CMaps paresseuses ; 26 PDF d'`adv-plumber`, dont
+des fenêtres de profondeur et d'unités C). Rejoueur :
+`js/test/shared/api-sessions.mjs`, **par l'API publique seulement** ; lancé
+par vitest sur les sources (`js/test/node/api.test.ts`) et sur le build
+`dist` (`api-dist.test.ts`), par Playwright dans Chromium, Firefox et
+WebKit, dans la page et en worker (`js/test/browser/api.spec.ts`, sessions
+`node_only` exclues). Un membre en attente entre dans les sessions avec
+son opération (BOUNDARY ajoute l'instruction à `js_pages_run.py`, API la
+ligne du plan et les appels).
+
+**Traces par l'API publique.** `js/trace/pdftrace-js` (Node, build `dist`
+avec `dist/pdfplumber-oracle.wasm`) a la ligne de commande de `pdftrace`
+et écrit les traces des étapes `plumber_objects`, `plumber_text`,
+`plumber_tables`, `plumber_doc` en suivant leur parcours Python
+(`js/trace/plumber_*.mjs`, tables d'options générées par
+`oracle/codegen/plumber_ops.py` dans `js/trace/plumber-ops.json`,
+`--check`) ; `python -m oracle.verify --engine js-api --stage S --set X`
+le lance à la place de `pdftrace`. Égalité octet pour octet :
+
+- chaque fichier dans un cœur neuf (un processus Python), au format typé
+  (`set_format("typed")`) : la valeur publique que l'API rend est la
+  projection (`project`) de la valeur typée, que l'étape lit dans
+  `core.lastTyped` juste après l'appel (file FIFO : rien entre les deux) ;
+  un `float` est un `PyFloat` (`3` et `3.0` distincts), un `tuple` un
+  `PyTuple`, un `dict` un `PyDict` (ordre des clés de Python, clés
+  entières comprises), un `int` un nombre ou un `bigint` ;
+- `js/trace/canon.mjs` : `canon` d'`oracle/canon.py` sur ces valeurs
+  (`repr` de flottant de CPython depuis les chiffres les plus courts de
+  `toExponential`, `json.dumps(ensure_ascii=True)` par unité UTF-16 — une
+  paire de substituts s'écrit comme Python écrit un caractère astral —,
+  octets au-delà de 256 par SHA-256, `Stream(...)` avec le `rawdata` lu à
+  la fin de l'appel, exceptions par `pythonModule`/`pythonQualname`) ;
+- crochets internes (`pdfplumber-js/internal`, jamais publics), là où la
+  sémantique publique diffère volontairement de Python, chacun documenté
+  dans `js/src/hooks.ts` et `crates/wasm/src/oracle.rs` : rang des `id()`
+  de l'analyse (`open(..., {[ORACLE]: {ids}})` → `oracle_doc_open`, et
+  `oracle_page_ids` pour écrire la ligne `ids`) ; spans de `re`
+  (`search(..., {[ORACLE]: {spans}})`, en points de code,
+  `page_search` `code_points`) ; identité des objets
+  (`oracle_object_indices` : les pages dérivées de Python tiennent les
+  dicts du parent, les résultats JS sont des copies) ; format typé (une
+  vue sans perte, pas une entrée).
+
+Résultat sur `quick` (150 fichiers, `heavy.sh`, `-j 3`) :
+`plumber_objects` 150/150 et `plumber_text` 150/150 identiques par
+l'API (149 avant la correction des spans en points de code :
+`lone-surrogates.pdf`, une paire de substituts que JS fusionne) ;
+`plumber_tables` et `plumber_doc` identiques hors les lignes des
+opérations en attente (`finder ...` de `debug_tablefinder` ; `tree`,
+`find_all`, `find`, `mcids`, `element_bbox`, `element_repr` de
+`PDFStructTree`).
+
+Vérification de la base (commit de fin de `wave5/base`, `heavy.sh`) :
+`scripts/check.sh` vert (42 min ; vitest : 123 tests, dont les 40 sessions
+sur les sources et sur `dist`, et `canon.mjs` contre les 6 292 cas
+d'`oracle/unit/canon.py` ; `plumber_objects` et `plumber_text` par l'API
+sur `micro` : 17/17) ; `scripts/check-browsers.sh` vert (345 tests en
+17 min : les tests du runtime et les 39 sessions qui ne sont pas
+`node_only`, dans Chromium, Firefox et WebKit, dans la page et en worker) ;
+`plumber_text` par l'API sur `quick` repassé après la correction des
+spans : 150/150.
+
+### Chantiers et propriété des fichiers
+
+| Chemins | API | BOUNDARY | PERF |
+|---|---|---|---|
+| `js/src/api.ts`, nouveaux modules `js/src/api/*`, `types.ts`, `search.ts`, `exports.ts`, `index.ts`, `browser.ts`, `browser-internal.ts`, `errors.ts`, `hooks.ts` | écrit | lit | lit |
+| `js/src/core/*`, `pdfobjects.ts`, `worker/*`, `platform/*`, `internal.ts` | lit | écrit | lit (mesures) |
+| `crates/wasm/src/{ops,pages,oracle,cmaps,errors,handles,abi,strings}.rs`, `crates/wasm/tests/*` | lit | écrit | lit |
+| `crates/wasm/src/wire/*`, `js/src/core/wire.ts` | lit | ajouts seulement (protocole 1) | écrit |
+| `crates/pdfplumber`, `crates/pdfminer`, `crates/pycompat` | — | sites `log.*` et `pycompat::logging` (protocole 2), analyse des CMaps | écrit |
+| `crates/pdftrace/examples/*`, `js/bench/*`, `scripts/size.mjs` | — | — | écrit |
+| `oracle/unit/js_api.py`, `js/trace/*`, `js/test/shared/api-sessions.mjs`, `js/test/node/api*.test.ts`, `js/test/browser/api.spec.ts`, `oracle/verify.py` (`--engine`) | écrit | lit | lit |
+| `oracle/unit/js_pages_run.py`, `oracle/unit/js_runtime.py`, `js/test/shared/tests.mjs` | ajouts d'instructions coordonnés (protocole 3) | écrit | — |
+| `docs/public-api.md`, `README.md` | écrit | — | — |
+| `docs/js-runtime.md` | — | écrit | section « Mesures » |
+| `docs/architecture.md` « Vague 5 » | sa sous-section | sa sous-section | sa sous-section et « Référence PERF » |
+| `scripts/check.sh`, `check-browsers.sh`, `build-*.mjs` | — | écrit | — |
+
+Protocoles :
+
+1. **Fil (`wire`)** : PERF possède l'encodage (allocation, table de
+   chaînes, colonnes, décodeur) ; BOUNDARY y ajoute seulement des sortes
+   de valeurs (le flux par référence : nouvelle étiquette, nouvelle
+   méthode de `Writer`, nouveau cas du décodeur), en un commit à part,
+   annoncé dans sa sous-section ; aucun ne change le format typé ni le
+   sens d'une étiquette existante sans l'autre. La jonction résout les
+   conflits textuels en gardant les deux.
+2. **`log.*` de pdfminer** : BOUNDARY ajoute le texte des messages aux
+   sites existants (fermetures de formatage, `pycompat::logging`) en un
+   commit de bout en bout, sans toucher au comptage des cadres ; PERF ne
+   reformate pas les lignes qui portent un appel de journalisation. Toute
+   autre modification de `crates/pdfminer` par BOUNDARY (l'analyse des
+   CMaps d'un document) vit dans un module nouveau.
+3. **Instructions de `js_pages_run.py`** : BOUNDARY ajoute l'instruction de
+   chaque nouvelle opération (ajout pur d'une branche du `if`), API ajoute
+   à `js_api.py` la ligne du plan du membre et ses appels. Toute
+   modification de `js_pages_run.py` invalide les données `js_runtime` et
+   `js_api` (empreinte) : à régénérer.
+4. **Traces et caches** : aucun chantier ne change `oracle/stages/*`,
+   `oracle/canon.py`, `oracle/typed_json.py`, `oracle/depth.py` (ils sont
+   dans l'empreinte des caches de l'oracle).
+
+**Chantier API** : le reste de la surface (`debugTablefinder`,
+`PDFStructTree` et ses éléments, `PDFStream` par référence côté API,
+mémoïsation éventuelle des getters, `FinalizationRegistry` des pages et
+tables, `README.md` : démarrage rapide et migration depuis l'ancien port
+`legacy-pdfjs`), les sessions de chaque membre et option (dont les
+nouveaux), les quatre étapes par l'API identiques sur `all` et les corpus
+adverses (hors fenêtres de profondeur, couvertes par les sessions), les
+tests de mutation de la couche API (Stryker hors ligne s'il tourne depuis
+`node_modules`, sinon mutants à la main de chaque branche, chaque
+survivant justifié).
+
+**Chantier BOUNDARY** — opérations que l'API attend :
+
+| Opération | Instruction (`js_pages_run.py`) | Résultat |
+|---|---|---|
+| `page_debug_tablefinder [settings?]` | `obj.debug_tablefinder(*args)` | `{edges, intersections: [[point, {v, h}]...], cells, tables: [table + handle...], settings}` |
+| `struct_tree [page handle ou None]` (sur le document) | `PDFStructTree(obj, page)` | handle de l'arbre, `children` (éléments : champs du dataclass, `children`, chemin) |
+| `struct_find_all [matcher]`, `struct_find [matcher]` (arbre ou élément) | `obj.find_all(m)` (liste), `obj.find(m)` | chemins des éléments ; `matcher` = nom, `{"regexp": ...}` (spans JS de `match` au début du type), ou masque calculé par JS |
+| `struct_element_bbox [path]` | `tree.element_bbox(el)` | bbox ou exception |
+| `struct_all_mcids [path]`, `struct_element_repr [path]` | `list(el.all_mcids())`, `repr(el)` | — |
+| `page_info` : `width`, `height` | lus séparément | valeur ou exception chacune |
+| `stream_rawdata`, `stream_data`, `stream_get_data`, `stream_get_rawdata` [handle] | `s.rawdata`... | octets ; flux par référence (étiquette de fil, durée de vie liée au document) |
+| `doc_cmap_scan` (préchargement) | aucune (analyse sans effet Python, sur un document à part) | noms de CMaps probables |
+
+Aussi : arguments `PSLiteral`, `PDFObjRef`, `PDFStream`, `PageRef`
+décodés comme les objets qu'ils représentent ; texte des `log.*` de
+pdfminer vers `onWarning` comme `logging` le formaterait (nom du logger,
+niveau, `%`-formatage, une fois par enregistrement) ; préchargement des
+CMaps d'un document pour que les appels nuls deviennent rares, sans
+changer aucun résultat ni la récursion (une CMap présente dès le départ
+= Python avec toutes ses CMaps) ; croissance de l'historique des appels
+nuls (aujourd'hui il ne raccourcit qu'à la libération) ;
+`docs/js-runtime.md`.
+
+#### Réalisation BOUNDARY (branche `wave5/boundary`)
+
+Détails dans [`js-runtime.md`](js-runtime.md) (« Format des résultats »,
+« Valeurs », « Diagnostics », « CMaps », « Documents et pages »,
+« Tests »).
+
+- **Opérations** : `page_info` (largeur et hauteur lues chacune dans son
+  instruction : valeur ou `width_error`/`height_error`),
+  `page_debug_tablefinder`, `struct_tree`, `struct_find_all`,
+  `struct_find`, `struct_element_bbox`, `struct_all_mcids`,
+  `struct_element_repr` (`crates/wasm/src/structs.rs` ; éléments nommés par
+  leur chemin, matcher = type, `{"mask": [...]}` dans l'ordre de
+  `_find_all`, ou valeur appelée comme Python l'appelle),
+  `stream_rawdata`, `stream_data`, `stream_get_data`,
+  `stream_get_rawdata` (`streams.rs`), `set_stream_refs`,
+  `set_history_limit` (tests). Pas de `doc_cmap_scan` : l'analyse des
+  CMaps d'un document (`cmap_scan.rs`) se fait dans le cœur, à son premier
+  appel nul (une analyse à chaque ouverture coûtait jusqu'à 75 % de
+  l'ouverture d'un gros document qui n'en a pas besoin). Leurs instructions sont
+  dans `js_pages_run.py` (protocole 3), qui écrit aussi `made` (le nombre
+  d'objets de chaque cas), lie les arguments (`bind_args` : `{"$obj": k}`,
+  `PDFObjRef` liés au document de la cible) et rend `$unresolved` pour une
+  cible entière que la session n'a pas faite (fenêtres de profondeur).
+- **Fil (protocole 1, commit à part)** : étiquette PJB1 `0x13` /
+  JSON `"streamref"` (`Writer::stream_ref`) ; décodage des arguments
+  `PSLiteral`, `PSKeyword`, `PDFObjRef`, `PageRef`, `PDFStream` par
+  référence (`binary::decode_args`, nouveaux cas du décodeur ;
+  l'encodeur JS les écrit). Aucune étiquette existante ne change.
+- **`log.*` de pdfminer (protocole 2, un commit)** : chaque
+  `log.warning` porté donne son texte (`Logger::log`,
+  `pdfminer::log_text`, nouveau module) ; les cadres comptés ne changent
+  pas ; les `log.debug` ne sont pas transmis (cadres seulement).
+- **Préchargement des CMaps** et **historique borné** : voir
+  `js-runtime.md` ; aucun résultat ni aucune récursion ne change
+  (relecture à part, état du processus remis ; historique vidé seulement
+  quand plus aucun appel ne peut être nul).
+- **Vérification** : le rejeu de `pages.jsonl` passe aussi en collectant
+  tous les diagnostics (le texte des `log.*` ne change ni résultat ni
+  récursion, fenêtres de profondeur comprises) ; la session `streams`
+  ouvre un document par chemin (`doc_open_file`) dont les flux d'image ont
+  un `/Filter` indirect : `get_data()` après `PDF.close()` lève
+  `ValueError("seek of closed file")` comme Python (un document ouvert
+  d'octets garde ses flux lisibles, `BytesIO` n'étant pas fermé par
+  pdfplumber) ; deux fenêtres de profondeur (`flate-warning-*`) dont le
+  point le plus profond est un `log.warning` (le décodage des données
+  Flate corrompues de la dernière forme d'une chaîne).
+- **Mutations** (diff `wave5/base..wave5/boundary`, `crates/wasm`,
+  `crates/pdfminer`, `crates/pycompat`) :
+  - `cargo mutants --in-diff` (`-j 1`, profil `mutants`), reprise de la
+    passe interrompue (`--iterate`) : 210 mutants, 82 détectés, 95 non
+    viables, 33 manqués ; après les tests ajoutés (borne des nœuds de
+    `cmap_scan` en paramètre, flux d'un document dans le résultat d'un
+    autre, arbre d'un document avec la page d'un autre, matchers dict non
+    masques, annotation tenant des flux dans un dict, une liste, un dict
+    dans une liste), la passe ciblée sur les manqués de `crates/wasm` :
+    28 mutants, 10 détectés, 18 manqués ; le bras `PDFObject::Dict` de
+    `label_values` est ensuite tué par l'annotation dont chaque flux
+    n'est atteint que par son conteneur ; les 17 autres sont justifiés
+    ci-dessous ;
+  - les mutants de `crates/pdfminer` et `crates/pycompat` avec les rejeux
+    de la frontière (`--test=js_runtime_unit --test=boundary` : cargo
+    mutants ne teste sinon que le paquet muté) : 228 mutants, 19 détectés,
+    206 non viables (`PyResult::new`), 1 délai (`emit_record` → `()`,
+    détecté avec un délai de 300 s), 2 manqués (`log_text::d`, gardes
+    `is_finite`, que ses sites d'appel n'atteignent pas avec un flottant :
+    tués par le test unitaire de `log_text`, à la main) ;
+  - passe `Ok(..)` (`scripts/mutants-ok.sh`) : `log_text.rs` 10/10
+    détectés ; `cmap_scan.rs`, `streams.rs`, `structs.rs` 15 mutants,
+    9 détectés, 6 non viables (pas de `Default`), remplacés à la main par
+    une valeur concrète (un flux vide, un autre arbre de la table des
+    handles, le premier élément, `Out::Value(None)`...) ; fonctions du
+    diff dans les fichiers existants (diff des fichiers réécrits) :
+    pdfminer/pycompat 45 mutants, 40 détectés, 3 non viables (corps
+    inchangés hors du texte du journal, remplacés à la main aux vagues 2
+    et 3), 2 manqués (`_format_page_label`, détectés par `document_unit`) ;
+    `crates/wasm` 13 mutants, 9 détectés, 4 non viables (`Core::op`,
+    `run`, `run_op`, `page_op`, remplacés à la main) ; les 10
+    remplacements à la main sont tous détectés ;
+  - à la main : `Logger::log`, `warning_with`, `frames::log_text` →
+    `Ok(())`, `decode_args` → `Ok(None)` détectés ; le retrait des cadres
+    de l'appel dans `Logger::log` (instruction de comptage) survivait aux
+    étapes de tous les ensembles adverses : tué par les fenêtres
+    `flate-warning-*` ;
+  - justifiés (équivalents) : `Object::reset` → `()` (le rejeu remplit
+    chaque objet de nouveau, comme à la vague 4) ; `!refs` et le bras
+    `Object::Document` de `Core::decode_request` (le document auquel un
+    `PDFObjRef` passé en argument est lié n'est lu par aucune opération :
+    pdfplumber ne résout pas ses arguments) ; les 10 mutants de
+    `oracle.rs` (compilé seulement avec `oracle-hooks`, que `cargo test`
+    ne construit pas : vérifié par les traces des étapes par l'API,
+    `oracle.verify --engine js-api` dans `check.sh`) ; `>` → `==`/`>=` de
+    `MAX_ELEMENTS` dans `preorder` et `paths` (une garde qu'atteint
+    seulement une marche de 2^24 éléments, que pdfplumber met autant de
+    pas à construire ; `==`/`>=` ne changent que le compte exact) ;
+  - JavaScript : `scripts/js-boundary-mutants.mjs`, 34 mutants, 1
+    survivant équivalent (passe précédente ; le code JS de la frontière
+    n'a pas changé depuis).
+- **Vérification de la reprise** (26 octobre 2026) : `scripts/check.sh`
+  vert (natif, `wasm32-wasip1`, porte de profondeur, Node 129/129, API
+  sur micro 17/17 + 17/17) ; `scripts/check-browsers.sh` vert (360
+  tests) ; `oracle.verify` identique : `pages` `adv-pages` 285/285 et
+  `quick` 150/150, `objects` et `streams` `adv-objects` 333/333,
+  `interp` et `fonts` `adv-interp` 353/353 et `quick` 150/150,
+  `plumber_objects` et `plumber_text` `adv-plumber` 199/199 ;
+  `oracle.wasm_parity --set quick --stages interp,fonts,layout` : 0
+  différence sur 3 × 150.
+
+**Pour le chantier API et la jonction** (changements hors de la propriété
+de BOUNDARY, faits pour que la frontière soit vérifiable par l'API, raison
+documentée ici) :
+
+- `js/src/api.ts` : `callOptions()` donne `owner: this` (le document est
+  le propriétaire des flux de ses résultats : leurs lectures sont des jobs
+  du document, `DocumentReleased` après `release()`) ; `PDFPlumberPage`
+  lit `width_error`/`height_error` de `page_info` (une exception chacune,
+  `fromPython`) au lieu d'une erreur commune. À garder à la jonction.
+- `js/test/shared/typed.mjs` : la valeur nommée `StreamRef` des sessions
+  (`{ $streamref: "#k", objid, genno, attrs }`) ; `difference` compare
+  aussi l'instantané d'un `PDFStream` (`snapshot()`), ses données n'étant
+  plus des champs propres.
+- `PDFStream` (`pdfobjects.ts`) : un flux d'un résultat est une référence
+  (`rawdata`, `data`, `getData()`, `getRawdata()` : promesses) ; un flux
+  fait de ses valeurs (`new PDFStream(objid, genno, attrs, rawdata, data)`,
+  format typé, `typed-json.mjs`) est un instantané dont `rawdata` et
+  `data` sont les valeurs elles-mêmes : `canon.mjs` et les traces sont
+  inchangés. Le format typé écrit toujours les flux par valeur.
+- Reste à l'API : les membres `debugTablefinder`, `structTree`
+  (`PDFStructTree` et ses éléments ; un `RegExp` ou une fonction comme
+  masque calculé en JS sur les éléments dans l'ordre de `_find_all`), les
+  lignes du plan de `js_api.py` pour ces opérations et pour les flux
+  (lectures de `rawdata`/`data` après les appels), `public-api.md`
+  (statuts « pending » à retirer).
+
+#### Réalisation API (branche `wave5/api`)
+
+Contrat : [`public-api.md`](public-api.md) (statut « implémenté », plus
+aucun membre en attente). Branche partie de `wave5/base`, avec
+`wave5/boundary` fusionnée trois fois (à `24954dc`, `936aebd` puis
+`b2e6128`) pour vérifier les nouveaux membres sur les opérations de
+BOUNDARY.
+
+- **Membres** : `page.debugTablefinder(settings)` (`settings` du
+  `TableFinder` en plus, `TableFinderResult.settings`) ;
+  `pdf.structTree(page?)` (`js/src/api/structure.ts`, nouveau module :
+  `PDFStructTree` {`pdf`, `page`, `children`, `findAll`/`find_all`, `find`,
+  `elementBbox`/`element_bbox`}, `PDFStructElement` {champs du dataclass,
+  `altText`/`actualText`/`pageNumber`, `findAll`, `find`,
+  `allMcids`/`all_mcids`, `repr`}) : une `RegExp` (collante depuis 0,
+  `re.match`) ou une fonction est évaluée dans le job sur chaque élément de
+  l'arbre dans l'ordre de `_find_all` (le masque de `structs.rs`), toute
+  autre valeur passe telle quelle (`TypeError` de Python) ; un élément
+  trouvé est l'objet de l'arbre à son chemin ; `elementBbox` prend un
+  élément de cet arbre. Les flux par référence sont ceux de BOUNDARY
+  (`pdfobjects.ts`), le document leur propriétaire (`owner`).
+- **Durée de vie** : `FinalizationRegistry` des pages dérivées, des tables
+  et des arbres (leur handle libéré une fois injoignables), gardé par la
+  vie du document (`Life` : jamais un handle d'un document libéré, que le
+  cœur a pu redonner ; le finaliseur d'un document marque sa vie libérée
+  d'abord). Une page dérivée dont on a lu les annotations (`annots`,
+  `hyperlinks`, `toDict` : `data.P` la nomme) est épinglée par le document.
+  Un job mis en file avant `release()` s'exécute (le cœur libère après lui,
+  dans l'ordre des appels) ; un membre appelé après rejette
+  `DocumentReleased`. Le cœur refuse de lui-même un handle périmé
+  (`handles.rs` : génération de 12 bits par emplacement) ; la garde `Life`
+  évite d'envoyer ces `free` et couvre le cas d'un emplacement redonné
+  4 096 fois. Une page dérivée est faite par sa dérivation puis
+  `page_info`, qui ne lève rien (les exceptions de `page.width` et
+  `page.height` sont des valeurs de son résultat) : une erreur de la
+  dérivation rejette sa promesse, une erreur de géométrie est levée à la
+  lecture de `width` ou `height`. `NotImplemented` n'est plus que le
+  `NotPorted` du cœur (plus aucun membre en attente).
+- **`pdf.page(ref)`** (décision prise quand le job s'exécute) : la page du
+  handle de la référence, sinon, pour une référence lue depuis le dernier
+  `close()` (`readRefs` : époque de chaque `PageRef` des résultats qui
+  tiennent des annotations), la page de ce numéro dans la liste courante de
+  `pdf.pages` (`#current`), sinon `page_info` ; `pdf.pages` réutilise la
+  page qu'un `page(ref)` a faite. Une valeur nomme une page par son premier
+  handle vivant, qui n'est pas forcément celui que `pdf.pages` a donné
+  (lecture de `pdf.annots` avant `pdf.pages`) : sans cette règle,
+  `page(ref) === pages[i]` (Python : `annot["data"]["P"] is
+  pdf.pages[i]`) serait faux. Après `close()`, les pages d'avant restent ce
+  que nomment les références d'avant, tant qu'elles vivent (`#weak`).
+- **Options** : un `Map` est un dict (`open`, `search`,
+  `extractTextLines` le découpent aussi) ; une valeur qui n'est pas un
+  mapping va au cœur telle quelle (`TypeError` de Python, « argument after
+  ** must be a mapping ») ; `open(x, null)` est `open(x)`. Une fonction ou
+  un symbole dans un argument est une `TypeError` (`encodeValue`, deux cas
+  dans `wire.ts`, fichier de PERF : commit à part `8ab0e97`, à garder à la
+  jonction).
+- **Harnais** (`js_pages_run.py`, ajouts du harnais seulement, à côté des
+  instructions de BOUNDARY) : cible `{"at": [cas, chemin...]}` (la page
+  qu'une valeur nomme, avec le handle que la frontière lui a donné ; ou la
+  valeur : un flux), argument `{"$cross": [cas, chemin...]}` (une valeur
+  d'un résultat rendue en argument, traversée comme JS la traverse :
+  `cross`), `api_page` (`page(ref)` : `page_info` sauf si l'API tient un
+  objet de la même page, par identité), `api_pages` (relecture de
+  `pdf.pages` : `doc_pages` seulement après une lecture qui a levé),
+  prédicats `text` et `raises`. `js_api.py` : formes d'arguments
+  JavaScript (`Num`, `Big`, `JSMap`, `Undefined`, `Ref`, `Refused`,
+  `Collector`, `ObjArg`), flux par référence (`set_stream_refs` en tête de
+  session, `PDFStream{objid, genno, attrs}` des deux côtés), arbres de
+  structure (`PDFStructTree{page, children}`, éléments sans récursion).
+- **Sessions** : 57 sessions, 4 112 appels : les dix fichiers réels
+  (chaque membre et alias, `debugTablefinder` en plus), options
+  d'ouverture, `open(path)`, ordre d'attente (dont `release()` entre deux
+  appels en vol), CJK, `open-inputs` (`Blob`, `ArrayBuffer`, vue décalée,
+  options `null`, `Map`, `undefined`, `logLevel`/`onWarning`, option
+  refusée), `open-file-url` (Node), `arguments` (nombres entiers ou non,
+  `PyFloat`, `PyTuple`, `bigint`, `-0`, NaN, `Map`, `undefined`, objets
+  rendus : lignes explicites, mots ; refus ; options qui ne sont pas des
+  mappings), `lifetime` (`page(ref)` avant et après `pdf.pages`, d'une page
+  recadrée, après `close()`, après `release()` ; `pdf`, `parent`,
+  `table.page` ; `close()` et `release()` deux fois ; `await using`),
+  `calls` (chaque option et erreur de `search`, dont les échappements
+  `\u{4A}` d'un motif chaîne, compilé avec `u`, et un nom de groupe pour
+  un motif sans groupes nommés ; recadrages hors de la page,
+  prédicats, options de déduplication et de sérialisation), `streams`
+  (lectures de `rawdata`, `data`, `getData`, `getRawdata` et alias, après
+  `close()` et `release()`, images rendues en lignes de table), onze
+  sessions de structure (cinq fichiers réels, six d'`adv-structure` : arbres
+  du document, d'une page, d'une page recadrée ; chaque sorte de matcher
+  sur l'arbre et sur des éléments ; `allMcids`, `repr`, `elementBbox`,
+  champs des éléments et leurs getters `altText`, `actualText`,
+  `pageNumber`), et
+  les 26 PDF d'`adv-plumber` (relecture de `pdf.pages` en plus).
+  `js/test/node/api-lifetime.test.ts` : ce que les valeurs ne montrent pas
+  (identités de `page(ref)`, des flux et des éléments ; handles libérés par
+  le ramasse-miettes, `gc` exposé par `v8.setFlagsFromString` ; jamais un
+  `free` après la libération ou la collecte du document ; `pdf.pages` le
+  même tableau jusqu'à `close()` ; une page dérivée nommée par `annots`,
+  `toDict` ou `hyperlinks` gardée à travers `close()`) ;
+  `js/test/node/api-runtime.test.ts` : ce qui entoure le cœur
+  (`logLevel` vers `console.warn`/`console.debug`, sur la politique et par
+  `open()` sur les cas de diagnostics de `js_runtime` ; le compte des
+  diagnostics abandonnés ; un cœur neuf après un crash ; le module compilé
+  réutilisé ; `NotImplemented` et `isInstance` ; le numéro de page des
+  diagnostics des membres d'une page et de son arbre).
+- **Mutants** (`scripts/js-api-mutants.mjs`, Stryker n'étant pas dans
+  `node_modules` hors ligne) : 114 mutants à la main des branches de
+  `api.ts`, `api/structure.ts`, `search.ts`, `errors.ts` (finaliseurs,
+  options, caches et identités du document, géométrie, membres et leurs
+  opérations, matchers, motifs, erreurs, politique de diagnostics, cœurs),
+  chacun lancé sur les sessions (sources), `api-lifetime` et `api-runtime`
+  (et le test des diagnostics du runtime pour la politique) dans une copie
+  du checkout, sous `heavy.sh`. Premier passage (117 mutants) : 21
+  survivants, chacun tué par un test ajouté (finaliseurs après
+  libération, cache de `pdf.pages`, références d'avant `close()`, pages
+  dérivées gardées, `NotImplemented`, `isInstance`, page des diagnostics,
+  drapeau `u`) ou retiré avec le code mort qu'il montrait (le `catch` de
+  `page_info`, la recherche d'un handle connu dans `page_`, le cas chaîne
+  des matchers) ou avec une forme équivalente du même appel
+  (`find_tables()` et `find_tables(None)`, `to_dict()` et
+  `to_dict(object_types=None)`). Second passage, sur le code final : 4
+  survivants, équivalents :
+  - `registry?.unregister(page)` de `pin` : une page épinglée est tenue
+    par `#byHandle` jusqu'à `release()` (son entrée trouve alors la vie
+    libérée) ou jusqu'à la collecte du document (son `free` précède alors
+    celui du document, valide) ;
+  - `registry?.unregister(this.#token)` de `release()` : l'entrée du
+    document trouve sa vie libérée et ne fait rien ;
+  - le `close()` d'`await using` avant `release()` : rien d'un document
+    libéré n'est observable (le contrat garde `close()` puis `release()`,
+    comme `with` appelle `close()`) ;
+  - `named: null` de `matchSpans` pour un motif sans groupes nommés : le
+    cœur lit `null` et une liste de dicts vides de la même façon
+    (`ops.rs`, `group_index` : `no_such_group`, l'`IndexError` de
+    Python ; session `main_group: "w"` sur `(J)`).
+- **Vérification** (`heavy.sh`, `HEAVY_SLOTS=1`) :
+  - sessions dans Node : 57/57 sur les sources et sur `dist` (4 112
+    appels), `api-lifetime` 12/12, `api-runtime` 8/8 ; fenêtres de
+    profondeur (`depth.jsonl`, `api-depth.test.ts`) : 448/448 (8 512
+    appels ; 443 au premier passage : le rejoueur construisait ses valeurs
+    par récursion, trop profonde pour la pile de JavaScript sur les
+    `depth-attribute-repr-998x` d'`adv-structure`, et la fenêtre
+    `388-depth-chain-to-dict-ref-attribute-324` ouverte depuis des octets
+    tombait sur le cas « Not Ported » de `structure_tree` : les fenêtres
+    s'ouvrent depuis leur chemin, comme dans les étapes) ;
+  - `scripts/check-browsers.sh` (sur `ab99044`, rejoueur sans récursion
+    compris) : 456 tests verts (23 min), dont 55 sessions (les 57 moins
+    les deux de Node) dans Chromium, Firefox et WebKit, dans la page et en
+    worker ;
+  - `oracle.verify --engine js-api` (`-j 3`) : `quick` 150/150 pour les
+    quatre étapes ; `all` (1 853, 20 premières pages) : `plumber_objects`
+    1 852 (la ligne `ids` de `pdfjs-issue19624-text.pdf`, écart connu),
+    `plumber_text` et `plumber_tables` 1 853, `plumber_doc` 1 850 ; sur
+    les cinq ensembles adverses, chaque différence est d'une de ces
+    sortes :
+    - une fenêtre de profondeur (`depth-*`, `climit-*`, 332 fichiers
+      différents) : les étapes appellent pdfplumber depuis des générateurs
+      imbriqués, l'API au niveau supérieur d'un script ; la trace par l'API
+      diffère par construction (y compris « the oracle's trace has no
+      spans line left » : la recherche de Python a levé `RecursionError`
+      où celle de l'API aboutit) ; ces fenêtres, les 448, sont comparées à
+      Python par les sessions de `depth.jsonl` ;
+    - l'ordre des NaN de `cluster_objects` sur `adv-interp`
+      (`plumber_text` 16 et `plumber_tables` 12 fichiers `op-*`/`text-*`,
+      les mêmes que par `pdftrace` ; `096-text-TL.pdf` : oracle tué par la
+      limite de 5 Go) ;
+    - `filter()` d'une page dont les objets ne se calculent pas
+      (`plumber_doc` : 3 fichiers de `all`, 10 d'`adv-interp`, 1
+      d'`adv-plumber`, `083-mc-mcid-deep.pdf`) : le filtre de l'API évalue
+      sa fonction sur les objets du parent dans son job (contrat), il
+      rejette donc avec leur erreur, là où `page.filter()` de Python rend
+      la page et lève à la première lecture de ses objets
+      (`public-api.md`, « Cropping, Filtering »). Le rendre paresseux
+      demanderait au cœur un `page_filter` dont le masque vient plus tard
+      (BOUNDARY : `mask_filter` de `pages.rs` calcule les objets du parent
+      à la création) ;
+    - un défaut du harnais, corrigé (`366-annot-stream-no-p.pdf`
+      d'`adv-structure` : `plumber_doc.mjs` écrivait les annotations dans
+      le `try` là où le `else:` de Python laisse l'erreur de l'écriture
+      sortir de l'étape) ;
+  - `scripts/check.sh` (`heavy.sh`, sur `dd2c5ce`) : vert en 50 min
+    (rustfmt, clippy, références amont, tables générées, données
+    unitaires, `cargo test` natif et wasm32-wasip1, porte de profondeur du
+    Wasm `dist`, 631 tests de Node — dont les 57 sessions sur les sources
+    et sur `dist`, les 448 fenêtres de profondeur, `api-lifetime`,
+    `api-runtime`, le canon —, budget de taille, `plumber_objects` et
+    `plumber_text` par l'API sur `micro` 17/17, auto-tests de l'oracle).
+
+**Chantier PERF** : chemins chauds de `crates/pdfplumber`,
+`crates/pdfminer`, `crates/pycompat` (`page.objects`/`process_object` :
+`resolve_all`, dicts d'attributs, conversions ; texte, mots, tables de la
+vague 1 ; layout), coût et allocations de l'encodage, taille et vitesse du
+Wasm `dist` ; mesuré en natif (`plumber_phases.rs` et son jumeau Python),
+dans Node (`js/bench/phases.mjs`) et dans les navigateurs ; chaque
+changement garde toutes les traces et toutes les fenêtres de profondeur
+(cadres et unités C) identiques ; avant/après avec la méthode écrite.
+
+**Fini pour la vague 5** (en plus de `verification.md`) : chaque membre et
+option de `public-api.md` implémenté et vérifié contre Python *par l'API
+publique* (sessions et traces), dans Node, Chromium, Firefox, WebKit et en
+mode worker ; performances mesurées avant/après, méthode notée ; aucune
+optimisation ne change une trace.
+
+### Référence PERF (base, `quick`)
+
+Méthode : `quick` (150 fichiers, 20 premières pages, 302 pages),
+`scripts/heavy.sh` (un job à la fois, 5 Go), machine partagée de 8 cœurs ;
+les mêmes phases que la jonction de la vague 4 : `pdfplumber.open` et
+`pdf.pages` (« ouverture »), puis par page `page.layout`, `page.objects`,
+`extract_text()`, `extract_words()`, `find_tables()`. Natif :
+`target/release/examples/plumber_phases <cmap-dir> < liste` (médiane de
+3 passes) ; Python : `crates/pdftrace/examples/plumber_phases.py` (le
+jumeau, CPython 3.12, après les imports, 1 passe) ; Node :
+`js/bench/phases.mjs` sur le build `dist` (`wasm-opt -O3`), par l'API
+publique, valeurs décodées (médiane de 3 passes ; `page.objects` y contient
+`layout`, la phase n'est pas visible séparément) ; une seconde lecture de
+`page.objects` (objets en cache dans le cœur) mesure la frontière seule
+(encodage PJB1, copie, décodage). Liste : `path<TAB>mot de passe` de
+`oracle.corpus --set quick`. Mémoire : `/usr/bin/time -v` (RSS maximale),
+taille de la mémoire linéaire du module à la fin (elle ne rétrécit
+jamais). Taille : `node scripts/size.mjs`.
+
+| ms par page | ouverture | layout | objects | texte | mots | tables | total |
+|---|---|---|---|---|---|---|---|
+| Python 3.12 | 4,61 | 75,7 | 49,0 | 6,85 | 4,73 | 3,96 | 144,8 |
+| Rust natif | 0,34 | 6,26 | 13,2 | 2,52 | 1,90 | 2,24 | 26,4 |
+| Wasm, Node, API publique | 1,29 | (dans objects) | 26,7 | 2,70 | 2,30 | 2,07 | 35,1 |
+
+- Rapports : natif ×5,5 sur Python (×12 pour `layout`, ×3,7 pour
+  `objects`, ×2,7 pour le texte, ×2,5 les mots, ×1,8 les tables) ; l'API
+  dans Node ×4,1 sur Python, ×1,33 au-dessus du natif.
+- `page.objects` par l'API (26,7 ms) = frontière seule 4,9 ms (seconde
+  lecture : 1,47 s pour les 302 pages) + calcul dans le Wasm ≈ 21,8 ms,
+  contre 19,4 ms en natif (`layout` + `objects`) : le Wasm calcule à ×1,12
+  du natif ; la frontière coûte 18 % de la phase. Point chaud inchangé :
+  `page.objects` (`process_object`), la moitié du temps natif.
+- Fichiers les plus lents (les mêmes partout) : `pdfjs-issue5509.pdf`
+  (2,5 s natif, 3,0 s Node, 14,6 s Python), `highlights.pdf`,
+  `issue-71-duplicate-chars-2.pdf`, `target-2024-ar.pdf`.
+- Mémoire : RSS maximale 366 Mio en natif, 428 Mio pour Python, 520–550 Mio
+  pour Node (600 Mio avec la seconde lecture des objets) ; mémoire linéaire
+  du Wasm à la fin : 294 Mio (308 150 272 octets), atteinte par le plus gros
+  document (elle ne rétrécit pas).
+- Taille (`dist`, `wasm-opt -O3`) : `pdfplumber.wasm` 2 416 107 octets
+  bruts, 890 959 gzip, 628 778 brotli (budget brotli 1 Mo) ; JS navigateur
+  36 231 / 12 733 / 11 502 ; `dist/src` (Node) 100 404 / 30 539 / 26 792 ;
+  CMaps 2 976 819 (`UniJIS-UCS2-H` + `to-unicode-Adobe-Japan1` : 155 903).
+- Traces : écrire les traces par l'API (`--engine js-api`, `-j 3`) prend
+  98 s pour `plumber_objects` sur `quick`, 75 s `plumber_text`, 63 s
+  `plumber_tables`, 213 s `plumber_doc` (format typé, sans tables,
+  canon en JavaScript).
+- Mesures dans les navigateurs : `js/bench/browser-phases.mjs` (chantier
+  PERF, ci-dessous) ; Firefox de Playwright (Nightly) n'est pas une
+  référence de vitesse (`port-strategy.md`).
+
+### Chantier PERF : réalisation (branche `wave5/perf`)
+
+Branche `wave5/perf`, depuis `wave5/base` (`acf9fa6`). Aucune optimisation
+ne change une trace : chacune garde le même calcul, les mêmes contrôles de
+cadres et d'unités C dans le même ordre, et le même résultat ; ce qu'elle
+retire, ce sont des copies, des allocations et des recherches. L'invariant
+qui le garantit est écrit en commentaire à chaque site (« Performance: »
+ou « performance: »).
+
+**Méthode.** `perf` n'est pas permis sur la machine
+(`perf_event_paranoid` = 4) : les profils natifs viennent de
+`scripts/perf/sprof.c`, un échantillonneur chargé par `LD_PRELOAD`
+(SIGPROF sur le temps CPU, pile par pointeurs de cadre : build
+`RUSTFLAGS="-C force-frame-pointers=yes"`, lignes avec
+`CARGO_PROFILE_RELEASE_DEBUG=line-tables-only`, tampon fixe de 32 Mio),
+lus par `sprof_report.py` et `sprof_lines.py` ; les allocations, de
+`scripts/perf/mcount.c` (nombre d'appels à `malloc`/`realloc`, pile d'un
+appel sur 16) ; le Wasm dans Node, de `node --cpu-prof` sur un `dist` dont
+le module garde ses noms (`wasm-opt -O3 -g`), lu par `prof_sum.py` et
+`prof_callees.py`. Chaque mesure tourne sous `prlimit` ou dans le cgroup
+de `heavy.sh`. Les phases : `plumber_phases.rs` (natif ; `PLUMBER_PHASES`
+choisit les phases, pour compter les allocations d'une phase),
+`js/bench/phases.mjs` (Node, API publique, `dist`),
+`js/bench/browser-phases.mjs` + `phases.html` (nouveau : les mêmes phases
+par l'API du paquet navigateur, dans Chromium, Firefox et WebKit, dans la
+page et en worker), `crates/wasm/examples/encode_phases.rs` (nouveau :
+l'encodage PJB1 des objets d'une page seul, avec une empreinte FNV-1a des
+blocs). Avant et après se mesurent dans le même créneau de `heavy.sh`, en
+alternant les deux builds (`wave5/base` reconstruit à part, avec les seuls
+outils de mesure en plus), médiane de 3 passes ; les deux `dist` sont
+optimisés (`wasm-opt -O3`, `node scripts/build.mjs` ; `check.sh` construit
+le sien sans `wasm-opt`).
+
+**Ce qui a changé** (par ordre de gain) :
+
+- `Page.process_object` (`page.rs`), la moitié du temps natif : le dict
+  est construit avec sa capacité, et une clé qu'il ne peut pas encore
+  tenir (un attribut du `__dict__`, dont les clés sont distinctes ; une
+  clé que `process_object` ajoute et qu'aucune classe de layout n'a) est
+  ajoutée sans recherche (`Obj::push_new`, vérifié en debug) ; les clés
+  sont faites une fois par fil (`AttrKeys`), `object_type`, les commandes
+  de chemin et les littéraux du port aussi (`obj::static_str`) ;
+  `resolve_all` d'une valeur que seul l'appelant tient (un tuple qu'il
+  vient de faire) se fait sur place (`resolve_all_owned` : mêmes cadres ;
+  Python fait un nouveau tuple, dont nul ne peut comparer l'identité avec
+  celle de l'ancien, que lui seul tenait) ; le tampon des items est
+  réutilisé ; les points de `original_path` passent par `point2coord` sans
+  leur tuple (`point2coord_with`, mêmes cadres) ; `decode_text` d'une `str`
+  ne fait plus une `str` par caractère et rend la même `str` quand
+  PDFDocEncoding l'envoie sur elle-même (`decode_text_pystr`) ; le nom de
+  l'espace de couleur est partagé entre les caractères consécutifs (cache
+  d'une référence faible : il ne garde pas l'espace en vie, et son adresse
+  ne peut pas en nommer un autre) ; `mediabox[i]` lit l'item d'une liste
+  PDF sans convertir la liste (`py_getitem_index`).
+- Valeurs partagées au lieu de copiées : `FontName::Str` et
+  `MarkedContentAttr::Tag` (et `cur_tag`) tiennent une `PyStr` (tous les
+  caractères d'une police tiennent la même, comme en Python) ; `ExtraAttrs`
+  garde `mcid` et `tag` sans allocation (`Attrs`, deux attributs en
+  ligne) ; `Unichr::to_pystr` partage les textes courts récents. L'identité
+  d'une `str` n'est pas modélisée (immuable, jamais comparée par `is` dans
+  le code porté).
+- Interpréteur : la méthode d'un opérateur sans les trois remplacements
+  quand son mot-clé n'a ni `*`, ni `"`, ni `'` (`keyword_op`) ; un seul
+  vecteur par segment de chemin ; `int_hash` d'un petit entier sans
+  vecteur d'octets (chaque recherche de largeur hachait un `Vec`).
+- Arithmétique : `add`, `sub`, `mul` et les comparaisons d'un `int` et
+  d'un `float` vont droit à `Num` (le résultat du chemin général, sans
+  ses conversions d'objets PDF ni ses tests de séquence) ; les compteurs
+  de `pycompat::recursion` sont `#[inline]` (l'erreur `#[cold]`).
+- Libération : le `Drop` de `PyValue` sort tout de suite pour un scalaire
+  ou un conteneur encore partagé, et la liste de travail des conteneurs
+  imbriqués est gardée entre deux libérations. Allocations sur 30 fichiers
+  de `quick`, toutes phases : 41,5 M `malloc` + 6,56 M `realloc` → 12,4 M
+  + 0,83 M.
+- Frontière (`crates/wasm/src/wire`, `js/src/core/wire.ts`) : les tables
+  PJB1 lisent leurs cellules une fois, rangée par rangée (`Cell`),
+  écrivent nombres et indices d'une colonne en place, et retrouvent la
+  `str` d'une cellule par son adresse quand les cellules voisines la
+  partagent (`intern_cell`) ; une valeur faite de scalaires et de
+  séquences sur trois niveaux au plus (points, chemins) s'écrit sans liste
+  de travail (`write_shallow`). Le format ne change pas : les blocs de
+  `page_objects` des 150 fichiers de `quick` sont identiques octet pour
+  octet entre `wave5/base` et `wave5/perf` (`encode_phases`). Côté
+  JavaScript, `Reader.item` lit les cellules génériques (scalaires, listes
+  et tuples sur trois niveaux) sans les cadres de `value()`
+  (`js/test/node/wire.test.ts` : mêmes valeurs que `value()` pour chaque
+  sorte, imbriquées au-delà de trois niveaux et sur 100 000 niveaux).
+
+**Résultats** (`quick`, 302 pages, ms par page, médiane de 3 passes, même
+créneau ; « frontière » = seconde lecture de `page.objects`) :
+
+| ms par page | ouverture | layout | objects | texte | mots | tables | total | frontière |
+|---|---|---|---|---|---|---|---|---|
+| natif, base | 0,32 | 5,60 | 13,14 | 2,13 | 1,61 | 1,79 | 24,59 | — |
+| natif, PERF | 0,28 | 4,50 | 5,17 | 1,54 | 1,25 | 1,59 | **14,33** | — |
+| Node, API, base | 1,12 | (dans objects) | 23,62 | 2,10 | 1,87 | 1,76 | 30,47 | 4,21 |
+| Node, API, PERF | 1,06 | (dans objects) | 13,87 | 1,63 | 1,52 | 1,39 | **19,47** | 2,88 |
+
+- Natif ×1,72 (objects ×2,5, layout ×1,24, texte ×1,38, mots ×1,29,
+  tables ×1,13) ; Node par l'API ×1,56 (objects ×1,70, frontière ×1,46).
+  Rapport à Python (144,8 ms, référence ci-dessus) : natif ×10, API dans
+  Node ×7,4. Le Wasm calcule à ×1,14 du natif (objects sans la frontière,
+  10,99 ms, contre layout + objects natifs, 9,67 ms).
+- Mémoire : RSS maximale native 366 → 318 Mio ; Node 588 → 557 Mio ;
+  mémoire linéaire du Wasm à la fin 295 → 266 Mio (309 002 240 → 279 117 824
+  octets).
+- Navigateurs (`browser-phases.mjs`, une passe, objects / frontière en
+  ms par page, base → PERF) : Chromium 148 page 26,67 → 14,17 / 4,57 →
+  2,79, worker 25,68 → 14,83 / 4,89 → 3,11 ; WebKit 26.4 page 24,98 →
+  14,67 / 3,89 → 2,86, worker 25,35 → 14,59 / 4,54 → 3,25 ; Firefox 150
+  (Nightly de Playwright) page 139,7 → 78,8 / 16,5 → 11,8, worker 140,3 →
+  76,7 / 16,5 → 11,6. Texte, mots, tables : −13 à −35 % partout.
+- Encodage seul (`js/bench/node.mjs --passes 5`, corpus de
+  `js-runtime.md`, Node 26.12) : PJB1 un appel par page 602 → 425 ms
+  (cœur 365 → 236, décodage 236 → 189), tout en un appel 820 → 577 ms ;
+  JSON inchangé (2 847 → 2 786).
+- Taille (`dist`, `wasm-opt -O3`) : `pdfplumber.wasm` 2 416 107 →
+  2 466 476 octets bruts (+2,1 %), 628 778 → 632 096 brotli (+0,5 %).
+- `all` en natif (1 853 fichiers, 3 654 pages, une passe de chaque build) :
+  24,65 → 14,38 ms par page (×1,71 ; objects 12,34 → 4,79), RSS maximale
+  546 → 501 Mio.
+- Les 12 fichiers les plus lents de `all` (natif, base ; 176 pages :
+  `cms-1500.pdf`, `pdfjs-issue19281.pdf`, `pdfjs-issue5509.pdf`,
+  `i1040nr.pdf`, `pdfjs-hudsonsurvey.pdf`...), médiane de 3 passes : natif
+  109,0 → 69,1 ms par page (×1,58 ; objects 53,1 → 23,3, layout 28,6 →
+  23,4, tables 12,9 → 10,7) ; Node par l'API 139,5 → 88,6 (×1,58 ;
+  frontière 23,1 → 15,6). Ce sont des formulaires et des plans denses en
+  chemins : le layout et les tables y pèsent plus, et y gagnent moins.
+
+**Ce qui reste** (profil natif sur les fichiers les plus lents, après
+PERF) : l'allocateur (≈ 20 % des échantillons, `malloc`, `free` et leurs
+fonctions internes), les copies et libérations de `PyValue` (≈ 9 %),
+`process_object` lui-même (≈ 5 %), l'analyseur PostScript des flux de
+contenu (`Lexer::parse1`, `nextobject` : ≈ 4 %), l'extraction des mots
+(≈ 5 %, `extract_wordmap`, `char_begins_new_word`, `cluster_objects`).
+Sur les fichiers les plus lents, `find_tables` est surtout `page.edges`
+(les arêtes de chaque courbe, `curve_to_edges`) et `merge_edges` : des
+dicts faits et copiés, pas un algorithme à revoir (Python fait le même
+travail, dans le même ordre). Le
+gros des allocations restantes vient des dicts d'objets eux-mêmes (un
+`Rc` par dict, un tuple par `matrix`, `pts`, couleur) : un arena ou des
+dicts à forme fixe changeraient le modèle de valeurs de `crates/pdfplumber`
+(hors de ce chantier). La frontière coûte encore ≈ 20 % de
+`page.objects` dans Node (2,9 ms sur 13,9).
+
+**Vérification** (commit de ce chantier) : `scripts/check.sh` vert (497
+tests Rust réussis en natif et en `wasm32-wasip1`, `plumber_frames`
+compris, 139 tests Node, porte de profondeur, autotests de l'oracle) ;
+`scripts/check-browsers.sh` vert (345 tests) ; les 13 étapes identiques
+sur `quick` (150/150 chacune) ; `oracle.wasm_parity` sur `quick`, 13
+étapes, 0 différence, `dist wasm = native` ; `plumber_objects` et
+`plumber_text` par l'API (`--engine js-api`) 150/150 sur `quick` ; les 13
+étapes sur `all` (1 853/1 853 chacune, sauf `plumber_objects` 1 852 : la
+ligne `ids` connue de `pdfjs-issue19624-text.pdf`) et sur les cinq corpus
+adverses (`adv-objects` 333, `adv-pages` 285, `adv-plumber` 199,
+`adv-structure` 441, `adv-interp` 353 : tous identiques, sauf les écarts
+connus d'`adv-interp`, `plumber_text` 336 et `plumber_tables` 341, les
+mêmes fichiers `op-*`/`text-*` aux coordonnées NaN que sur `wave5/base`,
+`port-strategy.md`).
+
+**Profondeur de `process_object`** (`oracle/unit/plumber_frames.py`,
+`crates/pdftrace/tests/plumber_frames.rs`, nouveaux). Ni les traces des
+étapes ni les balayages de `plumber_sweep` n'atteignent la limite de
+récursion dans `Page.process_object` : l'interprétation va plus profond
+d'abord, et un balayage ne voit que si l'opération lève. Tous les mutants
+à la main des instructions qui comptent les cadres des chemins PERF (et de
+`process_object` lui-même) survivaient. Le générateur prend, pour chaque
+objet de la première page de 26 fichiers (`micro`, `adv-plumber` :
+courbes, rectangles, lignes, images, figures, contenu marqué, MediaBox
+décalées), le layout calculé d'abord, la profondeur la plus grande de
+l'appelant d'où `page.process_object(obj)` ne lève pas `RecursionError`,
+le long de chaque compteur (`py` : cadres Python en plus ; `c` : listes
+imbriquées comparées, une unité C par niveau), et l'issue à cette
+profondeur ; de même pour `decode_text` et `resolve_all` seuls. Chaque
+essai tourne dans un processus forké depuis le même cadre ; la profondeur
+de l'appelant est mesurée au niveau 0 puis déplacée d'un cadre ou d'une
+unité par niveau (vérifié à 1, 7 et 30 niveaux). Le rejeu passe par
+`Page::process_object` (méthode publique de `page.py:353`),
+`decode_text_value`, `resolve_all_value` et `resolve_all_owned` : **cadres
+Python identiques** pour chaque objet et chaque fonction, sur `wave5/base`
+comme sur `wave5/perf`.
+
+**Écart connu, pour la jonction : les unités C** (vérifiées seulement avec
+`PLUMBER_FRAMES_C=1`). Le port compte une unité C de moins que Python au
+point le plus profond de chaque objet (336 cas) et de chaque fonction (18),
+**à l'identique sur `wave5/base`** (le rejeu y donne les mêmes lignes) :
+écarts de la vague 4, que les chemins PERF reproduisent sans les changer.
+Causes trouvées : `isinstance` avec un tuple de classes prend une unité
+le temps de la vérification (`object_recursive_isinstance`, « in
+__instancecheck__ » : `isinstance(x, (list, tuple))` de `resolve_all`,
+`(LTChar, LTTextContainer)` et `(LTCurve,)` de `process_object`) ; les
+abonnements `typing` des annotations de `process_attr` prennent des unités
+C que `pycompat::typing_cache` ne compte pas (il ne compte que les cadres :
+`Optional[Tuple[str, Any]]` en prend 6 quand il est en cache) ;
+`decode_text` d'une `str` en prend 4 (3 pour la chaîne vide), le port 2. Un
+correctif de la première cause (unité transitoire dans les trois
+`resolve_all` et les deux `isinstance` de `process_object`) aligne les
+rectangles et les lignes ; il n'est pas dans cette branche (il change le
+comptage, donc toute la vérification) : à faire avec les deux autres, puis
+`PLUMBER_FRAMES_C` par défaut. **Corrigé à la jonction** (les trois
+causes ; « Jonction (branche `wave5/join`) » ci-dessous).
+
+**Tests de mutation** (`cargo mutants --in-diff` sur le diff de
+`wave5/base`, `--profile mutants -j 1`, `heavy.sh`) :
+
+- `crates/wasm/src/wire` (110 mutants) : 79 tués, 23 non viables, 8
+  survivants ; deux tests unitaires ajoutés (le type de colonne qu'écrit la
+  table est celui de `column_kind` ; le contrat d'`is_shallow`), puis les
+  50 mutants de ces fonctions : 41 tués, 7 non viables, 2 survivants
+  équivalents (`|` → `^` dans `kind_of` : drapeaux de bits distincts).
+- `crates/pycompat/src/num.rs` (12) : 11 tués ; `*v < 0` → `<= 0` dans
+  `int_hash` équivalent (le hash de 0 est 0 dans les deux branches).
+- `crates/pdfminer` et les vidages de `pdftrace` (37, sans le test `corpus`
+  de 5 minutes de `converter_unit`) : 14 tués, 19 non viables, 4
+  survivants équivalents : le seuil de longueur de `shared_text` (×3 : il
+  choisit quelles chaînes passent par le cache, le résultat est la même
+  `str`) et la garde de `keyword_op` remplacée par `false` (toujours le
+  chemin général, même nom de méthode).
+- `crates/pdfplumber` (154, avec `table.rs` et `geometry.rs`) : 24 tués,
+  121 non viables, 9 survivants ; un test de libération profonde par sorte
+  de conteneur tue les 4 mutants du chemin rapide de `Drop` (relancés : 6
+  tués sur 7) ; restent équivalents : la borne de capacité de la liste de
+  travail de `drop_nested` (garder ou non le tampon), `int_float_operands`
+  → `None` ou sans un bras (le chemin général donne le même `Num`),
+  `Obj::with_capacity` → `Default` (une capacité).
+- Passe `Ok(..)` (`scripts/mutants-ok.sh`, fonctions écrites ou changées
+  par PERF) : 5 tués sur 5.
+- Mutants à la main (`PyResult` et types sans `Default`, instructions de
+  comptage) : tués, `Attrs::push` qui inverse les deux premiers attributs,
+  `as_slice` qui perd le second, `with_items` vide, `int_float_operands`
+  qui inverse ou convertit un opérande, `classify` qui rend tout générique,
+  et, par `plumber_frames`, `resolve_all_owned` sans son cadre (séquence ou
+  scalaire) ou sans le cadre de son expression génératrice,
+  `decode_text_pystr` avec `leaf(1)`. Survivants justifiés : `Attrs::push`
+  d'un troisième attribut qui le perd (jamais plus de deux : `mcid`,
+  `tag`) ; le cadre de `point2coord_with` et l'unité par point de
+  `original_path` (plus haut que la chaîne de `pts`, qui passe avant dans
+  le temps : jamais le premier à dépasser la limite, chez Python non
+  plus) ; le cadre de `process_attr` pour un attribut hors `ALL_ATTRS`
+  (même raison, code de la vague 4) ; les `eval_entry` de
+  `resolve_all_owned` et `decode_text_pystr` (unités C : l'écart connu
+  ci-dessus empêche de les départager ; ils reproduisent ceux du chemin
+  général).
+- `js/src/core/wire.ts` (`Reader.item`, 18 mutants à la main) : 11 tués ;
+  7 survivants qui envoient une cellule à `value()` plus tôt ou plus tard
+  (garde toujours ou jamais, `depth < 0`, colonne par `value()`,
+  `SHALLOW` 0 : mêmes valeurs) ou testent ce qu'un bloc de table ne peut
+  pas contenir (une cellule en fin de bloc : la table de chaînes la suit).
+
+### Jonction (branche `wave5/join`)
+
+Branche `wave5/join` : `wave5/api` (`85ed95b`), puis `wave5/boundary`
+(`b6391b3`) et `wave5/perf` (`149ff35`) fusionnées sans avance rapide.
+
+**Fusions.**
+
+- `wave5/boundary` : sans conflit (huit fichiers, ses commits d'après
+  `b2e6128`, la dernière fusion de BOUNDARY dans API : `cmap_scan`,
+  `structs`, tests, `js_runtime.py`, docs).
+- `wave5/perf` : un conflit, `PDFPageInterpreter.path_segment`
+  (pdfminer/pdfinterp.py:541-610). PERF y fait le `Vec<Num>` du segment en
+  une passe ; BOUNDARY y formate le texte du `log.warning` à la demande
+  (`warning_with`). Les deux sont gardés : le vecteur de PERF, le message
+  de BOUNDARY. Les autres fichiers communs (`wire/binary.rs`,
+  `wire/mod.rs`, `wire.ts`, docs) se fusionnent seuls, et le résultat
+  garde chaque intention : l'étiquette `0x13` de BOUNDARY et
+  `decode_args` à côté de la table et de `write_shallow` de PERF (une
+  valeur `is_shallow` ne contient jamais de flux) ; le `TypeError` d'une
+  fonction ou d'un symbole en argument (commit `8ab0e97` d'API) à côté du
+  `Reader.item` de PERF ; l'entrée `plumber_frames` de PERF dans
+  `oracle/unit/__main__.py` à côté de `js_api`. Les sites `log.*` de
+  pdfminer et ceux que PERF a récrits ne se recouvrent pas (protocole 2) :
+  aucun `LOG.warning()` sans texte n'a réapparu.
+
+**Câblage de l'API.** API avait fusionné BOUNDARY trois fois et
+construit chaque membre sur ses opérations (flux par référence et leur
+propriétaire, `element_bbox`, `page_info` et ses deux erreurs, arbres de
+structure) ; le préchargement des CMaps et la transmission des `log.*`
+sont dans le cœur et le paquet (la transmission est vérifiée par l'API
+publique : le test « records and warnings reach onWarning » de
+`tests.mjs`, qui ouvre par `open()`, dans Node, les trois navigateurs et
+en worker ; `api-runtime.test.ts` pour `logLevel` et la page). Un défaut
+de protocole trouvé à la jonction, corrigé à sa cause :
+
+- `struct_find_all`/`struct_find` prenaient tout dict d'une seule clé
+  `{"mask": [...]}` pour le masque que JavaScript a calculé, et l'API
+  passait tel quel l'objet d'un appelant : `tree.findAll({mask: [true]})`
+  filtrait par ce « masque » là où Python appelle le dict (`TypeError:
+  'dict' object is not callable`). Le masque est maintenant un troisième
+  argument (`structs.rs`), le matcher n'étant alors pas lu ; les rejeux
+  (`js_runtime_unit.rs`, `tests.mjs`) et `structure.ts` (`matcherArgs`)
+  l'envoient ainsi (`js-runtime.md`, « Documents et pages »). Les
+  sessions de structure ont un matcher `{"mask": [True]}` de plus
+  (`js_api.py`, `MATCHERS`) : 57 sessions, 4 178 appels.
+
+**Unités C de la couche page** (l'écart que PERF a trouvé, présent dès la
+vague 4). Chaque cause mesurée sur CPython 3.12 (essais forkés sous des
+comparaisons de listes imbriquées, `oracle/unit/plumber_frames.py`) :
+
+- `isinstance(x, (A, B))` une fois son site spécialisé
+  (`CALL_NO_KW_ISINSTANCE` → `object_recursive_isinstance`) : une unité le
+  temps de vérifier le tuple (`" in __instancecheck__"`) :
+  `resolve_all` de toute valeur qui n'est pas une référence
+  (`pdfinternals::resolve_all`, `resolve_all_value`,
+  `resolve_all_owned`), `resolve_and_decode` de ce qui n'est ni une liste
+  ni un `PSLiteral`, les `(LTChar, LTTextContainer)` et `(LTCurve,)` de
+  `process_object` (`pycompat::recursion::isinstance_tuple`) ;
+- `decode_text` : `"".join` (un descripteur de méthode à un argument)
+  tient une unité (`" while calling a Python object"`) autour de l'entrée
+  des générateurs ; `ord(c)` en prend une le temps de s'exécuter pour
+  chaque caractère d'une `str` ; `str(s[2:], "utf-16be", "ignore")` en
+  tient une (`_PyObject_MakeTpCall`) ;
+- les abonnements `typing` des annotations des fonctions imbriquées : un
+  *escalier* d'unités C par abonnement, défaut et succès du cache
+  (`typing_cache::CStaircase`, `Subscription::with_c`), mesuré par
+  `python -m oracle.depth_probe typing-c` (succès : l'entrée de `inner`
+  depuis le `BINARY_SUBSCR` générique, l'appel du `lru_cache`, les
+  comparaisons de sa clé, le `__hash__` d'un alias en argument ; défaut :
+  la construction de l'alias, jusqu'à 16 unités pour
+  `Optional[Tuple[str, Any]]`) ;
+- `re.sub(lt_pat, "", ...).lower()` au début de `process_object` :
+  l'`isinstance(flags, RegexFlag)` de `re._compile` (une classe d'enum :
+  le `__instancecheck__` de sa métaclasse cherché puis appelé, deux
+  unités), `.lower()` (une méthode sans argument). (La recherche de
+  `_cache2[type(pattern), pattern, flags]` n'en prend aucune : un motif
+  compilé n'est jamais une clé du cache, la recherche échoue sans comparer
+  de clé ; l'unité « comparaison de la clé » que la jonction avait ajoutée
+  n'existait pas dans CPython, retirée par `wave5/fix` après mesure :
+  `re._cache2.get(...)` va aussi profond que l'instruction vide, 9 995
+  sous les comparaisons imbriquées, `re._compile(lt_pat, 0)` et
+  `re.sub(...)` à 9 993, `.lower()` seul à 9 994.)
+
+`plumber_frames` vérifie maintenant les unités C par défaut
+(`PLUMBER_FRAMES_C` n'existe plus), et la `RecursionError` un à six
+niveaux sous l'entrée la plus profonde le long du compteur C (au plus les
+unités qui y restent) : le message de chaque unité du point le plus
+profond, pas seulement de la dernière ; aussi `decode_text` de `bytes`
+(BOM UTF-16 compris), `resolve_and_decode` (un nom, des octets, un
+entier) et `resolve_all` d'un dict ; et, nouveau test
+`typing_subscriptions`, les cadres et l'escalier de chaque abonnement
+que le port modélise (défaut puis succès, avec 0, 1, 2... unités de
+reste), contre `typing.jsonl` (les mesures de `depth_probe`). Les trois
+tests passent, en natif et en `wasm32-wasip1`. Ce qui n'est pas modélisé
+reste ce que `pycompat::specialize` exclut : l'unité de plus d'un appel
+de builtin à sa première exécution dans un processus, avant sa
+spécialisation (aucun site de ce type n'atteint la limite ici).
+
+**Bancs.** `plumber_phases.rs`/`.py`, `js/bench/phases.mjs`,
+`phases.html`, `browser-phases.mjs` mesurent aussi `extract_tables()`
+(dernière colonne : pdfplumber ne garde aucune table, elle refait
+`find_tables`).
+
+**Vérification** (`heavy.sh`, `HEAVY_SLOTS=1`, fournisseur de CMaps) :
+
+- `oracle.verify` par `pdftrace`, les 13 étapes, `all` (20 premières
+  pages) et les cinq ensembles adverses (78 passes, sur la fusion ; les
+  quatre étapes `plumber_*` repassées sur les six ensembles après chacun
+  des deux commits des unités C, `8ae8e36` et `95076f0`, le binaire
+  final) : identiques hors les écarts connus — `plumber_objects` 1 852/1 853
+  sur `all` (la ligne `ids` de `pdfjs-issue19624-text.pdf`),
+  `plumber_text` 336/353 et `plumber_tables` 341/353 sur `adv-interp`
+  (l'ordre des NaN de `cluster_objects` ; l'oracle de `096-text-TL.pdf`
+  tué par la limite de 5 Go) ;
+- les quatre étapes `plumber_*` par l'API publique (`--engine js-api`,
+  `dist/pdfplumber-oracle.wasm` de `check.sh`) sur `all` : 1 852, 1 853,
+  1 853, 1 850 ; chaque différence, ici et sur les ensembles adverses,
+  est d'une des sortes connues (classées fichier par fichier) : une
+  fenêtre de profondeur (`depth-*`, `climit-*` : comparées par
+  `depth.jsonl`), un fichier qui diffère aussi par `pdftrace` (les écarts
+  ci-dessus), ou `filter()` d'une page dont les objets lèvent (3 fichiers
+  de `all`, 10 d'`adv-interp`, `083-mc-mcid-deep.pdf` d'`adv-plumber`) ;
+  aucune autre :
+
+  | identiques par l'API | `plumber_objects` | `plumber_text` | `plumber_tables` | `plumber_doc` |
+  |---|---|---|---|---|
+  | `all` (1 853) | 1 852 (`ids`) | 1 853 | 1 853 | 1 850 (3 `filter`) |
+  | `adv-objects` (333) | 318 (15 fenêtres) | 321 (12) | 321 (12) | 318 (15) |
+  | `adv-pages` (285) | 228 (57) | 230 (55) | 230 (55) | 228 (57) |
+  | `adv-interp` (353) | 221 (132) | 292 (44 ; 17 NaN/oracle) | 301 (40 ; 12 NaN) | 192 (151 ; 10 `filter`) |
+  | `adv-plumber` (199) | 159 (40) | 188 (11) | 186 (13) | 149 (49 ; 1 `filter`) |
+  | `adv-structure` (441) | 441 | 441 | 441 | 405 (36) |
+
+  (une fenêtre de profondeur que la trace de l'étape ne peut pas suivre
+  par l'API est comptée comme différente, « the oracle's trace has no
+  spans line left » compris ; les 448 sont identiques par `depth.jsonl`,
+  dans `check.sh`) ;
+- `oracle.wasm_parity --set quick`, les 13 étapes : 0 différence sur
+  13 × 150 fichiers (`dist wasm = native`, à `8ae8e36` ; le code final
+  n'ajoute que les unités de `re.sub`, que la porte de profondeur de
+  `check.sh` compare entre le Wasm `dist` et le natif) ;
+- `scripts/check.sh` vert sur le code final (`c648d7d`, 63 min) :
+  rustfmt, clippy, références amont, tables générées, données unitaires à
+  jour, `cargo test` natif (261 tests réussis, 1 ignoré) et
+  `wasm32-wasip1` (249 réussis, 11 ignorés, dont les 7 tests qui veulent
+  un processus à eux, relancés chacun seul : réussis), porte de profondeur
+  du Wasm `dist` (= natif sur chaque fenêtre), 647 tests de Node (les 57
+  sessions sur les sources et sur `dist`, les 448 fenêtres de
+  `depth.jsonl`, `api-lifetime`, `api-runtime`, `wire`, le canon), budget
+  de taille, `plumber_objects` et `plumber_text` par l'API sur `micro`
+  (17/17), 47 auto-tests de l'oracle ; aussi vert à `8ae8e36` (41 min) ;
+- `scripts/check-browsers.sh` : 456 tests verts en 24 min (le code final
+  de la bibliothèque, `95076f0` ; seuls l'oracle, les docs et les scripts
+  ont changé depuis), dont les 55 sessions qui ne sont pas `node_only`
+  dans Chromium, Firefox et WebKit, dans la page et en worker, et le test
+  des diagnostics par `open()` ;
+- mutations, sur le code que la jonction a écrit ou fusionné :
+  - `cargo mutants --in-diff` (`--profile mutants -j 1`) : `structs.rs`
+    (le diff du masque ; rejeux `js_runtime_unit`, `boundary`) 8 mutants,
+    1 détecté, 7 non viables ; `path_segment` fusionné (rejeux
+    `interp_unit`, `js_runtime_unit`) 6 mutants, 2 détectés (les bras
+    `'m'` et `'l'` du texte du journal), 4 non viables ; le diff des
+    unités C (`pdfinternals.rs`, `page.rs`, `pdf.rs`, `typing_cache.rs`,
+    `recursion.rs`, rejeu `plumber_frames`) 63 mutants, 6 détectés, 52 non
+    viables, 5 manqués, repris à la main contre les autres rejeux
+    (`plumber_unit`, tests de `typing_cache`) et tous détectés ;
+  - à la main (`scripts/join-hand-mutants.py`, dans une copie neuve des
+    sources) : 38 mutants des instructions de comptage (chaque
+    `isinstance_tuple`, chaque unité de `decode_text` et de `re.sub`,
+    l'escalier des abonnements, la constance d'un abonnement), du
+    masque (bras du type, argument lu, longueur) et de `path_segment`
+    fusionné (drapeau, segment, corps) : 34 détectés, 4 survivants
+    équivalents — les unités transitoires de `(LTChar, LTTextContainer)`,
+    de `(LTCurve,)`, de la comparaison de `_cache2` (une unité que
+    CPython ne prend pas : retirée depuis, voir plus haut) et de
+    `.lower()` :
+    chacune n'en demande qu'une, après l'`isinstance` de `re._compile` qui
+    en demande deux dans le même appel de `process_object` ; aucune n'est
+    donc jamais la première à manquer (Python les prend, le port aussi) ;
+    un premier passage, dans une copie dont les produits de compilation
+    venaient d'une copie antérieure (`rsync` garde les dates des sources,
+    `cargo` jugeait frais le binaire d'un mutant), a été écarté ;
+  - JavaScript (`scripts/js-api-mutants.mjs`, les 21 mutants de
+    `api/structure.ts`, dont 4 nouveaux de `matcherArgs`) : 20 tués, un
+    survivant équivalent, une `RegExp` envoyée à la place du `null` qui
+    précède le masque (le cœur ne lit pas le matcher quand le masque est
+    là).
+
+**Mesures finales.** Méthode : `quick` (150 fichiers, 20 premières pages,
+302 pages), phases de `plumber_phases` (ouverture et `pdf.pages`, puis
+par page `layout`, `objects`, `extract_text()`, `extract_words()`,
+`find_tables()`, et `extract_tables()` en dernière colonne), chaque passe
+dans `heavy.sh` (une à la fois ; la machine de 8 cœurs garde d'autres
+travaux légers). Natif : l'exemple de la jonction compilé sur les sources
+de `wave5/base`, de `wave5/perf` (`git archive`) et de la jonction
+(`8ae8e36` : sans les quatre opérations de compteur de `re.sub` par
+objet de `95076f0`), les trois alternés dans un même créneau, 3 passes
+chacun, médiane. Node : `js/bench/phases.mjs` de la jonction (API
+publique, valeurs décodées) sur le `dist` (`wasm-opt -O3`) de chacune des
+trois branches, alternés de même ; « frontière » = seconde lecture de
+`page.objects`. Python : `plumber_phases.py`, une passe. Navigateurs :
+`browser-phases.mjs`, une passe par navigateur et par mode, la jonction
+seule.
+
+| ms par page | ouverture | layout | objects | texte | mots | tables | total | `extract_tables` |
+|---|---|---|---|---|---|---|---|---|
+| Python 3.12 | 4,85 | 70,87 | 42,88 | 6,76 | 4,12 | 4,84 | **134,3** | 4,76 |
+| natif, base | 0,35 | 5,76 | 12,60 | 2,30 | 1,67 | 1,94 | 24,6 | 1,42 |
+| natif, PERF | 0,31 | 4,70 | 5,78 | 1,69 | 1,31 | 1,73 | 15,5 | 1,14 |
+| natif, jonction | 0,33 | 4,89 | 5,91 | 1,70 | 1,33 | 1,80 | **16,0** | 1,22 |
+
+| ms par page, API publique | ouverture | objects (layout compris) | texte | mots | tables | total | frontière | `extract_tables` |
+|---|---|---|---|---|---|---|---|---|
+| Node, base | 1,23 | 25,90 | 2,42 | 2,01 | 1,91 | 33,5 | 4,77 | 1,59 |
+| Node, PERF | 1,15 | 14,82 | 1,87 | 1,61 | 1,53 | 21,0 | 3,34 | 1,32 |
+| Node, jonction | 1,21 | 14,91 | 1,96 | 1,69 | 1,55 | **21,3** | 3,26 | 1,33 |
+| Chromium 148, page | 1,11 | 15,64 | 2,02 | 1,79 | 1,68 | 22,2 | 3,37 | 1,37 |
+| Chromium 148, worker | 1,82 | 16,68 | 2,76 | 2,33 | 1,92 | 25,5 | 3,92 | 1,78 |
+| WebKit 26.4, page | 1,11 | 15,48 | 2,06 | 1,83 | 1,60 | 22,1 | 3,33 | 1,40 |
+| WebKit 26.4, worker | 1,68 | 16,73 | 2,48 | 2,12 | 1,84 | 24,9 | 3,82 | 1,73 |
+| Firefox 150 (Nightly), page | 3,55 | 83,34 | 9,35 | 8,28 | 5,40 | 109,9 | 12,63 | 5,13 |
+| Firefox 150 (Nightly), worker | 4,46 | 89,11 | 9,19 | 8,57 | 5,94 | 117,3 | 13,78 | 5,65 |
+
+- Rapport à Python (134,3 ms par page) : natif ×8,4, API dans Node ×6,3,
+  dans Chromium ×6,0 (×5,3 en worker), WebKit comme Chromium ; par phase
+  dans Node : ouverture ×4,0, objects ×7,6, texte ×3,4, mots ×2,4,
+  `find_tables` ×3,1, `extract_tables` ×3,6. Firefox de Playwright
+  (Nightly) n'est pas une référence de vitesse (`port-strategy.md`).
+- Rapport à la base : natif ×1,54, Node ×1,57 ; la jonction est à 3 % de
+  PERF en natif et 2 % dans Node, dans l'écart d'une passe à l'autre
+  (natif, jonction : 17,1, 16,0 et 15,0 ms selon la passe) : la
+  frontière de BOUNDARY (flux par référence, texte des journaux) et les
+  unités C comptées ne coûtent rien de mesurable. Les navigateurs, une
+  passe chacun à une autre heure, sont de 5 à 12 % au-dessus des mesures
+  de PERF (Chromium page 14,2 → 15,6 ms pour `objects`), sans mesure
+  alternée : non attribué.
+- Mémoire : RSS maximale native 318 Mio (base 366, PERF 318) ; Node 498
+  à 544 Mio (PERF 549 à 567, base 586 à 614) ; mémoire linéaire du Wasm à
+  la fin 279 117 824 octets (PERF idem, base 308 936 704).
+- Taille (`dist`, `wasm-opt -O3`) : `pdfplumber.wasm` 2 571 923 octets
+  bruts, 937 434 gzip, 660 876 brotli (PERF 2 466 507 et 632 096 brotli,
+  base 2 416 107 et 628 778) : +4,3 % sur PERF, le code de BOUNDARY et
+  d'API (flux, arbres de structure, `cmap_scan`, texte des `log.*`,
+  `debug_tablefinder`) ; budget brotli 1 Mo. JS navigateur 43 527 octets
+  (13 609 brotli), `dist/src` (Node) 126 643 (33 370).
+
+**Restent ouverts** (documentés) :
+
+- `filter()` d'une page dont les objets ne se calculent pas : l'API
+  rejette avec leur erreur (le prédicat est évalué dans le job de
+  `filter`, contrat), Python rend la page et lève à la première lecture
+  (`public-api.md`, « Cropping, Filtering ») ; 14 fichiers en tout. Le
+  rendre paresseux demanderait une page filtrée sans objet du cœur, dont
+  chaque membre referait les objets du parent, le prédicat et
+  `page_filter` dans son propre job, en sachant quels membres de
+  `FilteredPage` lisent les objets : un changement du contrat, pas de la
+  jonction.
+- Les écarts de la vague 4 : la ligne `ids` de
+  `pdfjs-issue19624-text.pdf`, l'ordre des NaN de `cluster_objects`
+  (`adv-interp`), l'oracle de `096-text-TL.pdf` au-delà de 5 Go.
+- Unités C non modélisées, par la règle de `pycompat::specialize` :
+  l'unité de plus d'un appel de builtin à sa première exécution dans un
+  processus ; et, pour un abonnement `typing`, l'ordre entre la limite
+  des cadres et celle des unités quand les deux sont atteintes à la fois.
+  Les abonnements des fonctions imbriquées de `table.py`,
+  `utils/text.py` et `structure.py` (dans `depth_probe typing`) restent
+  hors du modèle, cadres comme unités, comme avant la jonction : aucun
+  balayage ni aucune fenêtre ne les atteint au point le plus profond.
+- Les mesures des navigateurs sont d'une passe, sans base alternée.
+
+### Corrections de la revue (branche `wave5/fix`)
+
+Branche `wave5/fix` (depuis `wave5/join`, `94326ed`) : les constats des
+quatre revues indépendantes de la vague 5 (fidélité de l'API, frontière,
+performance, tests/docs/paquet), chacun vérifié, corrigé à sa cause avec
+un cas généré qui échoue avant la correction (session de `js_api.py`,
+test unitaire, ou test de `api-lifetime`/`api-runtime` pour ce qu'une
+valeur Python ne montre pas : identités, mémoire, worker).
+
+**API.**
+
+- `pdf.page(ref)` ne prend que les `PageRef` décodés par une requête du
+  document (`pageRefOwner` : le décodeur les fabrique par
+  `withRefMakers`, comme les flux) ; une référence d'un autre document, d'un
+  cœur d'avant `configure()` ou d'un plantage, ou faite à la main, est un
+  `TypeError` (avant : la page d'un autre document, attribuée à celui-ci, ou
+  la page qui avait ce numéro de handle dans le nouveau cœur). En argument,
+  un `PageRef` ou un `PDFStream` d'un autre cœur est un `TypeError`
+  (`StreamRefs.owns`) ; d'un autre document du même cœur, il passe (Python
+  prend tout objet).
+- `null` est `None` pour les options propres d'une méthode (`strip`,
+  `return_chars` d'`extractTextLines` ; `regex`, `case`, `main_group`,
+  `return_chars`, `return_groups` de `search`) : seul `undefined` prend le
+  défaut (`given`). Une entrée `undefined` d'un `Map` est omise comme une
+  propriété d'objet ; seuls les objets simples et les `Map` traversent
+  comme `dict` (`isPlainObject`) : un `Set`, une `Date`, un tableau typé,
+  une instance d'une classe de l'appelant sont un `TypeError` (avant : un
+  `dict` de leurs propriétés, souvent vide, en silence).
+- `pdf.pages` est un job (FIFO) : lu après un `close()` pas encore
+  attendu, il donne les pages que `close()` refait, comme Python.
+- `search()` d'un motif qui n'est ni une chaîne ni une `RegExp` : le cœur
+  lève l'erreur de `re` de Python (`search_pattern_error` :
+  `re.compile` hache la clé puis refuse, `re.escape` avec `regex=False`,
+  motif `bytes`) ; `search()` et `filter()` sans argument : le
+  `TypeError` d'argument manquant ; `filter()` d'une valeur qui n'est pas
+  une fonction : `filter(None, ...)` garde les objets vrais, toute autre
+  valeur n'est pas appelable au premier objet (`page_filter [None, v]`).
+  La différence de `filter` (fonction évaluée une fois, à l'appel) est
+  documentée comme telle (`public-api.md`), sans plus prétendre à
+  l'équivalence.
+- `PDFStructElement.toDict()`/`to_dict()` (`struct_element_to_dict`,
+  `el.to_dict()`) et l'itération d'un arbre ou d'un élément sur ses enfants
+  (`__iter__`).
+
+**Frontière.**
+
+- `StreamRefs` garde les flux par document dans une `WeakMap` : un
+  document jamais libéré dont un résultat a tenu un flux redevient
+  libérable (avant : ~5 Mo de fuite par document dans le scénario de la
+  revue ; après : 3 handles stables sur 61 documents).
+- Adresses de wasm32 lues non signées (`>>> 0`) : au-delà de 2 Gio de
+  mémoire linéaire, chaque appel plantait (`CoreCrash`).
+- Les finaliseurs reçoivent un tour de boucle d'événements tous les 64
+  objets suivis (`yieldTurn` avant le job suivant) : une boucle qui
+  n'attend que l'API (`crop` + `extractText`) gardait chaque page dérivée
+  dans le cœur (1 534 Mo à 2 000 itérations, puis `CoreCrash`) ; après :
+  115 à 290 handles et 289 Mo stables sur 4 000 itérations, sans `gc()`
+  explicite, et le même résultat.
+- CMaps que le chargeur ne peut pas fournir : marquées indisponibles dans
+  le cœur après le `loadAll` d'un historique long (`cmap_unavailable`) ;
+  l'historique s'en va et n'est plus rechargé à chaque appel (scénario de
+  la revue : 148 chargements en tout au lieu d'un par appel). L'historique
+  est aussi borné par la taille des requêtes (4 Mio).
+- Mode worker : un worker planté est arrêté (`WorkerCore.stop`, et
+  `getCore()` avant d'en démarrer un autre) ; les requêtes en attente
+  reçoivent `CoreCrash` ; un worker qui ne se charge pas nomme son URL.
+
+**Profondeur.** L'unité C « comparaison de la clé de `_cache2` » de
+`process_object` n'existe pas dans CPython (mesure de la revue refaite :
+`re._cache2.get(...)` 9 995 comme l'instruction vide, `re._compile` et
+`re.sub` 9 993) : retirée ; elle ne pouvait jamais être la première à
+manquer, aucun résultat ne change. Les fenêtres de profondeur de l'API
+sont maintenant les siennes (`verification.md`, « Harnais ») : par
+famille, la première imbrication où une instruction de la session lève
+`RecursionError`, cherchée par dichotomie, et ses deux voisines.
+
+**Paquet.** `LICENSE` (MIT, celui du `Cargo.toml`),
+`THIRD_PARTY_NOTICES`, champs `license`, `repository`, `engines` ;
+`exports` avec `default`, `./worker` et `./package.json` ; liens des
+Markdown livrés vers des fichiers non livrés rendus absolus ; worker d'un
+seul fichier ; déclarations sans la bibliothèque DOM et avec
+`esnext.disposable` ; README : prérequis, recettes de bundlers, notes de
+migration complétées ; `scripts/check-package.mjs` et
+`bundlers.spec.ts` (`js-runtime.md`, « Paquet JS »).
+
+**Vérification** (`heavy.sh`, `HEAVY_SLOTS=1`) :
+
+- `scripts/check.sh` vert (cargo test natif, 519 réussis ;
+  `wasm32-wasip1` ; porte de profondeur ; 801 tests de Node : les 57
+  sessions sur les sources et sur `dist`, les 593 fenêtres de profondeur,
+  `api-lifetime`, `api-runtime` ; paquet ; `plumber_*` par l'API sur
+  `micro`) ; `scripts/check-browsers.sh` vert : 464 réussis, 16 sautés
+  (les recettes de bundlers ne tournent que dans Chromium) ;
+- `oracle.verify` par `pdftrace` : les quatre étapes `plumber_*` sur `all`
+  et les cinq ensembles adverses, comme à la jonction (1 852/1 853 pour
+  `plumber_objects` sur `all`, la ligne `ids` de
+  `pdfjs-issue19624-text.pdf` ; `adv-interp` 336 et 341 sur 353 pour
+  `plumber_text` et `plumber_tables`) ; les neuf étapes du bas sur `quick` :
+  150/150 chacune ;
+- les quatre étapes par l'API publique (`--engine js-api`) sur les mêmes
+  ensembles : exactement les nombres du tableau de la jonction. Un premier
+  passage avait 5 fichiers de `plumber_tables` (2 de `all`, 2
+  d'`adv-interp`, 1 d'`adv-plumber`) que le harnais ne pouvait pas tracer :
+  le `free` d'un finaliseur, que les tours de boucle d'événements laissent
+  maintenant passer plus tôt, s'exécutait entre la requête d'un membre et
+  la lecture de `core.lastTyped` par le harnais, et remplaçait la valeur.
+  Un `free` ne change plus `lastTyped` (personne ne lit son résultat) ;
+  test dans `api-runtime.test.ts`, mutant #60 de `fix-mutants.mjs` tué ;
+  le second passage est identique à la jonction.
+
+**Mesures** (aucune optimisation dans cette branche ; vérifier que les
+corrections ne coûtent rien) : `js/bench/phases.mjs` sur `quick` (150
+fichiers, 302 pages), le `dist` de la jonction (son module refait avec
+`wasm-opt -O3` : 2 571 923 octets, comme mesuré à la jonction) et celui
+de `wave5/fix`, alternés, 3 passes chacun dans un même créneau de
+`heavy.sh`. Total (ouverture, objects, texte, mots, tables) : jonction
+6,53, 6,04, 6,17 s, `wave5/fix` 6,13, 6,36, 6,60 s ; médianes 20,4 et
+21,1 ms par page, dans l'écart d'une passe à l'autre (0,5 s d'une passe à
+l'autre pour la même branche). Mémoire linéaire finale identique
+(279 117 824 octets), RSS maximale 516 à 531 Mio (jonction 531 à 577).
+Les tours de boucle d'événements des finaliseurs : un `setImmediate` tous
+les 64 objets suivis.
+
+**Mutations.** `scripts/fix-mutants.mjs` (dans une copie de la branche ;
+un mutant Rust reconstruit `dist/pdfplumber.wasm`, puisque seules les
+sessions de l'API atteignent ce code par WebAssembly) : 61 mutants du
+code de la correction (JavaScript : `api.ts`, `runtime.ts`, `wire.ts`,
+`worker/client.ts`, `search.ts`, `structure.ts` ; Rust : `pages.rs`,
+`text.rs`, `structs.rs`, `ops.rs`, `cmaps.rs`, ces derniers aussi contre
+les tests unitaires de `cmaps`), 55 tués (dont le #34 après un test de
+plus : un worker qui tombe pendant une requête nomme son URL), 6
+survivants équivalents :
+
+- #8 (céder un tour avant chaque job, pas tous les 64 objets) et #10
+  (`MessageChannel` au lieu de `setImmediate` dans Node) : seul le moment
+  des tours change, jamais un résultat ;
+- #21, #22 (le balayage des entrées mortes de `StreamRefs`) : mémoire
+  seulement, aucune valeur ne le montre ;
+- #25 (la longueur d'une réponse lue signée) : une réponse de plus de
+  2 Gio est hors d'atteinte (la moitié de l'espace d'adresses) ; les
+  adresses, elles, le sont (#23, #24 tués par l'allocation de 2 Gio) ;
+- #45, #46 (les cadres de `re.escape` et de `re.compile` dans
+  `search_pattern_error`) : l'instruction est au niveau du module, à
+  moins de dix cadres ; aucune pile n'y atteint la limite.
+
+Les listes de `js-api-mutants.mjs` et `js-boundary-mutants.mjs` ont été
+mises aux textes changés et leurs mutants changés rejoués (10 et 4) :
+tous tués, le #3 de `js-api-mutants` après deux appels de plus dans la
+session `arguments` (`extractTextLines` et `search` dont les options
+sont un `Set` ou un tuple : les méthodes qui séparent leurs options).
+`join-hand-mutants.py` : r3 et r4 portent sur l'unité de `.lower()`,
+puisque celle de `_cache2` n'est plus.
+
 ## Sémantique Python centralisée (`crates/pycompat`)
 
 Tout ce qui imite Python vit ici, une seule fois, testé contre CPython :

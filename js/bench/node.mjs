@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // The result-encoding benchmark in Node (see encoding-bench.mjs).
-//   node js/bench/node.mjs [CORPUS.pjb] [--passes N]
+//   node js/bench/node.mjs [CORPUS.pjb] [--passes N] [--dist DIR]
 // CORPUS defaults to $PDFPLUMBER_ROOT/.cache/bench/pages_real.pjb (written by
 // `cargo run --release -p pdfplumber-wasm --example bench_corpus -- FILE`).
 import { readFileSync } from "node:fs";
@@ -14,8 +14,9 @@ const corpusPath =
   args.find((a) => a.endsWith(".pjb")) ??
   join(process.env.PDFPLUMBER_ROOT ?? ROOT, ".cache/bench/pages_real.pjb");
 
-await import(join(ROOT, "dist/src/index.js"));
-const lib = await import(join(ROOT, "dist/src/internal.js"));
+const DIST = args.includes("--dist") ? resolve(args[args.indexOf("--dist") + 1]) : join(ROOT, "dist");
+await import(join(DIST, "src/index.js"));
+const lib = await import(join(DIST, "src/internal.js"));
 const { runEncodingBench } = await import("./encoding-bench.mjs");
 const out = await runEncodingBench(lib, new Uint8Array(readFileSync(corpusPath)), {
   passes,

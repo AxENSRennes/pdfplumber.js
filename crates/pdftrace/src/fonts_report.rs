@@ -124,7 +124,7 @@ pub fn cmap_report(m: &dyn CMapBase) -> Value {
 /// A font's `fontname`.
 pub fn fontname(n: &FontName) -> Value {
     match n {
-        FontName::Str(s) => Value::str(s.clone()),
+        FontName::Str(s) => Value::str(s.to_string_lossy()),
         FontName::Obj(o) => Value::from(o),
     }
 }

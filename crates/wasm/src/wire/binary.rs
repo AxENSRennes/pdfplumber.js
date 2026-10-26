@@ -23,6 +23,8 @@
 
 use std::rc::Rc;
 
+use pdfminer::pdftypes::PDFObject;
+use pdfminer::psparser::{LIT_bytes, KWD, LIT};
 use pdfplumber::obj::{Obj, PyValue};
 use pycompat::{exc, PyErr, PyInt, PyResult, PyStr};
 use rustc_hash::FxHashMap;
@@ -52,6 +54,9 @@ pub const TAG_STREAM: u8 = 0x0f;
 pub const TAG_TABLE: u8 = 0x10;
 pub const TAG_INLINE_STR: u8 = 0x11;
 pub const TAG_PAGE: u8 = 0x12;
+/// A `PDFStream` by reference: its handle, `objid`, `genno`, `attrs`
+/// ([`Writer::stream_ref`]).
+pub const TAG_STREAM_REF: u8 = 0x13;
 
 pub const COL_GENERIC: u8 = 0;
 pub const COL_F64: u8 = 1;
@@ -207,61 +212,154 @@ impl BinWriter {
         self.buf.extend_from_slice(&x.to_le_bytes());
     }
 
-    fn column(&mut self, rows: &[&Obj], c: usize) -> PyResult<()> {
-        let cells: Vec<&PyValue> = rows.iter().map(|d| &d.items()[c].1).collect();
-        let kind = column_kind(&cells);
+    /// Appends `n` zero bytes and returns them, to be written in place
+    /// (performance: a column's numbers without a length check each).
+    fn extend_zeroed(&mut self, n: usize) -> &mut [u8] {
+        let start = self.buf.len();
+        self.buf.resize(start + n, 0);
+        &mut self.buf[start..]
+    }
+
+    /// The index of the `str` of a string cell, `last` the previous cell's
+    /// (`(address, index)`): the cells of a column often share one `str`
+    /// (a font name, `object_type`), found again without validating and
+    /// hashing its text. The rows are borrowed for the whole table: an
+    /// address cannot name another `str` meanwhile.
+    fn intern_cell(&mut self, s: &PyStr, last: &mut Option<(*const u8, u32)>) -> u32 {
+        let addr = s.as_bytes().as_ptr();
+        if let Some((a, i)) = *last {
+            if a == addr {
+                return i;
+            }
+        }
+        let i = self.intern_str(s);
+        *last = Some((addr, i));
+        i
+    }
+
+    /// Writes column `c` of `rows`, whose cells `cells` holds (see
+    /// [`Cell`]) and whose kinds of cell are `seen` ([`column_kind`]).
+    fn column(&mut self, rows: &[&Obj], c: usize, cells: &[Cell<'_>], seen: u8) -> PyResult<()> {
+        let kind = kind_of(seen);
         self.buf.push(kind);
         match kind {
             COL_NONE => {}
             COL_BOOL => {
-                for v in &cells {
-                    self.buf.push(u8::from(matches!(v, PyValue::Bool(true))));
+                for v in cells {
+                    self.buf.push(u8::from(matches!(v, Cell::Bool(true))));
                 }
             }
-            COL_F64 => {
-                self.align(8);
-                for v in &cells {
-                    self.f64(as_f64(v).expect("a number column"));
-                }
-            }
-            COL_OPT_F64 => {
-                for v in &cells {
-                    self.buf.push(u8::from(!v.is_none()));
+            COL_F64 | COL_OPT_F64 => {
+                if kind == COL_OPT_F64 {
+                    for v in cells {
+                        self.buf.push(u8::from(!matches!(v, Cell::None)));
+                    }
                 }
                 self.align(8);
-                for v in &cells {
-                    self.f64(as_f64(v).unwrap_or(0.0));
+                let out = self.extend_zeroed(8 * cells.len());
+                for (b, v) in out.as_chunks_mut::<8>().0.iter_mut().zip(cells) {
+                    let x = match v {
+                        Cell::Num(x) => *x,
+                        // a None of an optional column
+                        _ => 0.0,
+                    };
+                    b.copy_from_slice(&x.to_le_bytes());
                 }
             }
             COL_STR | COL_OPT_STR => {
                 self.align(4);
-                for v in &cells {
+                let start = self.buf.len();
+                self.extend_zeroed(4 * cells.len());
+                let mut last = None;
+                for (k, v) in cells.iter().enumerate() {
                     let i = match v {
-                        PyValue::Str(s) => self.intern_str(s),
+                        Cell::Str(s) => self.intern_cell(s, &mut last),
                         _ => NO_STR,
                     };
-                    self.u32(i);
+                    self.buf[start + 4 * k..start + 4 * k + 4].copy_from_slice(&i.to_le_bytes());
                 }
             }
             COL_NUM_SEQ => {
                 // the lengths, then every number, aligned (a Float64Array view)
-                for v in &cells {
-                    self.buf.push(v.as_seq().map_or(NO_SEQ, |items| items.len() as u8));
+                for v in cells {
+                    self.buf.push(match v {
+                        Cell::Seq(items) => items.len() as u8,
+                        _ => NO_SEQ,
+                    });
                 }
                 self.align(8);
-                for v in &cells {
-                    for x in v.as_seq().unwrap_or(&[]) {
-                        self.f64(as_f64(x).expect("a number sequence"));
+                let total = cells.iter().map(|v| if let Cell::Seq(items) = v { items.len() } else { 0 }).sum::<usize>();
+                let mut out = self.extend_zeroed(8 * total).as_chunks_mut::<8>().0.iter_mut();
+                for v in cells {
+                    if let Cell::Seq(items) = v {
+                        for x in *items {
+                            let b = out.next().expect("room for every number");
+                            b.copy_from_slice(&as_f64(x).expect("a number sequence").to_le_bytes());
+                        }
                     }
                 }
             }
             _ => {
-                for v in &cells {
-                    write_value(self, v)?;
+                for d in rows {
+                    write_value(self, &d.items()[c].1)?;
                 }
             }
         }
         Ok(())
+    }
+}
+
+/// A cell of a table as the column writer needs it, read from the rows
+/// once, row by row (performance: the columns are then written from these
+/// contiguous cells, not by visiting every row again for each column).
+#[derive(Clone, Copy)]
+enum Cell<'a> {
+    None,
+    Bool(bool),
+    Num(f64),
+    Str(&'a PyStr),
+    Seq(&'a [PyValue]),
+    /// Written as a value ([`COL_GENERIC`]).
+    Other,
+}
+
+const SEEN_NONE: u8 = 1;
+const SEEN_BOOL: u8 = 2;
+const SEEN_NUM: u8 = 4;
+const SEEN_STR: u8 = 8;
+const SEEN_SEQ: u8 = 16;
+const SEEN_OTHER: u8 = 32;
+
+/// The kind of a cell (a `SEEN_*` flag) and its [`Cell`].
+#[inline]
+fn classify(v: &PyValue) -> (u8, Cell<'_>) {
+    match v {
+        PyValue::None => (SEEN_NONE, Cell::None),
+        PyValue::Bool(b) => (SEEN_BOOL, Cell::Bool(*b)),
+        PyValue::Str(s) => (SEEN_STR, Cell::Str(s)),
+        v => match as_f64(v) {
+            Some(x) => (SEEN_NUM, Cell::Num(x)),
+            None => match v {
+                PyValue::Tuple(items) | PyValue::List(items) if is_num_seq(v) => (SEEN_SEQ, Cell::Seq(items)),
+                _ => (SEEN_OTHER, Cell::Other),
+            },
+        },
+    }
+}
+
+/// The narrowest column type that holds every cell of kinds `seen`
+/// exactly.
+fn kind_of(seen: u8) -> u8 {
+    // (`|` and `^` are the same in these patterns: the flags are distinct bits)
+    match seen {
+        SEEN_NONE => COL_NONE,
+        SEEN_BOOL => COL_BOOL,
+        SEEN_NUM => COL_F64,
+        x if x == SEEN_NUM | SEEN_NONE => COL_OPT_F64,
+        SEEN_STR => COL_STR,
+        x if x == SEEN_STR | SEEN_NONE => COL_OPT_STR,
+        x if x & !SEEN_NONE == SEEN_SEQ => COL_NUM_SEQ,
+        _ => COL_GENERIC,
     }
 }
 
@@ -284,33 +382,7 @@ fn is_num_seq(v: &PyValue) -> bool {
 /// The narrowest column type that holds every cell exactly, in one pass:
 /// the kinds of cell seen, then the column type that allows them all.
 pub fn column_kind(cells: &[&PyValue]) -> u8 {
-    const NONE: u8 = 1;
-    const BOOL: u8 = 2;
-    const NUM: u8 = 4;
-    const STR: u8 = 8;
-    const SEQ: u8 = 16;
-    let mut seen = 0u8;
-    for v in cells {
-        seen |= match v {
-            PyValue::None => NONE,
-            PyValue::Bool(_) => BOOL,
-            v if as_f64(v).is_some() => NUM,
-            PyValue::Str(_) => STR,
-            v if is_num_seq(v) => SEQ,
-            _ => return COL_GENERIC,
-        };
-    }
-    // (`|` and `^` are the same in these patterns: the flags are distinct bits)
-    match seen {
-        NONE => COL_NONE,
-        BOOL => COL_BOOL,
-        NUM => COL_F64,
-        x if x == NUM | NONE => COL_OPT_F64,
-        STR => COL_STR,
-        x if x == STR | NONE => COL_OPT_STR,
-        x if x & !NONE == SEQ => COL_NUM_SEQ,
-        _ => COL_GENERIC,
-    }
+    kind_of(cells.iter().fold(0, |seen, v| seen | classify(v).0))
 }
 
 impl Writer for BinWriter {
@@ -401,6 +473,10 @@ impl Writer for BinWriter {
         self.buf.push(TAG_STREAM);
     }
 
+    fn stream_ref(&mut self) {
+        self.buf.push(TAG_STREAM_REF);
+    }
+
     fn page(&mut self) {
         self.buf.push(TAG_PAGE);
     }
@@ -423,8 +499,19 @@ impl Writer for BinWriter {
                 let i = self.intern_str(k);
                 self.varint(i as usize);
             }
-            for c in 0..first.len() {
-                self.column(&group, c)?;
+            // the cells, column by column, read row by row
+            let (n, width) = (group.len(), first.len());
+            let mut cells = vec![Cell::None; n * width];
+            let mut seen = vec![0u8; width];
+            for (r, d) in group.iter().enumerate() {
+                for (c, (_, v)) in d.items().iter().enumerate() {
+                    let (flag, cell) = classify(v);
+                    seen[c] |= flag;
+                    cells[c * n + r] = cell;
+                }
+            }
+            for c in 0..width {
+                self.column(&group, c, &cells[c * n..(c + 1) * n], seen[c])?;
             }
         }
         if shapes.first.len() > 1 {
@@ -552,12 +639,34 @@ enum Frame {
     List(Vec<PyValue>, usize),
     Tuple(Vec<PyValue>, usize),
     Dict(Obj, usize, Option<PyStr>),
+    /// The values of an object argument ([`ObjectArg`]) being read.
+    Object(u8, Vec<PyValue>, usize),
+}
+
+/// A pdfminer or pdfplumber object JavaScript gives back as an argument
+/// (an object of a result: `PDFObjRef`, a `PDFStream` by reference, a
+/// `PageRef`), which only the core can make the object it stands for
+/// ([`decode_args`]).
+pub enum ObjectArg {
+    /// `PDFObjRef`: its `objid`.
+    Ref(PyValue),
+    /// A pdfplumber `Page`: its handle and `page_number`.
+    Page(PyValue, PyValue),
+    /// A `PDFStream` by reference: its handle (then `objid`, `genno`,
+    /// `attrs`, which the handle decides).
+    Stream(PyValue),
 }
 
 /// Reads the value of a `PJB1` block sent by JavaScript. Only plain Python
 /// values are accepted (`None`, `bool`, `int`, `float`, `str`, `bytes`,
-/// `list`, `tuple`, `dict` with `str` keys).
+/// `list`, `tuple`, `dict` with `str` keys), and `PSLiteral`s and
+/// `PSKeyword`s (interned, as pdfminer's `LIT` and `KWD` make them).
 pub fn decode(block: &[u8]) -> PyResult<PyValue> {
+    decode_args(block, &mut |_| Err(exc::TypeError("unsupported argument value (an object of a document)")))
+}
+
+/// [`decode`], the objects of a document ([`ObjectArg`]) made by `object`.
+pub fn decode_args(block: &[u8], object: &mut dyn FnMut(ObjectArg) -> PyResult<PyValue>) -> PyResult<PyValue> {
     if block.len() < HEADER_LEN || &block[..4] != MAGIC {
         return Err(malformed("bad header"));
     }
@@ -622,6 +731,19 @@ pub fn decode(block: &[u8]) -> PyResult<PyValue> {
                     continue;
                 }
             }
+            TAG_KEYWORD => {
+                let n = r.varint()?;
+                PyValue::Pdf(PDFObject::Keyword(KWD(r.take(n)?)))
+            }
+            TAG_LITERAL | TAG_REF | TAG_PAGE | TAG_STREAM_REF => {
+                let n = match tag {
+                    TAG_LITERAL | TAG_REF => 1,
+                    TAG_PAGE => 2,
+                    _ => 4,
+                };
+                stack.push(Frame::Object(tag, Vec::with_capacity(n), n));
+                continue;
+            }
             other => return Err(exc::TypeError(format!("unsupported argument value (PJB1 tag {other:#04x})"))),
         };
         // attach the value to its container, closing the full ones
@@ -637,7 +759,7 @@ pub fn decode(block: &[u8]) -> PyResult<PyValue> {
                     }
                     return Ok(value);
                 }
-                Some(Frame::List(items, n) | Frame::Tuple(items, n)) => {
+                Some(Frame::List(items, n) | Frame::Tuple(items, n) | Frame::Object(_, items, n)) => {
                     items.push(value);
                     if items.len() < *n {
                         break;
@@ -664,7 +786,82 @@ pub fn decode(block: &[u8]) -> PyResult<PyValue> {
                 Frame::List(items, _) => PyValue::List(Rc::from(items)),
                 Frame::Tuple(items, _) => PyValue::Tuple(Rc::from(items)),
                 Frame::Dict(obj, _, _) => PyValue::Dict(obj),
+                Frame::Object(tag, items, _) => {
+                    let mut items = items.into_iter();
+                    let mut next = || items.next().expect("the values of the object");
+                    match tag {
+                        // PSLiteralTable.intern(name): `str` or `bytes`
+                        TAG_LITERAL => match &next() {
+                            PyValue::Str(name) => match name.as_str() {
+                                Some(name) => PyValue::Pdf(PDFObject::Literal(LIT(name))),
+                                None => return Err(exc::TypeError("a PSLiteral name with a lone surrogate")),
+                            },
+                            PyValue::Bytes(name) => PyValue::Pdf(PDFObject::Literal(LIT_bytes(name))),
+                            other => {
+                                return Err(exc::TypeError(format!(
+                                    "a PSLiteral name is a str, not {}",
+                                    other.type_name()
+                                )))
+                            }
+                        },
+                        TAG_REF => object(ObjectArg::Ref(next()))?,
+                        TAG_PAGE => {
+                            let handle = next();
+                            object(ObjectArg::Page(handle, next()))?
+                        }
+                        _ => object(ObjectArg::Stream(next()))?,
+                    }
+                }
             };
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The kind of the one column of the table `encode` writes for rows
+    /// `{"k": cell}`: the byte after the header (16 bytes), `TAG_TABLE`, the
+    /// row count, the shape count, the shape's row count and width, and the
+    /// index of its key (one byte each here).
+    fn written_kind(cells: &[PyValue]) -> u8 {
+        let rows = PyValue::list(cells.iter().map(|c| PyValue::Dict(Obj::from_pairs([("k", c.clone())]))));
+        let block = encode(&rows).unwrap();
+        assert_eq!(block[16], TAG_TABLE, "{cells:?}");
+        assert_eq!(&block[17..21], &[cells.len() as u8, 1, cells.len() as u8, 1]);
+        block[22]
+    }
+
+    /// The writer classifies each column of a table as [`column_kind`]
+    /// does (the cells read row by row, `Cell` and `seen`).
+    #[test]
+    fn a_table_column_is_written_with_the_kind_column_kind_gives() {
+        let f = PyValue::float(1.0);
+        let i = PyValue::Int(PyInt::from(1));
+        let big = PyValue::Int(PyInt::from(1_i64 << 60));
+        let n = PyValue::None;
+        let t = PyValue::str("x");
+        let b = PyValue::Bool(true);
+        let seq = PyValue::tuple([f.clone(), i.clone()]);
+        let cases: [(&[PyValue], u8); 13] = [
+            (&[n.clone(), n.clone()], COL_NONE),
+            (&[b.clone(), b.clone()], COL_BOOL),
+            (&[f.clone(), i.clone()], COL_F64),
+            (&[n.clone(), i.clone(), f.clone()], COL_OPT_F64),
+            (&[t.clone(), t.clone()], COL_STR),
+            (&[t.clone(), n.clone()], COL_OPT_STR),
+            (&[seq.clone(), n.clone()], COL_NUM_SEQ),
+            (&[seq.clone(), seq.clone()], COL_NUM_SEQ),
+            (&[b.clone(), n.clone()], COL_GENERIC),
+            (&[f.clone(), big.clone()], COL_GENERIC),
+            (&[t.clone(), f.clone()], COL_GENERIC),
+            (&[seq.clone(), f.clone()], COL_GENERIC),
+            (&[PyValue::list([t.clone()]), PyValue::Dict(Obj::new())], COL_GENERIC),
+        ];
+        for (cells, kind) in cases {
+            assert_eq!(column_kind(&cells.iter().collect::<Vec<_>>()), kind, "{cells:?}");
+            assert_eq!(written_kind(cells), kind, "{cells:?}");
         }
     }
 }

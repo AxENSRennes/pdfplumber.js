@@ -375,7 +375,38 @@ Lecture :
     `dropCore()` laissant vivre le worker de l'ancien ; le module compilé
     est désormais réutilisé et le worker arrêté (`js-runtime.md`,
     « Paquet JS »).
-- **Vague suivante** : **vague 5**, l'API JS publique
+- **Vague 5** (en cours ; base `wave5/base`, `architecture.md`,
+  « Vague 5 ») : contrat de l'API (`public-api.md`, table « Operations »),
+  épine de l'API sur les opérations de la frontière (file FIFO des jobs,
+  causes des erreurs, `open(path)` comme `pdfplumber.open(path)`),
+  harnais (sessions `oracle/unit/js_api.py` rejouées par l'API publique
+  dans Node, le build `dist` et les navigateurs ; traces des étapes
+  `plumber_*` par l'API, `oracle.verify --engine js-api`), propriété des
+  fichiers des chantiers API, BOUNDARY et PERF, référence PERF sur
+  `quick`. Jonction (`wave5/join`, `architecture.md`, « Jonction ») : les
+  trois chantiers fusionnés (un conflit, `path_segment`, les deux
+  intentions gardées) ; le masque des matchers de structure dans son
+  propre argument (un objet d'un appelant n'est plus pris pour lui) ;
+  l'écart d'unités C de la couche page que PERF a trouvé, corrigé à ses
+  causes (`isinstance` avec un tuple de classes, `"".join` et `ord` de
+  `decode_text`, escaliers des abonnements `typing`, `re.sub` de
+  `process_object`) et vérifié par `plumber_frames` ; chaque membre de
+  `public-api.md` vérifié par l'API publique (sessions dans Node, `dist`,
+  Chromium, Firefox, WebKit, page et worker ; traces `plumber_*` par
+  l'API sur `all` et les ensembles adverses, différences toutes
+  classées) ; API publique ×6,3 sur Python dans Node, ×6,0 dans
+  Chromium, natif ×8,4 (`quick`). Corrections de la revue (`wave5/fix`,
+  `architecture.md`, « Corrections de la revue ») : `pdf.page()` limité
+  aux références du document, `null` pris pour `None`, objets sans valeur
+  Python refusés, `pdf.pages` en FIFO, erreurs de `re` et de `filter`
+  pour les arguments qui ne sont ni motifs ni fonctions, `toDict` et
+  itération des éléments de structure ; fuites (flux, pages dérivées dans
+  une boucle sans tour d'événements, historique d'une CMap absente),
+  adresses au-delà de 2 Gio, worker planté arrêté ; une unité C de
+  `re.sub` qui n'existait pas retirée ; fenêtres de profondeur propres à
+  l'API ; licence, avis tiers, déclarations et bundlers. Ce qui suit est
+  la liste d'origine de la vague.
+- **Vague 5 (liste d'origine)** : l'API JS publique
   (`PDFPlumberDocument`, `PDFPlumberPage`), construite sur les opérations
   de la frontière que la vague 4 a vérifiées (`js-runtime.md`,
   « Documents et pages » : `pdf.pages` par `doc_pages`, la recherche en

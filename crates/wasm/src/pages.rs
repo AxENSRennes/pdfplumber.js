@@ -19,7 +19,10 @@
 //!   `get_textmap`, computed at the depth Python's `search` computes it),
 //!   JavaScript runs its `RegExp` over it, and `page_search` takes the
 //!   spans of each match (UTF-16 offsets) as `re.finditer` would give them
-//!   (`docs/public-api.md`, "Search": the semantics are JavaScript's);
+//!   (`docs/public-api.md`, "Search": the semantics are JavaScript's), or,
+//!   for a pattern JavaScript cannot run (neither a string nor a
+//!   `RegExp`), the pattern itself, for which `TextMap.search` raises
+//!   Python's `TypeError` (`search_pattern_error`);
 //! - **filter**: JavaScript evaluates its function on the parent page's
 //!   objects (`page_objects`, which computes them) and gives, for each
 //!   kind, the truth of each result; the `FilteredPage`'s test function
@@ -40,14 +43,15 @@ use pdfplumber::container::{objects_value, Container, SerializeOptions};
 use pdfplumber::obj::{bbox_value, Obj, PyValue};
 use pdfplumber::page::{CropFn, FilterFn, Page};
 use pdfplumber::pdf::{OpenOptions, Source, PDF};
-use pdfplumber::table::{CellGroup, Table};
-use pdfplumber::utils::text::RegexMatch;
+use pdfplumber::table::{CellGroup, Table, TableSettings};
+use pdfplumber::utils::text::{search_pattern_error, RegexMatch};
 use pycompat::call::Signature;
 use pycompat::recursion::{eval_entry, py_frame, Guard};
 use pycompat::specialize::{AttrSite, CallSite};
 use pycompat::{exc, ExcKind, PyErr, PyResult, PyStr};
 use rustc_hash::FxHashMap;
 
+use crate::errors::error_value;
 use crate::ops::{arg, group_index, kwargs, list_of_objs, opt_bbox, seq, Core, NamedGroups, Object, Out, Utf16Index};
 
 /// A page handle: the page of a document (`pdf.pages[i]`) or a page
@@ -90,7 +94,26 @@ const OPEN: Signature<'static> = Signature {
 /// where it uses them). `gs_path` and `repair_setting` only matter with
 /// `repair=True`, which is out of scope (`NotPorted`).
 pub fn open(data: &Rc<[u8]>, options: &PyValue) -> PyResult<PDF> {
+    open_source(Source::Stream { data: data.clone(), kind: FileKind::BytesIO }, options, None)
+}
+
+/// `pdfplumber.open(path, **(options or {}))`: the file at `path` (whose
+/// bytes JavaScript read, Node's `open(path)`), opened by the `PDF`
+/// itself (`Source::Path`: `close()` closes it, and a later read raises
+/// `ValueError("seek of closed file")`, as in Python).
+pub fn open_file(data: &Rc<[u8]>, path: &PyValue, options: &PyValue) -> PyResult<PDF> {
+    let PyValue::Str(path) = path else {
+        return Err(exc::TypeError(format!("expected a str path, got {}", path.type_name())));
+    };
+    open_source(Source::Path { data: data.clone(), path: path.clone() }, options, None)
+}
+
+/// [`open`] and [`open_file`]; `ids`: the `IdSource` of each page's analysis
+/// (the oracle hooks of the harness, `crate::oracle`), `CreationOrder`
+/// otherwise.
+pub fn open_source(source: Source, options: &PyValue, ids: Option<pdfplumber::pdf::IdsFactory>) -> PyResult<PDF> {
     let mut o = OpenOptions::new();
+    o.ids = ids;
     let options = if options.truthy() { star_kwargs(options, "pdfplumber.pdf.PDF.open")? } else { Obj::new() };
     bind(OPEN, &options)?;
     for (k, v) in options.items() {
@@ -106,7 +129,7 @@ pub fn open(data: &Rc<[u8]>, options: &PyValue) -> PyResult<PDF> {
             _ => {}
         }
     }
-    PDF::open(Source::Stream { data: data.clone(), kind: FileKind::BytesIO }, o)
+    PDF::open(source, o)
 }
 
 /// The mapping of `f(**v)`: a dict, else CPython's `TypeError` (`func`:
@@ -224,6 +247,33 @@ fn table_value(handle: PyValue, t: &Table) -> PyResult<PyValue> {
     ])))
 }
 
+/// The fields of a resolved pdfplumber/table.py:486 TableSettings (a
+/// dataclass), in order: `{f.name: getattr(s, f.name) for f in
+/// dataclasses.fields(s)}` (`__post_init__` set every `UNSET` one).
+fn settings_value(s: &TableSettings) -> Obj {
+    let opt = |v: &Option<PyValue>| v.clone().unwrap_or(PyValue::None);
+    Obj::from_pairs([
+        ("vertical_strategy", s.vertical_strategy.clone()),
+        ("horizontal_strategy", s.horizontal_strategy.clone()),
+        ("explicit_vertical_lines", s.explicit_vertical_lines.clone()),
+        ("explicit_horizontal_lines", s.explicit_horizontal_lines.clone()),
+        ("snap_tolerance", s.snap_tolerance.clone()),
+        ("snap_x_tolerance", opt(&s.snap_x_tolerance)),
+        ("snap_y_tolerance", opt(&s.snap_y_tolerance)),
+        ("join_tolerance", s.join_tolerance.clone()),
+        ("join_x_tolerance", opt(&s.join_x_tolerance)),
+        ("join_y_tolerance", opt(&s.join_y_tolerance)),
+        ("edge_min_length", s.edge_min_length.clone()),
+        ("edge_min_length_prefilter", s.edge_min_length_prefilter.clone()),
+        ("min_words_vertical", s.min_words_vertical.clone()),
+        ("min_words_horizontal", s.min_words_horizontal.clone()),
+        ("intersection_tolerance", s.intersection_tolerance.clone()),
+        ("intersection_x_tolerance", opt(&s.intersection_x_tolerance)),
+        ("intersection_y_tolerance", opt(&s.intersection_y_tolerance)),
+        ("text_settings", s.text_settings.clone()),
+    ])
+}
+
 /// `Table.extract()`'s rows (`None` where there is no cell).
 fn rows_value(rows: Vec<Vec<Option<PyStr>>>) -> PyValue {
     PyValue::list(
@@ -235,6 +285,15 @@ fn rows_value(rows: Vec<Vec<Option<PyStr>>>) -> PyValue {
 /// `initial_doctop`, `rotation`, `mediabox`, `cropbox`, the optional
 /// boxes when the page has them, `bbox`), and `width`/`height`.
 fn page_geometry(page: &Page, width: &AttrSite, height: &AttrSite) -> PyResult<Obj> {
+    let mut d = page_boxes(page);
+    d.set("width", width.get(page.class_name(), || page.width())?);
+    d.set("height", height.get(page.class_name(), || page.height())?);
+    Ok(d)
+}
+
+/// What `Page.__init__` sets: [`page_geometry`] without `width` and
+/// `height`.
+fn page_boxes(page: &Page) -> Obj {
     let mut d = Obj::from_pairs([
         ("page_number", PyValue::Int(page.page_number.clone())),
         ("initial_doctop", page.initial_doctop.clone()),
@@ -248,9 +307,22 @@ fn page_geometry(page: &Page, width: &AttrSite, height: &AttrSite) -> PyResult<O
         }
     }
     d.set("bbox", page.bbox.clone());
-    d.set("width", width.get(page.class_name(), || page.width())?);
-    d.set("height", height.get(page.class_name(), || page.height())?);
-    Ok(d)
+    d
+}
+
+/// `page_info`: [`page_boxes`], then `width` and `height`, each read in a
+/// statement of its own (a property that may raise, as `page.width` does
+/// for a crop box kept as given): its value, or its exception under
+/// `width_error`/`height_error` (the dict of `crate::errors`).
+fn page_info(page: &Page) -> PyValue {
+    let mut d = page_boxes(page);
+    for (name, site) in [("width", &PAGE_INFO_WIDTH), ("height", &PAGE_INFO_HEIGHT)] {
+        match site.get(page.class_name(), || if name == "width" { page.width() } else { page.height() }) {
+            Ok(v) => d.set(name, v),
+            Err(e) => d.set(&format!("{name}_error"), error_value(&e)),
+        }
+    }
+    PyValue::Dict(d)
 }
 
 /// A derived page as JavaScript receives it: its handle, `page_number`
@@ -270,14 +342,36 @@ fn derived_value(handle: PyValue, page: &Page) -> PyValue {
 /// function's frame, which reads `page.objects` at a site of its own
 /// (computed there if no statement computed them before; JavaScript's
 /// `filter` computes them with `page_objects` first, to run its function).
-fn mask_filter(parent: &Page, mask: &PyValue) -> PyResult<FilterFn> {
-    let mask = kwargs(mask)?;
+///
+/// `mask` `None` and a `value`: `page.filter(value)` of a value that is not
+/// a function (JavaScript's `null`, a number...), whose truth `mask_of`
+/// takes as the builtin `filter` does on each kind's list: `None` keeps the
+/// objects that are true (every object: a non-empty dict), and anything
+/// else is called, which raises `TypeError` (`'int' object is not
+/// callable`) at the first object (none raises for a page without
+/// objects).
+fn mask_filter(parent: &Page, mask: &PyValue, value: Option<&PyValue>) -> PyResult<FilterFn> {
+    let mask = match value {
+        None => Some(kwargs(mask)?),
+        Some(_) => None,
+    };
     let objects = {
         let _mask_of = py_frame()?;
         MASK_OF_OBJECTS.get(parent.class_name(), || parent.objects())?
     };
     let mut kept: Vec<(Obj, bool)> = Vec::new();
     for (kind, objs) in objects.iter() {
+        let Some(mask) = &mask else {
+            // list(filter(value, objs))
+            match value {
+                Some(PyValue::None) => kept.extend(objs.iter().map(|o| (o.clone(), !o.is_empty()))),
+                Some(v) if !objs.is_empty() => {
+                    return Err(exc::TypeError(format!("'{}' object is not callable", v.type_name())))
+                }
+                _ => {}
+            }
+            continue;
+        };
         let truth = match mask.get(kind) {
             Some(v) => seq(v)?,
             None => &[],
@@ -354,7 +448,7 @@ fn str_arg(v: &PyValue) -> PyResult<PyStr> {
 
 impl Core {
     /// The `PDF` of the document `h` (the operation reaches it).
-    fn pdf(&mut self, h: u32) -> PyResult<Rc<PDF>> {
+    pub(crate) fn pdf(&mut self, h: u32) -> PyResult<Rc<PDF>> {
         let pdf = match self.handles.get(h) {
             Some(Object::Document(d)) => d.state.pdf.clone(),
             _ => return Err(exc::ValueError("invalid handle")),
@@ -365,7 +459,7 @@ impl Core {
 
     /// The page of the page handle `h` (the operation reaches its
     /// document).
-    fn page(&mut self, h: u32) -> PyResult<Rc<Page>> {
+    pub(crate) fn page(&mut self, h: u32) -> PyResult<Rc<Page>> {
         let (doc, page) = match self.handles.get(h) {
             Some(Object::Page(p)) => (p.doc, p.page.clone()),
             _ => return Err(exc::ValueError("invalid handle")),
@@ -375,7 +469,7 @@ impl Core {
     }
 
     /// The document of the page handle `h`.
-    fn page_doc(&self, h: u32) -> u32 {
+    pub(crate) fn page_doc(&self, h: u32) -> u32 {
         match self.handles.get(h) {
             Some(Object::Page(p)) => p.doc,
             _ => 0,
@@ -458,7 +552,7 @@ impl Core {
                 PyValue::None
             }
             // pages (`h`: the page)
-            "page_info" => PyValue::Dict(page_geometry(&*self.page(h)?, &PAGE_INFO_WIDTH, &PAGE_INFO_HEIGHT)?),
+            "page_info" => page_info(&*self.page(h)?),
             "page_objects" => {
                 let page = self.page(h)?;
                 objects_value(&*PAGE_OBJECTS.get(page.class_name(), || page.objects())?)
@@ -514,17 +608,32 @@ impl Core {
             }
             "page_search" => {
                 // [kwargs, matches, return_groups, return_chars, main_group,
-                // named], as `textmap_search` (crate::ops) takes them
+                // named, code_points, refused?], as `textmap_search` (crate::ops)
+                // takes them; `code_points` true (the harness of js/trace,
+                // which gives Python's matches): the offsets are Python's
+                // code point offsets, not JavaScript's UTF-16 ones
                 let a = a()?;
                 let page = self.page(h)?;
-                let raw_matches = seq(arg(a, 1)?)?;
                 let none = PyValue::None;
+                // [pattern, regex] instead of the matches: a pattern that is
+                // neither a string nor a RegExp, which JavaScript cannot run;
+                // `TextMap.search` raises Python's error for it, where the
+                // matches would be read
+                let refused = match a.get(7) {
+                    None | Some(PyValue::None) => None,
+                    Some(p) => Some(seq(p)?),
+                };
+                let raw_matches = if refused.is_some() { &[][..] } else { seq(arg(a, 1)?)? };
                 let named_arg = a.get(5).unwrap_or(&none);
+                let code_points = a.get(6).is_some_and(PyValue::truthy);
                 // the named groups of each match, read with the matches
                 // (inside `search`, before the main group of any of them)
                 let named = std::cell::RefCell::new(None::<Vec<NamedGroups>>);
                 let mut read = |text: &PyStr| -> PyResult<Vec<RegexMatch>> {
-                    let index = Utf16Index::new(text);
+                    if let Some(r) = refused {
+                        return Err(search_pattern_error(arg(r, 0)?, arg(r, 1)?));
+                    }
+                    let index = if code_points { Utf16Index::identity(text) } else { Utf16Index::new(text) };
                     let mut matches = Vec::with_capacity(raw_matches.len());
                     for m in raw_matches {
                         let spans = seq(m)?.iter().map(|s| index.span(s)).collect::<PyResult<Vec<_>>>()?;
@@ -584,9 +693,11 @@ impl Core {
                 derived_value(handle, &derived)
             }
             "page_filter" => {
-                // page.filter(test): [mask], {kind: [truth of each object]}
+                // page.filter(test): [mask], {kind: [truth of each object]};
+                // or [None, value], a value that is not a function
+                let a = a()?;
                 let page = self.page(h)?;
-                let test = mask_filter(&page, arg(a()?, 0)?)?;
+                let test = mask_filter(&page, arg(a, 0)?, a.get(1))?;
                 let derived = page.filter(test)?;
                 let handle = self.insert_page(self.page_doc(h), derived.clone())?;
                 derived_value(handle, &derived)
@@ -633,6 +744,42 @@ impl Core {
                         table_value(handle, &t)?
                     }
                 }
+            }
+            "page_debug_tablefinder" => {
+                // page.debug_tablefinder(*args): the finder's edges,
+                // intersections (`[[(x, top), {"v": [...], "h": [...]}],
+                // ...]`, the dict's items), cells, tables (each with its
+                // handle, as find_tables gives them) and resolved settings
+                let page = self.page(h)?;
+                let finder = {
+                    let settings = table_settings(a()?, "Page.debug_tablefinder")?;
+                    let _call = method_call()?;
+                    page.debug_tablefinder(&settings)?
+                };
+                let doc = self.page_doc(h);
+                let mut tables = Vec::with_capacity(finder.tables.len());
+                for t in finder.tables {
+                    let t = Rc::new(t);
+                    let table = TableObj { doc, table: Some((page.clone(), t.clone())) };
+                    let handle = self.insert(Object::Table(table))?;
+                    tables.push(table_value(handle, &t)?);
+                }
+                let intersections = finder.intersections.points.iter().map(|((x, top), v, h)| {
+                    PyValue::list([
+                        PyValue::tuple([x.clone(), top.clone()]),
+                        PyValue::Dict(Obj::from_pairs([
+                            ("v", list_of_objs(v.clone())),
+                            ("h", list_of_objs(h.clone())),
+                        ])),
+                    ])
+                });
+                PyValue::Dict(Obj::from_pairs([
+                    ("edges", list_of_objs(finder.edges)),
+                    ("intersections", PyValue::list(intersections)),
+                    ("cells", PyValue::list(finder.cells.iter().map(bbox_value))),
+                    ("tables", PyValue::list(tables)),
+                    ("settings", PyValue::Dict(settings_value(&finder.settings))),
+                ]))
             }
             "page_extract_tables" => {
                 let page = self.page(h)?;
@@ -692,62 +839,13 @@ impl Core {
             }
             _ => return Ok(None),
         };
-        self.label_pages(&value)?;
         Ok(Some(Out::Value(value)))
-    }
-
-    /// Gives a handle to each page the value holds (`annot["data"]["P"]`,
-    /// `getattr(pdf, "pages")`), which the result names it by: the first
-    /// live handle of that page, else a new one (made by the operation, so
-    /// that a replay makes it again), in the order the value is written.
-    fn label_pages(&mut self, value: &PyValue) -> PyResult<()> {
-        let mut stack = vec![value];
-        while let Some(v) = stack.pop() {
-            match v {
-                PyValue::List(items) | PyValue::Tuple(items) => stack.extend(items.iter().rev()),
-                PyValue::Dict(d) => stack.extend(d.items().iter().rev().map(|(_, v)| v)),
-                PyValue::Page(r) if !self.page_values.contains_key(&r.id()) => {
-                    let doc =
-                        self.op_doc.ok_or_else(|| PyErr::new(ExcKind::RuntimeError, "a page without a document"))?;
-                    let live = self
-                        .handles
-                        .iter()
-                        .filter_map(|(h, o)| match o {
-                            Object::Page(PageObj { doc: d, page: Some(p) }) if *d == doc && p.as_value().ptr_eq(r) => {
-                                Some((self.oids.get(&h).copied().unwrap_or(u64::MAX), h))
-                            }
-                            _ => None,
-                        })
-                        .min();
-                    let h = match live {
-                        Some((_, h)) => h,
-                        None => {
-                            let pdf = match self.handles.get(doc) {
-                                Some(Object::Document(d)) => d.state.pdf.clone(),
-                                _ => None,
-                            };
-                            let page = pdf
-                                .map(|pdf| pdf.cached_pages())
-                                .unwrap_or_default()
-                                .into_iter()
-                                .find(|p| p.as_value().ptr_eq(r))
-                                .ok_or_else(|| PyErr::new(ExcKind::RuntimeError, "a page value of no page"))?;
-                            u32::try_from(int_handle(&self.insert_page(doc, page)?)?)
-                                .map_err(|_| exc::ValueError("invalid handle"))?
-                        }
-                    };
-                    self.page_values.insert(r.id(), h);
-                }
-                _ => {}
-            }
-        }
-        Ok(())
     }
 }
 
 /// The handle an insertion returned (0 for an object a replay keeps out of
 /// the table).
-fn int_handle(v: &PyValue) -> PyResult<i64> {
+pub(crate) fn int_handle(v: &PyValue) -> PyResult<i64> {
     match v {
         PyValue::Int(i) => i.as_i64().ok_or_else(|| exc::ValueError("invalid handle")),
         _ => Ok(0),

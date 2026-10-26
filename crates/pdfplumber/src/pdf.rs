@@ -86,6 +86,7 @@ use pdfminer::pdfparser::FileKind;
 use pdfminer::pdftypes::PDFObject;
 use pycompat::logging::Logger;
 use pycompat::recursion::{c_call, class_call, eval_entry, leaf, py_frame};
+use pycompat::recursion::{IN_COMPARISON, WHILE_CALLING};
 use pycompat::specialize::AttrSite;
 use pycompat::typing_cache::Subscription;
 use pycompat::{exc, ExcKind, Num, PyErr, PyInt, PyResult, PyStr};
@@ -105,7 +106,12 @@ use crate::utils::pdfinternals::resolve_and_decode_obj;
 // Generator[PDFPage, None, None]`,
 // evaluated at each call of `PDF.pages` (depths below its frame, measured:
 // `python -m oracle.depth_probe typing`; `pycompat::typing_cache`)
-const ITER_PAGES_RETURN: Subscription = Subscription::new("Generator[PDFPage, None, None]", 7, 1);
+// (C units: as `Tuple[str, Any]` in page.rs, measured: `python -m
+// oracle.depth_probe typing-c`)
+pub const ITER_PAGES_RETURN: Subscription = Subscription::new("Generator[PDFPage, None, None]", 7, 1).with_c(
+    &["", "", WHILE_CALLING, "", "", "", "", IN_COMPARISON, "", "", WHILE_CALLING],
+    &["", "", WHILE_CALLING, IN_COMPARISON, IN_COMPARISON],
+);
 
 // The property loads of pdfplumber/pdf.py (`pycompat::specialize`).
 static CLOSE_PAGES: AttrSite = AttrSite::new("PDF.close self.pages");

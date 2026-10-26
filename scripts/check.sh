@@ -3,8 +3,10 @@
 # tests on the unit oracle data (natively and compiled to WebAssembly, run by
 # Node's WASI), the deepest recursions on the production Wasm profile
 # (scripts/wasm-depth-gate.sh), the JavaScript package (Wasm build, Node
-# tests, size budget; the browsers are scripts/check-browsers.sh) and the
-# oracle self-tests. Regenerates the unit oracle data first when it is
+# tests and the sessions of the public API on the sources and the dist
+# build, size budget; the browsers are scripts/check-browsers.sh), the
+# plumber_* stages through the public API on micro, and the oracle
+# self-tests. Regenerates the unit oracle data first when it is
 # missing or stale (`python -m oracle.unit`).
 #
 #   scripts/check.sh            # from any directory
@@ -72,7 +74,9 @@ step "cargo test on wasm32-wasip1: the tests that need a process of their own (i
 # No fresh thread per test under WebAssembly: these leave CMaps in the
 # provider and CMapDB's caches (crates/wasm/tests/js_runtime_unit.rs).
 for t in a_void_call_leaves_no_state_and_its_rerun_matches_pdfminer a_void_call_puts_the_process_state_back \
-  a_void_call_rebuilds_its_document_by_replaying_its_history page_operations_match_pdfplumber_through_the_boundary; do
+  a_void_call_rebuilds_its_document_by_replaying_its_history page_operations_match_pdfplumber_through_the_boundary \
+  the_history_goes_once_every_cmap_is_handed_over the_first_void_call_of_a_document_asks_for_every_cmap_its_fonts_name \
+  the_scan_reads_every_page_of_the_document; do
   out=$(CARGO_TARGET_WASM32_WASIP1_RUNNER="node --no-warnings $ROOT/scripts/wasi-runner.mjs" \
     capped cargo test --release --target wasm32-wasip1 -p pdfplumber-wasm --test js_runtime_unit -- --ignored --exact "$t" 2>&1) \
     || { printf '%s\n' "$out"; exit 1; }
@@ -93,6 +97,16 @@ node scripts/build-js.mjs
 node node_modules/typescript/bin/tsc -p js/tsconfig.test.json
 capped node node_modules/vitest/vitest.mjs run --config js/vitest.config.ts
 node scripts/size.mjs --budget
+
+step "the npm package as a consumer gets it: files, notices, links, declarations, import and require"
+node scripts/third-party-notices.mjs --check
+capped node scripts/check-package.mjs
+
+step "the plumber_* stages through the public JavaScript API on micro (js/trace, dist/pdfplumber-oracle.wasm)"
+node scripts/build-wasm.mjs --oracle --no-opt
+for stage in plumber_objects plumber_text; do
+  capped "$PY" -m oracle.verify --engine js-api --stage "$stage" --set micro -j 2
+done
 
 step "oracle self-tests"
 "$PY" -m unittest discover -s oracle/tests -t .

@@ -103,6 +103,7 @@
 
 use std::cell::RefCell;
 use std::fmt::Write as _;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, LazyLock, PoisonError, RwLock};
@@ -179,10 +180,41 @@ impl Unichr {
     /// it (`LTChar._text`).
     pub fn to_pystr(&self) -> pycompat::PyStr {
         match self {
-            Unichr::Text(s) => pycompat::PyStr::new(s),
+            Unichr::Text(s) => shared_text(s),
             Unichr::Surrogate(c) => pycompat::PyStr::from_code_point(*c),
         }
     }
+}
+
+/// How many recent short texts [`shared_text`] keeps.
+const SHARED_TEXTS: usize = 256;
+
+thread_local! {
+    /// The `str`s [`shared_text`] made, by a hash of their text.
+    static TEXTS: RefCell<Vec<Option<pycompat::PyStr>>> = RefCell::new(vec![None; SHARED_TEXTS]);
+}
+
+/// `s` as a `str`, shared with an earlier one of the same text when there is
+/// one at hand (performance: a page makes a `str` per char, from a few
+/// distinct texts; a `str` is immutable and its identity is not modeled).
+fn shared_text(s: &str) -> pycompat::PyStr {
+    if s.len() > 16 {
+        return pycompat::PyStr::new(s);
+    }
+    let mut h = rustc_hash::FxHasher::default();
+    s.as_bytes().hash(&mut h);
+    let slot = (h.finish() as usize) % SHARED_TEXTS;
+    TEXTS.with(|texts| {
+        let mut texts = texts.borrow_mut();
+        if let Some(p) = &texts[slot] {
+            if p.as_bytes() == s.as_bytes() {
+                return p.clone();
+            }
+        }
+        let p = pycompat::PyStr::new(s);
+        texts[slot] = Some(p.clone());
+        p
+    })
 }
 
 /// The `str` a layout object holds (`LTChar(..., text=font.to_unichr(cid))`).
@@ -1232,7 +1264,12 @@ impl<'a> PSStackParser<CMapParserExt<'a>> {
         let _frame = recursion::py_frame()?;
         if !self.ext.warnings.iter().any(|w| w == msg) {
             self.ext.warnings.push(msg.to_owned());
-            LOG.warning()?;
+            LOG.warning_with(|| {
+                Ok(format!(
+                    "Ignoring (part of) ToUnicode map because the PDF data does not conform to the format. This could \
+                     result in (cid) values in the output. {msg}"
+                ))
+            })?;
         }
         Ok(())
     }

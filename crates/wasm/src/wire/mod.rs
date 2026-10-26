@@ -68,6 +68,11 @@ pub trait Writer {
     /// "pages")`), followed by two values: the handle of the page
     /// ([`with_page_handles`]) and its `page_number`.
     fn page(&mut self);
+    /// A `PDFStream` by reference (the streams of a result, when the core
+    /// gives them a handle: [`with_value_handles`]), followed by four
+    /// values: its handle, `objid`, `genno` and `attrs` (a dict); its data
+    /// is read on demand (`crate::streams`).
+    fn stream_ref(&mut self);
     /// Writes `rows` (dicts, grouped by key sequence in `shapes`) as one
     /// list value, if this writer has a form for it, and returns whether it
     /// did.
@@ -82,15 +87,27 @@ thread_local! {
     ///
     /// [`PageRef::id`]: pdfplumber::obj::PageRef::id
     static PAGE_HANDLES: RefCell<FxHashMap<usize, u32>> = RefCell::new(FxHashMap::default());
+    /// The handle of each stream a result holds by reference (by
+    /// `Rc::as_ptr`), while the core writes it ([`with_value_handles`]).
+    static STREAM_HANDLES: RefCell<FxHashMap<usize, u32>> = RefCell::new(FxHashMap::default());
 }
 
 /// Runs `f` (the writing of a result) with the handles of the pages the
 /// result holds: a page value is written as its handle
 /// (`crate::ops::Core::label_pages` made them).
 pub fn with_page_handles<T>(handles: FxHashMap<usize, u32>, f: impl FnOnce() -> T) -> T {
-    let previous = PAGE_HANDLES.with(|p| std::mem::replace(&mut *p.borrow_mut(), handles));
+    with_value_handles(handles, FxHashMap::default(), f)
+}
+
+/// [`with_page_handles`], and the handles of the streams the result holds:
+/// a stream with a handle is written by reference ([`Writer::stream_ref`]),
+/// any other by value ([`Writer::stream`]).
+pub fn with_value_handles<T>(pages: FxHashMap<usize, u32>, streams: FxHashMap<usize, u32>, f: impl FnOnce() -> T) -> T {
+    let previous = PAGE_HANDLES.with(|p| std::mem::replace(&mut *p.borrow_mut(), pages));
+    let previous_streams = STREAM_HANDLES.with(|p| std::mem::replace(&mut *p.borrow_mut(), streams));
     let out = f();
     PAGE_HANDLES.with(|p| *p.borrow_mut() = previous);
+    STREAM_HANDLES.with(|p| *p.borrow_mut() = previous_streams);
     out
 }
 
@@ -175,8 +192,57 @@ enum Work<'a> {
     Exit(usize),
 }
 
+/// Whether `v` is a scalar (`None`, `bool`, `int`, `float`, `str`,
+/// `bytes`), or a `list` or `tuple` of such values nested at most `depth`
+/// levels.
+fn is_shallow(v: &PyValue, depth: u32) -> bool {
+    match v {
+        PyValue::None
+        | PyValue::Bool(_)
+        | PyValue::Int(_)
+        | PyValue::Float(_)
+        | PyValue::Str(_)
+        | PyValue::Bytes(_) => true,
+        PyValue::List(items) | PyValue::Tuple(items) => depth > 0 && items.iter().all(|x| is_shallow(x, depth - 1)),
+        _ => false,
+    }
+}
+
+/// Writes a value [`is_shallow`] accepts, as the loop of [`write_value`]
+/// writes it (a list of scalars or sequences is never a table: its items
+/// are not dicts).
+fn write_shallow<W: Writer + ?Sized>(w: &mut W, v: &PyValue) -> PyResult<()> {
+    match v {
+        PyValue::None => w.none(),
+        PyValue::Bool(b) => w.bool(*b),
+        PyValue::Int(i) => w.int(i),
+        PyValue::Float(x) => w.float(x.get()),
+        PyValue::Str(s) => write_str(w, s)?,
+        PyValue::Bytes(b) => w.bytes(b),
+        PyValue::List(items) | PyValue::Tuple(items) => {
+            if matches!(v, PyValue::List(_)) {
+                w.list(items.len());
+            } else {
+                w.tuple(items.len());
+            }
+            for x in items.iter() {
+                write_shallow(w, x)?;
+            }
+        }
+        _ => unreachable!("is_shallow accepts no other value"),
+    }
+    Ok(())
+}
+
 /// Writes a pdfplumber value (see the module documentation).
 pub fn write_value<W: Writer + ?Sized>(w: &mut W, v: &PyValue) -> PyResult<()> {
+    // Performance: a scalar or a few levels of sequences of scalars (a
+    // point, a curve's `pts` and `path`: the cells of a table's generic
+    // columns) are written without the work list, recursing at most
+    // `3` levels.
+    if is_shallow(v, 3) {
+        return write_shallow(w, v);
+    }
     let mut stack: Vec<Work<'_>> = vec![Work::Py(v)];
     // the PDF containers being written (Python lists and dicts are mutable)
     let mut active: FxHashSet<usize> = FxHashSet::default();
@@ -260,14 +326,23 @@ pub fn write_value<W: Writer + ?Sized>(w: &mut W, v: &PyValue) -> PyResult<()> {
                 PDFObject::Stream(s) => {
                     let addr = Rc::as_ptr(&s) as usize;
                     enter(&mut active, &mut stack, addr)?;
-                    w.stream();
                     let opt_int = |i: Option<PyInt>| i.map_or(PDFObject::Null, PDFObject::Int);
                     // an objid is any hashable object (`PDFXRefFallback`)
                     let objid = s.objid().map_or(PDFObject::Null, |id| id.obj().clone());
-                    let opt_bytes = |b: Option<Rc<[u8]>>| b.map_or(PDFObject::Null, PDFObject::Bytes);
-                    // pushed in reverse: objid, genno, attrs, rawdata, data
-                    stack.push(Work::Pdf(opt_bytes(s.data())));
-                    stack.push(Work::Pdf(opt_bytes(s.rawdata())));
+                    match STREAM_HANDLES.with(|h| h.borrow().get(&addr).copied()) {
+                        Some(handle) => {
+                            w.stream_ref();
+                            w.int(&PyInt::from(handle));
+                        }
+                        None => {
+                            w.stream();
+                            let opt_bytes = |b: Option<Rc<[u8]>>| b.map_or(PDFObject::Null, PDFObject::Bytes);
+                            // pushed in reverse: rawdata and data after attrs
+                            stack.push(Work::Pdf(opt_bytes(s.data())));
+                            stack.push(Work::Pdf(opt_bytes(s.rawdata())));
+                        }
+                    }
+                    // pushed in reverse: objid, genno, attrs
                     stack.push(Work::Pdf(PDFObject::Dict(s.attrs.clone())));
                     stack.push(Work::Pdf(opt_int(s.genno())));
                     stack.push(Work::Pdf(objid));
@@ -292,4 +367,39 @@ fn enter(active: &mut FxHashSet<usize>, stack: &mut Vec<Work<'_>>, addr: usize) 
     }
     stack.push(Work::Exit(addr));
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `is_shallow` (the dispatch of `write_value` to `write_shallow`):
+    /// every scalar at any depth, sequences of scalars nested at most
+    /// `depth` levels, nothing else.
+    #[test]
+    fn is_shallow_takes_scalars_and_sequences_up_to_its_depth() {
+        let scalars = [
+            PyValue::None,
+            PyValue::Bool(true),
+            PyValue::Int(PyInt::from(1)),
+            PyValue::float(1.5),
+            PyValue::str("s"),
+            PyValue::Bytes(Rc::from(&b"b"[..])),
+        ];
+        for v in &scalars {
+            assert!(is_shallow(v, 0), "{v:?}");
+        }
+        let x = PyValue::float(1.0);
+        let l1 = PyValue::list([x.clone(), PyValue::None]);
+        let t2 = PyValue::tuple([l1.clone(), x.clone()]);
+        let l3 = PyValue::list([t2.clone()]);
+        let l4 = PyValue::list([l3.clone()]);
+        assert!(is_shallow(&l1, 1) && !is_shallow(&l1, 0));
+        assert!(is_shallow(&t2, 2) && !is_shallow(&t2, 1));
+        assert!(is_shallow(&l3, 3) && !is_shallow(&l3, 2));
+        assert!(!is_shallow(&l4, 3));
+        assert!(is_shallow(&PyValue::list([]), 1));
+        assert!(!is_shallow(&PyValue::Dict(Obj::new()), 3));
+        assert!(!is_shallow(&PyValue::list([PyValue::Dict(Obj::new())]), 3));
+    }
 }

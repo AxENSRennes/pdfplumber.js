@@ -16,6 +16,11 @@ pycompat.workspace = true
 pdfminer.workspace = true
 pdfplumber.workspace = true
 rustc-hash.workspace = true
+# the oracle hooks of the harness (src/oracle.rs): never in the shipped build
+pdftrace = { workspace = true, optional = true }
+
+[features]
+oracle-hooks = ["dep:pdftrace"]
 
 [dev-dependencies]
 pdftrace.workspace = true

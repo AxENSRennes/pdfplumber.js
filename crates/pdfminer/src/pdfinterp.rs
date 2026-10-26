@@ -82,6 +82,7 @@ use rustc_hash::FxBuildHasher;
 
 use crate::casting::{safe_cmyk, safe_float, safe_int, safe_matrix, safe_rgb};
 use crate::cmapdb::{Attrs, CMap, CMapBase, CMapDB};
+use crate::log_text;
 use crate::pdfcolor::{predefined_colorspace, predefined_colorspaces, PDFColorSpace};
 use crate::pdfdevice::{ObjSeq, PDFDevice};
 use crate::pdffont::PDFFont;
@@ -775,6 +776,23 @@ enum Op {
     Do,
 }
 
+/// The operator of a keyword in `execute`: `name =
+/// keyword_name(obj)` (the bytes decoded as UTF-8, invalid sequences
+/// ignored), `method = name.replace("*", "_a").replace('"',
+/// "_w").replace("'", "_q")`, then `hasattr(self, "do_" + method)`.
+/// Performance: a name that is UTF-8 without those three characters (every
+/// operator but `b*`, `B*`, `f*`, `W*`, `T*`, `'` and `"`) is its own
+/// method name, looked up without making the strings.
+fn keyword_op(name: &[u8]) -> Option<Op> {
+    match std::str::from_utf8(name) {
+        Ok(s) if !s.contains(['*', '"', '\'']) => Op::from_method(s),
+        _ => {
+            let name = decode_utf8_ignore(name);
+            Op::from_method(&name.replace('*', "_a").replace('"', "_w").replace('\'', "_q"))
+        }
+    }
+}
+
 impl Op {
     /// `hasattr(self, "do_" + method)`: the operator whose method is
     /// `do_<method>`.
@@ -952,6 +970,16 @@ fn safe_cmyk_counted(c: &PDFObject, m: &PDFObject, y: &PDFObject, k: &PDFObject)
 enum Paint {
     Stroke,
     NonStroke,
+}
+
+impl Paint {
+    /// The word of the log messages (`"stroke"`, `"non-stroke"`).
+    fn name(self) -> &'static str {
+        match self {
+            Paint::Stroke => "stroke",
+            Paint::NonStroke => "non-stroke",
+        }
+    }
 }
 
 /// The path segment `(op, *coords)` of floats.
@@ -1230,8 +1258,13 @@ impl PDFPageInterpreter {
     ) -> PyResult<()> {
         let _frame = py_frame()?;
         match safe_matrix_counted([a1, b1, c1, d1, e1, f1])? {
-            // log.warning("Cannot concatenate matrix to current transformation matrix ...")
-            None => LOG.warning()?,
+            None => LOG.warning_with(|| {
+                Ok(format!(
+                    "Cannot concatenate matrix to current transformation matrix because not all values in {} can be \
+                     parsed as floats",
+                    log_text::tuple(&[a1, b1, c1, d1, e1, f1])?
+                ))
+            })?,
             Some(matrix) => {
                 // utils.mult_matrix: a Python function
                 leaf(1)?;
@@ -1247,8 +1280,9 @@ impl PDFPageInterpreter {
     pub fn do_w(&mut self, linewidth: &PDFStackT) -> PyResult<()> {
         let _frame = py_frame()?;
         match safe_float_counted(linewidth)? {
-            // log.warning("Cannot set line width because %r is an invalid float value", ...)
-            None => LOG.warning()?,
+            None => LOG.warning_with(|| {
+                Ok(format!("Cannot set line width because {} is an invalid float value", log_text::r(linewidth)?))
+            })?,
             Some(linewidth_f) => {
                 let two = int(2);
                 let scale = self.ctm[0].pow(&two)?.add(&self.ctm[1].pow(&two)?)?.pow(&Num::Float(0.5))?;
@@ -1316,14 +1350,27 @@ impl PDFPageInterpreter {
     /// `do_m`, `do_l`, `do_c`, `do_v`, `do_y`: the operands as floats
     /// appended as the segment `(op, ...)`, or a warning.
     fn path_segment(&mut self, op: char, operands: &[&PDFStackT]) -> PyResult<()> {
+        // every operand converted, then the segment if all are floats (one
+        // vector: performance)
         let mut coords = Vec::with_capacity(operands.len());
+        let mut all = true;
         for x in operands {
-            coords.push(safe_float_counted(x)?);
+            match safe_float_counted(x)? {
+                Some(v) => coords.push(Num::Float(v)),
+                None => all = false,
+            }
         }
-        match coords.into_iter().collect::<Option<Vec<f64>>>() {
-            // log.warning("Cannot ... because not all values in %r can be parsed as floats", point)
-            None => LOG.warning()?,
-            Some(coords) => self.curpath.push(segment(op, &coords)),
+        match all.then_some(coords) {
+            None => LOG.warning_with(|| {
+                let what = match op {
+                    'm' => "start new subpath because not all values",
+                    'l' => "append straight line segment to path because not all values",
+                    _ => "append curved segment to path because not all values",
+                };
+                let point = log_text::tagged_tuple(&op.to_string(), operands)?;
+                Ok(format!("Cannot {what} in {point} can be parsed as floats"))
+            })?,
+            Some(coords) => self.curpath.push((op, coords)),
         }
         Ok(())
     }
@@ -1395,8 +1442,12 @@ impl PDFPageInterpreter {
                 self.curpath.push(segment('l', &[x_f, y_f + h_f]));
                 self.curpath.push(('h', Vec::new()));
             }
-            // log.warning("Cannot append rectangle to path because ...")
-            _ => LOG.warning()?,
+            _ => LOG.warning_with(|| {
+                Ok(format!(
+                    "Cannot append rectangle to path because not all values in {} can be parsed as floats",
+                    log_text::tuple(&[x, y, w, h])?
+                ))
+            })?,
         }
         Ok(())
     }
@@ -1547,8 +1598,9 @@ impl PDFPageInterpreter {
     fn set_gray(&mut self, paint: Paint, gray: &PDFStackT) -> PyResult<()> {
         let _frame = py_frame()?;
         match safe_float_counted(gray)? {
-            // log.warning("Cannot set gray level because %r is an invalid float value", gray)
-            None => LOG.warning()?,
+            None => LOG.warning_with(|| {
+                Ok(format!("Cannot set gray level because {} is an invalid float value", log_text::r(gray)?))
+            })?,
             Some(gray_f) => self.set_color(paint, StandardColor::Gray(Num::Float(gray_f)), "DeviceGray"),
         }
         Ok(())
@@ -1570,8 +1622,13 @@ impl PDFPageInterpreter {
     fn set_rgb(&mut self, paint: Paint, r: &PDFStackT, g: &PDFStackT, b: &PDFStackT) -> PyResult<()> {
         let _frame = py_frame()?;
         match safe_rgb_counted(r, g, b)? {
-            // log.warning("Cannot set RGB stroke color because ...")
-            None => LOG.warning()?,
+            None => LOG.warning_with(|| {
+                Ok(format!(
+                    "Cannot set RGB {} color because not all values in {} can be parsed as floats",
+                    paint.name(),
+                    log_text::tuple(&[r, g, b])?
+                ))
+            })?,
             Some(rgb) => self.set_color(paint, StandardColor::Rgb(rgb), "DeviceRGB"),
         }
         Ok(())
@@ -1593,8 +1650,13 @@ impl PDFPageInterpreter {
     fn set_cmyk(&mut self, paint: Paint, c: &PDFStackT, m: &PDFStackT, y: &PDFStackT, k: &PDFStackT) -> PyResult<()> {
         let _frame = py_frame()?;
         match safe_cmyk_counted(c, m, y, k)? {
-            // log.warning("Cannot set CMYK stroke color because ...")
-            None => LOG.warning()?,
+            None => LOG.warning_with(|| {
+                Ok(format!(
+                    "Cannot set CMYK {} color because not all values in {} can be parsed as floats",
+                    paint.name(),
+                    log_text::tuple(&[c, m, y, k])?
+                ))
+            })?,
             Some(cmyk) => self.set_color(paint, StandardColor::Cmyk(cmyk), "DeviceCMYK"),
         }
         Ok(())
@@ -1616,7 +1678,7 @@ impl PDFPageInterpreter {
     /// Parse color components into StandardColor (gray, RGB, or CMYK): 1,
     /// 3 or 4 numeric components, else (or when one is not a number) a
     /// warning and `None`.
-    fn _parse_color_components(&self, components: &[PDFStackT]) -> PyResult<Option<StandardColor>> {
+    fn _parse_color_components(&self, components: &[PDFStackT], context: &str) -> PyResult<Option<StandardColor>> {
         let _frame = py_frame()?;
         let color = match components {
             [gray] => safe_float_counted(gray)?.map(|g| StandardColor::Gray(Num::Float(g))),
@@ -1625,8 +1687,24 @@ impl PDFPageInterpreter {
             _ => None,
         };
         if color.is_none() {
-            // log.warning("Cannot set %s color: ...")
-            LOG.warning()?;
+            LOG.warning_with(|| {
+                Ok(match components {
+                    [gray] => format!("Cannot set {context} color: {} is an invalid float value", log_text::r(gray)?),
+                    [_, _, _] => format!(
+                        "Cannot set {context} color: components {} cannot be parsed as RGB",
+                        log_text::list(components)?
+                    ),
+                    [_, _, _, _] => format!(
+                        "Cannot set {context} color: components {} cannot be parsed as CMYK",
+                        log_text::list(components)?
+                    ),
+                    _ => format!(
+                        "Cannot set {context} color: {} components specified, but only 1 (grayscale), 3 (RGB), and \
+                         4 (CMYK) are supported",
+                        components.len()
+                    ),
+                })
+            })?;
         }
         Ok(color)
     }
@@ -1647,11 +1725,17 @@ impl PDFPageInterpreter {
             Paint::NonStroke => interp.graphicstate.ncolor = color,
         };
         if !int(components.len() as i64).py_eq(&n_num) {
-            // log.warning("Cannot set stroke color because expected %d components but got %r", ...)
-            LOG.warning()?;
+            LOG.warning_with(|| {
+                Ok(format!(
+                    "Cannot set {} color because expected {} components but got {}",
+                    paint.name(),
+                    log_text::d(&n)?,
+                    log_text::list(&components)?
+                ))
+            })?;
         } else if cs.name != "Pattern" {
             // Standard colors (gray, RGB, CMYK) - common case
-            if let Some(color) = self._parse_color_components(&components)? {
+            if let Some(color) = self._parse_color_components(&components, paint.name())? {
                 set(self, Color::Standard(color));
             }
         } else if let Some(pattern_component) = components.last() {
@@ -1659,8 +1743,19 @@ impl PDFPageInterpreter {
             // Last component is always the pattern name
             // Per spec: pattern name must be a name object (PSLiteral)
             if !matches!(pattern_component, PDFObject::Literal(_)) {
-                // log.warning("Pattern color space requires name object (PSLiteral), ...")
-                LOG.warning()?;
+                LOG.warning_with(|| {
+                    let op = match paint {
+                        Paint::Stroke => "SCN",
+                        Paint::NonStroke => "scn",
+                    };
+                    Ok(format!(
+                        "Pattern color space requires name object (PSLiteral), got {}: {}. Per ISO 32000 8.7.3.2, \
+                         colored patterns use syntax '/name {op}'. Per ISO 32000 8.7.3.3, uncolored patterns use \
+                         syntax 'c1...cn /name {op}'.",
+                        pattern_component.type_name(),
+                        log_text::r(pattern_component)?
+                    ))
+                })?;
                 return Ok(());
             }
             let pattern_name = literal_name(pattern_component)?;
@@ -1674,7 +1769,11 @@ impl PDFPageInterpreter {
                 // color components + pattern name
                 let base_color_components = &components[..components.len() - 1];
                 // Parse base color using shared logic
-                let Some(base_color) = self._parse_color_components(base_color_components)? else {
+                let context = match paint {
+                    Paint::Stroke => "stroke (uncolored pattern)",
+                    Paint::NonStroke => "non-stroke (uncolored pattern)",
+                };
+                let Some(base_color) = self._parse_color_components(base_color_components, context)? else {
                     return Ok(());
                 };
                 // Store as tuple: (base_color, pattern_name)
@@ -1753,8 +1852,9 @@ impl PDFPageInterpreter {
         let _frame = py_frame()?;
         match tag {
             PDFObject::Literal(tag) => self.device.borrow_mut().do_tag(tag, None)?,
-            // log.warning("Cannot define marked-content point because %r is not a PSLiteral", tag)
-            _ => LOG.warning()?,
+            _ => LOG.warning_with(|| {
+                Ok(format!("Cannot define marked-content point because {} is not a PSLiteral", log_text::r(tag)?))
+            })?,
         }
         Ok(())
     }
@@ -1765,7 +1865,12 @@ impl PDFPageInterpreter {
         let _frame = py_frame()?;
         match tag {
             PDFObject::Literal(tag) => self.device.borrow_mut().do_tag(tag, Some(props))?,
-            _ => LOG.warning()?,
+            _ => LOG.warning_with(|| {
+                Ok(format!(
+                    "Cannot define marked-content point with property list because {} is not a PSLiteral",
+                    log_text::r(tag)?
+                ))
+            })?,
         }
         Ok(())
     }
@@ -1776,7 +1881,9 @@ impl PDFPageInterpreter {
         let _frame = py_frame()?;
         match tag {
             PDFObject::Literal(tag) => self.device.borrow_mut().begin_tag(tag, None)?,
-            _ => LOG.warning()?,
+            _ => LOG.warning_with(|| {
+                Ok(format!("Cannot begin marked-content sequence because {} is not a PSLiteral", log_text::r(tag)?))
+            })?,
         }
         Ok(())
     }
@@ -1787,7 +1894,12 @@ impl PDFPageInterpreter {
         let _frame = py_frame()?;
         match tag {
             PDFObject::Literal(tag) => self.device.borrow_mut().begin_tag(tag, Some(props))?,
-            _ => LOG.warning()?,
+            _ => LOG.warning_with(|| {
+                Ok(format!(
+                    "Cannot begin marked-content sequence with property list because {} is not a PSLiteral",
+                    log_text::r(tag)?
+                ))
+            })?,
         }
         Ok(())
     }
@@ -1799,12 +1911,14 @@ impl PDFPageInterpreter {
         self.device.borrow_mut().end_tag()
     }
 
-    /// `safe_float(operand)`, or `None` after the warning of the operator.
-    fn text_float(&self, operand: &PDFStackT) -> PyResult<Option<f64>> {
+    /// `safe_float(operand)`, or `None` after the warning of the operator
+    /// (`what`: the parameter the operator sets).
+    fn text_float(&self, operand: &PDFStackT, what: &str) -> PyResult<Option<f64>> {
         let value = safe_float_counted(operand)?;
         if value.is_none() {
-            // log.warning("Could not set ... because %r is an invalid float value", operand)
-            LOG.warning()?;
+            LOG.warning_with(|| {
+                Ok(format!("Could not set {what} because {} is an invalid float value", log_text::r(operand)?))
+            })?;
         }
         Ok(value)
     }
@@ -1814,7 +1928,7 @@ impl PDFPageInterpreter {
     /// `TJ` and `'`).
     pub fn do_Tc(&mut self, space: &PDFStackT) -> PyResult<()> {
         let _frame = py_frame()?;
-        if let Some(charspace) = self.text_float(space)? {
+        if let Some(charspace) = self.text_float(space, "character spacing")? {
             self.textstate.charspace = Num::Float(charspace);
         }
         Ok(())
@@ -1824,7 +1938,7 @@ impl PDFPageInterpreter {
     /// Set the word spacing (unscaled text space units).
     pub fn do_Tw(&mut self, space: &PDFStackT) -> PyResult<()> {
         let _frame = py_frame()?;
-        if let Some(wordspace) = self.text_float(space)? {
+        if let Some(wordspace) = self.text_float(space, "word spacing")? {
             self.textstate.wordspace = Num::Float(wordspace);
         }
         Ok(())
@@ -1834,7 +1948,7 @@ impl PDFPageInterpreter {
     /// Set the horizontal scaling (a percentage of the normal width).
     pub fn do_Tz(&mut self, scale: &PDFStackT) -> PyResult<()> {
         let _frame = py_frame()?;
-        if let Some(scale_f) = self.text_float(scale)? {
+        if let Some(scale_f) = self.text_float(scale, "horizontal scaling")? {
             self.textstate.scaling = Num::Float(scale_f);
         }
         Ok(())
@@ -1845,7 +1959,7 @@ impl PDFPageInterpreter {
     /// and `"`): stored negated.
     pub fn do_TL(&mut self, leading: &PDFStackT) -> PyResult<()> {
         let _frame = py_frame()?;
-        if let Some(leading_f) = self.text_float(leading)? {
+        if let Some(leading_f) = self.text_float(leading, "text leading")? {
             self.textstate.leading = Num::Float(-leading_f);
         }
         Ok(())
@@ -1862,7 +1976,7 @@ impl PDFPageInterpreter {
             Some(font) => font,
             None => self.rsrcmgr.get_font(None, &PDFDict::new())?,
         });
-        if let Some(fontsize_f) = self.text_float(fontsize)? {
+        if let Some(fontsize_f) = self.text_float(fontsize, "text font")? {
             self.textstate.fontsize = Num::Float(fontsize_f);
         }
         Ok(())
@@ -1876,8 +1990,12 @@ impl PDFPageInterpreter {
         // safe_int: its frame
         leaf(1)?;
         match safe_int(render)? {
-            // log.warning("Could not set text rendering mode because %r is an invalid int value", render)
-            None => LOG.warning()?,
+            None => LOG.warning_with(|| {
+                Ok(format!(
+                    "Could not set text rendering mode because {} is an invalid int value",
+                    log_text::r(render)?
+                ))
+            })?,
             Some(render_i) => self.textstate.render = render_i,
         }
         Ok(())
@@ -1887,7 +2005,7 @@ impl PDFPageInterpreter {
     /// Set the text rise (unscaled text space units).
     pub fn do_Ts(&mut self, rise: &PDFStackT) -> PyResult<()> {
         let _frame = py_frame()?;
-        if let Some(rise_f) = self.text_float(rise)? {
+        if let Some(rise_f) = self.text_float(rise, "text rise")? {
             self.textstate.rise = Num::Float(rise_f);
         }
         Ok(())
@@ -1949,8 +2067,12 @@ impl PDFPageInterpreter {
     ) -> PyResult<()> {
         let _frame = py_frame()?;
         match safe_matrix_counted([a, b, c, d, e, f])? {
-            // log.warning("Could not set text matrix because ...")
-            None => LOG.warning()?,
+            None => LOG.warning_with(|| {
+                Ok(format!(
+                    "Could not set text matrix because not all values in {} can be parsed as floats",
+                    log_text::tuple(&[a, b, c, d, e, f])?
+                ))
+            })?,
             Some(matrix) => {
                 self.textstate.matrix = matrix.map(Num::Float);
                 self.textstate.linematrix = origin();
@@ -2258,13 +2380,18 @@ impl PDFPageInterpreter {
             let objid = stream.objid().filter(|id| !matches!(id.obj(), PDFObject::Null));
             let Some(objid) = objid else {
                 // Inline streams without object IDs can't be tracked for circular refs
-                // log.warning("Execute called on non-indirect object (inline image?) %r", stream)
-                LOG.warning()?;
+                LOG.warning_with(|| {
+                    Ok(format!("Execute called on non-indirect object (inline image?) {}", stream.repr()?))
+                })?;
                 continue;
             };
             if self.parent_stream_ids.contains(&objid) {
-                // log.warning("Refusing to execute circular reference to content stream %d", ...)
-                LOG.warning()?;
+                LOG.warning_with(|| {
+                    Ok(format!(
+                        "Refusing to execute circular reference to content stream {}",
+                        log_text::d(objid.obj())?
+                    ))
+                })?;
             } else {
                 valid_streams.push(PDFObject::Stream(stream));
                 self.stream_ids.insert(objid);
@@ -2288,11 +2415,9 @@ impl PDFPageInterpreter {
             };
             // keyword_name(obj): its frame
             leaf(1)?;
-            let name = decode_utf8_ignore(kwd.name());
-            let method = name.replace('*', "_a").replace('"', "_w").replace('\'', "_q");
             // hasattr(self, "do_" + method); elif settings.STRICT: raise
             // PDFInterpreterError(f"Unknown operator: {name!r}")
-            let Some(op) = Op::from_method(&method) else {
+            let Some(op) = keyword_op(kwd.name()) else {
                 continue;
             };
             let nargs = op.nargs();

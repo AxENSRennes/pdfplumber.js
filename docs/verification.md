@@ -238,6 +238,7 @@ fixe) et les sorties Python, Rust les rejoue (`cargo test`).
   | `js_runtime.py` | `crates/wasm` (`errors`, `cmaps`, `ops`, `pages`, `wire`), la couche page par la frontière | `crates/wasm/tests/js_runtime_unit.rs` (et les tests JS de `js/test/shared/`, Node et navigateurs) | MRO de chaque classe d'exception, CMaps prédéfinies par le protocole paresseux, texte, mots, `dedupe_chars`, `TextMap.search`/lignes, tables sur des objets de pages réelles ; documents CJK (texte et CMaps chargées) ; `pages.jsonl` : sessions d'opérations des documents et des pages exécutées au niveau du module de `js_pages_run.py`, un processus neuf par session (toutes les opérations sur des fichiers `micro` et upstream, documents CJK aux appels nuls, fenêtres autour de la première profondeur qui lève `RecursionError` par la frontière : figures imbriquées, tirets, opérandes à la limite C), la profondeur du niveau du module (`ENTRY_DEPTH`) |
   | `plumber.py` | `pdfplumber::{pdf, page, container, convert, utils::pdfinternals}` (et `structure` par `plumber_doc`), `pycompat::{json, csv}`, `pdftrace::stages::plumber_*` | `plumber_unit.rs` | traces des étapes `plumber_objects`, `plumber_text`, `plumber_tables`, `plumber_doc` sur `adv-plumber` (régénéré d'abord, fenêtres de profondeur comprises, aussi depuis un et deux cadres plus bas, et fenêtres `climit-*` des unités C), `micro` et les petits fichiers de `quick`, chaque trace dans un processus fils (`py_process.jsonl`), les étapes `ORACLE_INPUT` recevant leur trace Python ; `open.jsonl` : `pdfplumber.open` avec des `laparams` (clés inconnues, `boxes_flow` de tout type et hors domaine, marges entières, booléennes, infinies, NaN), `pages` (listes, tuples, vides, flottants, booléens, `str`, entiers), `password`, `strict_metadata`, `unicode_norm` (dont des formes à surrogates isolés, sur une page de caractères au texte vide), `raise_unicode_errors` sur trois petits documents : `doctop`, objets et rang des `id()` de l'analyse ; `utils.jsonl` : `decode_psl_list` |
   | `plumber_sweep.py` | `pdfplumber::{pdf, page, container, convert}`, les cadres de `table.rs` jusqu'aux propriétés de la page, `pycompat::typing_cache` | `plumber_sweep.rs` | balayages de profondeur : chaque opération de la couche page (texte, recherche, pages dérivées, arêtes, tables, `to_json`/`to_csv`, annotations, `PDF.pages`/`objects`/`to_csv`, `pdfplumber.open`, `close`) sur une page neuve de six fichiers d'`adv-plumber` (et les objets après le layout, avec et sans `laparams`), lancée de chaque profondeur qui fait passer la limite de récursion par ses cadres (de la place de son cadre le plus profond, mesurée par un crochet de profil borné, à aucune), comparée par SHA-256 ; identité des arêtes en cache et `flush_cache`, `getattr` de `to_dict` (`hyperlinks`, `pages`, `_objects`, `cached_properties`, `_rect_edges`...) |
+  | `plumber_frames.py` | `Page.process_object`, `decode_text`, `resolve_and_decode`, `resolve_all` (chemins PERF compris), abonnements `typing` des annotations | `plumber_frames.rs` | profondeur la plus grande de l'appelant d'où chaque objet de la première page de 26 fichiers (layout calculé d'abord) et chaque argument de `decode_text`/`resolve_and_decode`/`resolve_all` ne lève pas `RecursionError`, le long de chaque compteur (cadres Python et unités C), l'issue à cette profondeur et la `RecursionError` (son message) un niveau plus bas, essais forkés depuis le même cadre ; cadres et escalier d'unités C (`oracle.depth_probe typing-c`) de chaque abonnement que `pycompat::typing_cache` modélise, défaut et succès du cache (jonction de la vague 5, `architecture.md` « Jonction ») |
 
   Les tables générées (`oracle/codegen/`) sont vérifiées par `--check` dans
   `scripts/check.sh` : `libm_tables.py`, `atan2_tables.py`, `unicodedata_tables.py`, `saslprep_tables.py`,
@@ -372,6 +373,48 @@ Mode d'emploi détaillé : [`oracle/README.md`](../oracle/README.md).
   dépôt) donne l'emplacement de `corpus/`, `upstream/` et `.cache`
   (`PDFPLUMBER_CACHE` peut désigner un autre cache). Dans un worktree Git, elle
   pointe vers le dépôt principal, qui contient les PDF téléchargés et le venv.
+- **Parité par l'API JavaScript publique** (vague 5, `architecture.md`,
+  « Vague 5 », « Harnais ») : `python -m oracle.verify --engine js-api
+  --stage plumber_{objects,text,tables,doc} --set NOM` lance
+  `js/trace/pdftrace-js` (même ligne de commande que `pdftrace`, build
+  `dist` avec `dist/pdfplumber-oracle.wasm` : `node scripts/build.mjs`,
+  `node scripts/build-wasm.mjs --oracle`) à la place du binaire Rust :
+  les traces sont écrites par l'API publique, au format typé, avec les
+  seuls crochets d'oracle documentés. Les sessions de
+  `oracle/unit/js_api.py` (instructions de `js_pages_run.py`, résultats de
+  Python) vérifient chaque membre de l'API, et la récursion là où l'API
+  l'atteint (les étapes appellent pdfplumber depuis des générateurs : sur
+  les fenêtres de profondeur, une trace par l'API diffère par
+  construction, la parité y est celle des sessions : `depth.jsonl` de
+  `js_api.py` en tient une pour chacune des fenêtres `depth-*` et
+  `climit-*` des ensembles adverses, et, par famille de fenêtres, la
+  fenêtre de l'API elle-même, rejouées dans Node par
+  `js/test/node/api-depth.test.ts`). Les fenêtres des étapes sont
+  centrées sur la limite des étapes, que l'API atteint un à quelques
+  niveaux plus loin (ses instructions sont au niveau du module) : pour
+  chaque famille, le générateur cherche par dichotomie la première
+  imbrication où une instruction de la session de profondeur lève
+  `RecursionError` (elle-même ou comme cause : `ApiDepth`, sondes en
+  cache sous `.cache/corpus/js-api-depth/`), écrit le PDF de cette
+  imbrication et des deux voisines et en fait des sessions ; il vérifie
+  que l'une passe et l'autre lève. Une famille sans `RecursionError`
+  jusqu'au plafond (6 000 niveaux, 12 000 pour `climit-*`), ou qui en lève
+  à toute imbrication jusqu'à 1, n'a que les fenêtres des étapes ; la
+  liste est dans `meta.json` (`depth_api_first_failing`). À la génération
+  de `wave5/fix` : 85 familles sur 95 ont leur fenêtre (145 sessions de
+  plus que les 448 des étapes ; la limite de l'API est de 0 à 7 niveaux
+  au-delà de celle des étapes, ou en deçà quand une autre instruction de
+  la session lève d'abord : `chain-prune` à 332) ; les 10 autres ne
+  lèvent pas de `RecursionError` par les instructions de l'API jusqu'au
+  plafond (`dash-list`, `outline-*`, `names-kids`, `length-chain`, les
+  métadonnées imbriquées, dont pdfplumber attrape l'erreur à
+  l'ouverture, et trois familles d'unités C de `adv-structure`). Les
+  générateurs des familles (`depth_families`) sont vérifiés octet pour
+  octet contre les fichiers des ensembles. Les comptes
+  d'appels distinguent les appels faits des `Unresolved` (un appel sur un
+  objet qu'un appel précédent n'a pas fait : aucun côté ne le fait) :
+  `calls_made`, `calls_made_by_member`, avec au moins 3 appels faits par
+  membre (sinon le générateur échoue).
 
 ### Mesurer une profondeur de cadres
 

@@ -590,9 +590,20 @@ pub mod text_device {
                     *c = c.sub(&shift)?;
                     needcharspace = true;
                 }
-                _ => {
-                    // logger.warning("Cannot render horizontal string ..." / "... vertical ...")
-                    LOG.warning()?;
+                other => {
+                    LOG.warning_with(|| {
+                        let direction = match axis {
+                            Axis::Horizontal => "horizontal",
+                            Axis::Vertical => "vertical",
+                        };
+                        let obj = match &other {
+                            SeqItem::Obj(o) => o.repr()?,
+                            SeqItem::Str(s) => pycompat::repr::str_repr(s),
+                        };
+                        Ok(format!(
+                            "Cannot render {direction} string because {obj} is not a valid int, float or bytes."
+                        ))
+                    })?;
                 }
             }
         }

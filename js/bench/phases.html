@@ -1,0 +1,70 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>pdfplumber-js phases benchmark</title>
+<pre id="out">running...</pre>
+<script type="module">
+  // The phases of js/bench/phases.mjs in a browser, through the public API
+  // of the browser bundle: for each file of /phases-list.json (mounted by
+  // js/bench/browser-phases.mjs: [{url, password}]), fetched first (not
+  // timed), `open(bytes, {pages: [1..20], password})` and `await pdf.pages`,
+  // then per page `page.objects`, `extractText()`, `extractWords()`,
+  // `findTables()`, `page.objects` again (the boundary alone) and
+  // `extractTables()`. With ?worker, the core runs in a worker. The result
+  // goes to window.__result: {rows: [[url, pages, open, objects, text,
+  // words, tables, again, extractTables]...]}
+  // (seconds).
+  import * as api from "/dist/browser/index.js";
+  const params = new URLSearchParams(location.search);
+  const out = document.getElementById("out");
+  try {
+    if (params.has("worker")) api.configure({ worker: true });
+    const list = await (await fetch("/phases-list.json")).json();
+    const rows = [];
+    for (const { url, password } of list) {
+      const data = new Uint8Array(await (await fetch(url)).arrayBuffer());
+      const t = [0, 0, 0, 0, 0, 0, 0];
+      const started = performance.now();
+      let pdf;
+      let pages;
+      try {
+        pdf = await api.open(data, {
+          pages: Array.from({ length: 20 }, (_, k) => k + 1),
+          password: password || undefined,
+        });
+        pages = await pdf.pages;
+      } catch {
+        rows.push([url, 0, (performance.now() - started) / 1000, 0, 0, 0, 0, 0, 0]);
+        if (pdf) await pdf.release();
+        continue;
+      }
+      t[0] = performance.now() - started;
+      for (const p of pages) {
+        const phases = [
+          () => p.objects,
+          () => p.extractText(),
+          () => p.extractWords(),
+          () => p.findTables(),
+          () => p.objects,
+          () => p.extractTables(),
+        ];
+        for (let k = 0; k < phases.length; k++) {
+          const s = performance.now();
+          try {
+            await phases[k]();
+          } catch {
+            // an exception ends the phase (as in the Node, Rust and Python twins)
+          }
+          t[k + 1] += performance.now() - s;
+        }
+      }
+      await pdf.release();
+      rows.push([url, pages.length, ...t.map((x) => x / 1000)]);
+      out.textContent = `${rows.length}/${list.length}`;
+    }
+    window.__result = { runtime: navigator.userAgent, rows };
+    out.textContent = "done";
+  } catch (e) {
+    window.__result = { error: String(e && e.stack ? e.stack : e) };
+    out.textContent = window.__result.error;
+  }
+</script>

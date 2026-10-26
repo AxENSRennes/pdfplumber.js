@@ -16,7 +16,7 @@ use pdfminer::pdftypes::{PDFDict, PDFList, PDFObject};
 use pdfminer::psparser::LiteralName;
 use pdfminer::utils::PDF_DOC_ENCODING;
 use pycompat::pystr::PyStrBuilder;
-use pycompat::recursion::{eval_entry, py_frame};
+use pycompat::recursion::{c_call, eval_entry, isinstance_tuple, py_frame, WHILE_CALLING};
 use pycompat::specialize::CallSite;
 use pycompat::{exc, ExcKind, PyResult, PyStr};
 
@@ -35,24 +35,33 @@ pub fn decode_text(s: TextArg<'_>) -> PyResult<String> {
     let _frame = py_frame()?;
     if let TextArg::Bytes(b) = &s {
         if let Some(body) = b.strip_prefix(b"\xfe\xff") {
-            // str(s[2:], "utf-16be", "ignore"): not one of PyUnicode_Decode's
-            // fast paths, so the codec registry's decoder runs,
-            // encodings.utf_16_be.decode, a Python function called from C
+            // str(s[2:], "utf-16be", "ignore"): the type `str` called with
+            // three arguments (`_PyObject_MakeTpCall`: a C unit), not one of
+            // PyUnicode_Decode's fast paths, so the codec registry's decoder
+            // runs, encodings.utf_16_be.decode, a Python function called
+            // from C
+            let _call = c_call(WHILE_CALLING)?;
             pycompat::recursion::c_called_leaf()?;
             let units = body.as_chunks::<2>().0.iter().map(|p| u16::from_be_bytes(*p));
             return Ok(char::decode_utf16(units).filter_map(Result::ok).collect());
         }
     }
     // `ords` and the generator `"".join` runs are created (a frame check
-    // each), then join resumes the second from C, which resumes `ords`, two
-    // frames down, once per character and once more (or up to the
-    // IndexError): every check is at most two frames down, and nothing
-    // between them can raise, so the deepest decides.
+    // each), then join (a method descriptor called: a C unit, held) resumes
+    // the second from C, which resumes `ords`, two frames down, once per
+    // character and once more (or up to the IndexError): every check is at
+    // most two frames down, and nothing between them can raise, so the
+    // deepest decides; `ord(c)` of a `str`'s character, a builtin of one
+    // argument, takes one more unit while it runs.
+    let _join = c_call(WHILE_CALLING)?;
     let _entry = eval_entry()?;
     pycompat::recursion::leaf(2)?;
     match s {
         TextArg::Bytes(b) => Ok(b.iter().map(|&c| doc_char(u32::from(c))).collect()),
         TextArg::Str(s) => {
+            if !s.is_empty() {
+                drop(c_call(WHILE_CALLING)?); // ord(c)
+            }
             // PDFDocEncoding[ord(c)]: an IndexError past 255, then str(s)
             if s.chars().any(|c| u32::from(c) > 255) {
                 return Ok(s.to_owned());
@@ -127,6 +136,16 @@ pub fn resolve_all(x: &PDFObject) -> PyResult<PDFObject> {
                 other => other,
             }
         }
+        _ => resolve_all_unref(x),
+    }
+}
+
+/// [`resolve_all`] of a value that is not a reference, after its frame:
+/// `isinstance(x, (list, tuple))` (a C unit while it checks), then the
+/// branches.
+fn resolve_all_unref(x: &PDFObject) -> PyResult<PDFObject> {
+    isinstance_tuple()?;
+    match x {
         PDFObject::List(l) => {
             // type(x)(resolve_all(v) for v in x): list() runs the generator
             // expression from C, a frame of its own
@@ -174,12 +193,17 @@ pub fn decode_text_value(s: &PyValue) -> PyResult<PyStr> {
     };
     if let Some(b) = &bytes {
         if let Some(body) = b.strip_prefix(b"\xfe\xff") {
-            // str(s[2:], "utf-16be", "ignore"), from C (see decode_text)
+            // str(s[2:], "utf-16be", "ignore"): the call's unit, then the
+            // decoder from C (see decode_text)
+            let _call = c_call(WHILE_CALLING)?;
             pycompat::recursion::c_called_leaf()?;
             let units = body.as_chunks::<2>().0.iter().map(|p| u16::from_be_bytes(*p));
             let text: String = char::decode_utf16(units).filter_map(Result::ok).collect();
             return Ok(PyStr::from(text));
         }
+    }
+    if let PyValue::Str(text) = s {
+        return decode_text_pystr(s, text);
     }
     // `ords = (... for c in s)`: iter(s) runs where the generator
     // expression is created
@@ -188,9 +212,10 @@ pub fn decode_text_value(s: &PyValue) -> PyResult<PyStr> {
         None => return Err(exc::TypeError(format!("'{}' object is not iterable", s.type_name()))),
     };
     // the two generators created, then resumed by "".join from C (see
-    // decode_text): their units are held until join returns or raises,
-    // before the `except IndexError:` runs `str(s)`
+    // decode_text): their units, and join's, are held until join returns or
+    // raises, before the `except IndexError:` runs `str(s)`
     let joined = {
+        let _join = c_call(WHILE_CALLING)?;
         let _entry = eval_entry()?;
         pycompat::recursion::leaf(2)?;
         // "".join materializes the generator first (PySequence_Fast): every
@@ -199,8 +224,9 @@ pub fn decode_text_value(s: &PyValue) -> PyResult<PyStr> {
         let mut index_error = false;
         for c in &items {
             let o = match c {
-                // ord(c)
+                // ord(c): a builtin of one argument, a C unit while it runs
                 PyValue::Str(ch) => {
+                    drop(c_call(WHILE_CALLING)?);
                     let n = ch.len();
                     if n != 1 {
                         return Err(exc::TypeError(format!(
@@ -231,6 +257,54 @@ pub fn decode_text_value(s: &PyValue) -> PyResult<PyStr> {
             out.push(u32::from(PDF_DOC_ENCODING[index as usize]));
         }
         (!index_error).then(|| out.finish())
+    };
+    match joined {
+        Some(text) => Ok(text),
+        None => decode_text_str(s),
+    }
+}
+
+/// [`decode_text_value`] of a `str` (`s` is `PyValue::Str(text)`), after
+/// its frame: the same checks and result as the general path, whose items
+/// would be the one-character strings of `text` (`ord(c)` is a code point,
+/// never negative, so an `IndexError` is a code point past 255), without
+/// making them. Performance (`docs/architecture.md`, "Vague 5", PERF): a
+/// `str` that PDFDocEncoding maps to itself (the color space names
+/// `process_object` decodes for every char) is returned as it is (a
+/// `str` is immutable and its identity is not modeled).
+fn decode_text_pystr(s: &PyValue, text: &PyStr) -> PyResult<PyStr> {
+    let joined = {
+        // the two generators created, then resumed by "".join from C (see
+        // the general path), with join's unit; `ord` of the first character
+        // (each takes the same unit while it runs)
+        let _join = c_call(WHILE_CALLING)?;
+        let _entry = eval_entry()?;
+        pycompat::recursion::leaf(2)?;
+        if !text.is_empty() {
+            drop(c_call(WHILE_CALLING)?);
+        }
+        let mut same = true;
+        let mut index_error = false;
+        for c in text.code_points() {
+            match PDF_DOC_ENCODING.get(c as usize) {
+                Some(&d) => same &= u32::from(d) == c,
+                None => {
+                    index_error = true;
+                    break;
+                }
+            }
+        }
+        if index_error {
+            None
+        } else if same {
+            Some(text.clone())
+        } else {
+            let mut out = PyStrBuilder::with_capacity(text.as_bytes().len());
+            for c in text.code_points() {
+                out.push(u32::from(PDF_DOC_ENCODING[c as usize]));
+            }
+            Some(out.finish())
+        }
     };
     match joined {
         Some(text) => Ok(text),
@@ -286,6 +360,11 @@ pub fn resolve_and_decode_obj(obj: &PDFObject) -> PyResult<PDFObject> {
         PDFObject::Ref(r) => r.resolve(&PDFObject::Null)?,
         other => other.clone(),
     };
+    // isinstance(obj, list), isinstance(obj, PSLiteral), then
+    // isinstance(obj, (str, bytes)): a C unit while it checks
+    if !matches!(obj, PDFObject::List(_) | PDFObject::Literal(_)) {
+        isinstance_tuple()?;
+    }
     match &obj {
         PDFObject::List(l) => {
             // list(map(resolve_and_decode, obj)): map calls it from C, while

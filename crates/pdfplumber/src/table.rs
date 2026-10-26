@@ -25,7 +25,9 @@ use pycompat::pystr::PyStrBuilder;
 use pycompat::specialize::AttrSite;
 use pycompat::{exc, ExcKind, PyErr, PyResult, PyStr};
 
-use crate::obj::{bbox_value, check_hashable, py_contains, py_iter, Bbox, HashKey, Hot, Obj, PyFloat, PyValue};
+use crate::obj::{
+    bbox_value, check_hashable, py_contains, py_iter, static_str, Bbox, HashKey, Hot, Obj, PyFloat, PyValue,
+};
 use crate::utils::clustering::cluster_objects;
 use crate::utils::geometry::{
     bbox_to_rect, filter_edges, get_bbox_overlap, obj_to_bbox, obj_to_edges, objects_to_bbox, objects_to_rect,
@@ -158,9 +160,9 @@ pub fn merge_edges(
     // get_group (nested in merge_edges)
     fn get_group(edge: &Obj) -> PyResult<PyValue> {
         if orientation(edge)?.as_str() == Some("h") {
-            Ok(PyValue::tuple([PyValue::str("h"), edge.hot(Hot::Top)?.clone()]))
+            Ok(PyValue::tuple([static_str("h"), edge.hot(Hot::Top)?.clone()]))
         } else {
-            Ok(PyValue::tuple([PyValue::str("v"), edge.hot(Hot::X0)?.clone()]))
+            Ok(PyValue::tuple([static_str("v"), edge.hot(Hot::X0)?.clone()]))
         }
     }
 
@@ -224,7 +226,7 @@ pub fn words_to_edges_h(words: &[Obj], word_threshold: &PyValue) -> PyResult<Vec
                 ("top", y.clone()),
                 ("bottom", y),
                 ("width", max_x1.sub(&min_x0)?),
-                ("orientation", PyValue::str("h")),
+                ("orientation", static_str("h")),
             ]));
         }
     }
@@ -289,7 +291,7 @@ pub fn words_to_edges_v(words: &[Obj], word_threshold: &PyValue) -> PyResult<Vec
             ("top", min_top.clone()),
             ("bottom", max_bottom.clone()),
             ("height", max_bottom.sub(&min_top)?),
-            ("orientation", PyValue::str("v")),
+            ("orientation", static_str("v")),
         ]))
     };
     let mut out = Vec::with_capacity(sorted_rects.len() + 1);
@@ -350,12 +352,12 @@ pub fn edges_to_intersections(edges: &[Obj], x_tolerance: &PyValue, y_tolerance:
     let mut v_edges = Vec::new();
     let mut h_edges = Vec::new();
     for e in edges {
-        if orientation(e)?.py_eq(&PyValue::str("v")) {
+        if orientation(e)?.py_eq(&static_str("v")) {
             v_edges.push(e.clone());
         }
     }
     for e in edges {
-        if orientation(e)?.py_eq(&PyValue::str("h")) {
+        if orientation(e)?.py_eq(&static_str("h")) {
             h_edges.push(e.clone());
         }
     }
@@ -876,8 +878,8 @@ impl TableSettings {
     /// The field defaults, before `__post_init__`.
     fn field_defaults() -> TableSettings {
         TableSettings {
-            vertical_strategy: PyValue::str("lines"),
-            horizontal_strategy: PyValue::str("lines"),
+            vertical_strategy: static_str("lines"),
+            horizontal_strategy: static_str("lines"),
             explicit_vertical_lines: PyValue::None,
             explicit_horizontal_lines: PyValue::None,
             snap_tolerance: PyValue::from(DEFAULT_SNAP_TOLERANCE),
@@ -1019,7 +1021,7 @@ impl TableSettings {
                 }
             }
         }
-        if py_contains(ts, &PyValue::str("tolerance"))? {
+        if py_contains(ts, &static_str("tolerance"))? {
             match ts {
                 PyValue::Dict(d) => {
                     d.remove("tolerance")?;
@@ -1190,7 +1192,7 @@ impl TableFinder {
         for desc in explicit_items(&settings.explicit_vertical_lines)? {
             if let PyValue::Dict(d) = &desc {
                 for e in obj_to_edges(d)? {
-                    if orientation(&e)?.py_eq(&PyValue::str("v")) {
+                    if orientation(&e)?.py_eq(&static_str("v")) {
                         v_explicit.push(e);
                     }
                 }
@@ -1202,13 +1204,13 @@ impl TableFinder {
                     ("top", b[1].clone()),
                     ("bottom", b[3].clone()),
                     ("height", b[3].sub(&b[1])?),
-                    ("orientation", PyValue::str("v")),
+                    ("orientation", static_str("v")),
                 ]));
             }
         }
 
         let prefilter = &settings.edge_min_length_prefilter;
-        let line = PyValue::str("line");
+        let line = static_str("line");
         let mut v = match v_strat {
             "lines" => filter_edges(&page_load(page, &EDGES_V_LINES, || page.edges())?, Some("v"), None, prefilter)?,
             "lines_strict" => {
@@ -1223,7 +1225,7 @@ impl TableFinder {
         for desc in explicit_items(&settings.explicit_horizontal_lines)? {
             if let PyValue::Dict(d) = &desc {
                 for e in obj_to_edges(d)? {
-                    if orientation(&e)?.py_eq(&PyValue::str("h")) {
+                    if orientation(&e)?.py_eq(&static_str("h")) {
                         h_explicit.push(e);
                     }
                 }
@@ -1235,7 +1237,7 @@ impl TableFinder {
                     ("width", b[2].sub(&b[0])?),
                     ("top", desc.clone()),
                     ("bottom", desc.clone()),
-                    ("orientation", PyValue::str("h")),
+                    ("orientation", static_str("h")),
                 ]));
             }
         }

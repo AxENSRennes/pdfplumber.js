@@ -174,6 +174,29 @@ impl<K: Key + ?Sized> Key for &K {
     }
 }
 
+thread_local! {
+    /// The `str`s [`static_str`] made, by the address and length of their
+    /// text.
+    static STATIC_STRS: RefCell<Vec<((usize, usize), PyStr)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The `str` of a literal of the port (`"h"`, `"rect_edge"`...), made once
+/// per thread and literal (performance: values that every edge or word
+/// holds or compares with; a `str` is immutable and its identity is not
+/// modeled). The literals are few: the table stays small.
+pub fn static_str(s: &'static str) -> PyValue {
+    let key = (s.as_ptr() as usize, s.len());
+    STATIC_STRS.with(|strs| {
+        let mut strs = strs.borrow_mut();
+        if let Some((_, v)) = strs.iter().find(|(k, _)| *k == key) {
+            return PyValue::Str(v.clone());
+        }
+        let v = PyStr::new(s);
+        strs.push((key, v.clone()));
+        PyValue::Str(v)
+    })
+}
+
 /// A shared copy of a dict key (keys repeat across thousands of objects).
 pub fn intern(key: &str) -> PyStr {
     if let Some(h) = Hot::of(key) {
@@ -402,13 +425,43 @@ impl Default for PyValue {
 // flat one (docs/architecture.md, "Profondeur de récursion"); PDF objects
 // have their own (pdfminer::pdftypes).
 impl Drop for PyValue {
+    #[inline]
     fn drop(&mut self) {
-        let mut stack = Vec::new();
-        take_items(self, &mut stack);
-        while let Some(mut v) = stack.pop() {
-            take_items(&mut v, &mut stack);
-            // `v` holds nothing of its own now: dropping it is shallow
+        // performance: a scalar, or a container another value still holds,
+        // frees nothing that could nest
+        let unique = match self {
+            PyValue::Tuple(items) | PyValue::List(items) => Rc::strong_count(items) == 1,
+            PyValue::Dict(d) => Rc::strong_count(&d.0) == 1,
+            _ => false,
+        };
+        if unique {
+            drop_nested(self);
         }
+    }
+}
+
+thread_local! {
+    /// The work list of [`drop_nested`], kept between drops (performance: a
+    /// dict of a page object holds tuples, which went through a new vector
+    /// at each drop). A drop inside a drop (a value of the list, emptied)
+    /// finds it taken and uses a vector of its own, which stays empty.
+    static DROP_STACK: std::cell::Cell<Vec<PyValue>> = const { std::cell::Cell::new(Vec::new()) };
+}
+
+/// The drop of a container `v` is the last owner of (see above).
+#[inline(never)]
+fn drop_nested(v: &mut PyValue) {
+    // (a value dropped while the thread's storage is destroyed gets a
+    // vector of its own)
+    let mut stack = DROP_STACK.try_with(std::cell::Cell::take).unwrap_or_default();
+    take_items(v, &mut stack);
+    while let Some(mut v) = stack.pop() {
+        take_items(&mut v, &mut stack);
+        // `v` holds nothing of its own now: dropping it is shallow
+    }
+    // (empty: put back for the next drop, unless it grew large)
+    if stack.capacity() <= 4096 {
+        let _ = DROP_STACK.try_with(|s| s.set(stack));
     }
 }
 
@@ -837,6 +890,9 @@ impl PyValue {
                 CmpOp::Ge => a >= b,
             });
         }
+        if let Some((a, b)) = self.int_float_operands(other) {
+            return Ok(a.py_cmp(&b).is_some_and(|o| op.holds(o)));
+        }
         if let Some((a, b)) = self.as_python2(other) {
             return a.compare(&b, op);
         }
@@ -1012,11 +1068,27 @@ impl PyValue {
         })
     }
 
+    /// The numbers of two `int` or `float` operands (performance: what
+    /// [`PyValue::num_operands`] gives them, without its conversions of PDF
+    /// objects and its checks for sequences, which they are not).
+    #[inline]
+    fn int_float_operands(&self, other: &PyValue) -> Option<(Num, Num)> {
+        let num = |v: &PyValue| match v {
+            PyValue::Float(PyFloat(x)) => Some(Num::Float(*x)),
+            PyValue::Int(i) => Some(Num::Int(i.clone())),
+            _ => None,
+        };
+        Some((num(self)?, num(other)?))
+    }
+
     /// `a + b`
     #[inline]
     pub fn add(&self, other: &PyValue) -> PyResult<PyValue> {
         if let (PyValue::Float(PyFloat(a)), PyValue::Float(PyFloat(b))) = (self, other) {
             return Ok(PyValue::float(a + b));
+        }
+        if let Some((a, b)) = self.int_float_operands(other) {
+            return Ok(a.add(&b)?.into());
         }
         if let Some(r) = self.seq_concat(other) {
             return r;
@@ -1031,6 +1103,9 @@ impl PyValue {
         if let (PyValue::Float(PyFloat(a)), PyValue::Float(PyFloat(b))) = (self, other) {
             return Ok(PyValue::float(a - b));
         }
+        if let Some((a, b)) = self.int_float_operands(other) {
+            return Ok(a.sub(&b)?.into());
+        }
         let (a, b) = self.num_operands("-", other)?;
         Ok(a.sub(&b)?.into())
     }
@@ -1039,6 +1114,9 @@ impl PyValue {
     pub fn mul(&self, other: &PyValue) -> PyResult<PyValue> {
         if let (PyValue::Float(PyFloat(a)), PyValue::Float(PyFloat(b))) = (self, other) {
             return Ok(PyValue::float(a * b));
+        }
+        if let Some((a, b)) = self.int_float_operands(other) {
+            return Ok(a.mul(&b)?.into());
         }
         if let Some(r) = self.seq_repeat(other) {
             return r;
@@ -1302,6 +1380,12 @@ pub fn py_getitem_index(v: &PyValue, i: usize) -> PyResult<PyValue> {
     if let PyValue::Pdf(PDFObject::Stream(stream)) = v {
         return Err(stream_missing_attribute(stream, &i.to_string()));
     }
+    // a PDF list (a page's `mediabox`, read for every object and point):
+    // its item, without converting the whole list first (same result as
+    // below)
+    if let PyValue::Pdf(PDFObject::List(l)) = v {
+        return l.get(i).map(PyValue::from_pdf).ok_or_else(|| exc::IndexError("list index out of range"));
+    }
     if let Some(p) = v.as_python() {
         return py_getitem_index(&p, i);
     }
@@ -1509,6 +1593,24 @@ impl Obj {
         Obj(Rc::new(ObjData { items: Vec::new(), hot: [0; HOT_N] }))
     }
 
+    /// `{}` with room for `n` items (a capacity: the same empty dict).
+    pub fn with_capacity(n: usize) -> Obj {
+        Obj(Rc::new(ObjData { items: Vec::with_capacity(n), hot: [0; HOT_N] }))
+    }
+
+    /// `obj[key] = value` for a `key` the dict does not hold (checked in
+    /// debug builds): the item is appended without looking the key up
+    /// (performance: `Page.process_object` builds its dicts so).
+    pub fn push_new(&mut self, key: PyStr, value: PyValue) {
+        debug_assert!(!self.contains(&key), "push_new of a key the dict holds");
+        let hot = Hot::of_bytes(key.as_bytes());
+        let data = Rc::make_mut(&mut self.0);
+        data.items.push((key, value));
+        if let Some(h) = hot {
+            data.hot[h as usize] = data.items.len() as u32;
+        }
+    }
+
     /// `dict(pairs)`: a repeated key keeps its first position and its last
     /// value.
     pub fn from_pairs<K: Key>(pairs: impl IntoIterator<Item = (K, PyValue)>) -> Obj {
@@ -1690,6 +1792,19 @@ mod tests {
         drop(v);
         assert_eq!(shared.as_seq().map(|s| s[0].type_name()), Some("list"));
         drop(shared);
+        // each kind of container alone (the fast path of `Drop` decides per
+        // kind whether the value is the last owner of what it holds)
+        for kind in 0..3 {
+            let mut v = PyValue::None;
+            for _ in 0..1_000_000 {
+                v = match kind {
+                    0 => PyValue::list([v]),
+                    1 => PyValue::tuple([v]),
+                    _ => PyValue::Dict(Obj::from_pairs([("k", v)])),
+                };
+            }
+            drop(v);
+        }
     }
 
     #[test]

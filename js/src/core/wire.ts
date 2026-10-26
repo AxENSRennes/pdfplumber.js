@@ -5,6 +5,7 @@
  */
 
 import { PageRef, PDFObjRef, PDFStream, PSKeyword, PSLiteral, PyFloat, PyTuple } from "../pdfobjects.js";
+import { PyDict } from "./typed.js";
 
 export const TAG = {
   NONE: 0x00,
@@ -26,6 +27,8 @@ export const TAG = {
   TABLE: 0x10,
   INLINE_STR: 0x11,
   PAGE: 0x12,
+  /** A `PDFStream` by reference: handle, objid, genno, attrs (`streamRefs`). */
+  STREAM_REF: 0x13,
 } as const;
 
 export const COL = {
@@ -80,6 +83,7 @@ const enum K {
   REF,
   STREAM,
   PAGE,
+  STREAM_REF,
 }
 
 interface Frame {
@@ -89,6 +93,9 @@ interface Frame {
   n: number;
   i: number;
   key?: string;
+  /** Typed mode: the frame is a tuple (`LIST`), the items of a dict. */
+  tuple?: boolean;
+  entries?: [string, unknown][];
 }
 
 class Reader {
@@ -99,6 +106,10 @@ class Reader {
   constructor(
     readonly u8: Uint8Array,
     readonly base: number,
+    /** Typed values (core/typed.ts): `float` → `PyFloat`, `tuple` →
+     * `PyTuple`, `dict` → `PyDict`; a block of the typed format has no
+     * table. */
+    readonly typed = false,
   ) {
     this.view = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
     this.pos = base;
@@ -225,6 +236,45 @@ class Reader {
     return out;
   }
 
+  /** One value, as `value()` reads it, recursing into the lists and tuples
+   * of the first `depth` levels (performance: the generic cells of a
+   * table, points and paths, are small nested sequences, which the frames
+   * of `value()` make slow); `value()` reads anything else, and what is
+   * deeper. Only tables call it, which a typed block has none of: values
+   * are the plain ones. */
+  item(depth: number): unknown {
+    if (this.pos < this.u8.length) {
+      const tag = this.u8[this.pos];
+      switch (tag) {
+        // the scalars of points and paths, read as `value()` reads them
+        case TAG.F64:
+          this.pos++;
+          return this.f64();
+        case TAG.I32: {
+          this.pos++;
+          this.check(4);
+          const v = this.view.getInt32(this.pos, true);
+          this.pos += 4;
+          return v;
+        }
+        case TAG.STR:
+          this.pos++;
+          return this.str();
+        case TAG.LIST:
+        case TAG.TUPLE: {
+          if (depth <= 0) break;
+          this.pos++;
+          const n = this.varint();
+          if (n > this.u8.length - this.pos) throw new WireError("list longer than its block");
+          const arr = new Array<unknown>(n);
+          for (let i = 0; i < n; i++) arr[i] = this.item(depth - 1);
+          return arr;
+        }
+      }
+    }
+    return this.value();
+  }
+
   /** One value, without recursion (a table's generic cells recurse once
    * per nested table). */
   value(): unknown {
@@ -250,8 +300,10 @@ class Reader {
           this.pos += 4;
           break;
         case TAG.INT_F64:
-        case TAG.F64:
           value = this.f64();
+          break;
+        case TAG.F64:
+          value = this.typed ? new PyFloat(this.f64()) : this.f64();
           break;
         case TAG.BIGINT: {
           const n = this.varint();
@@ -275,21 +327,23 @@ class Reader {
         case TAG.TUPLE: {
           const n = this.varint();
           if (n > u8.length - this.pos) throw new WireError("list longer than its block");
+          const tuple = this.typed && tag === TAG.TUPLE;
           if (n === 0) {
-            value = [];
+            value = tuple ? new PyTuple([]) : [];
             break;
           }
-          stack.push({ k: K.LIST, arr: new Array(n), n, i: 0 });
+          stack.push({ k: K.LIST, arr: new Array(n), n, i: 0, tuple });
           continue;
         }
         case TAG.DICT: {
           const n = this.varint();
           if (n > u8.length - this.pos) throw new WireError("dict longer than its block");
           if (n === 0) {
-            value = {};
+            value = this.typed ? new PyDict([]) : {};
             break;
           }
-          stack.push({ k: K.DICT, obj: {}, n, i: 0 });
+          if (this.typed) stack.push({ k: K.DICT, entries: [], n, i: 0 });
+          else stack.push({ k: K.DICT, obj: {}, n, i: 0 });
           continue;
         }
         case TAG.LITERAL:
@@ -307,7 +361,11 @@ class Reader {
         case TAG.PAGE:
           stack.push({ k: K.PAGE, arr: new Array(2), n: 2, i: 0 });
           continue;
+        case TAG.STREAM_REF:
+          stack.push({ k: K.STREAM_REF, arr: new Array(4), n: 4, i: 0 });
+          continue;
         case TAG.TABLE:
+          if (this.typed) throw new WireError("a table in a typed block");
           value = this.table();
           break;
         default:
@@ -320,17 +378,18 @@ class Reader {
         if (top.k === K.LIST) {
           top.arr![top.i++] = value;
           if (top.i < top.n) break;
-          value = top.arr;
+          value = top.tuple ? new PyTuple(top.arr!) : top.arr;
         } else if (top.k === K.DICT) {
           if (top.key === undefined) {
             if (typeof value !== "string") throw new WireError("a dict key is not a str");
             top.key = value;
             break;
           }
-          setOwn(top.obj!, top.key, value);
+          if (top.entries) top.entries.push([top.key, value]);
+          else setOwn(top.obj!, top.key, value);
           top.key = undefined;
           if (++top.i < top.n) break;
-          value = top.obj;
+          value = top.entries ? new PyDict(top.entries) : top.obj;
         } else if (top.k === K.LITERAL) {
           value = new PSLiteral(value as string | Uint8Array);
         } else if (top.k === K.REF) {
@@ -338,7 +397,11 @@ class Reader {
         } else if (top.k === K.PAGE) {
           top.arr![top.i++] = value;
           if (top.i < top.n) break;
-          value = new PageRef(top.arr![0] as number, top.arr![1] as number | bigint);
+          value = pageRef(top.arr![0] as number, top.arr![1] as number | bigint);
+        } else if (top.k === K.STREAM_REF) {
+          top.arr![top.i++] = value;
+          if (top.i < top.n) break;
+          value = streamRef(top.arr!);
         } else {
           top.arr![top.i++] = value;
           if (top.i < top.n) break;
@@ -465,7 +528,7 @@ class Reader {
       }
       case COL.GENERIC: {
         const out = new Array<unknown>(n);
-        for (let i = 0; i < n; i++) out[i] = this.value();
+        for (let i = 0; i < n; i++) out[i] = this.item(SHALLOW);
         return out;
       }
       default:
@@ -473,6 +536,9 @@ class Reader {
     }
   }
 }
+
+/** The levels of nested sequences `Reader.item` reads by recursion. */
+const SHALLOW = 3;
 
 /** The cells of a column of `None`s. */
 const NULLS: ArrayLike<unknown> = new Proxy([], { get: (_t, p) => (p === "length" ? Infinity : null) });
@@ -537,14 +603,64 @@ export function setCodegen(allowed: boolean | undefined): void {
 }
 
 /** Decodes the PJB1 block at `offset` of `u8`. */
-export function decodeBinary(u8: Uint8Array, offset = 0): unknown {
-  const r = new Reader(u8, offset);
+export function decodeBinary(u8: Uint8Array, offset = 0, typed = false): unknown {
+  const r = new Reader(u8, offset, typed);
   r.check(HEADER_LEN);
   if (r.view.getUint32(offset, true) !== MAGIC) throw new WireError("bad PJB1 magic");
   const tableOffset = r.view.getUint32(offset + 8, true);
   if (tableOffset) r.readStrings(tableOffset);
   r.pos = offset + HEADER_LEN;
   return r.value();
+}
+
+// ---------------------------------------------------------------------------
+// Streams and pages by reference
+
+/** What makes the `PDFStream` of a stream reference (its handle, `objid`,
+ * `genno`, `attrs`): the core whose response is decoded
+ * (core/runtime.ts `StreamRefs`), which reads its data on demand and keeps
+ * one object per stream. */
+export type StreamRefMaker = (handle: number, objid: number | bigint | null, genno: number | bigint | null, attrs: Record<string, unknown>) => PDFStream;
+
+/** What makes the `PageRef` of a page held as a value: the core whose
+ * response is decoded, which notes the document it belongs to. */
+export type PageRefMaker = (handle: number, pageNumber: number | bigint) => PageRef;
+
+/** The makers of the objects by reference of a response (its streams and
+ * pages). */
+export interface RefMakers {
+  stream?: StreamRefMaker;
+  page?: PageRefMaker;
+}
+
+let refMakers: RefMakers | undefined;
+
+/** Runs `f` (the decoding of a response) with the makers of its streams
+ * and pages by reference. */
+export function withRefMakers<T>(makers: RefMakers | undefined, f: () => T): T {
+  const previous = refMakers;
+  refMakers = makers;
+  try {
+    return f();
+  } finally {
+    refMakers = previous;
+  }
+}
+
+/** A stream reference's `PDFStream`: from the maker, or, decoded outside
+ * a core (a response copied elsewhere), a stream whose data cannot be
+ * read. */
+function streamRef(fields: unknown[]): PDFStream {
+  const [handle, objid, genno, attrs] = fields as [number, number | bigint | null, number | bigint | null, Record<string, unknown>];
+  const maker = refMakers?.stream;
+  return maker ? maker(handle, objid, genno, attrs) : PDFStream.reference(objid, genno, attrs, handle, null);
+}
+
+/** A page value's `PageRef`: from the maker, or, decoded outside a core,
+ * a reference no document takes (`pdf.page()` refuses it). */
+function pageRef(handle: number, pageNumber: number | bigint): PageRef {
+  const maker = refMakers?.page;
+  return maker ? maker(handle, pageNumber) : new PageRef(handle, pageNumber);
 }
 
 // ---------------------------------------------------------------------------
@@ -632,6 +748,13 @@ function fixup(root: unknown): unknown {
           ]);
           break;
         }
+        case "streamref": {
+          const s = { handle: sp[1], objid: sp[2], genno: sp[3], attrs: sp[4] };
+          for (const f of ["handle", "objid", "genno", "attrs"]) stack.push([s as Record<string, unknown>, f]);
+          holder[key] = s;
+          pending.push([holder, key, (x: Record<string, unknown>) => streamRef([x.handle, x.objid, x.genno, x.attrs])]);
+          break;
+        }
         case "page": {
           const page = { handle: sp[1], page_number: sp[2] };
           for (const f of ["handle", "page_number"]) stack.push([page as Record<string, unknown>, f]);
@@ -639,7 +762,7 @@ function fixup(root: unknown): unknown {
           pending.push([
             holder,
             key,
-            (x: Record<string, unknown>) => new PageRef(x.handle as number, x.page_number as number),
+            (x: Record<string, unknown>) => pageRef(x.handle as number, x.page_number as number),
           ]);
           break;
         }
@@ -766,16 +889,44 @@ class ByteWriter {
  * below it. */
 const EXIT = Symbol("exit");
 
+/** Whether `v` is a plain object (`{...}`, `Object.create(null)`, or a
+ * plain object of another realm): the objects that cross as a `dict`, with
+ * `Map`s. An instance of any other class (`Set`, `Date`, a typed array
+ * other than `Uint8Array`, a class of the caller's...) has no Python value
+ * (docs/public-api.md, "Arguments"). */
+export function isPlainObject(v: unknown): v is Record<string, unknown> {
+  if (v === null || typeof v !== "object") return false;
+  const proto = Object.getPrototypeOf(v) as object | null;
+  return proto === null || Object.getPrototypeOf(proto) === null;
+}
+
+/** The class of an object, for an error message. */
+function className(v: unknown): string {
+  const name = (v as { constructor?: { name?: unknown } } | null)?.constructor?.name;
+  return typeof name === "string" && name ? name : "object";
+}
+
+/** Decides whether an object by reference of a result (a `PageRef`, a
+ * `PDFStream`) can be an argument of a request: one of the core the request
+ * goes to (core/runtime.ts `StreamRefs.owns`). */
+export type RefCheck = (ref: PageRef | PDFStream) => boolean;
+
+const OTHER_CORE = (kind: string): string =>
+  `a ${kind} of a document of another core (read before configure() or a CoreCrash) cannot be an argument`;
+
 /** Encodes a JavaScript value as a PJB1 block of plain Python values:
  * `null`/`undefined` → `None`, booleans, safe integers → `int` (and
  * `bigint`), other numbers and `PyFloat` → `float`, strings → `str` (lone
  * surrogates kept), `Uint8Array`/`ArrayBuffer` → `bytes`, arrays → `list`,
- * `PyTuple` → `tuple`, plain objects and `Map`s with string keys → `dict`
- * (`undefined` properties left out). Without recursion: any depth
- * encodes, and the core decodes and frees it without recursion too. A
- * container inside itself is a `TypeError` (Python's `json.dumps` raises
- * "Circular reference detected"); the same object twice is not. */
-export function encodeValue(value: unknown): Uint8Array {
+ * `PyTuple` → `tuple`, plain objects (`isPlainObject`) and `Map`s with
+ * string keys → `dict` (`undefined` values left out, in both). Without
+ * recursion: any depth encodes, and the core decodes and frees it without
+ * recursion too. A container inside itself is a `TypeError` (Python's
+ * `json.dumps` raises "Circular reference detected"); the same object twice
+ * is not. Any other object is a `TypeError` (a `Set`, a `Date`, a
+ * `Float64Array`... has no Python value: never an empty `dict`), and so is
+ * an object by reference that `accept` refuses (one of another core). */
+export function encodeValue(value: unknown, accept?: RefCheck): Uint8Array {
   const w = new ByteWriter();
   w.raw(new Uint8Array([0x50, 0x4a, 0x42, 0x31, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]));
   const str = (s: string): void => {
@@ -827,6 +978,10 @@ export function encodeValue(value: unknown): Uint8Array {
       }
       case "string":
         return str(v);
+      case "function":
+      case "symbol":
+        // no Python value (docs/public-api.md, "Arguments")
+        throw new TypeError(`a ${typeof v} cannot cross to Python`);
     }
     if (v instanceof PyFloat) {
       w.u8(TAG.F64);
@@ -842,6 +997,37 @@ export function encodeValue(value: unknown): Uint8Array {
       w.raw(b);
       return;
     }
+    // the objects of a result given back: the objects they stand for
+    // (crates/wasm/src/wire/binary.rs `decode_args`)
+    if (v instanceof PSLiteral) {
+      w.u8(TAG.LITERAL);
+      stack.push(v.name);
+      return;
+    }
+    if (v instanceof PSKeyword) {
+      w.u8(TAG.KEYWORD);
+      w.varint(v.name.length);
+      w.raw(v.name);
+      return;
+    }
+    if (v instanceof PDFObjRef) {
+      w.u8(TAG.REF);
+      stack.push(v.objid);
+      return;
+    }
+    if (v instanceof PageRef) {
+      if (accept && !accept(v)) throw new TypeError(OTHER_CORE("PageRef"));
+      w.u8(TAG.PAGE);
+      stack.push(v.page_number, v.handle);
+      return;
+    }
+    if (v instanceof PDFStream) {
+      if (v.handle === undefined) throw new TypeError("a PDFStream snapshot (made from its values) cannot be an argument");
+      if (accept && !accept(v)) throw new TypeError(OTHER_CORE("PDFStream"));
+      w.u8(TAG.STREAM_REF);
+      stack.push(v.attrs, v.genno, v.objid, v.handle);
+      return;
+    }
     if (Array.isArray(v) || v instanceof PyTuple) {
       const items = Array.isArray(v) ? v : v.items;
       w.u8(Array.isArray(v) ? TAG.LIST : TAG.TUPLE);
@@ -850,8 +1036,11 @@ export function encodeValue(value: unknown): Uint8Array {
       for (let i = items.length - 1; i >= 0; i--) stack.push(items[i]);
       return;
     }
-    const entries: [unknown, unknown][] =
-      v instanceof Map ? [...v.entries()] : Object.entries(v as object).filter(([, x]) => x !== undefined);
+    let entries: [unknown, unknown][];
+    if (v instanceof PyDict) entries = v.entries;
+    else if (v instanceof Map) entries = [...v.entries()].filter(([, x]) => x !== undefined);
+    else if (isPlainObject(v)) entries = Object.entries(v).filter(([, x]) => x !== undefined);
+    else throw new TypeError(`a ${className(v)} cannot cross to Python (docs/public-api.md, "Arguments")`);
     w.u8(TAG.DICT);
     w.varint(entries.length);
     enter(v as object);

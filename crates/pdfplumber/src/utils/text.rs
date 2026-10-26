@@ -41,7 +41,7 @@ use pycompat::pystr::PyStrBuilder;
 use pycompat::text::str_isspace_cp;
 use pycompat::{exc, ExcKind, PyErr, PyInt, PyResult, PyStr};
 
-use crate::obj::{check_hashable, py_contains, py_iter, HashKey, Hot, Obj, PyValue};
+use crate::obj::{check_hashable, py_contains, py_iter, static_str, HashKey, Hot, Obj, PyValue};
 use crate::typing::T_dir;
 use crate::utils::clustering::cluster_objects;
 use crate::utils::geometry::objects_to_bbox_refs;
@@ -298,7 +298,7 @@ pub fn validate_directions(line_dir: &PyValue, char_dir: &PyValue, suffix: &str)
 }
 
 fn dir_value(d: T_dir) -> PyValue {
-    PyValue::str(d.name())
+    static_str(d.name())
 }
 
 // -- TextMap --------------------------------------------------------------------
@@ -1093,7 +1093,8 @@ impl WordExtractor {
             check_hashable(t)?;
             texts.push(t);
         }
-        let mut text = PyStrBuilder::new();
+        let size = texts.iter().map(|t| if let PyValue::Str(s) = t { s.as_bytes().len() } else { 0 }).sum();
+        let mut text = PyStrBuilder::with_capacity(size);
         for (i, t) in texts.into_iter().enumerate() {
             match t {
                 PyValue::Str(s) => match expansion(s, self.expand_ligatures) {
@@ -1622,4 +1623,39 @@ impl<'a> IndexOf<'a> {
         };
         candidates.take_while(|&i| i < pos).find(|&i| self.chars[i].py_eq(c)).unwrap_or(pos)
     }
+}
+
+// pdfplumber/utils/text.py:172 TextMap.search (its lines 181-196)
+/// The exception `search` raises for a pattern that is neither a `str`
+/// nor a compiled pattern (a caller's `str` and compiled patterns are
+/// run by the caller: `re` is not ported, and their matches are
+/// [`TextMap::search_with`]'s). With `regex is False`, that of
+/// `re.escape(pattern)` (CPython 3.12 `Lib/re/__init__.py`, `escape`:
+/// anything but `str` and `bytes` is `str(pattern, 'latin1')`), else
+/// that of `re.compile(pattern, flags)` (`_compile`: the key
+/// `(type(pattern), pattern, flags)` is hashed first, then what is not a
+/// `str` or `bytes` raises); a `bytes` pattern compiles, and
+/// `re.finditer` refuses it on the text map's `as_string`. Each call takes its
+/// frames (`re.escape`; `re.compile`, then `_compile`).
+pub fn search_pattern_error(pattern: &PyValue, regex: &PyValue) -> PyErr {
+    let raised = || -> PyResult<PyErr> {
+        let regex_false = matches!(regex, PyValue::Bool(false));
+        if regex_false && !matches!(pattern, PyValue::Bytes(_)) {
+            // re.escape(pattern)
+            pycompat::recursion::leaf(1)?;
+            return Ok(exc::TypeError(format!(
+                "decoding to str: need a bytes-like object, {} found",
+                pattern.type_name()
+            )));
+        }
+        // re.compile(pattern, flags) -> _compile(pattern, flags), or
+        // re.finditer(compiled, string) -> _compile(...)
+        pycompat::recursion::leaf(2)?;
+        check_hashable(pattern)?;
+        Ok(match pattern {
+            PyValue::Bytes(_) => exc::TypeError("cannot use a bytes pattern on a string-like object"),
+            _ => exc::TypeError("first argument must be string or compiled pattern"),
+        })
+    };
+    raised().unwrap_or_else(|e| e)
 }

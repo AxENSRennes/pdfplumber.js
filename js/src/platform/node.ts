@@ -57,6 +57,13 @@ export const nodePlatform: Platform = {
     return dir.protocol === "file:" ? dirCMapSource(dir) : fetchCMapSource(dir);
   },
 
+  filePath(input: PDFInput) {
+    if (input instanceof URL) return input.protocol === "file:" ? fileURLToPath(input) : undefined;
+    if (typeof input !== "string") return undefined;
+    if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(input)) return input;
+    return input.toLowerCase().startsWith("file:") ? fileURLToPath(input) : undefined;
+  },
+
   async readInput(input: PDFInput) {
     const bytes = await memoryInput(input);
     if (bytes) return bytes;

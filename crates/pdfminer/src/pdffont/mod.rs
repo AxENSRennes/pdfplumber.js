@@ -71,7 +71,7 @@ use std::sync::LazyLock;
 use indexmap::IndexMap;
 use pycompat::io::BytesIO;
 use pycompat::repr::str_repr;
-use pycompat::{exc, ExcKind, Num, NumKey, PyErr, PyInt, PyResult};
+use pycompat::{exc, ExcKind, Num, NumKey, PyErr, PyInt, PyResult, PyStr};
 use rustc_hash::FxBuildHasher;
 
 pub use cff::{getdict, CFFFont, INDEX};
@@ -257,14 +257,24 @@ pub fn get_widths(seq: &PDFList) -> PyResult<FontWidthDict> {
                         widths.insert(WidthKey::int(i), w.clone());
                     });
                 } else {
-                    // log.warning("Skipping invalid font width specification ...")
-                    frames::log_frames(Logger::PdfFont, Level::Warning)?;
+                    frames::log_text(Logger::PdfFont, Level::Warning, || {
+                        Ok(format!(
+                            "Skipping invalid font width specification for {} to {} because either of them is not \
+                             an int",
+                            char1.py_str()?,
+                            char2.py_str()?
+                        ))
+                    })?;
                 }
                 r.clear();
             }
         } else {
-            // log.warning("Skipping invalid font width specification ...")
-            frames::log_frames(Logger::PdfFont, Level::Warning)?;
+            frames::log_text(Logger::PdfFont, Level::Warning, || {
+                Ok(format!(
+                    "Skipping invalid font width specification for {} because it is not a number or a list",
+                    v.py_str()?
+                ))
+            })?;
         }
     }
     Ok(widths)
@@ -444,10 +454,12 @@ impl FontClass {
 }
 
 /// `PDFFont.fontname`: a `str` (a literal's name, `"unknown"`, a standard
-/// font's name) or whatever object the descriptor's `/FontName` holds.
+/// font's name) or whatever object the descriptor's `/FontName` holds. The
+/// `str` is shared (performance: each `LTChar` holds its font's name, as
+/// in Python, where they hold the same object).
 #[derive(Clone, Debug)]
 pub enum FontName {
-    Str(String),
+    Str(PyStr),
     Obj(PDFObject),
 }
 
@@ -628,14 +640,14 @@ impl Base {
         let fontname = match descriptor.get("FontName") {
             None | Some(DescValue::Str(_)) => {
                 frames::leaf(1)?; // resolve1 of a str
-                FontName::Str(match descriptor.get("FontName") {
-                    Some(DescValue::Str(s)) => s.to_owned(),
-                    _ => "unknown".to_owned(),
-                })
+                FontName::Str(PyStr::new(match descriptor.get("FontName") {
+                    Some(DescValue::Str(s)) => s,
+                    _ => "unknown",
+                }))
             }
             Some(DescValue::Tuple(_)) => unreachable!("FontName is never a tuple"),
             Some(DescValue::Obj(o)) => match resolve1(&o)? {
-                lit @ PDFObject::Literal(_) => FontName::Str(lit_name(&lit)?),
+                lit @ PDFObject::Literal(_) => FontName::Str(PyStr::from(lit_name(&lit)?)),
                 other => FontName::Obj(other),
             },
         };
@@ -712,8 +724,15 @@ fn parse_bbox(descriptor: &Descriptor) -> PyResult<[f64; 4]> {
     match safe_rect_list(&font_bbox)? {
         Some(bbox) => Ok(bbox),
         None => {
-            // log.warning("Could not get FontBBox from font descriptor ...")
-            frames::log_frames(Logger::PdfFont, Level::Warning)?;
+            frames::log_text(Logger::PdfFont, Level::Warning, || {
+                let font_bbox = match &font_bbox {
+                    DescItem::Obj(o) => o.repr()?,
+                    DescItem::Tuple(t) => format!("{t:?}"),
+                };
+                Ok(format!(
+                    "Could not get FontBBox from font descriptor because {font_bbox} cannot be parsed as 4 floats"
+                ))
+            })?;
             Ok([0.0; 4])
         }
     }
