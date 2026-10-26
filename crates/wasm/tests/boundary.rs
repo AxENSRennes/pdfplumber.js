@@ -940,6 +940,8 @@ fn documents_handles_formats_and_the_benchmark_body() {
         ("pdfplumber", s("0.11.9")),
         ("handles", Js::Num(1.0)),
         ("history", Js::Num(1.0)),
+        // the size of the request of its one entry (doc_open)
+        ("history_bytes", Js::Num(80.0)),
     ]);
     assert_eq!(info, expected);
     assert_eq!(ok(call(&mut core, "free", h, PyValue::None, None)), Js::Null);
