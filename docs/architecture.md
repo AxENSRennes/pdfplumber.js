@@ -2480,7 +2480,13 @@ BOUNDARY.
 - **Vérification** (`heavy.sh`, `HEAVY_SLOTS=1`) :
   - sessions dans Node : 57/57 sur les sources et sur `dist` (4 112
     appels), `api-lifetime` 12/12, `api-runtime` 8/8 ; fenêtres de
-    profondeur (`depth.jsonl`, `api-depth.test.ts`) : DEPTH ;
+    profondeur (`depth.jsonl`, `api-depth.test.ts`) : 448/448 (8 512
+    appels ; 443 au premier passage : le rejoueur construisait ses valeurs
+    par récursion, trop profonde pour la pile de JavaScript sur les
+    `depth-attribute-repr-998x` d'`adv-structure`, et la fenêtre
+    `388-depth-chain-to-dict-ref-attribute-324` ouverte depuis des octets
+    tombait sur le cas « Not Ported » de `structure_tree` : les fenêtres
+    s'ouvrent depuis leur chemin, comme dans les étapes) ;
   - `scripts/check-browsers.sh` : 456 tests verts (23 min), dont 55
     sessions (les 57 moins les deux de Node) dans Chromium, Firefox et
     WebKit, dans la page et en worker ;
