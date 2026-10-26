@@ -3050,7 +3050,35 @@ spécialisation (aucun site de ce type n'atteint la limite ici).
   13 × 150 fichiers (`dist wasm = native`) ;
 - `scripts/check.sh` : TODO-CHECK
 - `scripts/check-browsers.sh` : TODO-BROWSERS
-- mutations : TODO-MUTANTS
+- mutations, sur le code que la jonction a écrit ou fusionné :
+  - `cargo mutants --in-diff` (`--profile mutants -j 1`) : `structs.rs`
+    (le diff du masque ; rejeux `js_runtime_unit`, `boundary`) 8 mutants,
+    1 détecté, 7 non viables ; `path_segment` fusionné (rejeux
+    `interp_unit`, `js_runtime_unit`) 6 mutants, 2 détectés (les bras
+    `'m'` et `'l'` du texte du journal), 4 non viables ; le diff des
+    unités C (`pdfinternals.rs`, `page.rs`, `pdf.rs`, `typing_cache.rs`,
+    `recursion.rs`, rejeu `plumber_frames`) 63 mutants, 6 détectés, 52 non
+    viables, 5 manqués, repris à la main contre les autres rejeux
+    (`plumber_unit`, tests de `typing_cache`) et tous détectés ;
+  - à la main (`scripts/join-hand-mutants.py`, dans une copie neuve des
+    sources) : 38 mutants des instructions de comptage (chaque
+    `isinstance_tuple`, chaque unité de `decode_text` et de `re.sub`,
+    l'escalier des abonnements, la constance d'un abonnement), du
+    masque (bras du type, argument lu, longueur) et de `path_segment`
+    fusionné (drapeau, segment, corps) : 34 détectés, 4 survivants
+    équivalents — les unités transitoires de `(LTChar, LTTextContainer)`,
+    de `(LTCurve,)`, de la comparaison de `_cache2` et de `.lower()` :
+    chacune n'en demande qu'une, après l'`isinstance` de `re._compile` qui
+    en demande deux dans le même appel de `process_object` ; aucune n'est
+    donc jamais la première à manquer (Python les prend, le port aussi) ;
+    un premier passage, dans une copie dont les produits de compilation
+    venaient d'une copie antérieure (`rsync` garde les dates des sources,
+    `cargo` jugeait frais le binaire d'un mutant), a été écarté ;
+  - JavaScript (`scripts/js-api-mutants.mjs`, les 21 mutants de
+    `api/structure.ts`, dont 4 nouveaux de `matcherArgs`) : 20 tués, un
+    survivant équivalent, une `RegExp` envoyée à la place du `null` qui
+    précède le masque (le cœur ne lit pas le matcher quand le masque est
+    là).
 
 **Mesures finales.** Méthode : `quick` (150 fichiers, 20 premières pages,
 302 pages), phases de `plumber_phases` (ouverture et `pdf.pages`, puis

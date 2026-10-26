@@ -383,7 +383,20 @@ Lecture :
   dans Node, le build `dist` et les navigateurs ; traces des étapes
   `plumber_*` par l'API, `oracle.verify --engine js-api`), propriété des
   fichiers des chantiers API, BOUNDARY et PERF, référence PERF sur
-  `quick`. Ce qui suit est la liste d'origine de la vague.
+  `quick`. Jonction (`wave5/join`, `architecture.md`, « Jonction ») : les
+  trois chantiers fusionnés (un conflit, `path_segment`, les deux
+  intentions gardées) ; le masque des matchers de structure dans son
+  propre argument (un objet d'un appelant n'est plus pris pour lui) ;
+  l'écart d'unités C de la couche page que PERF a trouvé, corrigé à ses
+  causes (`isinstance` avec un tuple de classes, `"".join` et `ord` de
+  `decode_text`, escaliers des abonnements `typing`, `re.sub` de
+  `process_object`) et vérifié par `plumber_frames` ; chaque membre de
+  `public-api.md` vérifié par l'API publique (sessions dans Node, `dist`,
+  Chromium, Firefox, WebKit, page et worker ; traces `plumber_*` par
+  l'API sur `all` et les ensembles adverses, différences toutes
+  classées) ; API publique ×6,3 sur Python dans Node, ×6,0 dans
+  Chromium, natif ×8,4 (`quick`). Ce qui suit est la liste d'origine de
+  la vague.
 - **Vague 5 (liste d'origine)** : l'API JS publique
   (`PDFPlumberDocument`, `PDFPlumberPage`), construite sur les opérations
   de la frontière que la vague 4 a vérifiées (`js-runtime.md`,

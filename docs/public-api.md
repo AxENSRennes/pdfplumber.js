@@ -375,7 +375,8 @@ the order of `_find_all` (depth-first, preorder), in the member's job (as
 `filter`'s), even where Python stops at the first match (`find`) or walks a
 subtree only: a function with side effects sees every element. Any other
 matcher reaches Python as it is (`TypeError: '...' object is not
-callable`). An element found is the element object of the tree at its
+callable`), a plain object included, whatever its keys (`{ mask: [...] }`
+is a `dict` Python calls, not the truth the API computes for a function). An element found is the element object of the tree at its
 path. `elementBbox` takes an element of this tree (`TypeError` otherwise;
 Python accepts any `PDFStructElement`).
 
