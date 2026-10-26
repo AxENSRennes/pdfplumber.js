@@ -281,6 +281,9 @@ FUNCTION_ARGS: list[tuple[str, Any]] = [
     ("decode_text", b"abc"),
     ("decode_text", b""),
     ("decode_text", b"\xfe\xff\x00a\x01\x00"),
+    # (a list, as the structure tree may decode what /Alt resolves to: each
+    # item through ord() when it is a str)
+    ("decode_text", ["a", 98]),
     ("resolve_and_decode", "DeviceGray"),
     ("resolve_and_decode", ""),
     ("resolve_and_decode", b"x\x80"),

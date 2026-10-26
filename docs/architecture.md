@@ -2916,6 +2916,130 @@ causes ; « Jonction (branche `wave5/join`) » ci-dessous).
   `SHALLOW` 0 : mêmes valeurs) ou testent ce qu'un bloc de table ne peut
   pas contenir (une cellule en fin de bloc : la table de chaînes la suit).
 
+### Jonction (branche `wave5/join`)
+
+Branche `wave5/join` : `wave5/api` (`85ed95b`), puis `wave5/boundary`
+(`b6391b3`) et `wave5/perf` (`149ff35`) fusionnées sans avance rapide.
+
+**Fusions.**
+
+- `wave5/boundary` : sans conflit (huit fichiers, ses commits d'après
+  `b2e6128`, la dernière fusion de BOUNDARY dans API : `cmap_scan`,
+  `structs`, tests, `js_runtime.py`, docs).
+- `wave5/perf` : un conflit, `PDFPageInterpreter.path_segment`
+  (pdfminer/pdfinterp.py:541-610). PERF y fait le `Vec<Num>` du segment en
+  une passe ; BOUNDARY y formate le texte du `log.warning` à la demande
+  (`warning_with`). Les deux sont gardés : le vecteur de PERF, le message
+  de BOUNDARY. Les autres fichiers communs (`wire/binary.rs`,
+  `wire/mod.rs`, `wire.ts`, docs) se fusionnent seuls, et le résultat
+  garde chaque intention : l'étiquette `0x13` de BOUNDARY et
+  `decode_args` à côté de la table et de `write_shallow` de PERF (une
+  valeur `is_shallow` ne contient jamais de flux) ; le `TypeError` d'une
+  fonction ou d'un symbole en argument (commit `8ab0e97` d'API) à côté du
+  `Reader.item` de PERF ; l'entrée `plumber_frames` de PERF dans
+  `oracle/unit/__main__.py` à côté de `js_api`. Les sites `log.*` de
+  pdfminer et ceux que PERF a récrits ne se recouvrent pas (protocole 2) :
+  aucun `LOG.warning()` sans texte n'a réapparu.
+
+**Câblage de l'API.** API avait fusionné BOUNDARY trois fois et
+construit chaque membre sur ses opérations (flux par référence et leur
+propriétaire, `element_bbox`, `page_info` et ses deux erreurs, arbres de
+structure) ; le préchargement des CMaps et la transmission des `log.*`
+sont dans le cœur et le paquet (la transmission est vérifiée par l'API
+publique : le test « records and warnings reach onWarning » de
+`tests.mjs`, qui ouvre par `open()`, dans Node, les trois navigateurs et
+en worker ; `api-runtime.test.ts` pour `logLevel` et la page). Un défaut
+de protocole trouvé à la jonction, corrigé à sa cause :
+
+- `struct_find_all`/`struct_find` prenaient tout dict d'une seule clé
+  `{"mask": [...]}` pour le masque que JavaScript a calculé, et l'API
+  passait tel quel l'objet d'un appelant : `tree.findAll({mask: [true]})`
+  filtrait par ce « masque » là où Python appelle le dict (`TypeError:
+  'dict' object is not callable`). Le masque est maintenant un troisième
+  argument (`structs.rs`), le matcher n'étant alors pas lu ; les rejeux
+  (`js_runtime_unit.rs`, `tests.mjs`) et `structure.ts` (`matcherArgs`)
+  l'envoient ainsi (`js-runtime.md`, « Documents et pages »). Les
+  sessions de structure ont un matcher `{"mask": [True]}` de plus
+  (`js_api.py`, `MATCHERS`) : 57 sessions, 4 178 appels.
+
+**Unités C de la couche page** (l'écart que PERF a trouvé, présent dès la
+vague 4). Chaque cause mesurée sur CPython 3.12 (essais forkés sous des
+comparaisons de listes imbriquées, `oracle/unit/plumber_frames.py`) :
+
+- `isinstance(x, (A, B))` une fois son site spécialisé
+  (`CALL_NO_KW_ISINSTANCE` → `object_recursive_isinstance`) : une unité le
+  temps de vérifier le tuple (`" in __instancecheck__"`) :
+  `resolve_all` de toute valeur qui n'est pas une référence
+  (`pdfinternals::resolve_all`, `resolve_all_value`,
+  `resolve_all_owned`), `resolve_and_decode` de ce qui n'est ni une liste
+  ni un `PSLiteral`, les `(LTChar, LTTextContainer)` et `(LTCurve,)` de
+  `process_object` (`pycompat::recursion::isinstance_tuple`) ;
+- `decode_text` : `"".join` (un descripteur de méthode à un argument)
+  tient une unité (`" while calling a Python object"`) autour de l'entrée
+  des générateurs ; `ord(c)` en prend une le temps de s'exécuter pour
+  chaque caractère d'une `str` ; `str(s[2:], "utf-16be", "ignore")` en
+  tient une (`_PyObject_MakeTpCall`) ;
+- les abonnements `typing` des annotations des fonctions imbriquées : un
+  *escalier* d'unités C par abonnement, défaut et succès du cache
+  (`typing_cache::CStaircase`, `Subscription::with_c`), mesuré par
+  `python -m oracle.depth_probe typing-c` (succès : l'entrée de `inner`
+  depuis le `BINARY_SUBSCR` générique, l'appel du `lru_cache`, les
+  comparaisons de sa clé, le `__hash__` d'un alias en argument ; défaut :
+  la construction de l'alias, jusqu'à 16 unités pour
+  `Optional[Tuple[str, Any]]`) ;
+- `re.sub(lt_pat, "", ...).lower()` au début de `process_object` :
+  l'`isinstance(flags, RegexFlag)` de `re._compile` (une classe d'enum :
+  le `__instancecheck__` de sa métaclasse cherché puis appelé, deux
+  unités), la comparaison de la clé de `_cache2`, `.lower()` (une méthode
+  sans argument).
+
+`plumber_frames` vérifie maintenant les unités C par défaut
+(`PLUMBER_FRAMES_C` n'existe plus), et la `RecursionError` un à six
+niveaux sous l'entrée la plus profonde le long du compteur C (au plus les
+unités qui y restent) : le message de chaque unité du point le plus
+profond, pas seulement de la dernière ; aussi `decode_text` de `bytes`
+(BOM UTF-16 compris), `resolve_and_decode` (un nom, des octets, un
+entier) et `resolve_all` d'un dict ; et, nouveau test
+`typing_subscriptions`, les cadres et l'escalier de chaque abonnement
+que le port modélise (défaut puis succès, avec 0, 1, 2... unités de
+reste), contre `typing.jsonl` (les mesures de `depth_probe`). Les trois
+tests passent, en natif et en `wasm32-wasip1`. Ce qui n'est pas modélisé
+reste ce que `pycompat::specialize` exclut : l'unité de plus d'un appel
+de builtin à sa première exécution dans un processus, avant sa
+spécialisation (aucun site de ce type n'atteint la limite ici).
+
+**Bancs.** `plumber_phases.rs`/`.py`, `js/bench/phases.mjs`,
+`phases.html`, `browser-phases.mjs` mesurent aussi `extract_tables()`
+(dernière colonne : pdfplumber ne garde aucune table, elle refait
+`find_tables`).
+
+**Vérification** (`heavy.sh`, `HEAVY_SLOTS=1`, fournisseur de CMaps) :
+
+- `oracle.verify` par `pdftrace`, les 13 étapes, `all` (20 premières
+  pages) et les cinq ensembles adverses (78 passes, sur la fusion ; les
+  quatre étapes `plumber_*` repassées sur les six ensembles après les
+  unités C) : identiques hors les écarts connus — `plumber_objects` 1 852/1 853
+  sur `all` (la ligne `ids` de `pdfjs-issue19624-text.pdf`),
+  `plumber_text` 336/353 et `plumber_tables` 341/353 sur `adv-interp`
+  (l'ordre des NaN de `cluster_objects` ; l'oracle de `096-text-TL.pdf`
+  tué par la limite de 5 Go) ;
+- les quatre étapes `plumber_*` par l'API publique (`--engine js-api`,
+  `dist/pdfplumber-oracle.wasm` de `check.sh`) sur `all` : 1 852, 1 853,
+  1 853, 1 850 ; chaque différence, ici et sur les ensembles adverses,
+  est d'une des sortes connues (classées fichier par fichier) : une
+  fenêtre de profondeur (`depth-*`, `climit-*` : comparées par
+  `depth.jsonl`), un fichier qui diffère aussi par `pdftrace` (les écarts
+  ci-dessus), ou `filter()` d'une page dont les objets lèvent (3 fichiers
+  de `all`, 10 d'`adv-interp`, `083-mc-mcid-deep.pdf` d'`adv-plumber`) ;
+  TODO-JSAPI-STRUCTURE
+- `oracle.wasm_parity --set quick`, les 13 étapes : 0 différence sur
+  13 × 150 fichiers (`dist wasm = native`) ;
+- `scripts/check.sh` : TODO-CHECK
+- `scripts/check-browsers.sh` : TODO-BROWSERS
+- mutations : TODO-MUTANTS
+
+**Mesures finales** : TODO-MEASURES
+
 ## Sémantique Python centralisée (`crates/pycompat`)
 
 Tout ce qui imite Python vit ici, une seule fois, testé contre CPython :
