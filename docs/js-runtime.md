@@ -655,7 +655,14 @@ la couche page ajoutera l'interpréteur et les polices. Budget (brotli) :
   l'autre ; non portable, comme l'ordre des NaN) ; fenêtres de
   profondeur de `debug_tablefinder` (unités C), de `PDFStructTree`
   (récursion de `prune`, `str(s)` de `decode_text`) et de `repr(el)`
-  (cadres).
+  (cadres), et `flate-warning-*` : une chaîne de formes dont la dernière
+  a des données Flate corrompues, si bien que le point le plus profond
+  est le `log.warning` de `decompress_corrupted` (les cadres de l'appel,
+  logging coupé : `Logger::log`). La session `streams` ouvre aussi un
+  document par chemin (`doc_open_file`, rejoué avec le nom et les octets
+  du fichier) dont les flux d'image ont un `/Filter` indirect, lus après
+  `PDF.close()`, et une annotation qui tient des flux dans un dict, une
+  liste et un dict dans une liste.
 - **API publique** (vague 5) : les sessions de `oracle/unit/js_api.py`
   (`sessions.jsonl`), rejouées par `js/test/shared/api-sessions.mjs` par
   l'API publique seulement, dans Node sur les sources (`api.test.ts`) et
