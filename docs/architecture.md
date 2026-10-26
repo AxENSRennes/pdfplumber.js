@@ -3296,6 +3296,19 @@ migration complétées ; `scripts/check-package.mjs` et
   test dans `api-runtime.test.ts`, mutant #60 de `fix-mutants.mjs` tué ;
   le second passage est identique à la jonction.
 
+**Mesures** (aucune optimisation dans cette branche ; vérifier que les
+corrections ne coûtent rien) : `js/bench/phases.mjs` sur `quick` (150
+fichiers, 302 pages), le `dist` de la jonction (son module refait avec
+`wasm-opt -O3` : 2 571 923 octets, comme mesuré à la jonction) et celui
+de `wave5/fix`, alternés, 3 passes chacun dans un même créneau de
+`heavy.sh`. Total (ouverture, objects, texte, mots, tables) : jonction
+6,53, 6,04, 6,17 s, `wave5/fix` 6,13, 6,36, 6,60 s ; médianes 20,4 et
+21,1 ms par page, dans l'écart d'une passe à l'autre (0,5 s d'une passe à
+l'autre pour la même branche). Mémoire linéaire finale identique
+(279 117 824 octets), RSS maximale 516 à 531 Mio (jonction 531 à 577).
+Les tours de boucle d'événements des finaliseurs : un `setImmediate` tous
+les 64 objets suivis.
+
 **Mutations.** `scripts/fix-mutants.mjs` (dans une copie de la branche ;
 un mutant Rust reconstruit `dist/pdfplumber.wasm`, puisque seules les
 sessions de l'API atteignent ce code par WebAssembly) : 61 mutants du
