@@ -55,6 +55,29 @@ ported and verified (docs/architecture.md, "Vague 5"). Not ported:
 - Public JavaScript API: [`docs/public-api.md`](docs/public-api.md)
 - Runtime (WebAssembly, CMaps, workers): [`docs/js-runtime.md`](docs/js-runtime.md)
 
+## Performance
+
+Milliseconds per page on the `quick` set (150 files, their first 20
+pages: 302 pages), each phase as pdfplumber runs it, on a shared 8-core
+Linux VPS (one benchmark at a time; median of 3 runs, Python 1 run):
+
+| ms per page | open | objects (layout included) | `extract_text` | `extract_words` | `find_tables` | total | `extract_tables` |
+|---|---|---|---|---|---|---|---|
+| Python pdfplumber 0.11.9 (CPython 3.12) | 4.85 | 113.75 | 6.76 | 4.12 | 4.84 | 134.3 | 4.76 |
+| pdfplumber-js in Node 26, public API | 1.21 | 14.91 | 1.96 | 1.69 | 1.55 | 21.3 | 1.33 |
+| pdfplumber-js in Chromium 148, public API | 1.11 | 15.64 | 2.02 | 1.79 | 1.68 | 22.2 | 1.37 |
+| the Rust core, native (no JavaScript) | 0.33 | 10.80 | 1.70 | 1.33 | 1.80 | 16.0 | 1.22 |
+
+The public API in Node is about 6.3 times as fast as Python on these
+pages, in Chromium 6.0 times (5.3 with the engine in a worker; WebKit is
+on par with Chromium, Playwright's Firefox Nightly about five times
+slower), native Rust 8.4 times. `objects` includes moving every object into
+JavaScript values (3.3 ms of its 14.9 ms: a second read, the objects
+already computed). The WebAssembly module is 2.57 MB (661 kB brotli); the
+CJK CMaps are loaded only when a document needs them. Method, per-phase
+history and memory: [`docs/architecture.md`](docs/architecture.md),
+"Jonction (branche `wave5/join`)".
+
 ## Migrating from the pdf.js-based port (`legacy-pdfjs`)
 
 The previous port (tag `legacy-pdfjs`) reimplemented pdfplumber over pdf.js.

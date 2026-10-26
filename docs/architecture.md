@@ -3031,14 +3031,84 @@ spécialisation (aucun site de ce type n'atteint la limite ici).
   `depth.jsonl`), un fichier qui diffère aussi par `pdftrace` (les écarts
   ci-dessus), ou `filter()` d'une page dont les objets lèvent (3 fichiers
   de `all`, 10 d'`adv-interp`, `083-mc-mcid-deep.pdf` d'`adv-plumber`) ;
-  TODO-JSAPI-STRUCTURE
+  aucune autre :
+
+  | identiques par l'API | `plumber_objects` | `plumber_text` | `plumber_tables` | `plumber_doc` |
+  |---|---|---|---|---|
+  | `all` (1 853) | 1 852 (`ids`) | 1 853 | 1 853 | 1 850 (3 `filter`) |
+  | `adv-objects` (333) | 318 (15 fenêtres) | 321 (12) | 321 (12) | 318 (15) |
+  | `adv-pages` (285) | 228 (57) | 230 (55) | 230 (55) | 228 (57) |
+  | `adv-interp` (353) | 221 (132) | 292 (44 ; 17 NaN/oracle) | 301 (40 ; 12 NaN) | 192 (151 ; 10 `filter`) |
+  | `adv-plumber` (199) | 159 (40) | 188 (11) | 186 (13) | 149 (49 ; 1 `filter`) |
+  | `adv-structure` (441) | 441 | 441 | 441 | 405 (36) |
+
+  (une fenêtre de profondeur que la trace de l'étape ne peut pas suivre
+  par l'API est comptée comme différente, « the oracle's trace has no
+  spans line left » compris ; les 448 sont identiques par `depth.jsonl`,
+  dans `check.sh`) ;
 - `oracle.wasm_parity --set quick`, les 13 étapes : 0 différence sur
   13 × 150 fichiers (`dist wasm = native`) ;
 - `scripts/check.sh` : TODO-CHECK
 - `scripts/check-browsers.sh` : TODO-BROWSERS
 - mutations : TODO-MUTANTS
 
-**Mesures finales** : TODO-MEASURES
+**Mesures finales.** Méthode : `quick` (150 fichiers, 20 premières pages,
+302 pages), phases de `plumber_phases` (ouverture et `pdf.pages`, puis
+par page `layout`, `objects`, `extract_text()`, `extract_words()`,
+`find_tables()`, et `extract_tables()` en dernière colonne), chaque passe
+dans `heavy.sh` (une à la fois ; la machine de 8 cœurs garde d'autres
+travaux légers). Natif : l'exemple de la jonction compilé sur les sources
+de `wave5/base`, de `wave5/perf` (`git archive`) et de la jonction
+(`8ae8e36` : sans les quatre opérations de compteur de `re.sub` par
+objet de `95076f0`), les trois alternés dans un même créneau, 3 passes
+chacun, médiane. Node : `js/bench/phases.mjs` de la jonction (API
+publique, valeurs décodées) sur le `dist` (`wasm-opt -O3`) de chacune des
+trois branches, alternés de même ; « frontière » = seconde lecture de
+`page.objects`. Python : `plumber_phases.py`, une passe. Navigateurs :
+`browser-phases.mjs`, une passe par navigateur et par mode, la jonction
+seule.
+
+| ms par page | ouverture | layout | objects | texte | mots | tables | total | `extract_tables` |
+|---|---|---|---|---|---|---|---|---|
+| Python 3.12 | 4,85 | 70,87 | 42,88 | 6,76 | 4,12 | 4,84 | **134,3** | 4,76 |
+| natif, base | 0,35 | 5,76 | 12,60 | 2,30 | 1,67 | 1,94 | 24,6 | 1,42 |
+| natif, PERF | 0,31 | 4,70 | 5,78 | 1,69 | 1,31 | 1,73 | 15,5 | 1,14 |
+| natif, jonction | 0,33 | 4,89 | 5,91 | 1,70 | 1,33 | 1,80 | **16,0** | 1,22 |
+
+| ms par page, API publique | ouverture | objects (layout compris) | texte | mots | tables | total | frontière | `extract_tables` |
+|---|---|---|---|---|---|---|---|---|
+| Node, base | 1,23 | 25,90 | 2,42 | 2,01 | 1,91 | 33,5 | 4,77 | 1,59 |
+| Node, PERF | 1,15 | 14,82 | 1,87 | 1,61 | 1,53 | 21,0 | 3,34 | 1,32 |
+| Node, jonction | 1,21 | 14,91 | 1,96 | 1,69 | 1,55 | **21,3** | 3,26 | 1,33 |
+| Chromium 148, page | 1,11 | 15,64 | 2,02 | 1,79 | 1,68 | 22,2 | 3,37 | 1,37 |
+| Chromium 148, worker | 1,82 | 16,68 | 2,76 | 2,33 | 1,92 | 25,5 | 3,92 | 1,78 |
+| WebKit 26.4, page | 1,11 | 15,48 | 2,06 | 1,83 | 1,60 | 22,1 | 3,33 | 1,40 |
+| WebKit 26.4, worker | 1,68 | 16,73 | 2,48 | 2,12 | 1,84 | 24,9 | 3,82 | 1,73 |
+| Firefox 150 (Nightly), page | 3,55 | 83,34 | 9,35 | 8,28 | 5,40 | 109,9 | 12,63 | 5,13 |
+| Firefox 150 (Nightly), worker | 4,46 | 89,11 | 9,19 | 8,57 | 5,94 | 117,3 | 13,78 | 5,65 |
+
+- Rapport à Python (134,3 ms par page) : natif ×8,4, API dans Node ×6,3,
+  dans Chromium ×6,0 (×5,3 en worker), WebKit comme Chromium ; par phase
+  dans Node : ouverture ×4,0, objects ×7,6, texte ×3,4, mots ×2,4,
+  `find_tables` ×3,1, `extract_tables` ×3,6. Firefox de Playwright
+  (Nightly) n'est pas une référence de vitesse (`port-strategy.md`).
+- Rapport à la base : natif ×1,54, Node ×1,57 ; la jonction est à 3 % de
+  PERF en natif et 2 % dans Node, dans l'écart d'une passe à l'autre
+  (natif, jonction : 17,1, 16,0 et 15,0 ms selon la passe) : la
+  frontière de BOUNDARY (flux par référence, texte des journaux) et les
+  unités C comptées ne coûtent rien de mesurable. Les navigateurs, une
+  passe chacun à une autre heure, sont de 5 à 12 % au-dessus des mesures
+  de PERF (Chromium page 14,2 → 15,6 ms pour `objects`), sans mesure
+  alternée : non attribué.
+- Mémoire : RSS maximale native 318 Mio (base 366, PERF 318) ; Node 498
+  à 544 Mio (PERF 549 à 567, base 586 à 614) ; mémoire linéaire du Wasm à
+  la fin 279 117 824 octets (PERF idem, base 308 936 704).
+- Taille (`dist`, `wasm-opt -O3`) : `pdfplumber.wasm` 2 571 923 octets
+  bruts, 937 434 gzip, 660 876 brotli (PERF 2 466 507 et 632 096 brotli,
+  base 2 416 107 et 628 778) : +4,3 % sur PERF, le code de BOUNDARY et
+  d'API (flux, arbres de structure, `cmap_scan`, texte des `log.*`,
+  `debug_tablefinder`) ; budget brotli 1 Mo. JS navigateur 43 527 octets
+  (13 609 brotli), `dist/src` (Node) 126 643 (33 370).
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 
