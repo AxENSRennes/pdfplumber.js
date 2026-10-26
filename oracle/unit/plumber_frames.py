@@ -42,7 +42,9 @@ depth, py outcome, c depth, c outcome, py deeper, c deeper], ...]}``.
 
 Cases (``objects.jsonl``): ``{"in": [name, pdf, password], "out": [[class
 name, py depth, py outcome, c depth, c outcome, py deeper, c deeper],
-...]}`` (``deeper``: the ``RecursionError`` one level down), each depth
+...]}`` (``deeper``: the ``RecursionError`` lines one level down, and for
+``c`` down to ``C_DEEPER`` levels, at most the units left there: where each unit of the deepest point is
+taken), each depth
 ``{"py", "c_left"}`` of the caller at the deepest entry from which no
 ``RecursionError`` escapes, each outcome ``"ok"`` or the canonical line of
 the exception ``process_object`` raised there (a malformed MediaBox; a
@@ -90,6 +92,10 @@ ADV = ("box-media-origin.pdf", "box-media-inverted.pdf", "box-media-mixed.pdf", 
        "mc-props.pdf", "mc-figure.pdf", "font-kinds.pdf")
 #: Objects per file: the first ones, then the first of each class not seen.
 MAX_OBJECTS = 20
+#: The levels below the deepest entry whose ``RecursionError`` is recorded
+#: along the C counter (the units of the deepest point, the last taken
+#: first: each one's ``where`` is pinned).
+C_DEEPER = 6
 
 
 def leaves(objs: list[Any]) -> Iterator[Any]:
@@ -217,7 +223,7 @@ def limits(f: Any, arg: Any, what: str) -> list[Any]:
         return out
 
     row: list[Any] = []
-    deeper: list[str] = []
+    deeper: list[list[str]] = []
     for counter, hi in (("py", PY_LIMIT), ("c", C_LIMIT)):
         # the caller's depth at x = 0, moved by one frame (py) or one unit
         # (c) per level: checked at a few levels
@@ -242,7 +248,13 @@ def limits(f: Any, arg: Any, what: str) -> list[Any]:
                 hi = mid - 1
         if attempt(counter, lo + 1) is not None:
             raise RuntimeError(f"{what}: {counter} not monotone at {lo}")
-        deeper.append(raised[(counter, lo + 1)])
+        # (below the units left at the deepest entry, the caller itself has
+        # none: what raises there is the harness, not the function)
+        levels = 1 if counter == "py" else min(C_DEEPER, at(lo)["c_left"])
+        for k in range(2, levels + 1):
+            if attempt(counter, lo + k) is not None:
+                raise RuntimeError(f"{what}: {counter} not monotone at {lo + k}")
+        deeper.append([raised[(counter, lo + k)] for k in range(1, levels + 1)])
         row += [at(lo), attempt(counter, lo)]
     return row + deeper
 
@@ -272,6 +284,7 @@ FUNCTION_ARGS: list[tuple[str, Any]] = [
     ("resolve_and_decode", "DeviceGray"),
     ("resolve_and_decode", ""),
     ("resolve_and_decode", b"x\x80"),
+    ("resolve_and_decode", 5),
     ("resolve_all", 1.5),
     ("resolve_all", 3),
     ("resolve_all", "x"),

@@ -93,6 +93,12 @@ fn outcome(r: &PyResult<Obj>) -> String {
     }
 }
 
+/// A list of `str`.
+fn strs(v: &Value) -> Vec<String> {
+    let Value::List(items) = v else { panic!("a list: {v:?}") };
+    items.iter().map(|x| str_of(x).to_owned()).collect()
+}
+
 fn str_of(v: &Value) -> &str {
     let Value::Str(s) = v else { panic!("a str: {v:?}") };
     s.as_str().expect("ASCII")
@@ -116,8 +122,8 @@ fn replay_file(page: &Page, expected: &[Value], failures: &mut Vec<String>, name
         };
         assert_eq!(o.class_name(), str_of(class), "{name} object {i}");
         let counters = [
-            ("py", depth(py_depth), str_of(py_outcome), str_of(py_deeper)),
-            ("c", depth(c_depth), str_of(c_outcome), str_of(c_deeper)),
+            ("py", depth(py_depth), str_of(py_outcome), strs(py_deeper)),
+            ("c", depth(c_depth), str_of(c_outcome), strs(c_deeper)),
         ];
         for (counter, at, expected, expected_deeper) in counters {
             let got = outcome(&with_depth(at, || page.process_object(o)));
@@ -127,14 +133,16 @@ fn replay_file(page: &Page, expected: &[Value], failures: &mut Vec<String>, name
                     o.class_name()
                 ));
             }
-            let deeper = if counter == "py" { Depth { py: at.py + 1, ..at } } else { Depth { c: at.c + 1, ..at } };
-            match with_depth(deeper, || page.process_object(o)) {
-                Err(e) if e.kind == ExcKind::RecursionError && exc(&e) == expected_deeper => {}
-                r => failures.push(format!(
-                    "{name} {i} {}: one {counter} deeper {deeper:?}: oracle {expected_deeper}, rust {}",
-                    o.class_name(),
-                    outcome(&r)
-                )),
+            for (k, expected_deeper) in (1..).zip(&expected_deeper) {
+                let deeper = if counter == "py" { Depth { py: at.py + k, ..at } } else { Depth { c: at.c + k, ..at } };
+                match with_depth(deeper, || page.process_object(o)) {
+                    Err(e) if e.kind == ExcKind::RecursionError && exc(&e) == *expected_deeper => {}
+                    r => failures.push(format!(
+                        "{name} {i} {}: {k} {counter} deeper {deeper:?}: oracle {expected_deeper}, rust {}",
+                        o.class_name(),
+                        outcome(&r)
+                    )),
+                }
             }
         }
     }
@@ -260,8 +268,8 @@ fn function_frames() {
             other => panic!("unknown function {other}"),
         };
         let counters = [
-            ("py", depth(py_depth), str_of(py_outcome), str_of(py_deeper)),
-            ("c", depth(c_depth), str_of(c_outcome), str_of(c_deeper)),
+            ("py", depth(py_depth), str_of(py_outcome), strs(py_deeper)),
+            ("c", depth(c_depth), str_of(c_outcome), strs(c_deeper)),
         ];
         for (path, f) in &paths {
             for (counter, at, expected, expected_deeper) in &counters {
@@ -274,14 +282,16 @@ fn function_frames() {
                         "{path}({value:?}): at the {counter} limit {at:?}: oracle {expected}, rust {got}"
                     ));
                 }
-                let deeper =
-                    if *counter == "py" { Depth { py: at.py + 1, ..*at } } else { Depth { c: at.c + 1, ..*at } };
-                match with_depth(deeper, f) {
-                    Err(e) if e.kind == ExcKind::RecursionError && exc(&e) == *expected_deeper => {}
-                    r => failures.push(format!(
-                        "{path}({value:?}): one {counter} deeper {deeper:?}: oracle {expected_deeper}, rust {}",
-                        r.map_or_else(|e| exc(&e), |()| "ok".to_owned())
-                    )),
+                for (k, expected_deeper) in (1..).zip(expected_deeper) {
+                    let deeper =
+                        if *counter == "py" { Depth { py: at.py + k, ..*at } } else { Depth { c: at.c + k, ..*at } };
+                    match with_depth(deeper, f) {
+                        Err(e) if e.kind == ExcKind::RecursionError && exc(&e) == *expected_deeper => {}
+                        r => failures.push(format!(
+                            "{path}({value:?}): {k} {counter} deeper {deeper:?}: oracle {expected_deeper}, rust {}",
+                            r.map_or_else(|e| exc(&e), |()| "ok".to_owned())
+                        )),
+                    }
                 }
             }
         }
@@ -298,6 +308,9 @@ fn resolve_and_decode(value: &pdfplumber::obj::PyValue) -> PyResult<()> {
     match value {
         pdfplumber::obj::PyValue::Bytes(b) => {
             p::resolve_and_decode_obj(&pdfminer::pdftypes::PDFObject::Bytes(b.clone())).map(drop)
+        }
+        pdfplumber::obj::PyValue::Int(i) => {
+            p::resolve_and_decode_obj(&pdfminer::pdftypes::PDFObject::Int(i.clone())).map(drop)
         }
         other => p::resolve_and_decode(other).map(drop),
     }
@@ -333,10 +346,6 @@ fn typing_subscriptions() {
     let int = |v: &Value| match v {
         Value::Int(i) => u32::try_from(i.as_i64().expect("small")).expect("a depth"),
         _ => panic!("an int: {v:?}"),
-    };
-    let strs = |v: &Value| -> Vec<String> {
-        let Value::List(items) = v else { panic!("a list: {v:?}") };
-        items.iter().map(|x| str_of(x).to_owned()).collect()
     };
     let cases = data.cases("typing");
     assert_eq!(cases.len(), subscriptions.len());
