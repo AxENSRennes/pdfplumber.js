@@ -2496,7 +2496,14 @@ dicts à forme fixe changeraient le modèle de valeurs de `crates/pdfplumber`
 `scripts/check-browsers.sh` vert (345 tests) ; les 13 étapes identiques
 sur `quick` (150/150 chacune) ; `oracle.wasm_parity` sur `quick`, 13
 étapes, 0 différence, `dist wasm = native` ; `plumber_objects` et
-`plumber_text` par l'API (`--engine js-api`) 150/150 sur `quick`.
+`plumber_text` par l'API (`--engine js-api`) 150/150 sur `quick` ; les 13
+étapes sur `all` (1 853/1 853 chacune, sauf `plumber_objects` 1 852 : la
+ligne `ids` connue de `pdfjs-issue19624-text.pdf`) et sur les cinq corpus
+adverses (`adv-objects` 333, `adv-pages` 285, `adv-plumber` 199,
+`adv-structure` 441, `adv-interp` 353 : tous identiques, sauf les écarts
+connus d'`adv-interp`, `plumber_text` 336 et `plumber_tables` 341, les
+mêmes fichiers `op-*`/`text-*` aux coordonnées NaN que sur `wave5/base`,
+`port-strategy.md`).
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 
