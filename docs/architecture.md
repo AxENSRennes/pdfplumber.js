@@ -2505,6 +2505,94 @@ connus d'`adv-interp`, `plumber_text` 336 et `plumber_tables` 341, les
 mêmes fichiers `op-*`/`text-*` aux coordonnées NaN que sur `wave5/base`,
 `port-strategy.md`).
 
+**Profondeur de `process_object`** (`oracle/unit/plumber_frames.py`,
+`crates/pdftrace/tests/plumber_frames.rs`, nouveaux). Ni les traces des
+étapes ni les balayages de `plumber_sweep` n'atteignent la limite de
+récursion dans `Page.process_object` : l'interprétation va plus profond
+d'abord, et un balayage ne voit que si l'opération lève. Tous les mutants
+à la main des instructions qui comptent les cadres des chemins PERF (et de
+`process_object` lui-même) survivaient. Le générateur prend, pour chaque
+objet de la première page de 26 fichiers (`micro`, `adv-plumber` :
+courbes, rectangles, lignes, images, figures, contenu marqué, MediaBox
+décalées), le layout calculé d'abord, la profondeur la plus grande de
+l'appelant d'où `page.process_object(obj)` ne lève pas `RecursionError`,
+le long de chaque compteur (`py` : cadres Python en plus ; `c` : listes
+imbriquées comparées, une unité C par niveau), et l'issue à cette
+profondeur ; de même pour `decode_text` et `resolve_all` seuls. Chaque
+essai tourne dans un processus forké depuis le même cadre ; la profondeur
+de l'appelant est mesurée au niveau 0 puis déplacée d'un cadre ou d'une
+unité par niveau (vérifié à 1, 7 et 30 niveaux). Le rejeu passe par
+`Page::process_object` (méthode publique de `page.py:353`),
+`decode_text_value`, `resolve_all_value` et `resolve_all_owned` : **cadres
+Python identiques** pour chaque objet et chaque fonction, sur `wave5/base`
+comme sur `wave5/perf`.
+
+**Écart connu, pour la jonction : les unités C** (vérifiées seulement avec
+`PLUMBER_FRAMES_C=1`). Le port compte une unité C de moins que Python au
+point le plus profond de chaque objet (336 cas) et de chaque fonction (18),
+**à l'identique sur `wave5/base`** (le rejeu y donne les mêmes lignes) :
+écarts de la vague 4, que les chemins PERF reproduisent sans les changer.
+Causes trouvées : `isinstance` avec un tuple de classes prend une unité
+le temps de la vérification (`object_recursive_isinstance`, « in
+__instancecheck__ » : `isinstance(x, (list, tuple))` de `resolve_all`,
+`(LTChar, LTTextContainer)` et `(LTCurve,)` de `process_object`) ; les
+abonnements `typing` des annotations de `process_attr` prennent des unités
+C que `pycompat::typing_cache` ne compte pas (il ne compte que les cadres :
+`Optional[Tuple[str, Any]]` en prend 6 quand il est en cache) ;
+`decode_text` d'une `str` en prend 4 (3 pour la chaîne vide), le port 2. Un
+correctif de la première cause (unité transitoire dans les trois
+`resolve_all` et les deux `isinstance` de `process_object`) aligne les
+rectangles et les lignes ; il n'est pas dans cette branche (il change le
+comptage, donc toute la vérification) : à faire avec les deux autres, puis
+`PLUMBER_FRAMES_C` par défaut.
+
+**Tests de mutation** (`cargo mutants --in-diff` sur le diff de
+`wave5/base`, `--profile mutants -j 1`, `heavy.sh`) :
+
+- `crates/wasm/src/wire` (110 mutants) : 79 tués, 23 non viables, 8
+  survivants ; deux tests unitaires ajoutés (le type de colonne qu'écrit la
+  table est celui de `column_kind` ; le contrat d'`is_shallow`), puis les
+  50 mutants de ces fonctions : 41 tués, 7 non viables, 2 survivants
+  équivalents (`|` → `^` dans `kind_of` : drapeaux de bits distincts).
+- `crates/pycompat/src/num.rs` (12) : 11 tués ; `*v < 0` → `<= 0` dans
+  `int_hash` équivalent (le hash de 0 est 0 dans les deux branches).
+- `crates/pdfminer` et les vidages de `pdftrace` (37, sans le test `corpus`
+  de 5 minutes de `converter_unit`) : 14 tués, 19 non viables, 4
+  survivants équivalents : le seuil de longueur de `shared_text` (×3 : il
+  choisit quelles chaînes passent par le cache, le résultat est la même
+  `str`) et la garde de `keyword_op` remplacée par `false` (toujours le
+  chemin général, même nom de méthode).
+- `crates/pdfplumber` (154, avec `table.rs` et `geometry.rs`) : 24 tués,
+  121 non viables, 9 survivants ; un test de libération profonde par sorte
+  de conteneur tue les 4 mutants du chemin rapide de `Drop` (relancés : 6
+  tués sur 7) ; restent équivalents : la borne de capacité de la liste de
+  travail de `drop_nested` (garder ou non le tampon), `int_float_operands`
+  → `None` ou sans un bras (le chemin général donne le même `Num`),
+  `Obj::with_capacity` → `Default` (une capacité).
+- Passe `Ok(..)` (`scripts/mutants-ok.sh`, fonctions écrites ou changées
+  par PERF) : 5 tués sur 5.
+- Mutants à la main (`PyResult` et types sans `Default`, instructions de
+  comptage) : tués, `Attrs::push` qui inverse les deux premiers attributs,
+  `as_slice` qui perd le second, `with_items` vide, `int_float_operands`
+  qui inverse ou convertit un opérande, `classify` qui rend tout générique,
+  et, par `plumber_frames`, `resolve_all_owned` sans son cadre (séquence ou
+  scalaire) ou sans le cadre de son expression génératrice,
+  `decode_text_pystr` avec `leaf(1)`. Survivants justifiés : `Attrs::push`
+  d'un troisième attribut qui le perd (jamais plus de deux : `mcid`,
+  `tag`) ; le cadre de `point2coord_with` et l'unité par point de
+  `original_path` (plus haut que la chaîne de `pts`, qui passe avant dans
+  le temps : jamais le premier à dépasser la limite, chez Python non
+  plus) ; le cadre de `process_attr` pour un attribut hors `ALL_ATTRS`
+  (même raison, code de la vague 4) ; les `eval_entry` de
+  `resolve_all_owned` et `decode_text_pystr` (unités C : l'écart connu
+  ci-dessus empêche de les départager ; ils reproduisent ceux du chemin
+  général).
+- `js/src/core/wire.ts` (`Reader.item`, 18 mutants à la main) : 11 tués ;
+  7 survivants qui envoient une cellule à `value()` plus tôt ou plus tard
+  (garde toujours ou jamais, `depth < 0`, colonne par `value()`,
+  `SHALLOW` 0 : mêmes valeurs) ou testent ce qu'un bloc de table ne peut
+  pas contenir (une cellule en fin de bloc : la table de chaînes la suit).
+
 ## Sémantique Python centralisée (`crates/pycompat`)
 
 Tout ce qui imite Python vit ici, une seule fois, testé contre CPython :
