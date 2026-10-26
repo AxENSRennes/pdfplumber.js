@@ -3017,8 +3017,9 @@ spécialisation (aucun site de ce type n'atteint la limite ici).
 
 - `oracle.verify` par `pdftrace`, les 13 étapes, `all` (20 premières
   pages) et les cinq ensembles adverses (78 passes, sur la fusion ; les
-  quatre étapes `plumber_*` repassées sur les six ensembles après les
-  unités C) : identiques hors les écarts connus — `plumber_objects` 1 852/1 853
+  quatre étapes `plumber_*` repassées sur les six ensembles après chacun
+  des deux commits des unités C, `8ae8e36` et `95076f0`, le binaire
+  final) : identiques hors les écarts connus — `plumber_objects` 1 852/1 853
   sur `all` (la ligne `ids` de `pdfjs-issue19624-text.pdf`),
   `plumber_text` 336/353 et `plumber_tables` 341/353 sur `adv-interp`
   (l'ordre des NaN de `cluster_objects` ; l'oracle de `096-text-TL.pdf`
@@ -3047,9 +3048,24 @@ spécialisation (aucun site de ce type n'atteint la limite ici).
   spans line left » compris ; les 448 sont identiques par `depth.jsonl`,
   dans `check.sh`) ;
 - `oracle.wasm_parity --set quick`, les 13 étapes : 0 différence sur
-  13 × 150 fichiers (`dist wasm = native`) ;
-- `scripts/check.sh` : TODO-CHECK
-- `scripts/check-browsers.sh` : TODO-BROWSERS
+  13 × 150 fichiers (`dist wasm = native`, à `8ae8e36` ; le code final
+  n'ajoute que les unités de `re.sub`, que la porte de profondeur de
+  `check.sh` compare entre le Wasm `dist` et le natif) ;
+- `scripts/check.sh` vert sur le code final (`c648d7d`, 63 min) :
+  rustfmt, clippy, références amont, tables générées, données unitaires à
+  jour, `cargo test` natif (261 tests réussis, 1 ignoré) et
+  `wasm32-wasip1` (249 réussis, 11 ignorés, dont les 7 tests qui veulent
+  un processus à eux, relancés chacun seul : réussis), porte de profondeur
+  du Wasm `dist` (= natif sur chaque fenêtre), 647 tests de Node (les 57
+  sessions sur les sources et sur `dist`, les 448 fenêtres de
+  `depth.jsonl`, `api-lifetime`, `api-runtime`, `wire`, le canon), budget
+  de taille, `plumber_objects` et `plumber_text` par l'API sur `micro`
+  (17/17), 47 auto-tests de l'oracle ; aussi vert à `8ae8e36` (41 min) ;
+- `scripts/check-browsers.sh` : 456 tests verts en 24 min (le code final
+  de la bibliothèque, `95076f0` ; seuls l'oracle, les docs et les scripts
+  ont changé depuis), dont les 55 sessions qui ne sont pas `node_only`
+  dans Chromium, Firefox et WebKit, dans la page et en worker, et le test
+  des diagnostics par `open()` ;
 - mutations, sur le code que la jonction a écrit ou fusionné :
   - `cargo mutants --in-diff` (`--profile mutants -j 1`) : `structs.rs`
     (le diff du masque ; rejeux `js_runtime_unit`, `boundary`) 8 mutants,
@@ -3137,6 +3153,30 @@ seule.
   d'API (flux, arbres de structure, `cmap_scan`, texte des `log.*`,
   `debug_tablefinder`) ; budget brotli 1 Mo. JS navigateur 43 527 octets
   (13 609 brotli), `dist/src` (Node) 126 643 (33 370).
+
+**Restent ouverts** (documentés) :
+
+- `filter()` d'une page dont les objets ne se calculent pas : l'API
+  rejette avec leur erreur (le prédicat est évalué dans le job de
+  `filter`, contrat), Python rend la page et lève à la première lecture
+  (`public-api.md`, « Cropping, Filtering ») ; 14 fichiers en tout. Le
+  rendre paresseux demanderait une page filtrée sans objet du cœur, dont
+  chaque membre referait les objets du parent, le prédicat et
+  `page_filter` dans son propre job, en sachant quels membres de
+  `FilteredPage` lisent les objets : un changement du contrat, pas de la
+  jonction.
+- Les écarts de la vague 4 : la ligne `ids` de
+  `pdfjs-issue19624-text.pdf`, l'ordre des NaN de `cluster_objects`
+  (`adv-interp`), l'oracle de `096-text-TL.pdf` au-delà de 5 Go.
+- Unités C non modélisées, par la règle de `pycompat::specialize` :
+  l'unité de plus d'un appel de builtin à sa première exécution dans un
+  processus ; et, pour un abonnement `typing`, l'ordre entre la limite
+  des cadres et celle des unités quand les deux sont atteintes à la fois.
+  Les abonnements des fonctions imbriquées de `table.py`,
+  `utils/text.py` et `structure.py` (dans `depth_probe typing`) restent
+  hors du modèle, cadres comme unités, comme avant la jonction : aucun
+  balayage ni aucune fenêtre ne les atteint au point le plus profond.
+- Les mesures des navigateurs sont d'une passe, sans base alternée.
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 
