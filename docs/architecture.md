@@ -2487,9 +2487,10 @@ BOUNDARY.
     `388-depth-chain-to-dict-ref-attribute-324` ouverte depuis des octets
     tombait sur le cas « Not Ported » de `structure_tree` : les fenêtres
     s'ouvrent depuis leur chemin, comme dans les étapes) ;
-  - `scripts/check-browsers.sh` : 456 tests verts (23 min), dont 55
-    sessions (les 57 moins les deux de Node) dans Chromium, Firefox et
-    WebKit, dans la page et en worker ;
+  - `scripts/check-browsers.sh` (sur `ab99044`, rejoueur sans récursion
+    compris) : 456 tests verts (23 min), dont 55 sessions (les 57 moins
+    les deux de Node) dans Chromium, Firefox et WebKit, dans la page et en
+    worker ;
   - `oracle.verify --engine js-api` (`-j 3`) : `quick` 150/150 pour les
     quatre étapes ; `all` (1 853, 20 premières pages) : `plumber_objects`
     1 852 (la ligne `ids` de `pdfjs-issue19624-text.pdf`, écart connu),
