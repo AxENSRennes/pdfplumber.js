@@ -2521,7 +2521,13 @@ BOUNDARY.
       d'`adv-structure` : `plumber_doc.mjs` écrivait les annotations dans
       le `try` là où le `else:` de Python laisse l'erreur de l'écriture
       sortir de l'étape) ;
-  - `scripts/check.sh` : CHECK.
+  - `scripts/check.sh` (`heavy.sh`, sur `dd2c5ce`) : vert en 50 min
+    (rustfmt, clippy, références amont, tables générées, données
+    unitaires, `cargo test` natif et wasm32-wasip1, porte de profondeur du
+    Wasm `dist`, 631 tests de Node — dont les 57 sessions sur les sources
+    et sur `dist`, les 448 fenêtres de profondeur, `api-lifetime`,
+    `api-runtime`, le canon —, budget de taille, `plumber_objects` et
+    `plumber_text` par l'API sur `micro` 17/17, auto-tests de l'oracle).
 
 **Chantier PERF** : chemins chauds de `crates/pdfplumber`,
 `crates/pdfminer`, `crates/pycompat` (`page.objects`/`process_object` :
