@@ -3271,6 +3271,36 @@ seul fichier ; déclarations sans la bibliothèque DOM et avec
 migration complétées ; `scripts/check-package.mjs` et
 `bundlers.spec.ts` (`js-runtime.md`, « Paquet JS »).
 
+**Mutations.** `scripts/fix-mutants.mjs` (dans une copie de la branche ;
+un mutant Rust reconstruit `dist/pdfplumber.wasm`, puisque seules les
+sessions de l'API atteignent ce code par WebAssembly) : 60 mutants du
+code de la correction (JavaScript : `api.ts`, `runtime.ts`, `wire.ts`,
+`worker/client.ts`, `search.ts`, `structure.ts` ; Rust : `pages.rs`,
+`text.rs`, `structs.rs`, `ops.rs`, `cmaps.rs`, ces derniers aussi contre
+les tests unitaires de `cmaps`), 54 tués (dont le #34 après un test de
+plus : un worker qui tombe pendant une requête nomme son URL), 6
+survivants équivalents :
+
+- #8 (céder un tour avant chaque job, pas tous les 64 objets) et #10
+  (`MessageChannel` au lieu de `setImmediate` dans Node) : seul le moment
+  des tours change, jamais un résultat ;
+- #21, #22 (le balayage des entrées mortes de `StreamRefs`) : mémoire
+  seulement, aucune valeur ne le montre ;
+- #25 (la longueur d'une réponse lue signée) : une réponse de plus de
+  2 Gio est hors d'atteinte (la moitié de l'espace d'adresses) ; les
+  adresses, elles, le sont (#23, #24 tués par l'allocation de 2 Gio) ;
+- #45, #46 (les cadres de `re.escape` et de `re.compile` dans
+  `search_pattern_error`) : l'instruction est au niveau du module, à
+  moins de dix cadres ; aucune pile n'y atteint la limite.
+
+Les listes de `js-api-mutants.mjs` et `js-boundary-mutants.mjs` ont été
+mises aux textes changés et leurs mutants changés rejoués (10 et 4) :
+tous tués, le #3 de `js-api-mutants` après deux appels de plus dans la
+session `arguments` (`extractTextLines` et `search` dont les options
+sont un `Set` ou un tuple : les méthodes qui séparent leurs options).
+`join-hand-mutants.py` : r3 et r4 portent sur l'unité de `.lower()`,
+puisque celle de `_cache2` n'est plus.
+
 ## Sémantique Python centralisée (`crates/pycompat`)
 
 Tout ce qui imite Python vit ici, une seule fois, testé contre CPython :
