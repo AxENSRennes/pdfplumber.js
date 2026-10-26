@@ -185,6 +185,31 @@ pub fn c_call(what: &str) -> PyResult<Guard> {
     Ok(take(0, 1))
 }
 
+/// The `where` of a C function's call (`cfunction_enter_call`, the
+/// `CALL_NO_KW_BUILTIN_O` and `CALL_NO_KW_METHOD_DESCRIPTOR_O` instructions,
+/// `_PyObject_MakeTpCall`): `ord(c)`, `"".join(...)`, a type without
+/// `tp_vectorcall` called...
+pub const WHILE_CALLING: &str = " while calling a Python object";
+
+/// The `where` of `object_recursive_isinstance` checking a tuple of
+/// classes (`Objects/abstract.c`).
+pub const IN_INSTANCECHECK: &str = " in __instancecheck__";
+
+/// The `where` of a rich comparison (`do_richcompare`, `Objects/object.c`).
+pub const IN_COMPARISON: &str = " in comparison";
+
+/// `isinstance(x, (A, B, ...))` once its call site is specialized
+/// (`CALL_NO_KW_ISINSTANCE` calls `PyObject_IsInstance` directly):
+/// `object_recursive_isinstance` takes one C unit while it checks the
+/// classes of the tuple (`" in __instancecheck__"`), whatever `x` is; with
+/// a single class (a plain class: `PyType_CheckExact`) it takes none.
+/// Measured: `oracle/unit/plumber_frames.py`.
+#[inline]
+pub fn isinstance_tuple() -> PyResult<()> {
+    drop(c_call(IN_INSTANCECHECK)?);
+    Ok(())
+}
+
 /// The evaluation loop entered from C (`_PyEval_EvalFrameDefault`, to run
 /// a Python function called by C code): two C units, before the function
 /// takes its frame ([`py_frame`]). Raises `RecursionError("maximum

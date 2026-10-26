@@ -42,10 +42,11 @@ use pdfminer::utils::{Matrix, PathSegment, Point};
 use pycompat::bytes_format::bytes_mod_int;
 use pycompat::call::Signature;
 use pycompat::codecs;
-use pycompat::recursion::{c_call, c_called_leaf, class_call, eval_entry, leaf, py_frame, py_frames};
+use pycompat::recursion::{c_call, c_called_leaf, class_call, eval_entry, isinstance_tuple, leaf, py_frame, py_frames};
+use pycompat::recursion::{IN_COMPARISON, IN_INSTANCECHECK};
 use pycompat::repr::bytes_repr;
 use pycompat::specialize::{AttrSite, CallSite};
-use pycompat::typing_cache::Subscription;
+use pycompat::typing_cache::{CStaircase, Subscription};
 use pycompat::{exc, ExcKind, Num, PyErr, PyInt, PyResult, PyStr};
 
 use crate::container::{Container, ContainerCache, Objects};
@@ -787,17 +788,54 @@ pub const ALL_ATTRS: [&str; 27] = [
 
 // `process_attr`, nested in pdfplumber/page.py:353 Page.process_object:
 // `item: Tuple[str, Any]`
-const PROCESS_ATTR_ITEM: Subscription = Subscription::new("Tuple[str, Any]", 7, 1);
+pub const PROCESS_ATTR_ITEM: Subscription =
+    Subscription::new("Tuple[str, Any]", 7, 1).with_c(TYPING_ALIAS_MISS, TYPING_ALIAS_HIT);
 // `process_attr`, nested in pdfplumber/page.py:353 Page.process_object:
 // `-> Optional[Tuple[str, Any]]` (its
 // `Tuple[str, Any]` cached by the parameter's)
-const PROCESS_ATTR_RETURN: Subscription = Subscription::new("Optional[Tuple[str, Any]]", 10, 2);
+// (C units: the alias `Tuple[str, Any]` hashed by its `__hash__`, called
+// from C, its `hash()` a builtin; a miss also `repr`s it)
+pub const PROCESS_ATTR_RETURN: Subscription = Subscription::new("Optional[Tuple[str, Any]]", 10, 2).with_c(
+    &[
+        "",
+        "",
+        WHILE_CALLING,
+        IN_COMPARISON,
+        IN_COMPARISON,
+        WHILE_CALLING,
+        WHILE_STR,
+        "",
+        "",
+        "",
+        WHILE_CALLING,
+        "",
+        IN_COMPARISON,
+        "",
+        "",
+        WHILE_CALLING,
+    ],
+    &["", "", WHILE_CALLING, IN_COMPARISON, IN_COMPARISON, WHILE_CALLING],
+);
 // `sorter`, nested in pdfplumber/page.py:464 Page.find_table: `->
 // Tuple[int, T_num, T_num]`
-const SORTER_RETURN: Subscription = Subscription::new("Tuple[int, T_num, T_num]", 7, 2);
+// (C units: `T_num`, a `Union`, hashed by its `__hash__` from C; a miss
+// checks it with `isinstance` and a tuple of classes)
+pub const SORTER_RETURN: Subscription = Subscription::new("Tuple[int, T_num, T_num]", 7, 2).with_c(
+    &["", "", WHILE_CALLING, "", "", WHILE_CALLING, "", IN_COMPARISON, "", "", IN_INSTANCECHECK],
+    &["", "", WHILE_CALLING, "", "", WHILE_CALLING],
+);
 // `rotate_point`, nested in pdfplumber/page.py:273 Page.annots: `pt:
 // Tuple[float, float]` and `-> Tuple[float, float]`
-const ROTATE_POINT_TUPLE: Subscription = Subscription::new("Tuple[float, float]", 7, 1);
+pub const ROTATE_POINT_TUPLE: Subscription =
+    Subscription::new("Tuple[float, float]", 7, 1).with_c(TYPING_ALIAS_MISS, TYPING_ALIAS_HIT);
+// The C units of the subscriptions (`pycompat::typing_cache::CStaircase`,
+// measured: `python -m oracle.depth_probe typing-c`): an alias of
+// `typing` subscripted by plain classes (`Tuple[str, Any]`,
+// `Tuple[float, float]`) the first time in a process (the alias built) and
+// the next ones (`inner` entered from C, the `lru_cache` called, its key
+// compared, one tuple in the other).
+const TYPING_ALIAS_MISS: CStaircase = &["", "", WHILE_CALLING, "", "", "", "", IN_COMPARISON, "", "", WHILE_CALLING];
+const TYPING_ALIAS_HIT: CStaircase = &["", "", WHILE_CALLING, IN_COMPARISON, IN_COMPARISON];
 
 // pdfplumber/page.py:83 CP936_FONTNAMES
 pub const CP936_FONTNAMES: [(&[u8], &str); 5] = [
@@ -1293,12 +1331,14 @@ fn dict_items(out: &mut Vec<DictItem>, k: &AttrKeys, obj: &LayoutObj) {
 /// `pdfinternals::resolve_all` (its frame), a Python `tuple` or `list`
 /// item by item (`type(x)(resolve_all(v) for v in x)`: the generator
 /// expression resumed from C), a `dict` value by value, anything else as
-/// it is.
+/// it is; every value that is not a reference after `isinstance(x, (list,
+/// tuple))`, a C unit while it checks.
 pub fn resolve_all_value(x: &PyValue) -> PyResult<PyValue> {
     if let PyValue::Pdf(o) = x {
         return Ok(PyValue::from_pdf(resolve_all(o)?));
     }
     let _frame = py_frame()?;
+    isinstance_tuple()?;
     match x {
         PyValue::Tuple(items) | PyValue::List(items) => {
             let _entry = eval_entry()?;
@@ -1346,6 +1386,7 @@ pub fn resolve_all_owned(mut x: PyValue) -> PyResult<PyValue> {
     if let PyValue::Tuple(items) | PyValue::List(items) = &mut x {
         if let Some(items) = Rc::get_mut(items) {
             let _frame = py_frame()?;
+            isinstance_tuple()?;
             let _entry = eval_entry()?;
             let _genexpr = py_frame()?;
             for v in items.iter_mut() {
@@ -1355,8 +1396,10 @@ pub fn resolve_all_owned(mut x: PyValue) -> PyResult<PyValue> {
         }
     }
     if !matches!(x, PyValue::Pdf(_) | PyValue::Tuple(_) | PyValue::List(_) | PyValue::Dict(_)) {
-        // anything else is returned as it is, after the frame
+        // anything else is returned as it is, after the frame and the
+        // isinstance checks
         let _frame = py_frame()?;
+        isinstance_tuple()?;
         return Ok(x);
     }
     resolve_all_value(&x)
@@ -1838,6 +1881,9 @@ impl Page {
             attr.push_new(k.ncs.clone(), resolve_and_decode(&name)?);
         }
 
+        // isinstance(obj, (LTChar, LTTextContainer)): a C unit while it
+        // checks
+        isinstance_tuple()?;
         let text = match obj {
             LayoutObj::Item(LTItem::Char(c)) => {
                 leaf(1)?; // LTChar.get_text
@@ -1869,39 +1915,44 @@ impl Page {
                     attr.set(&k.fontname, PyValue::Str(fixed));
                 }
             }
-            LayoutObj::Item(LTItem::Curve(c)) => {
-                // list(map(self.point2coord, attr["pts"]))
-                let pts = attr.item(&k.pts)?.clone();
-                let pts = match crate::obj::py_iter(&pts) {
-                    Some(items) => items?,
-                    None => return Err(exc::TypeError(format!("'{}' object is not iterable", pts.type_name()))),
-                };
-                attr.set(&k.pts, PyValue::List(self.points2coords(&pts)?.into()));
-                // [(cmd, *map(self.point2coord, pts)) for cmd, *pts in obj.original_path]
-                let Some(original_path) = &c.original_path else {
-                    return Err(exc::TypeError("'NoneType' object is not iterable"));
-                };
-                let mut path = Vec::with_capacity(original_path.len());
-                for (cmd, pts) in original_path {
-                    let mut items = Vec::with_capacity(pts.len() + 1);
-                    items.push(PyValue::Str(path_command(*cmd)));
-                    // *map(self.point2coord, pts), the map consumed from C
-                    for p in pts {
-                        let _entry = eval_entry()?;
-                        items.push(self.point2coord_with(|i| Ok(numv(&p[i])))?);
+            // elif isinstance(obj, (LTCurve,)): a C unit while it checks
+            _ => {
+                isinstance_tuple()?;
+                if let LayoutObj::Item(LTItem::Curve(c)) = obj {
+                    // list(map(self.point2coord, attr["pts"]))
+                    let pts = attr.item(&k.pts)?.clone();
+                    let pts = match crate::obj::py_iter(&pts) {
+                        Some(items) => items?,
+                        None => return Err(exc::TypeError(format!("'{}' object is not iterable", pts.type_name()))),
+                    };
+                    attr.set(&k.pts, PyValue::List(self.points2coords(&pts)?.into()));
+                    // [(cmd, *map(self.point2coord, pts)) for cmd, *pts in obj.original_path]
+                    let Some(original_path) = &c.original_path else {
+                        return Err(exc::TypeError("'NoneType' object is not iterable"));
+                    };
+                    let mut path = Vec::with_capacity(original_path.len());
+                    for (cmd, pts) in original_path {
+                        let mut items = Vec::with_capacity(pts.len() + 1);
+                        items.push(PyValue::Str(path_command(*cmd)));
+                        // *map(self.point2coord, pts), the map consumed from C
+                        for p in pts {
+                            let _entry = eval_entry()?;
+                            items.push(self.point2coord_with(|i| Ok(numv(&p[i])))?);
+                        }
+                        path.push(PyValue::Tuple(items.into()));
                     }
-                    path.push(PyValue::Tuple(items.into()));
+                    attr.push_new(k.path.clone(), PyValue::List(path.into()));
+                    attr.push_new(
+                        k.dash.clone(),
+                        match &c.dashing_style {
+                            None => PyValue::None,
+                            Some((d, p)) => {
+                                PyValue::tuple([PyValue::from_pdf(d.clone()), PyValue::from_pdf(p.clone())])
+                            }
+                        },
+                    );
                 }
-                attr.push_new(k.path.clone(), PyValue::List(path.into()));
-                attr.push_new(
-                    k.dash.clone(),
-                    match &c.dashing_style {
-                        None => PyValue::None,
-                        Some((d, p)) => PyValue::tuple([PyValue::from_pdf(d.clone()), PyValue::from_pdf(p.clone())]),
-                    },
-                );
             }
-            _ => {}
         }
 
         // As noted in #1181, `pdfminer.six` adjusts objects' coordinates

@@ -25,21 +25,24 @@ each counter:
   the ``__eq__`` called from C).
 
 ``k`` and ``n`` are bisected, then ``k + 1`` and ``n + 1`` checked to
-raise. Each attempt runs in a process forked for it from the same frame
+raise ``RecursionError``, whose canonical line is recorded (its message
+names where the limit was reached: `` in __instancecheck__``, `` while
+calling a Python object``...). Each attempt runs in a process forked for it from the same frame
 (every attempt has the same base and the same history: what an attempt
 specializes or raises is gone with its process). The depth of the caller
 (``depth_here``) is measured at ``k = 0`` and ``n = 0`` through the same
 path and moved by ``k`` frames or ``n`` units (checked at a few levels):
 never measured near the limit, where the measure itself would raise.
 
-``functions.jsonl`` holds the same for ``decode_text`` and ``resolve_all``
+``functions.jsonl`` holds the same for ``decode_text``, ``resolve_and_decode`` and ``resolve_all``
 on their own (``FUNCTION_ARGS``: the arguments ``process_object`` gives
 them, whose paths the port speeds up), where their frames are the deepest:
 one case, ``{"in": [], "out": [[function, typed JSON of the argument, py
-depth, py outcome, c depth, c outcome], ...]}``.
+depth, py outcome, c depth, c outcome, py deeper, c deeper], ...]}``.
 
 Cases (``objects.jsonl``): ``{"in": [name, pdf, password], "out": [[class
-name, py depth, py outcome, c depth, c outcome], ...]}``, each depth
+name, py depth, py outcome, c depth, c outcome, py deeper, c deeper],
+...]}`` (``deeper``: the ``RecursionError`` one level down), each depth
 ``{"py", "c_left"}`` of the caller at the deepest entry from which no
 ``RecursionError`` escapes, each outcome ``"ok"`` or the canonical line of
 the exception ``process_object`` raised there (a malformed MediaBox; a
@@ -63,6 +66,7 @@ from typing import Any
 from ..codegen import cmaps as codegen_cmaps
 from ..corpus import cache_dir, load_set
 from ..depth import depth_here
+from ..depth_probe import typing_c_staircases, typing_depths
 from ..stages import _in_stage_thread
 from ..stages._common import terminated
 from ..stages.plumber_objects import exc, open_pdf
@@ -171,10 +175,11 @@ def forked(f: Any) -> Any:
 
 
 def limits(f: Any, arg: Any, what: str) -> list[Any]:
-    """``[py depth, py outcome, c depth, c outcome]`` of ``f(arg)`` (see the
-    module docstring): the depth of ``f``'s caller at the deepest entry from
-    which no ``RecursionError`` escapes, along each counter, and the outcome
-    there."""
+    """``[py depth, py outcome, c depth, c outcome, py deeper, c deeper]`` of
+    ``f(arg)`` (see the module docstring): the depth of ``f``'s caller at the
+    deepest entry from which no ``RecursionError`` escapes, along each
+    counter, the outcome there, and the ``RecursionError`` one level
+    down."""
     mode = {"measure": False}
 
     def call() -> Any:
@@ -190,21 +195,29 @@ def limits(f: Any, arg: Any, what: str) -> list[Any]:
         except Exception as e:  # noqa: BLE001  (the outcome)
             return exc(e)
 
+    raised: dict[tuple[str, int], str] = {}
+
     def attempt(counter: str, x: int, measure: bool = False) -> Any:
         """``call`` ``x`` frames (``py``) or list levels (``c``) down, in a
-        process forked for it; ``None`` for a RecursionError. Always made
-        from this frame: every attempt has the same base."""
+        process forked for it; ``None`` for a RecursionError (its line kept
+        in ``raised``). Always made from this frame: every attempt has the
+        same base."""
 
         def run() -> Any:
             mode["measure"] = measure
             try:
                 return down(x, call) if counter == "py" else under_c(x, call)
-            except RecursionError:
-                return None
+            except RecursionError as e:
+                return {"$recursion": exc(e)}
 
-        return forked(run)
+        out = forked(run)
+        if isinstance(out, dict) and "$recursion" in out:
+            raised[(counter, x)] = out["$recursion"]
+            return None
+        return out
 
     row: list[Any] = []
+    deeper: list[str] = []
     for counter, hi in (("py", PY_LIMIT), ("c", C_LIMIT)):
         # the caller's depth at x = 0, moved by one frame (py) or one unit
         # (c) per level: checked at a few levels
@@ -229,8 +242,9 @@ def limits(f: Any, arg: Any, what: str) -> list[Any]:
                 hi = mid - 1
         if attempt(counter, lo + 1) is not None:
             raise RuntimeError(f"{what}: {counter} not monotone at {lo}")
+        deeper.append(raised[(counter, lo + 1)])
         row += [at(lo), attempt(counter, lo)]
-    return row
+    return row + deeper
 
 
 def object_cases(page: Any, objs: list[Any]) -> list[list[Any]]:
@@ -242,14 +256,22 @@ def object_cases(page: Any, objs: list[Any]) -> list[list[Any]]:
 
 #: Arguments of the functions ``process_object`` calls whose performance
 #: paths the port has: ``decode_text`` of a ``str`` (one PDFDocEncoding maps
-#: to itself, one it changes, one past 255: ``str(s)``, the empty one) and
-#: ``resolve_all`` of the values ``process_object`` makes (numbers, a
-#: ``str``, tuples and lists of them, nested).
+#: to itself, one it changes, one past 255: ``str(s)``, the empty one; and
+#: of ``bytes``: UTF-16BE after a BOM, ``str(s[2:], ...)``),
+#: ``resolve_and_decode`` of a colour space name (its ``isinstance`` with a
+#: tuple of classes) and ``resolve_all`` of the values ``process_object``
+#: makes (numbers, a ``str``, tuples, lists and dicts of them, nested).
 FUNCTION_ARGS: list[tuple[str, Any]] = [
     ("decode_text", "DeviceGray"),
     ("decode_text", "\x80\x9fab"),
     ("decode_text", "a\u0100b"),
     ("decode_text", ""),
+    ("decode_text", b"abc"),
+    ("decode_text", b""),
+    ("decode_text", b"\xfe\xff\x00a\x01\x00"),
+    ("resolve_and_decode", "DeviceGray"),
+    ("resolve_and_decode", ""),
+    ("resolve_and_decode", b"x\x80"),
     ("resolve_all", 1.5),
     ("resolve_all", 3),
     ("resolve_all", "x"),
@@ -258,17 +280,18 @@ FUNCTION_ARGS: list[tuple[str, Any]] = [
     ("resolve_all", [(1.0, 2.0), (3.0, 4.0)]),
     ("resolve_all", [[[1.0]]]),
     ("resolve_all", ()),
+    ("resolve_all", {"a": 1.5, "b": [2]}),
 ]
 
 
 def function_cases() -> list[list[Any]]:
     """``[[function, typed JSON of the argument, py depth, py outcome, c
     depth, c outcome], ...]`` (``FUNCTION_ARGS``), in the stage thread."""
-    from pdfplumber.utils import decode_text, resolve_all
+    from pdfplumber.utils import decode_text, resolve_all, resolve_and_decode
 
     from ..typed_json import dumps
 
-    functions = {"decode_text": decode_text, "resolve_all": resolve_all}
+    functions = {"decode_text": decode_text, "resolve_all": resolve_all, "resolve_and_decode": resolve_and_decode}
     box: dict[str, Any] = {}
 
     @terminated
@@ -325,6 +348,19 @@ def cases() -> Iterator[tuple[list, Any]]:
         yield [f.path.name, f.path.read_bytes(), f.password], out
 
 
+def typing_cases() -> Iterator[tuple[list, Any]]:
+    """``typing.jsonl``: ``{"in": [subscription], "out": [frames of a miss,
+    frames of a hit, C staircase of a miss, C staircase of a hit]}`` of each
+    subscription ``pycompat::typing_cache`` models (``python -m
+    oracle.depth_probe typing`` and ``typing-c``), each measured in
+    processes forked from this one."""
+
+    frames = {(d["module"], d["expr"]): d for d in typing_depths()}
+    for d in typing_c_staircases():
+        f = frames[(d["module"], d["expr"])]
+        yield [d["expr"]], [f["miss"], f["hit"], d["miss"], d["hit"]]
+
+
 def main() -> None:
     require_oracle_python()
     cmap_dir = codegen_cmaps.ensure()
@@ -333,6 +369,7 @@ def main() -> None:
     write_cases(MODULE, "py_process", [([], state)])
     n = write_cases(MODULE, "objects", cases())
     write_cases(MODULE, "functions", [([], in_child(function_cases))])
+    write_cases(MODULE, "typing", typing_cases())
     if process_state() != state:
         raise RuntimeError("the process state changed while the cases ran in children")
     print(f"{MODULE}: {n} files", file=sys.stderr)
