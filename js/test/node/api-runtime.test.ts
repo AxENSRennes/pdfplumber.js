@@ -223,6 +223,21 @@ describe("public API cores", () => {
     await expect(WorkerCore.start(failing as never, {} as WebAssembly.Module, null, "http://x/moved/worker.js")).rejects.toThrow(
       /http:\/\/x\/moved\/worker\.js/,
     );
+    // a worker that fails while a request waits (an error event without a
+    // message): the request's CoreCrash names the worker
+    const later = {
+      onmessage: null as ((e: { data: Reply }) => void) | null,
+      onerror: null as ((e: { message: string }) => void) | null,
+      postMessage(m: { id: number; type: string }) {
+        if (m.type === "init") queueMicrotask(() => later.onmessage!({ data: { id: m.id, ready: true } }));
+      },
+      terminate() {},
+    };
+    const second = await WorkerCore.start(later as never, {} as WebAssembly.Module, null, "http://x/w2.js");
+    const pending = second.call("info", 0, null);
+    await Promise.resolve();
+    later.onerror!({ message: "" });
+    await expect(pending).rejects.toThrow(/http:\/\/x\/w2\.js/);
     // a worker whose instance cannot start (its init answered with an
     // error): stopped, the error passed on
     let stopped = 0;
