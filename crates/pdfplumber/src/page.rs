@@ -959,7 +959,7 @@ pub enum LayoutObj {
 
 impl LayoutObj {
     /// `isinstance(obj, LTContainer)`: its children, `None` for a leaf.
-    fn children(&self) -> Option<Vec<LayoutObj>> {
+    pub fn children(&self) -> Option<Vec<LayoutObj>> {
         match self {
             LayoutObj::Item(LTItem::Figure(f)) => {
                 Some(f.borrow().layout._objs.iter().cloned().map(LayoutObj::Item).collect())
@@ -982,7 +982,7 @@ impl LayoutObj {
     }
 
     /// The Python class name.
-    fn class_name(&self) -> &'static str {
+    pub fn class_name(&self) -> &'static str {
         match self {
             LayoutObj::Item(item) => item.class_name(),
             LayoutObj::Anno(_) => "LTAnno",
@@ -1782,6 +1782,14 @@ impl Page {
     /// (`docs/architecture.md`, "Vague 3").
     fn process_layout_obj(&self, obj: &LayoutObj) -> PyResult<Obj> {
         ATTR_KEYS.with(|k| self.process_layout_obj_with(obj, k))
+    }
+
+    // pdfplumber/page.py:353 Page.process_object
+    /// `page.process_object(obj)`, the public method (what
+    /// `iter_layout_objects` calls for each object; the unit replay of its
+    /// frames, `crates/pdftrace/tests/plumber_frames.rs`, calls it so).
+    pub fn process_object(&self, obj: &LayoutObj) -> PyResult<Obj> {
+        self.process_layout_obj(obj)
     }
 
     /// [`Page::process_layout_obj`] with the shared keys. Performance
