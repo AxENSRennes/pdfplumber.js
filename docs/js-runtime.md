@@ -147,6 +147,18 @@ le moteur (3 à 5 fois hors Nightly), 2,3 fois plus petit, et son décodeur est 
 imbriquée sur 10^5 niveaux passe partout). Le JSON reste disponible
 (`set_format`, benchmark, débogage) et testé.
 
+Vague 5, chantier PERF (`docs/architecture.md`, « Chantier PERF :
+réalisation ») : l'écriture des tables lit les cellules une fois, rangée
+par rangée, écrit les colonnes de nombres et d'indices en place et
+retrouve la `str` d'une cellule par son adresse ; le décodeur lit les
+cellules génériques peu profondes sans les cadres de `value()`. Mêmes
+octets qu'avant (empreinte des blocs de `crates/wasm/examples/encode_phases.rs`
+sur `quick`). Même corpus, Node 26.12, médianes de 5 passes, `wave5/base` →
+`wave5/perf` dans le même créneau : PJB1 un appel par page 602 → 425 ms
+(cœur 365 → 236, décodage 236 → 189), tout en un appel 820 → 577 ms ; JSON
+2 847 → 2 786 ms (inchangé). Les phases de pdfplumber par l'API publique
+dans les navigateurs se mesurent avec `js/bench/browser-phases.mjs`.
+
 Reproduire :
 
 ```sh

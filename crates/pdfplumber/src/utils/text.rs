@@ -41,7 +41,7 @@ use pycompat::pystr::PyStrBuilder;
 use pycompat::text::str_isspace_cp;
 use pycompat::{exc, ExcKind, PyErr, PyInt, PyResult, PyStr};
 
-use crate::obj::{check_hashable, py_contains, py_iter, HashKey, Hot, Obj, PyValue};
+use crate::obj::{check_hashable, py_contains, py_iter, static_str, HashKey, Hot, Obj, PyValue};
 use crate::typing::T_dir;
 use crate::utils::clustering::cluster_objects;
 use crate::utils::geometry::objects_to_bbox_refs;
@@ -298,7 +298,7 @@ pub fn validate_directions(line_dir: &PyValue, char_dir: &PyValue, suffix: &str)
 }
 
 fn dir_value(d: T_dir) -> PyValue {
-    PyValue::str(d.name())
+    static_str(d.name())
 }
 
 // -- TextMap --------------------------------------------------------------------
@@ -1093,7 +1093,8 @@ impl WordExtractor {
             check_hashable(t)?;
             texts.push(t);
         }
-        let mut text = PyStrBuilder::new();
+        let size = texts.iter().map(|t| if let PyValue::Str(s) = t { s.as_bytes().len() } else { 0 }).sum();
+        let mut text = PyStrBuilder::with_capacity(size);
         for (i, t) in texts.into_iter().enumerate() {
             match t {
                 PyValue::Str(s) => match expansion(s, self.expand_ligatures) {

@@ -6,7 +6,7 @@
 
 use pycompat::{exc, ExcKind, PyErr, PyResult, PyStr};
 
-use crate::obj::{bbox_from_value, check_hashable, py_contains, Bbox, Hot, Obj, PyValue};
+use crate::obj::{bbox_from_value, check_hashable, py_contains, static_str, Bbox, Hot, Obj, PyValue};
 use crate::utils::clustering::cluster_objects;
 
 /// `max(a, b)`: `b` only when `b > a`.
@@ -328,14 +328,14 @@ pub fn curve_to_edges(curve: &Obj) -> PyResult<Vec<Obj>> {
         let width = point_item(p0, 0)?.sub(point_item(p1, 0)?)?.abs()?;
         let height = point_item(p0, 1)?.sub(point_item(p1, 1)?)?.abs()?;
         let orientation = if point_item(p0, 0)?.py_eq(point_item(p1, 0)?) {
-            PyValue::str("v")
+            static_str("v")
         } else if point_item(p0, 1)?.py_eq(point_item(p1, 1)?) {
-            PyValue::str("h")
+            static_str("h")
         } else {
             PyValue::None
         };
         out.push(Obj::from_pairs([
-            ("object_type", PyValue::str("curve_edge")),
+            ("object_type", static_str("curve_edge")),
             ("x0", x0),
             ("x1", x1),
             ("top", top),
@@ -358,13 +358,13 @@ fn not_subscriptable(v: &PyValue) -> pycompat::PyErr {
 pub fn rect_to_edges(rect: &Obj) -> PyResult<Vec<Obj>> {
     let (mut top, mut bottom, mut left, mut right) = (rect.clone(), rect.clone(), rect.clone(), rect.clone());
     let zero = PyValue::from(0i64);
-    let rect_edge = PyValue::str("rect_edge");
+    let rect_edge = static_str("rect_edge");
     top.update([
         ("object_type", rect_edge.clone()),
         ("height", zero.clone()),
         ("y0", rect.hot(Hot::Y1)?.clone()),
         ("bottom", rect.hot(Hot::Top)?.clone()),
-        ("orientation", PyValue::str("h")),
+        ("orientation", static_str("h")),
     ]);
     let b_y1 = rect.hot(Hot::Y0)?.clone();
     let b_top = rect.hot(Hot::Top)?.add(rect.hot(Hot::Height)?)?;
@@ -375,19 +375,19 @@ pub fn rect_to_edges(rect: &Obj) -> PyResult<Vec<Obj>> {
         ("y1", b_y1),
         ("top", b_top),
         ("doctop", b_doctop),
-        ("orientation", PyValue::str("h")),
+        ("orientation", static_str("h")),
     ]);
     left.update([
         ("object_type", rect_edge.clone()),
         ("width", zero.clone()),
         ("x1", rect.hot(Hot::X0)?.clone()),
-        ("orientation", PyValue::str("v")),
+        ("orientation", static_str("v")),
     ]);
     right.update([
         ("object_type", rect_edge),
         ("width", zero),
         ("x0", rect.hot(Hot::X1)?.clone()),
-        ("orientation", PyValue::str("v")),
+        ("orientation", static_str("v")),
     ]);
     Ok(vec![top, bottom, left, right])
 }
@@ -405,9 +405,9 @@ pub fn obj_to_edges(obj: &Obj) -> PyResult<Vec<Obj>> {
     let t = obj.hot(Hot::ObjectType)?;
     // `"_edge" in t`: Python's `in` on whatever value the object holds (a
     // substring of a `str`, an item of a `list`, a key of a `dict`...)
-    if py_contains(t, &PyValue::str("_edge"))? {
+    if py_contains(t, &static_str("_edge"))? {
         Ok(vec![obj.clone()])
-    } else if t.py_eq(&PyValue::str("line")) {
+    } else if t.py_eq(&static_str("line")) {
         Ok(vec![line_to_edge(obj)?])
     } else {
         // `{"rect": rect_to_edges, "curve": curve_to_edges}[t]` hashes `t`

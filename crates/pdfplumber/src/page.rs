@@ -28,7 +28,7 @@ use pdfminer::converter::{
     layout_analyzer, page_aggregator, InterpPayload, LayoutAnalyzer, PDFLayoutAnalyzer, PDFPageAggregator,
     PageAggregator,
 };
-use pdfminer::layout::{LAParams, LTAnno, LTComponent, LTItem, LTPage, LTPayload, TextLineElement};
+use pdfminer::layout::{ExtraAttrs, LAParams, LTAnno, LTComponent, LTItem, LTPage, LTPayload, TextLineElement};
 use pdfminer::pdfcolor::PDFColorSpace;
 use pdfminer::pdfdevice::{text_device, ObjSeq, PDFDevice, PDFDeviceAttrs, PDFTextDevice, PDFTextSeq};
 use pdfminer::pdffont::{FontName, PDFFont};
@@ -49,7 +49,7 @@ use pycompat::typing_cache::Subscription;
 use pycompat::{exc, ExcKind, Num, PyErr, PyInt, PyResult, PyStr};
 
 use crate::container::{Container, ContainerCache, Objects};
-use crate::obj::{bbox_from_value, bbox_value, Bbox, HashKey, Obj, PageRef, PyValue};
+use crate::obj::{bbox_from_value, bbox_value, Bbox, HashKey, Hot, Obj, PageRef, PyValue};
 use crate::pdf::PdfCore;
 use crate::structure::{self, PDFStructTree, Scope};
 use crate::table::{Table, TableFinder, TablePage, TableSettings};
@@ -241,7 +241,7 @@ impl PageBoxes {
 #[derive(Clone, Debug)]
 pub enum MarkedContentAttr {
     Mcid(PDFObject),
-    Tag(Option<String>),
+    Tag(Option<PyStr>),
 }
 
 /// The layout payload of pdfplumber's pages: the interpreter's types, and
@@ -264,7 +264,7 @@ impl InterpPayload for PlumberPayload {}
 #[derive(Clone, Debug)]
 pub struct MarkedContentState {
     pub cur_mcid: PDFObject,
-    pub cur_tag: Option<String>,
+    pub cur_tag: Option<PyStr>,
 }
 
 impl Default for MarkedContentState {
@@ -304,7 +304,7 @@ pub mod marked_content {
             LiteralName::Bytes(b) => decode_text(TextArg::Bytes(b))?,
         };
         let marked = dev.marked_mut();
-        marked.cur_tag = Some(cur_tag);
+        marked.cur_tag = Some(PyStr::from(cur_tag));
         marked.cur_mcid = match props {
             Some(PDFObject::Dict(d)) => d.get("MCID").unwrap_or(PDFObject::Null),
             _ => PDFObject::Null,
@@ -959,7 +959,7 @@ pub enum LayoutObj {
 
 impl LayoutObj {
     /// `isinstance(obj, LTContainer)`: its children, `None` for a leaf.
-    fn children(&self) -> Option<Vec<LayoutObj>> {
+    pub fn children(&self) -> Option<Vec<LayoutObj>> {
         match self {
             LayoutObj::Item(LTItem::Figure(f)) => {
                 Some(f.borrow().layout._objs.iter().cloned().map(LayoutObj::Item).collect())
@@ -982,7 +982,7 @@ impl LayoutObj {
     }
 
     /// The Python class name.
-    fn class_name(&self) -> &'static str {
+    pub fn class_name(&self) -> &'static str {
         match self {
             LayoutObj::Item(item) => item.class_name(),
             LayoutObj::Anno(_) => "LTAnno",
@@ -990,9 +990,155 @@ impl LayoutObj {
     }
 }
 
-/// A value of an object's `__dict__` as `process_attr` sees it: `None`
-/// for an attribute that is not in `ALL_ATTRS` (it is only looked at).
-type DictItem = (&'static str, Option<PyValue>);
+/// An item of an object's `__dict__` as `process_attr` sees it: `None`
+/// for an attribute that is not in `ALL_ATTRS` (it is only looked at),
+/// else the key (shared: [`AttrKeys`]) and the value.
+type DictItem = Option<(PyStr, PyValue)>;
+
+/// The keys `process_object` writes, made once per thread (performance:
+/// `intern` hashes the name; these are cloned): the same shared `str`s as
+/// [`crate::obj::intern`] gives.
+struct AttrKeys {
+    matrix: PyStr,
+    fontname: PyStr,
+    adv: PyStr,
+    upright: PyStr,
+    x0: PyStr,
+    y0: PyStr,
+    x1: PyStr,
+    y1: PyStr,
+    width: PyStr,
+    height: PyStr,
+    size: PyStr,
+    pts: PyStr,
+    linewidth: PyStr,
+    stroke: PyStr,
+    fill: PyStr,
+    evenodd: PyStr,
+    stroking_color: PyStr,
+    non_stroking_color: PyStr,
+    name: PyStr,
+    stream: PyStr,
+    srcsize: PyStr,
+    imagemask: PyStr,
+    bits: PyStr,
+    colorspace: PyStr,
+    object_type: PyStr,
+    page_number: PyStr,
+    ncs: PyStr,
+    text: PyStr,
+    path: PyStr,
+    dash: PyStr,
+    top: PyStr,
+    bottom: PyStr,
+    doctop: PyStr,
+    mcid: PyStr,
+    tag: PyStr,
+}
+
+impl AttrKeys {
+    fn new() -> AttrKeys {
+        let k = crate::obj::intern;
+        AttrKeys {
+            matrix: k("matrix"),
+            fontname: k("fontname"),
+            adv: k("adv"),
+            upright: k("upright"),
+            x0: k("x0"),
+            y0: k("y0"),
+            x1: k("x1"),
+            y1: k("y1"),
+            width: k("width"),
+            height: k("height"),
+            size: k("size"),
+            pts: k("pts"),
+            linewidth: k("linewidth"),
+            stroke: k("stroke"),
+            fill: k("fill"),
+            evenodd: k("evenodd"),
+            stroking_color: k("stroking_color"),
+            non_stroking_color: k("non_stroking_color"),
+            name: k("name"),
+            stream: k("stream"),
+            srcsize: k("srcsize"),
+            imagemask: k("imagemask"),
+            bits: k("bits"),
+            colorspace: k("colorspace"),
+            object_type: k("object_type"),
+            page_number: k("page_number"),
+            ncs: k("ncs"),
+            text: k("text"),
+            path: k("path"),
+            dash: k("dash"),
+            top: k("top"),
+            bottom: k("bottom"),
+            doctop: k("doctop"),
+            mcid: k("mcid"),
+            tag: k("tag"),
+        }
+    }
+}
+
+thread_local! {
+    static ATTR_KEYS: AttrKeys = AttrKeys::new();
+    /// The buffer of [`dict_items`], kept between objects.
+    static DICT_ITEMS: RefCell<Vec<DictItem>> = const { RefCell::new(Vec::new()) };
+    /// The last color space whose name [`colorspace_name`] made, and that
+    /// name (the chars of a page share a few color spaces).
+    static LAST_COLORSPACE: RefCell<Option<(std::rc::Weak<PDFColorSpace>, PyStr)>> = const { RefCell::new(None) };
+    /// `object_type` of each class (`re.sub(lt_pat, "", name).lower()`),
+    /// made once per thread: a `str` is immutable and its identity is not
+    /// modeled.
+    static OBJECT_TYPES: RefCell<Vec<(&'static str, PyStr)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The `str` of a path operator (`cmd` of `obj.original_path`), made once
+/// per thread.
+fn path_command(cmd: char) -> PyStr {
+    thread_local! {
+        static COMMANDS: RefCell<Vec<(char, PyStr)>> = const { RefCell::new(Vec::new()) };
+    }
+    COMMANDS.with(|cmds| {
+        let mut cmds = cmds.borrow_mut();
+        if let Some((_, s)) = cmds.iter().find(|(c, _)| *c == cmd) {
+            return s.clone();
+        }
+        let s = PyStr::from(cmd);
+        cmds.push((cmd, s.clone()));
+        s
+    })
+}
+
+/// `cs.name`, a `str`, made once for consecutive chars of one color space
+/// (performance). The cache holds a weak reference: it does not keep the
+/// color space (or what its `ncomponents` holds) alive, and its allocation
+/// stays reserved, so that the address never names another one.
+fn colorspace_name(cs: &Rc<PDFColorSpace>) -> PyStr {
+    LAST_COLORSPACE.with(|last| {
+        let mut last = last.borrow_mut();
+        if let Some((c, name)) = &*last {
+            if std::ptr::eq(c.as_ptr(), Rc::as_ptr(cs)) {
+                return name.clone();
+            }
+        }
+        let name = PyStr::new(&cs.name);
+        *last = Some((Rc::downgrade(cs), name.clone()));
+        name
+    })
+}
+
+/// `re.sub(lt_pat, "", class_name).lower()` (`lt_pat = re.compile(r"^LT")`).
+fn object_type(class_name: &'static str) -> PyStr {
+    OBJECT_TYPES.with(|types| {
+        let mut types = types.borrow_mut();
+        if let Some((_, t)) = types.iter().find(|(c, _)| *c == class_name) {
+            return t.clone();
+        }
+        let t = PyStr::new(&class_name.strip_prefix("LT").unwrap_or(class_name).to_lowercase());
+        types.push((class_name, t.clone()));
+        t
+    })
+}
 
 fn numv(n: &Num) -> PyValue {
     PyValue::from(n.clone())
@@ -1031,104 +1177,115 @@ fn color_tuple(c: &Color) -> PyValue {
 fn marked(v: &MarkedContentAttr) -> PyValue {
     match v {
         MarkedContentAttr::Mcid(o) => PyValue::from_pdf(o.clone()),
-        MarkedContentAttr::Tag(t) => t.as_ref().map_or(PyValue::None, |t| PyValue::str(t)),
+        MarkedContentAttr::Tag(t) => t.as_ref().map_or(PyValue::None, |t| PyValue::Str(t.clone())),
     }
 }
 
-fn comp_items(c: &LTComponent) -> [DictItem; 7] {
-    [
-        ("x0", Some(numv(&c.x0))),
-        ("y0", Some(numv(&c.y0))),
-        ("x1", Some(numv(&c.x1))),
-        ("y1", Some(numv(&c.y1))),
-        ("width", Some(numv(&c.width))),
-        ("height", Some(numv(&c.height))),
-        ("bbox", None),
-    ]
+/// The items of `LTComponent.__init__`: `x0`, `y0`, `x1`, `y1`, `width`,
+/// `height`, then `bbox` (not in `ALL_ATTRS`).
+fn comp_items(out: &mut Vec<DictItem>, k: &AttrKeys, c: &LTComponent) {
+    out.extend([
+        Some((k.x0.clone(), numv(&c.x0))),
+        Some((k.y0.clone(), numv(&c.y0))),
+        Some((k.x1.clone(), numv(&c.x1))),
+        Some((k.y1.clone(), numv(&c.y1))),
+        Some((k.width.clone(), numv(&c.width))),
+        Some((k.height.clone(), numv(&c.height))),
+        None,
+    ]);
 }
 
-/// `obj.__dict__.items()`, the values of `ALL_ATTRS` made (see
+/// The attributes pdfplumber set after `__init__` (`mcid`, `tag`): never
+/// one of the class's own.
+fn extra_items(out: &mut Vec<DictItem>, k: &AttrKeys, attrs: &ExtraAttrs<MarkedContentAttr>) {
+    attrs.with_items(|items| {
+        out.extend(items.iter().map(|(name, v)| {
+            let key = match *name {
+                "mcid" => k.mcid.clone(),
+                "tag" => k.tag.clone(),
+                other => crate::obj::intern(other),
+            };
+            Some((key, marked(v)))
+        }));
+    });
+}
+
+/// `obj.__dict__.items()` into `out`, the values of `ALL_ATTRS` made (see
 /// [`DictItem`]): the class's attributes in `__init__` order, then those
-/// pdfplumber set later (`mcid`, `tag`).
-fn dict_items(obj: &LayoutObj) -> Vec<DictItem> {
-    let mut out: Vec<DictItem> = Vec::new();
-    let extra = match obj {
+/// pdfplumber set later (`mcid`, `tag`). The keys are distinct (a
+/// `__dict__`'s).
+fn dict_items(out: &mut Vec<DictItem>, k: &AttrKeys, obj: &LayoutObj) {
+    match obj {
         LayoutObj::Anno(_) => {
-            out.push(("_text", None));
-            Vec::new()
+            out.push(None); // _text
         }
         LayoutObj::Item(LTItem::Char(c)) => {
-            out.push(("_text", None));
-            out.push(("matrix", Some(PyValue::tuple(c.matrix.iter().map(numv)))));
-            out.push((
-                "fontname",
-                Some(match &c.fontname {
-                    FontName::Str(s) => PyValue::str(s),
+            out.push(None); // _text
+            out.push(Some((k.matrix.clone(), PyValue::tuple(c.matrix.iter().map(numv)))));
+            out.push(Some((
+                k.fontname.clone(),
+                match &c.fontname {
+                    FontName::Str(s) => PyValue::Str(s.clone()),
                     FontName::Obj(o) => PyValue::from_pdf(o.clone()),
-                }),
-            ));
-            out.push(("ncs", None));
-            out.push(("graphicstate", None));
-            out.push(("adv", Some(numv(&c.adv))));
-            out.push(("upright", Some(PyValue::Bool(c.upright))));
-            out.extend(comp_items(&c.comp));
-            out.push(("size", Some(numv(&c.size))));
-            c.attrs.items()
+                },
+            )));
+            out.push(None); // ncs
+            out.push(None); // graphicstate
+            out.push(Some((k.adv.clone(), numv(&c.adv))));
+            out.push(Some((k.upright.clone(), PyValue::Bool(c.upright))));
+            comp_items(out, k, &c.comp);
+            out.push(Some((k.size.clone(), numv(&c.size))));
+            extra_items(out, k, &c.attrs);
         }
         LayoutObj::Item(LTItem::Curve(c)) => {
-            out.extend(comp_items(&c.comp));
-            out.push(("pts", Some(PyValue::list(c.pts.iter().map(point_value)))));
-            out.push(("linewidth", Some(numv(&c.linewidth))));
-            out.push(("stroke", Some(PyValue::Bool(c.stroke))));
-            out.push(("fill", Some(PyValue::Bool(c.fill))));
-            out.push(("evenodd", Some(PyValue::Bool(c.evenodd))));
-            out.push(("stroking_color", Some(c.stroking_color.as_ref().map_or(PyValue::None, color_value))));
-            out.push(("non_stroking_color", Some(c.non_stroking_color.as_ref().map_or(PyValue::None, color_value))));
-            out.push(("original_path", None));
-            out.push(("dashing_style", None));
-            c.attrs.items()
+            comp_items(out, k, &c.comp);
+            out.push(Some((k.pts.clone(), PyValue::list(c.pts.iter().map(point_value)))));
+            out.push(Some((k.linewidth.clone(), numv(&c.linewidth))));
+            out.push(Some((k.stroke.clone(), PyValue::Bool(c.stroke))));
+            out.push(Some((k.fill.clone(), PyValue::Bool(c.fill))));
+            out.push(Some((k.evenodd.clone(), PyValue::Bool(c.evenodd))));
+            let color = |c: &Option<Color>| c.as_ref().map_or(PyValue::None, color_value);
+            out.push(Some((k.stroking_color.clone(), color(&c.stroking_color))));
+            out.push(Some((k.non_stroking_color.clone(), color(&c.non_stroking_color))));
+            out.push(None); // original_path
+            out.push(None); // dashing_style
+            extra_items(out, k, &c.attrs);
         }
         LayoutObj::Item(LTItem::Image(i)) => {
-            out.extend(comp_items(&i.comp));
-            out.push(("name", Some(PyValue::str(&i.name))));
-            out.push(("stream", Some(PyValue::Pdf(PDFObject::Stream(i.stream.clone())))));
-            out.push((
-                "srcsize",
-                Some(PyValue::tuple([PyValue::from_pdf(i.srcsize.0.clone()), PyValue::from_pdf(i.srcsize.1.clone())])),
-            ));
-            out.push(("imagemask", Some(PyValue::from_pdf(i.imagemask.clone()))));
-            out.push(("bits", Some(PyValue::from_pdf(i.bits.clone()))));
-            out.push(("colorspace", Some(PyValue::from_pdf(i.colorspace.clone()))));
-            i.attrs.items()
+            comp_items(out, k, &i.comp);
+            out.push(Some((k.name.clone(), PyValue::str(&i.name))));
+            out.push(Some((k.stream.clone(), PyValue::Pdf(PDFObject::Stream(i.stream.clone())))));
+            out.push(Some((
+                k.srcsize.clone(),
+                PyValue::tuple([PyValue::from_pdf(i.srcsize.0.clone()), PyValue::from_pdf(i.srcsize.1.clone())]),
+            )));
+            out.push(Some((k.imagemask.clone(), PyValue::from_pdf(i.imagemask.clone()))));
+            out.push(Some((k.bits.clone(), PyValue::from_pdf(i.bits.clone()))));
+            out.push(Some((k.colorspace.clone(), PyValue::from_pdf(i.colorspace.clone()))));
+            extra_items(out, k, &i.attrs);
         }
         LayoutObj::Item(LTItem::Figure(f)) => {
             let f = f.borrow();
-            out.push(("name", Some(PyValue::str(&f.name))));
-            out.push(("matrix", Some(PyValue::tuple(f.matrix.iter().map(numv)))));
-            out.extend(comp_items(&f.layout.comp));
-            out.push(("_objs", None));
-            out.push(("groups", None));
-            f.attrs.items()
+            out.push(Some((k.name.clone(), PyValue::str(&f.name))));
+            out.push(Some((k.matrix.clone(), PyValue::tuple(f.matrix.iter().map(numv)))));
+            comp_items(out, k, &f.layout.comp);
+            out.push(None); // _objs
+            out.push(None); // groups
+            extra_items(out, k, &f.attrs);
         }
         LayoutObj::Item(LTItem::TextLine(l)) => {
             let l = l.borrow();
-            out.extend(comp_items(&l.comp));
-            out.push(("_objs", None));
-            out.push(("word_margin", None));
-            out.push((if l.is_horizontal() { "_x1" } else { "_y0" }, None));
-            Vec::new()
+            comp_items(out, k, &l.comp);
+            out.push(None); // _objs
+            out.push(None); // word_margin
+            out.push(None); // _x1 (horizontal) or _y0 (vertical)
         }
         LayoutObj::Item(LTItem::TextBox(b)) => {
-            out.extend(comp_items(&b.borrow().comp));
-            out.push(("_objs", None));
-            out.push(("index", None));
-            Vec::new()
+            comp_items(out, k, &b.borrow().comp);
+            out.push(None); // _objs
+            out.push(None); // index
         }
-    };
-    for (k, v) in &extra {
-        out.push((k, Some(marked(v))));
     }
-    out
 }
 
 // pdfplumber/utils/pdfinternals.py:66 resolve_all
@@ -1177,6 +1334,32 @@ pub fn resolve_all_value(x: &PyValue) -> PyResult<PyValue> {
         }
         other => Ok(other.clone()),
     }
+}
+
+// pdfplumber/utils/pdfinternals.py:66 resolve_all
+/// [`resolve_all_value`] of a value nothing else holds (an attribute
+/// value `process_object` has just made): the same frames, and the same
+/// result, but a `tuple` or `list` that only `x` holds is resolved in
+/// place instead of copied (performance: Python makes a new one, whose
+/// identity no one can compare with the old one's, which only it held).
+pub fn resolve_all_owned(mut x: PyValue) -> PyResult<PyValue> {
+    if let PyValue::Tuple(items) | PyValue::List(items) = &mut x {
+        if let Some(items) = Rc::get_mut(items) {
+            let _frame = py_frame()?;
+            let _entry = eval_entry()?;
+            let _genexpr = py_frame()?;
+            for v in items.iter_mut() {
+                *v = resolve_all_owned(std::mem::take(v))?;
+            }
+            return Ok(x);
+        }
+    }
+    if !matches!(x, PyValue::Pdf(_) | PyValue::Tuple(_) | PyValue::List(_) | PyValue::Dict(_)) {
+        // anything else is returned as it is, after the frame
+        let _frame = py_frame()?;
+        return Ok(x);
+    }
+    resolve_all_value(&x)
 }
 
 /// `x[i]`, `IndexError`... as Python's subscription of a sequence raises.
@@ -1563,11 +1746,18 @@ impl Page {
 
     // pdfplumber/page.py:349 Page.point2coord
     pub fn point2coord(&self, pt: &PyValue) -> PyResult<PyValue> {
+        self.point2coord_with(|i| index(pt, i))
+    }
+
+    /// [`Page::point2coord`] of the point whose `pt[i]` is `item(i)`
+    /// (performance: a point of `obj.original_path` is read without
+    /// making its tuple first).
+    fn point2coord_with(&self, item: impl Fn(usize) -> PyResult<PyValue>) -> PyResult<PyValue> {
         let _frame = py_frame()?;
         // See note below re. #1181 and mediabox-adjustment reversions
-        let x = index(&self.mediabox, 0)?.add(&index(pt, 0)?)?;
+        let x = index(&self.mediabox, 0)?.add(&item(0)?)?;
         let height = POINT2COORD_HEIGHT.get(self.class_name(), || self.height())?;
-        let y = index(&self.mediabox, 1)?.add(&height)?.sub(&index(pt, 1)?)?;
+        let y = index(&self.mediabox, 1)?.add(&height)?.sub(&item(1)?)?;
         Ok(PyValue::tuple([x, y]))
     }
 
@@ -1591,6 +1781,25 @@ impl Page {
     /// not start at 0. Inline image names are `inline-<k>`
     /// (`docs/architecture.md`, "Vague 3").
     fn process_layout_obj(&self, obj: &LayoutObj) -> PyResult<Obj> {
+        ATTR_KEYS.with(|k| self.process_layout_obj_with(obj, k))
+    }
+
+    // pdfplumber/page.py:353 Page.process_object
+    /// `page.process_object(obj)`, the public method (what
+    /// `iter_layout_objects` calls for each object; the unit replay of its
+    /// frames, `crates/pdftrace/tests/plumber_frames.rs`, calls it so).
+    pub fn process_object(&self, obj: &LayoutObj) -> PyResult<Obj> {
+        self.process_layout_obj(obj)
+    }
+
+    /// [`Page::process_layout_obj`] with the shared keys. Performance
+    /// (`docs/architecture.md`, "Vague 5", PERF): the dict is made with
+    /// room for its items, and a key it cannot hold yet (an attribute of
+    /// the `__dict__`, whose keys are distinct; a key `process_object`
+    /// adds that no layout class has) is appended without a look-up
+    /// ([`Obj::push_new`]): the same dict, in the same order, as `obj[k]
+    /// = v` for each.
+    fn process_layout_obj_with(&self, obj: &LayoutObj, k: &AttrKeys) -> PyResult<Obj> {
         let _frame = py_frame()?;
         // re.sub(lt_pat, "", obj.__class__.__name__).lower(): re.sub ->
         // re._compile (a compiled pattern: returned as it is)
@@ -1599,30 +1808,34 @@ impl Page {
         // Any]]: its annotations, evaluated at each call
         PROCESS_ATTR_ITEM.eval()?;
         PROCESS_ATTR_RETURN.eval()?;
-        let class_name = obj.class_name();
-        let kind = class_name.strip_prefix("LT").unwrap_or(class_name).to_lowercase();
+        let kind = object_type(obj.class_name());
 
         // dict(filter(None, map(process_attr, obj.__dict__.items()))): each
         // process_attr called from C
-        let mut attr = Obj::new();
-        for (k, v) in dict_items(obj) {
+        let mut items: Vec<DictItem> = DICT_ITEMS.with(|v| std::mem::take(&mut *v.borrow_mut()));
+        dict_items(&mut items, k, obj);
+        // (room for what is added below: at most 9 keys, a curve's)
+        let mut attr = Obj::with_capacity(items.len() + 9);
+        for item in items.drain(..) {
             let _entry = eval_entry()?;
             let _process_attr = py_frame()?;
-            if let Some(v) = v {
+            if let Some((key, v)) = item {
                 // k in ALL_ATTRS
-                let res = resolve_all_value(&v)?;
-                attr.set(k, res);
+                let res = resolve_all_owned(v)?;
+                attr.push_new(key, res);
             }
         }
+        // (the buffer is used again: an error above drops it)
+        DICT_ITEMS.with(|v| *v.borrow_mut() = items);
 
-        attr.set("object_type", PyValue::str(&kind));
-        attr.set("page_number", PyValue::Int(self.page_number.clone()));
+        attr.set(&k.object_type, PyValue::Str(kind));
+        attr.push_new(k.page_number.clone(), PyValue::Int(self.page_number.clone()));
 
         // Note: As of pdfminer.six v20221105, that library only exposes ncs
         // for LTChars, and neither attribute for other objects.
         if let LayoutObj::Item(LTItem::Char(c)) = obj {
-            let name = PyValue::str(&c.ncs.name);
-            attr.set("ncs", resolve_and_decode(&name)?);
+            let name = PyValue::Str(colorspace_name(&c.ncs));
+            attr.push_new(k.ncs.clone(), resolve_and_decode(&name)?);
         }
 
         let text = match obj {
@@ -1639,7 +1852,7 @@ impl Page {
                 Some(form) => normalize_unicode(form, &text)?,
                 None => text,
             };
-            attr.set("text", PyValue::Str(text));
+            attr.set(&k.text, PyValue::Str(text));
         }
 
         match obj {
@@ -1648,36 +1861,40 @@ impl Page {
                 // expose .stroking_color and .non_stroking_color for LTChar
                 // objects (unlike, e.g., LTRect objects).
                 let gs = &c.graphicstate;
-                attr.set("stroking_color", color_tuple(&gs.scolor));
-                attr.set("non_stroking_color", color_tuple(&gs.ncolor));
+                attr.push_new(k.stroking_color.clone(), color_tuple(&gs.scolor));
+                attr.push_new(k.non_stroking_color.clone(), color_tuple(&gs.ncolor));
                 // Handle (rare) byte-encoded fontnames
-                let fontname = attr.item("fontname")?.clone();
-                if let PyValue::Bytes(b) = &fontname {
-                    attr.set("fontname", PyValue::Str(fix_fontname_bytes(b)?));
+                if let PyValue::Bytes(b) = attr.item(&k.fontname)? {
+                    let fixed = fix_fontname_bytes(b)?;
+                    attr.set(&k.fontname, PyValue::Str(fixed));
                 }
             }
             LayoutObj::Item(LTItem::Curve(c)) => {
                 // list(map(self.point2coord, attr["pts"]))
-                let pts = attr.item("pts")?.clone();
+                let pts = attr.item(&k.pts)?.clone();
                 let pts = match crate::obj::py_iter(&pts) {
                     Some(items) => items?,
                     None => return Err(exc::TypeError(format!("'{}' object is not iterable", pts.type_name()))),
                 };
-                attr.set("pts", PyValue::List(self.points2coords(&pts)?.into()));
+                attr.set(&k.pts, PyValue::List(self.points2coords(&pts)?.into()));
                 // [(cmd, *map(self.point2coord, pts)) for cmd, *pts in obj.original_path]
                 let Some(original_path) = &c.original_path else {
                     return Err(exc::TypeError("'NoneType' object is not iterable"));
                 };
                 let mut path = Vec::with_capacity(original_path.len());
                 for (cmd, pts) in original_path {
-                    let mut items = vec![PyValue::str(&cmd.to_string())];
-                    let pts: Vec<PyValue> = pts.iter().map(point_value).collect();
-                    items.extend(self.points2coords(&pts)?);
+                    let mut items = Vec::with_capacity(pts.len() + 1);
+                    items.push(PyValue::Str(path_command(*cmd)));
+                    // *map(self.point2coord, pts), the map consumed from C
+                    for p in pts {
+                        let _entry = eval_entry()?;
+                        items.push(self.point2coord_with(|i| Ok(numv(&p[i])))?);
+                    }
                     path.push(PyValue::Tuple(items.into()));
                 }
-                attr.set("path", PyValue::List(path.into()));
-                attr.set(
-                    "dash",
+                attr.push_new(k.path.clone(), PyValue::List(path.into()));
+                attr.push_new(
+                    k.dash.clone(),
                     match &c.dashing_style {
                         None => PyValue::None,
                         Some((d, p)) => PyValue::tuple([PyValue::from_pdf(d.clone()), PyValue::from_pdf(p.clone())]),
@@ -1692,22 +1909,22 @@ impl Page {
         let mb_x0 = index(&self.mediabox, 0)?;
         let mb_top = index(&self.mediabox, 1)?;
 
-        if attr.contains("y0") {
+        if attr.contains(&k.y0) {
             let top = PROCESS_OBJECT_HEIGHT_TOP.get(self.class_name(), || self.height())?;
-            let top = top.sub(attr.item("y1")?)?.add(&mb_top)?;
-            attr.set("top", top);
+            let top = top.sub(attr.hot(Hot::Y1)?)?.add(&mb_top)?;
+            attr.set(&k.top, top);
             let bottom = PROCESS_OBJECT_HEIGHT_BOTTOM.get(self.class_name(), || self.height())?;
-            let bottom = bottom.sub(attr.item("y0")?)?.add(&mb_top)?;
-            attr.set("bottom", bottom);
-            let doctop = self.initial_doctop.add(attr.item("top")?)?;
-            attr.set("doctop", doctop);
+            let bottom = bottom.sub(attr.hot(Hot::Y0)?)?.add(&mb_top)?;
+            attr.set(&k.bottom, bottom);
+            let doctop = self.initial_doctop.add(attr.hot(Hot::Top)?)?;
+            attr.set(&k.doctop, doctop);
         }
 
-        if attr.contains("x0") && !mb_x0.py_eq(&PyValue::from(0i64)) {
-            let x0 = attr.item("x0")?.add(&mb_x0)?;
-            attr.set("x0", x0);
-            let x1 = attr.item("x1")?.add(&mb_x0)?;
-            attr.set("x1", x1);
+        if attr.contains(&k.x0) && !mb_x0.py_eq(&PyValue::from(0i64)) {
+            let x0 = attr.hot(Hot::X0)?.add(&mb_x0)?;
+            attr.set(&k.x0, x0);
+            let x1 = attr.hot(Hot::X1)?.add(&mb_x0)?;
+            attr.set(&k.x1, x1);
         }
 
         Ok(attr)

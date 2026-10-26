@@ -236,6 +236,45 @@ class Reader {
     return out;
   }
 
+  /** One value, as `value()` reads it, recursing into the lists and tuples
+   * of the first `depth` levels (performance: the generic cells of a
+   * table, points and paths, are small nested sequences, which the frames
+   * of `value()` make slow); `value()` reads anything else, and what is
+   * deeper. Only tables call it, which a typed block has none of: values
+   * are the plain ones. */
+  item(depth: number): unknown {
+    if (this.pos < this.u8.length) {
+      const tag = this.u8[this.pos];
+      switch (tag) {
+        // the scalars of points and paths, read as `value()` reads them
+        case TAG.F64:
+          this.pos++;
+          return this.f64();
+        case TAG.I32: {
+          this.pos++;
+          this.check(4);
+          const v = this.view.getInt32(this.pos, true);
+          this.pos += 4;
+          return v;
+        }
+        case TAG.STR:
+          this.pos++;
+          return this.str();
+        case TAG.LIST:
+        case TAG.TUPLE: {
+          if (depth <= 0) break;
+          this.pos++;
+          const n = this.varint();
+          if (n > this.u8.length - this.pos) throw new WireError("list longer than its block");
+          const arr = new Array<unknown>(n);
+          for (let i = 0; i < n; i++) arr[i] = this.item(depth - 1);
+          return arr;
+        }
+      }
+    }
+    return this.value();
+  }
+
   /** One value, without recursion (a table's generic cells recurse once
    * per nested table). */
   value(): unknown {
@@ -489,7 +528,7 @@ class Reader {
       }
       case COL.GENERIC: {
         const out = new Array<unknown>(n);
-        for (let i = 0; i < n; i++) out[i] = this.value();
+        for (let i = 0; i < n; i++) out[i] = this.item(SHALLOW);
         return out;
       }
       default:
@@ -497,6 +536,9 @@ class Reader {
     }
   }
 }
+
+/** The levels of nested sequences `Reader.item` reads by recursion. */
+const SHALLOW = 3;
 
 /** The cells of a column of `None`s. */
 const NULLS: ArrayLike<unknown> = new Proxy([], { get: (_t, p) => (p === "length" ? Infinity : null) });

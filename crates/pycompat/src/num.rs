@@ -38,7 +38,10 @@ const HASH_INF: i64 = 314159;
 /// replaced by -2.
 pub fn int_hash(i: &PyInt) -> i64 {
     let (sign, digits) = match i {
-        PyInt::Small(v) => (if *v < 0 { Sign::Minus } else { Sign::Plus }, v.unsigned_abs().to_be_bytes().to_vec()),
+        // |v| mod P directly (performance: no byte vector for the ints
+        // every width or cluster lookup hashes; the same value as the
+        // loop below)
+        PyInt::Small(v) => return signed_hash(*v < 0, v.unsigned_abs() % HASH_MODULUS),
         PyInt::Big(b) => {
             let (sign, bytes) = b.to_bytes_be();
             (sign, bytes)
@@ -54,7 +57,13 @@ pub fn int_hash(i: &PyInt) -> i64 {
             x -= HASH_MODULUS;
         }
     }
-    let x = if sign == Sign::Minus { (x as i64).wrapping_neg() } else { x as i64 };
+    signed_hash(sign == Sign::Minus, x)
+}
+
+/// The hash of an int whose magnitude modulo P is `x`: negated for a
+/// negative int, -1 being replaced by -2.
+fn signed_hash(negative: bool, x: u64) -> i64 {
+    let x = if negative { (x as i64).wrapping_neg() } else { x as i64 };
     if x == -1 {
         -2
     } else {
