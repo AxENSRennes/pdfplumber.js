@@ -105,7 +105,8 @@ pub fn complete() -> bool {
 pub fn mark_unavailable(names: impl IntoIterator<Item = String>) {
     STATE.with(|s| {
         let mut s = s.borrow_mut();
-        let names: Vec<String> = names.into_iter().filter(|n| s.known.contains(n) && !s.loaded.contains_key(n)).collect();
+        let names: Vec<String> =
+            names.into_iter().filter(|n| s.known.contains(n) && !s.loaded.contains_key(n)).collect();
         s.unavailable.extend(names);
     });
 }

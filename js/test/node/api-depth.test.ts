@@ -1,4 +1,4 @@
-// The depth windows of the adversarial sets (oracle/unit/js_api.py,
+// The depth windows of the adversarial sets and the API's own (oracle/unit/js_api.py,
 // depth.jsonl) through the public API, in Node, on the TypeScript sources:
 // where Python's RecursionError happens when each member's statement runs
 // at the top level of a script (docs/public-api.md, "Operations"). The

@@ -30,7 +30,7 @@ const mutants = [
   ["js/src/pdfobjects.ts", "if (!ref.source) return Promise.reject(", "if (false) return Promise.reject(", STREAMS],
   ["js/src/pdfobjects.ts", "return [this.#rawdata, this.#data];", "return [this.#data, this.#rawdata];", STREAMS],
   // runtime.ts
-  ["js/src/core/runtime.ts", "if (known && known.owner === owner) {", "if (known) {", STREAMS],
+  ["js/src/core/runtime.ts", "    if (owner === undefined) return this.#unowned;\n", "", STREAMS],
   ["js/src/core/runtime.ts", "        if (s) return s;\n", "", STREAMS],
   ["js/src/core/runtime.ts", "      const source: StreamSource = owner\n", "      const source: StreamSource = false\n", STREAMS],
   ["js/src/core/runtime.ts", 'responseValue(this.callRaw("set_stream_refs", 0, [true]), "set_stream_refs");', 'responseValue(this.callRaw("set_stream_refs", 0, [false]), "set_stream_refs");', STREAMS],
@@ -40,17 +40,17 @@ const mutants = [
   ["js/src/core/runtime.ts", "this.cmaps.names.filter((n) => !this.added.has(n))", "this.cmaps.names.filter((n) => this.added.has(n))", HISTORY],
   ["js/src/core/runtime.ts", "        this.voidCalls++;\n        await this.loadMissing(r.value as string[]);\n        continue;", "        await this.loadMissing(r.value as string[]);\n        continue;", LAZY],
   // wire.ts
-  ["js/src/core/wire.ts", "return streamRefMaker ? streamRefMaker(handle, objid, genno, attrs) : PDFStream.reference(objid, genno, attrs, handle, null);", "return PDFStream.reference(objid, genno, attrs, handle, null);", STREAMS],
+  ["js/src/core/wire.ts", "return maker ? maker(handle, objid, genno, attrs) : PDFStream.reference(objid, genno, attrs, handle, null);", "return PDFStream.reference(objid, genno, attrs, handle, null);", STREAMS],
   ["js/src/core/wire.ts", "    if (v instanceof PSLiteral) {\n      w.u8(TAG.LITERAL);", "    if (false) {\n      w.u8(TAG.LITERAL);", PAGES],
   ["js/src/core/wire.ts", "    if (v instanceof PSKeyword) {\n      w.u8(TAG.KEYWORD);", "    if (false) {\n      w.u8(TAG.KEYWORD);", PAGES],
   ["js/src/core/wire.ts", "    if (v instanceof PDFObjRef) {\n      w.u8(TAG.REF);", "    if (false) {\n      w.u8(TAG.REF);", PAGES],
-  ["js/src/core/wire.ts", "    if (v instanceof PageRef) {\n      w.u8(TAG.PAGE);", "    if (false) {\n      w.u8(TAG.PAGE);", PAGES],
+  ["js/src/core/wire.ts", "    if (v instanceof PageRef) {\n      if (accept", "    if (false) {\n      if (accept", PAGES],
   ["js/src/core/wire.ts", "      stack.push(v.page_number, v.handle);", "      stack.push(v.handle, v.page_number);", PAGES],
   ["js/src/core/wire.ts", "      stack.push(v.attrs, v.genno, v.objid, v.handle);", "      stack.push(v.handle, v.genno, v.objid, v.attrs);", PAGES],
   ["js/src/core/wire.ts", "    if (v instanceof PDFStream) {\n      if (v.handle === undefined)", "    if (false) {\n      if (v.handle === undefined)", PAGES],
   ["js/src/core/wire.ts", "pending.push([holder, key, (x: Record<string, unknown>) => streamRef([x.handle, x.objid, x.genno, x.attrs])]);", "pending.push([holder, key, (x: Record<string, unknown>) => streamRef([x.objid, x.handle, x.genno, x.attrs])]);", STREAMS],
   // api.ts (owner)
-  ["js/src/api.ts", "return { ...diagnosticsPolicy(this.options, page), owner: this };", "return { ...diagnosticsPolicy(this.options, page) };", STREAMS],
+  ["js/src/api.ts", "return { ...diagnosticsPolicy(this.#own, page), owner: this };", "return { ...diagnosticsPolicy(this.#own, page) };", STREAMS],
 ];
 
 const run = (pattern) => {

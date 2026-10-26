@@ -387,8 +387,24 @@ Mode d'emploi détaillé : [`oracle/README.md`](../oracle/README.md).
   les fenêtres de profondeur, une trace par l'API diffère par
   construction, la parité y est celle des sessions : `depth.jsonl` de
   `js_api.py` en tient une pour chacune des fenêtres `depth-*` et
-  `climit-*` des ensembles adverses, rejouée dans Node par
-  `js/test/node/api-depth.test.ts`).
+  `climit-*` des ensembles adverses, et, par famille de fenêtres, la
+  fenêtre de l'API elle-même, rejouées dans Node par
+  `js/test/node/api-depth.test.ts`). Les fenêtres des étapes sont
+  centrées sur la limite des étapes, que l'API atteint un à quelques
+  niveaux plus loin (ses instructions sont au niveau du module) : pour
+  chaque famille, le générateur cherche par dichotomie la première
+  imbrication où une instruction de la session de profondeur lève
+  `RecursionError` (elle-même ou comme cause : `ApiDepth`, sondes en
+  cache sous `.cache/corpus/js-api-depth/`), écrit le PDF de cette
+  imbrication et des deux voisines et en fait des sessions ; il vérifie
+  que l'une passe et l'autre lève. Une famille sans `RecursionError`
+  jusqu'au plafond (6 000 niveaux, 12 000 pour `climit-*`), ou qui en lève
+  à toute imbrication jusqu'à 1, n'a que les fenêtres des étapes ; la
+  liste est dans `meta.json` (`depth_api_first_failing`). Les comptes
+  d'appels distinguent les appels faits des `Unresolved` (un appel sur un
+  objet qu'un appel précédent n'a pas fait : aucun côté ne le fait) :
+  `calls_made`, `calls_made_by_member`, avec au moins 3 appels faits par
+  membre (sinon le générateur échoue).
 
 ### Mesurer une profondeur de cadres
 

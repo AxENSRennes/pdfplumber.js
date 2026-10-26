@@ -529,11 +529,25 @@ du `TableSettings` résolu),
   début de l'appel suivant et plus rien n'y est noté (les documents sont
   marqués : si des noms de CMaps devenaient connus ensuite, un appel nul
   sur eux les laisserait inutilisables, jamais différents). Au-delà de
-  `HISTORY_LIMIT` entrées (4 096), chaque réponse le signale (drapeau 1) et
-  le runtime donne toutes les CMaps (`WasmCore.loadAll`, ~3 Mo) : la
-  mémoire de l'historique est bornée, sans rien changer à Python. Testé
-  par `the_history_goes_once_every_cmap_is_handed_over` et dans
-  `tests.mjs` (`set_history_limit`).
+  `HISTORY_LIMIT` entrées (4 096), ou de `HISTORY_BYTES_LIMIT` octets de
+  requêtes (4 Mio : une entrée garde les arguments de son appel, le masque
+  d'un `filter` par exemple, une valeur par objet de la page ; `wave5/fix`),
+  chaque réponse le signale (drapeau 1) et le runtime donne toutes les
+  CMaps (`WasmCore.loadAll`, ~3 Mo) : la mémoire de l'historique est
+  bornée, sans rien changer à Python. Un fichier que le chargeur ne peut
+  pas fournir à ce moment (404, réseau) est marqué indisponible dans le
+  cœur (`cmap_unavailable`, `cmaps::mark_unavailable`) : `complete` tient
+  sans lui, l'historique s'en va et le drapeau ne revient plus (sans quoi
+  le cœur garderait l'historique sans limite et le runtime rechargerait
+  chaque fichier manquant à chaque appel) ; un appel qui en a besoin est
+  encore nul, le runtime le recharge alors, et un document dont
+  l'historique est parti ne peut plus être reconstruit par cet appel
+  (chaque opération suivante sur lui lève) là où, sans le fichier, son
+  appel ne pouvait qu'échouer. Un nom remis ensuite (`cmap_add`) redevient
+  disponible. Testé par `the_history_goes_once_every_cmap_is_handed_over`,
+  `unavailable_names_complete_the_set_until_one_is_handed_over`, dans
+  `tests.mjs` (`set_history_limit`) et `api-runtime.test.ts` (un chargeur
+  qui refuse un nom ; l'historique borné par sa taille).
 - **Tests** : `oracle/unit/js_runtime.py` exécute des sessions de cas
   dans un processus neuf chacune, au niveau du module de
   `js_pages_run.py` (`pages.jsonl`) : `documents` (toutes les opérations,
@@ -601,11 +615,57 @@ ou leur worker (Chromium, WebKit) jusqu'au ramasse-miettes : le test
 dépassait les 5 Go de `heavy.sh` (`check-browsers.sh` de l'intégration de
 la vague 4).
 
+Un cœur qui plante en mode worker arrête son worker aussitôt (`WorkerCore`
+reçoit le `CoreCrash` et appelle `terminate()`, et `getCore()` le fait
+aussi avant d'en démarrer un autre) : la mémoire du worker, souvent la
+cause du plantage, ne reste pas jusqu'au ramasse-miettes à côté du
+nouveau cœur ; les requêtes en attente reçoivent un `CoreCrash`. Un
+worker qui ne se charge pas (une URL qu'un bundler a déplacée) rejette
+`open()` avec une erreur qui nomme son URL (l'événement d'erreur du
+navigateur n'a pas de message).
+
+Les adresses et longueurs que rend le module (`pp_alloc`,
+`pp_result_ptr`, `pp_result_len`) sont des `i32` de wasm32, que
+JavaScript lit signés : `WasmCore` les lit non signés (`>>> 0`), sans quoi
+toute allocation au-delà de 2 Gio de mémoire linéaire (un gros document)
+donnait un décalage négatif et un `CoreCrash` (`wave5/fix` ; testé dans
+`api-runtime.test.ts` par une allocation de 2 Gio puis un `open()`).
+
+Les flux par référence (`StreamRefs`) sont gardés par document, dans une
+`WeakMap` dont le document est la clé : rien du runtime ne garde un
+document, qu'un `FinalizationRegistry` libère donc encore une fois
+inaccessible (avant `wave5/fix`, la table des flux du cœur gardait chaque
+document dont un résultat avait tenu un flux : jamais libéré). Chaque
+`PageRef` et chaque `PDFStream` est noté comme objet de son cœur :
+l'argument d'une requête d'un autre cœur ne peut pas le contenir
+(`TypeError` ; un objet fait à la main passe, comme ceux des tests de
+l'API interne), et `pdf.page(ref)` ne prend que les références des
+résultats de `pdf`.
+
 Build : `node scripts/build.mjs` = `build-wasm.mjs` (cargo `--profile dist`,
 puis `wasm-opt -O3` du paquet npm `binaryen`, `--no-opt` pour l'éviter),
 `build-cmaps.mjs`, `build-js.mjs` (`tsc` → `dist/src` avec les `.d.ts` ;
-esbuild → `dist/browser/{index,worker,internal}.js` avec morceaux partagés).
-Aucune dépendance d'exécution. `node scripts/build-wasm.mjs --oracle`
+esbuild → `dist/browser/{index,internal}.js` avec morceaux partagés, et
+`dist/browser/worker.js` seul, sans morceau partagé : un fichier, qu'une
+application copie à côté de son bundle, exporté comme
+`pdfplumber-js/worker`). Le worker par défaut est créé sous la forme que
+les bundlers reconnaissent (`new Worker(new URL("./worker.js",
+import.meta.url), { type: "module" })`). Les déclarations se vérifient
+sans la bibliothèque DOM (`WasmModule`) et apportent `esnext.disposable`
+(`/// <reference lib>`). Aucune dépendance d'exécution.
+`scripts/check-package.mjs` (dans `check.sh`) vérifie le paquet tel que
+`npm pack` le fait : fichiers livrés (`LICENSE`, `THIRD_PARTY_NOTICES`,
+module, CMaps, docs) et exclus, liens relatifs des Markdown livrés, worker
+d'un seul fichier, puis, installé dans un projet neuf, ses déclarations
+(projet Node sans DOM, avec et sans `await using` ; projet navigateur),
+`import` et `require()`, et ses sous-chemins ; avec `--bundles`
+(`check-browsers.sh`), deux applications qui l'empaquettent (esbuild,
+Vite) selon les recettes du README, que `bundlers.spec.ts` exécute dans
+Chromium (page et worker, un document CJK). `THIRD_PARTY_NOTICES` est
+écrit par `scripts/third-party-notices.mjs` (pdfminer.six, pdfplumber,
+CMaps d'Adobe, CPython, zlib, ARM optimized-routines, crates liés) ;
+`--check` vérifie la liste des crates et l'absence du port de l'`atan2`
+de la glibc (LGPL) dans le module. `node scripts/build-wasm.mjs --oracle`
 construit `dist/pdfplumber-oracle.wasm` : le même module avec les crochets
 d'oracle du harnais (feature `oracle-hooks`, `crates/wasm/src/oracle.rs`,
 opérations `oracle_*` : rang des `id()` de Python, ligne `ids`, indices par

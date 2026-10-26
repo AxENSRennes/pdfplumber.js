@@ -106,9 +106,13 @@ describe("public API cores", () => {
     expect(await lib.getCore()).toBe(core);
     const pdf = await api.open(new Uint8Array(await readFile(join(PDFPLUMBER_ROOT, "corpus/micro/text-operators.pdf"))));
     Object.defineProperty(core, "crashed", { get: () => true, configurable: true });
+    // (a core in a worker is stopped before the next one starts)
+    const terminate = vi.fn();
+    (core as { terminate?: () => void }).terminate = terminate;
     const next = await lib.getCore();
     expect(next).not.toBe(core);
     expect(next.crashed).toBe(false);
+    expect(terminate).toHaveBeenCalledTimes(1);
     const call = vi.spyOn(core, "call");
     await pdf.release();
     expect(call).not.toHaveBeenCalled();
@@ -219,6 +223,20 @@ describe("public API cores", () => {
     await expect(WorkerCore.start(failing as never, {} as WebAssembly.Module, null, "http://x/moved/worker.js")).rejects.toThrow(
       /http:\/\/x\/moved\/worker\.js/,
     );
+    // a worker whose instance cannot start (its init answered with an
+    // error): stopped, the error passed on
+    let stopped = 0;
+    const refusing = {
+      ...worker,
+      postMessage(m: { id: number; type: string }) {
+        queueMicrotask(() => refusing.onmessage!({ data: { id: m.id, error: { name: "Error", message: "no memory" } } }));
+      },
+      terminate() {
+        stopped++;
+      },
+    };
+    await expect(WorkerCore.start(refusing as never, {} as WebAssembly.Module, null, "w.js")).rejects.toThrow("no memory");
+    expect(stopped).toBe(1);
   });
 
   it("a new core instantiates the module compiled before (the default source)", async () => {

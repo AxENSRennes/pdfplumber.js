@@ -28,6 +28,9 @@ else
   node scripts/build.mjs
 fi
 
+step "the packed package bundled by esbuild and Vite (README recipes: dist/bundler-tests, bundlers.spec.ts)"
+node scripts/check-package.mjs --bundles
+
 step "unit oracle data of the JS runtime (python -m oracle.unit js_runtime)"
 "$PY" -m oracle.unit js_runtime
 

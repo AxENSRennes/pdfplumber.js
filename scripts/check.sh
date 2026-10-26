@@ -98,6 +98,10 @@ node node_modules/typescript/bin/tsc -p js/tsconfig.test.json
 capped node node_modules/vitest/vitest.mjs run --config js/vitest.config.ts
 node scripts/size.mjs --budget
 
+step "the npm package as a consumer gets it: files, notices, links, declarations, import and require"
+node scripts/third-party-notices.mjs --check
+capped node scripts/check-package.mjs
+
 step "the plumber_* stages through the public JavaScript API on micro (js/trace, dist/pdfplumber-oracle.wasm)"
 node scripts/build-wasm.mjs --oracle --no-opt
 for stage in plumber_objects plumber_text; do
