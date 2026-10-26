@@ -3271,13 +3271,38 @@ seul fichier ; déclarations sans la bibliothèque DOM et avec
 migration complétées ; `scripts/check-package.mjs` et
 `bundlers.spec.ts` (`js-runtime.md`, « Paquet JS »).
 
+**Vérification** (`heavy.sh`, `HEAVY_SLOTS=1`) :
+
+- `scripts/check.sh` vert (cargo test natif, 519 réussis ;
+  `wasm32-wasip1` ; porte de profondeur ; 801 tests de Node : les 57
+  sessions sur les sources et sur `dist`, les 593 fenêtres de profondeur,
+  `api-lifetime`, `api-runtime` ; paquet ; `plumber_*` par l'API sur
+  `micro`) ; `scripts/check-browsers.sh` vert : 464 réussis, 16 sautés
+  (les recettes de bundlers ne tournent que dans Chromium) ;
+- `oracle.verify` par `pdftrace` : les quatre étapes `plumber_*` sur `all`
+  et les cinq ensembles adverses, comme à la jonction (1 852/1 853 pour
+  `plumber_objects` sur `all`, la ligne `ids` de
+  `pdfjs-issue19624-text.pdf` ; `adv-interp` 336 et 341 sur 353 pour
+  `plumber_text` et `plumber_tables`) ; les neuf étapes du bas sur `quick` :
+  150/150 chacune ;
+- les quatre étapes par l'API publique (`--engine js-api`) sur les mêmes
+  ensembles : exactement les nombres du tableau de la jonction. Un premier
+  passage avait 5 fichiers de `plumber_tables` (2 de `all`, 2
+  d'`adv-interp`, 1 d'`adv-plumber`) que le harnais ne pouvait pas tracer :
+  le `free` d'un finaliseur, que les tours de boucle d'événements laissent
+  maintenant passer plus tôt, s'exécutait entre la requête d'un membre et
+  la lecture de `core.lastTyped` par le harnais, et remplaçait la valeur.
+  Un `free` ne change plus `lastTyped` (personne ne lit son résultat) ;
+  test dans `api-runtime.test.ts`, mutant #60 de `fix-mutants.mjs` tué ;
+  le second passage est identique à la jonction.
+
 **Mutations.** `scripts/fix-mutants.mjs` (dans une copie de la branche ;
 un mutant Rust reconstruit `dist/pdfplumber.wasm`, puisque seules les
-sessions de l'API atteignent ce code par WebAssembly) : 60 mutants du
+sessions de l'API atteignent ce code par WebAssembly) : 61 mutants du
 code de la correction (JavaScript : `api.ts`, `runtime.ts`, `wire.ts`,
 `worker/client.ts`, `search.ts`, `structure.ts` ; Rust : `pages.rs`,
 `text.rs`, `structs.rs`, `ops.rs`, `cmaps.rs`, ces derniers aussi contre
-les tests unitaires de `cmaps`), 54 tués (dont le #34 après un test de
+les tests unitaires de `cmaps`), 55 tués (dont le #34 après un test de
 plus : un worker qui tombe pendant une requête nomme son URL), 6
 survivants équivalents :
 

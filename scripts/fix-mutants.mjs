@@ -116,6 +116,9 @@ const mutants = [
   [CM, "        s.unavailable.remove(name);\n", "", RUNTIME, CMAPS],
   [CM, ".filter(|n| s.known.contains(n) && !s.loaded.contains_key(n))", ".filter(|_| true)", RUNTIME, CMAPS],
   [OP, "                cmaps::mark_unavailable(names);\n", "                drop(names);\n", RUNTIME],
+  // (found by the stage passes through the API: a finalizer's free between
+  // a member's request and the harness's read of lastTyped)
+  [R, '      if (op !== "free") this.typedValue = r.typed;', "      this.typedValue = r.typed;", RUNTIME],
 ];
 
 const env = { ...process.env, PATH: `${join(homedir(), ".cargo/bin")}:${process.env.PATH}`, CARGO_BUILD_JOBS: process.env.CARGO_BUILD_JOBS ?? "2" };

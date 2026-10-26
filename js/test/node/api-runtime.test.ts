@@ -254,6 +254,27 @@ describe("public API cores", () => {
     expect(stopped).toBe(1);
   });
 
+  it("a finalizer's free between a member's request and the read of lastTyped leaves it (the harness of js/trace)", async () => {
+    api.configure({});
+    lib.dropCore();
+    const { core, call } = await internal.internals();
+    const pdf = await api.open(new Uint8Array(await readFile(join(PDFPLUMBER_ROOT, "corpus/micro/text-operators.pdf"))));
+    const [page] = await pdf.pages;
+    const crop = await page.crop([0, 0, 10, 10]);
+    await call("set_format", "typed");
+    try {
+      await page.chars;
+      const after = core.lastTyped;
+      expect(after).toBeDefined();
+      await core.call("free", crop.handle, null);
+      expect(core.lastTyped).toBe(after);
+    } finally {
+      await call("set_format", "binary");
+      await pdf.release();
+      lib.dropCore();
+    }
+  });
+
   it("a new core instantiates the module compiled before (the default source)", async () => {
     api.configure({});
     await lib.getCore();

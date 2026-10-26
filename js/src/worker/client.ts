@@ -138,7 +138,7 @@ export class WorkerCore implements Core {
     }
     if (!("response" in r)) throw new Error("unexpected worker reply");
     const response = decodeWithRefs(r.response, this.refs, options);
-    this.typedValue = response.typed;
+    if (op !== "free") this.typedValue = response.typed;
     if (response.diagnostics.length || response.dropped)
       options.onDiagnostics?.(response.diagnostics, response.dropped);
     return responseValue(response, op);

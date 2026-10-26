@@ -79,7 +79,9 @@ export interface Core {
   readonly crashed: boolean;
   /** The typed value (core/typed.ts) of the last result, when the core
    * writes the typed format (`set_format("typed")`: the harness of
-   * js/trace/); `undefined` otherwise. */
+   * js/trace/); `undefined` otherwise. A `free` (a finalizer's, which can
+   * run between a member's request and the read of its value) leaves it
+   * as it is: it has no result anyone reads. */
   readonly lastTyped: unknown;
   /** Stops a core that holds more than references (a worker); a core in
    * the page is freed with its last reference. */
@@ -484,7 +486,7 @@ export class WasmCore implements Core {
         await this.loadMissing(r.value as string[]);
         continue;
       }
-      this.typedValue = r.typed;
+      if (op !== "free") this.typedValue = r.typed;
       if (r.diagnostics.length || r.dropped) options.onDiagnostics?.(r.diagnostics, r.dropped);
       if (r.historyLong) await this.loadAll();
       return responseValue(r, op);
