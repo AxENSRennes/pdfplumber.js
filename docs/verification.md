@@ -400,7 +400,17 @@ Mode d'emploi détaillé : [`oracle/README.md`](../oracle/README.md).
   que l'une passe et l'autre lève. Une famille sans `RecursionError`
   jusqu'au plafond (6 000 niveaux, 12 000 pour `climit-*`), ou qui en lève
   à toute imbrication jusqu'à 1, n'a que les fenêtres des étapes ; la
-  liste est dans `meta.json` (`depth_api_first_failing`). Les comptes
+  liste est dans `meta.json` (`depth_api_first_failing`). À la génération
+  de `wave5/fix` : 85 familles sur 95 ont leur fenêtre (145 sessions de
+  plus que les 448 des étapes ; la limite de l'API est de 0 à 7 niveaux
+  au-delà de celle des étapes, ou en deçà quand une autre instruction de
+  la session lève d'abord : `chain-prune` à 332) ; les 10 autres ne
+  lèvent pas de `RecursionError` par les instructions de l'API jusqu'au
+  plafond (`dash-list`, `outline-*`, `names-kids`, `length-chain`, les
+  métadonnées imbriquées, dont pdfplumber attrape l'erreur à
+  l'ouverture, et trois familles d'unités C de `adv-structure`). Les
+  générateurs des familles (`depth_families`) sont vérifiés octet pour
+  octet contre les fichiers des ensembles. Les comptes
   d'appels distinguent les appels faits des `Unresolved` (un appel sur un
   objet qu'un appel précédent n'a pas fait : aucun côté ne le fait) :
   `calls_made`, `calls_made_by_member`, avec au moins 3 appels faits par

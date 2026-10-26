@@ -1658,8 +1658,33 @@ def depth_families() -> dict[str, dict[str, Callable[[int], bytes]]]:
         "adv-structure": {f"depth-{k}": m for k, (m, first) in structure.WINDOWS.items() if first > 0},
         "adv-interp": {**{f"depth-{k}": m for k, m in interp.depth_kinds().items()},
                        **{f"climit-{k}": m for k, m in interp.climit_kinds().items()}},
-        "adv-objects": {f"depth-{k}": m for k, m, *_ in objects.depth_windows()},
-        "adv-pages": {f"depth-{k}": m for k, m, *_ in pages.depth_windows()},
+        # (the windows of objects.py and pages.py are made inside their
+        # cases_depth: the same builders and arguments, which
+        # check_families checks against the sets' files)
+        "adv-objects": {
+            "depth-prev-tables": lambda n: objects.prev_chain(n, "none"),
+            "depth-prev-streams": lambda n: objects.prev_chain(n, "all"),
+            "depth-prev-stream-bottom": lambda n: objects.prev_chain(n, "bottom"),
+            "depth-length-chain": objects.length_chain,
+        },
+        "adv-pages": {
+            "depth-chain": pages.page_chain,
+            "depth-chain-kids-ref": lambda n: pages.page_chain(n, kids_ref=True),
+            "depth-chain-hex-numbers": lambda n: pages.page_chain(n, node=b"/X <41 42 4> /N 12 /F 1.5 "),
+            "depth-chain-stream-last": lambda n: pages.page_chain(
+                n, last=b"<< /Type /Page /Length 3 >>\nstream\nabc\nendstream"),
+            "depth-chain-tail-new-name": lambda n: pages.page_chain(n, last=b"<< /Type /Pages /Kids [ /Zq7uniq", tail=True),
+            "depth-chain-tail-old-name": lambda n: pages.page_chain(n, last=b"<< /Type /Pages /Kids [ /Count", tail=True),
+            "depth-chain-fallback": pages.fallback_chain,
+            "depth-chain-encrypted": pages.encrypted_chain,
+            **{f"depth-chain-objstm-{f}": (lambda n, f=f: pages.objstm_chain(n, f)) for f in pages.FILTERS},
+            "depth-labels-kids": pages.labels_chain,
+            "depth-box-refs": lambda n: pages.box_chain(n, True),
+            "depth-box-nested": lambda n: pages.box_chain(n, False),
+            "depth-outline-first": lambda n: pages.outline_chain(n, "first"),
+            "depth-outline-next": lambda n: pages.outline_chain(n, "next"),
+            "depth-names-kids": pages.names_chain,
+        },
     }
 
 
@@ -1767,9 +1792,13 @@ def depth_sessions(summary: dict[str, Any] | None = None) -> list[Session]:
             m = re.fullmatch(r"\d+-((?:depth|climit)-.+)-(\d+)", p.stem)
             assert m, p
             windows.setdefault(m.group(1), []).append(int(m.group(2)))
-        missing = sorted(set(windows) - set(families[aset]))
-        if missing:
-            raise SystemExit(f"js_api: no generator for the families {missing} of {aset} (depth_families)")
+            # the family's generator makes the set's files: the API's
+            # window is of the same documents
+            make = families[aset].get(m.group(1))
+            if make is None:
+                raise SystemExit(f"js_api: no generator for the family {m.group(1)} of {aset} (depth_families)")
+            if make(int(m.group(2))) != p.read_bytes():
+                raise SystemExit(f"js_api: depth_families makes another {p.name} than {aset} has")
         for family, ns in sorted(windows.items()):
             make = families[aset][family]
             first = api.first(aset, family, make, ns)
