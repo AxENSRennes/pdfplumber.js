@@ -2492,7 +2492,9 @@ dicts à forme fixe changeraient le modèle de valeurs de `crates/pdfplumber`
 (hors de ce chantier). La frontière coûte encore ≈ 20 % de
 `page.objects` dans Node (2,9 ms sur 13,9).
 
-**Vérification** (commit de ce chantier) : `scripts/check.sh` vert ;
+**Vérification** (commit de ce chantier) : `scripts/check.sh` vert (497
+tests Rust réussis en natif et en `wasm32-wasip1`, `plumber_frames`
+compris, 139 tests Node, porte de profondeur, autotests de l'oracle) ;
 `scripts/check-browsers.sh` vert (345 tests) ; les 13 étapes identiques
 sur `quick` (150/150 chacune) ; `oracle.wasm_parity` sur `quick`, 13
 étapes, 0 différence, `dist wasm = native` ; `plumber_objects` et
