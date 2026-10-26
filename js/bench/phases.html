@@ -8,9 +8,10 @@
   // js/bench/browser-phases.mjs: [{url, password}]), fetched first (not
   // timed), `open(bytes, {pages: [1..20], password})` and `await pdf.pages`,
   // then per page `page.objects`, `extractText()`, `extractWords()`,
-  // `findTables()` and `page.objects` again (the boundary alone). With
-  // ?worker, the core runs in a worker. The result goes to window.__result:
-  // {rows: [[url, pages, open, objects, text, words, tables, again]...]}
+  // `findTables()`, `page.objects` again (the boundary alone) and
+  // `extractTables()`. With ?worker, the core runs in a worker. The result
+  // goes to window.__result: {rows: [[url, pages, open, objects, text,
+  // words, tables, again, extractTables]...]}
   // (seconds).
   import * as api from "/dist/browser/index.js";
   const params = new URLSearchParams(location.search);
@@ -21,7 +22,7 @@
     const rows = [];
     for (const { url, password } of list) {
       const data = new Uint8Array(await (await fetch(url)).arrayBuffer());
-      const t = [0, 0, 0, 0, 0, 0];
+      const t = [0, 0, 0, 0, 0, 0, 0];
       const started = performance.now();
       let pdf;
       let pages;
@@ -32,13 +33,20 @@
         });
         pages = await pdf.pages;
       } catch {
-        rows.push([url, 0, (performance.now() - started) / 1000, 0, 0, 0, 0, 0]);
+        rows.push([url, 0, (performance.now() - started) / 1000, 0, 0, 0, 0, 0, 0]);
         if (pdf) await pdf.release();
         continue;
       }
       t[0] = performance.now() - started;
       for (const p of pages) {
-        const phases = [() => p.objects, () => p.extractText(), () => p.extractWords(), () => p.findTables(), () => p.objects];
+        const phases = [
+          () => p.objects,
+          () => p.extractText(),
+          () => p.extractWords(),
+          () => p.findTables(),
+          () => p.objects,
+          () => p.extractTables(),
+        ];
         for (let k = 0; k < phases.length; k++) {
           const s = performance.now();
           try {

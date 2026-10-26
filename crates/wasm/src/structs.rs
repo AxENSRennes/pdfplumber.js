@@ -11,20 +11,23 @@
 //! | operation | statement (`oracle/unit/js_pages_run.py`) | result |
 //! |---|---|---|
 //! | `struct_tree [page]` | `PDFStructTree(obj, page)` | `{handle, children}` |
-//! | `struct_find_all [path, matcher]` | `list(x.find_all(m))` | paths |
-//! | `struct_find [path, matcher]` | `x.find(m)` | a path or `None` |
+//! | `struct_find_all [path, matcher, mask?]` | `list(x.find_all(m))` | paths |
+//! | `struct_find [path, matcher, mask?]` | `x.find(m)` | a path or `None` |
 //! | `struct_element_bbox [path]` | `obj.element_bbox(el)` | a bbox |
 //! | `struct_all_mcids [path]` | `list(el.all_mcids())` | `(page_number, mcid)` tuples |
 //! | `struct_element_repr [path]` | `repr(el)` | a `str` |
 //!
-//! (`x`: the tree when `path` is `None`, else the element.) A matcher is
-//! an element type (a `str`: `match_tag`), or `{"mask": [truth...]}`, the
-//! truth of a function JavaScript ran on every element of the tree, in the
-//! tree's depth-first order (`_find_all`'s), looked up by identity by a
-//! function of one frame (as a Python predicate, or `match_regex` for a
-//! `RegExp`, whose JavaScript semantics decide the truth); any other value
-//! is called as Python calls it (`TypeError: '...' object is not
-//! callable`, raised at the first element).
+//! (`x`: the tree when `path` is `None`, else the element.) With a third
+//! argument, the *mask* `[truth...]`, the matcher is the truth of a
+//! function JavaScript ran on every element of the tree, in the tree's
+//! depth-first order (`_find_all`'s), looked up by identity by a function
+//! of one frame (as a Python predicate, or `match_regex` for a `RegExp`,
+//! whose JavaScript semantics decide the truth), and the second argument
+//! is not read. Without it, the matcher is the second argument: an element
+//! type (a `str`: `match_tag`), or any other value, called as Python calls
+//! it (`TypeError: '...' object is not callable`, raised at the first
+//! element), a `dict` included: the mask has its own argument so that no
+//! value a caller passes can be taken for it.
 
 use std::rc::Rc;
 
@@ -218,19 +221,19 @@ impl Core {
                 PyValue::Dict(Obj::from_pairs([("handle", handle), ("children", children)]))
             }
             "struct_find_all" | "struct_find" => {
-                // [path or None, matcher]
+                // [path or None, matcher, mask?]
                 let a = a()?;
                 let tree = self.tree(h)?;
-                let (path, m) = (arg(a, 0)?, arg(a, 1)?);
+                let (path, m, mask) = (arg(a, 0)?, arg(a, 1)?, a.get(2));
                 let el = if path.is_none() { None } else { Some(element(&tree, path)?) };
                 let mask_index;
                 let mask_truth;
                 let not_callable;
                 let mask_fn: Box<MatchFn<'_>>;
-                let matcher = match m {
-                    PyValue::Str(tag) => Matcher::Tag(tag),
-                    PyValue::Dict(d) if d.len() == 1 && d.get("mask").is_some() => {
-                        let truth = seq(d.get("mask").expect("checked"))?;
+                let matcher = match (mask, m) {
+                    (None, PyValue::Str(tag)) => Matcher::Tag(tag),
+                    (Some(mask), _) => {
+                        let truth = seq(mask)?;
                         let elements = preorder(&tree)?;
                         if truth.len() != elements.len() {
                             return Err(exc::ValueError(format!(
@@ -255,7 +258,7 @@ impl Core {
                         });
                         Matcher::Func(&*mask_fn)
                     }
-                    other => {
+                    (None, other) => {
                         // match_func = matcher; match_func(el)
                         not_callable = format!("'{}' object is not callable", other.type_name());
                         mask_fn = Box::new(|_: &PDFStructElement| Err(exc::TypeError(not_callable.clone())));

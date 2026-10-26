@@ -107,7 +107,7 @@ const mutants = [
   // the structure tree
   [S, 'const re = new RegExp(matcher.source, matcher.flags.replace(/[gy]/g, "") + "y");', 'const re = new RegExp(matcher.source, matcher.flags.replace(/[gy]/g, ""));'],
   [S, "        re.lastIndex = 0;\n", ""],
-  [S, "return { mask: preorder(tree.children).map((el) => Boolean(matcher(el))) };", "return { mask: preorder(tree.children).map((el) => !matcher(el)) };"],
+  [S, "return [null, preorder(tree.children).map((el) => Boolean(matcher(el)))];", "return [null, preorder(tree.children).map((el) => !matcher(el))];"],
   [S, "    for (let i = el.children.length - 1; i >= 0; i--) stack.push(el.children[i]);", "    for (let i = 0; i < el.children.length; i++) stack.push(el.children[i]);"],
   [S, "      for (let i = value.children.length - 1; i >= 0; i--) stack.push([value.children[i], [...path, i], el.children]);", "      for (let i = value.children.length - 1; i >= 0; i--) stack.push([value.children[i], [i], el.children]);"],
   [S, "    stack.reverse();\n", ""],
@@ -151,6 +151,11 @@ const mutants = [
   [A, '    this.pdf.pin(this);\n    return this.#list("hyperlinks");', '    return this.#list("hyperlinks");'],
   [S, "if (matcher instanceof RegExp) {", "if (false) {"],
   [S, 'if (typeof matcher === "function") return', 'if (false) return'],
+  // the join: the mask in its own argument, never taken from a caller's value
+  [S, "  return [matcher];\n}", "  return matcher !== null && typeof matcher === \"object\" && \"mask\" in matcher ? [null, matcher.mask] : [matcher];\n}"],
+  [S, "  return [matcher];\n}", "  return [null, matcher];\n}"],
+  [S, "    return [\n      null,\n", "    return [\n      matcher,\n"],
+  [S, "const args = [path, ...matcherArgs(this, matcher)];", "const args = [path, matcherArgs(this, matcher).at(-1)];"],
 ];
 
 const run = (tests) => {

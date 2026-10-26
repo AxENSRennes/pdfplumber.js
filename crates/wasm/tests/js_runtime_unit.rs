@@ -807,12 +807,13 @@ fn replay_session(format: &str, name: &str, cases: &[Value], out: &Value) -> usi
                 objs.relabel(r)
             }
             "struct_find_all" | "struct_find" => {
-                // a predicate or a pattern: the mask the script computed
-                let matcher = match extra {
-                    Value::None => py(&args[1]),
-                    mask => PyValue::Dict(pdfplumber::obj::Obj::from_pairs([("mask", py(mask))])),
+                // a predicate or a pattern: the mask the script computed,
+                // in its own argument
+                let args = match extra {
+                    Value::None => vec![py(&args[0]), py(&args[1])],
+                    mask => vec![py(&args[0]), PyValue::None, py(mask)],
                 };
-                call_cmaps(&mut core, op, h, list(vec![py(&args[0]), matcher]), None, &dir)
+                call_cmaps(&mut core, op, h, list(args), None, &dir)
             }
             _ => {
                 let args = list(args.iter().map(|a| object_args(&core, &objs, a)).collect());

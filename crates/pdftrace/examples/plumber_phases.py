@@ -4,9 +4,10 @@ imports). For each file (``path<TAB>password`` lines on stdin):
 ``pdfplumber.open(path, pages=[1..20], password=...)`` and ``pdf.pages``,
 then for each page ``page.layout`` (the interpretation and the device),
 ``page.objects`` (``process_object`` of each layout object),
-``extract_text()``, ``extract_words()``, ``find_tables()``. Writes, per
-file, ``path pages open layout objects text words tables`` (seconds), the
-columns of the Rust example. An exception ends the phase it happens in
+``extract_text()``, ``extract_words()``, ``find_tables()``,
+``extract_tables()`` (which finds the tables again: pdfplumber keeps no
+table). Writes, per file, ``path pages open layout objects text words
+tables extract_tables`` (seconds), the columns of the Rust example. An exception ends the phase it happens in
 (the Rust example drops errors alike).
 
     .venv/bin/python crates/pdftrace/examples/plumber_phases.py < list.tsv
@@ -29,18 +30,25 @@ def main() -> None:
         if not line or line.startswith("#"):
             continue
         path, _, password = line.partition("\t")
-        t = [0.0] * 6
+        t = [0.0] * 7
         started = time.perf_counter()
         try:
             pdf = pdfplumber.open(path, pages=list(range(1, 21)), password=password or None)
             pages = pdf.pages
         except Exception:
-            print(f"{path}\t0\t{time.perf_counter() - started:.4f}\t0\t0\t0\t0\t0", flush=True)
+            print(f"{path}\t0\t{time.perf_counter() - started:.4f}\t0\t0\t0\t0\t0\t0", flush=True)
             continue
         t[0] = time.perf_counter() - started
         for p in pages:
             for i, f in enumerate(
-                (lambda: p.layout, lambda: p.objects, lambda: p.extract_text(), lambda: p.extract_words(), lambda: p.find_tables()),
+                (
+                    lambda: p.layout,
+                    lambda: p.objects,
+                    lambda: p.extract_text(),
+                    lambda: p.extract_words(),
+                    lambda: p.find_tables(),
+                    lambda: p.extract_tables(),
+                ),
                 start=1,
             ):
                 s = time.perf_counter()

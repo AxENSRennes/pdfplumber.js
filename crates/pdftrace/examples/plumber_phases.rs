@@ -2,8 +2,10 @@
 //! file (`path<TAB>password` lines on stdin), `pdfplumber.open`, then for
 //! each of its first 20 pages `page.layout` (the interpretation and the
 //! device), `page.objects` (`process_object` of each layout object),
-//! `extract_text()`, `extract_words()`, `find_tables()`. Writes, per file,
-//! `path pages open layout objects text words tables` (seconds). The Python
+//! `extract_text()`, `extract_words()`, `find_tables()`, `extract_tables()`
+//! (which finds the tables again, as pdfplumber does). Writes, per file,
+//! `path pages open layout objects text words tables extract_tables`
+//! (seconds). The Python
 //! twin is `oracle`'s way of measuring the same calls (the join's report,
 //! `docs/architecture.md`).
 //!
@@ -12,7 +14,7 @@
 //! ```
 //!
 //! `PLUMBER_PHASES=1,2` runs only the phases listed (1 `layout`, 2
-//! `objects`, 3 text, 4 words, 5 tables; a later phase still computes
+//! `objects`, 3 text, 4 words, 5 tables, 6 `extract_tables`; a later phase still computes
 //! what it needs), to count what a phase allocates.
 
 use std::io::BufRead;
@@ -35,16 +37,17 @@ fn main() {
 
 fn run() {
     // PLUMBER_PHASES=1,2 (say) runs only those phases (1 layout, 2 objects,
-    // 3 text, 4 words, 5 tables): the allocation counts of a phase
+    // 3 text, 4 words, 5 tables, 6 extract_tables): the allocation counts
+    // of a phase
     let phases: Vec<bool> = match std::env::var("PLUMBER_PHASES") {
-        Ok(v) => (0..6).map(|i| i == 0 || v.split(',').any(|p| p == i.to_string())).collect(),
-        Err(_) => vec![true; 6],
+        Ok(v) => (0..7).map(|i| i == 0 || v.split(',').any(|p| p == i.to_string())).collect(),
+        Err(_) => vec![true; 7],
     };
     for line in std::io::stdin().lock().lines() {
         let line = line.unwrap();
         let (path, password) = line.split_once('\t').unwrap_or((&line, ""));
         let data: Rc<[u8]> = Rc::from(std::fs::read(path).unwrap());
-        let mut t = [0f64; 6];
+        let mut t = [0f64; 7];
         let started = Instant::now();
         let mut o = OpenOptions::new();
         if !password.is_empty() {
@@ -54,7 +57,7 @@ fn run() {
         let pdf = match PDF::open(Source::Path { data, path: PyStr::new("") }, o) {
             Ok(pdf) => pdf,
             Err(_) => {
-                println!("{path}\t0\t{:.4}\t0\t0\t0\t0\t0", started.elapsed().as_secs_f64());
+                println!("{path}\t0\t{:.4}\t0\t0\t0\t0\t0\t0", started.elapsed().as_secs_f64());
                 continue;
             }
         };
@@ -75,6 +78,7 @@ fn run() {
             lap(3, &mut || drop(p.extract_text(&kw)));
             lap(4, &mut || drop(p.extract_words(&kw)));
             lap(5, &mut || drop(p.find_tables(&pdfplumber::obj::PyValue::None)));
+            lap(6, &mut || drop(p.extract_tables(&pdfplumber::obj::PyValue::None)));
         }
         let t: Vec<String> = t.iter().map(|x| format!("{x:.4}")).collect();
         println!("{path}\t{}\t{}", pages.len(), t.join("\t"));

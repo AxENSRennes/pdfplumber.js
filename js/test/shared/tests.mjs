@@ -175,8 +175,9 @@ async function replaySession(lib, input, out, readFile) {
         const page = args[0] && typeof args[0] === "object" && "$obj" in args[0] ? handles[args[0].$obj] : args[0];
         got = relabel(await t.call(op, [page], handle));
       } else if (op === "struct_find_all" || op === "struct_find") {
-        // a predicate or a pattern: the mask the script computed
-        got = await t.call(op, [args[0], extra === null ? args[1] : { mask: extra }], handle);
+        // a predicate or a pattern: the mask the script computed, in its
+        // own argument
+        got = await t.call(op, extra === null ? [args[0], args[1]] : [args[0], null, extra], handle);
       } else if (op === "page_debug_tablefinder") {
         got = await t.call(op, args, handle);
         got = { ...got, tables: relabel(got.tables) };

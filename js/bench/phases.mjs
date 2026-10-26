@@ -8,8 +8,9 @@
 // the objects through the boundary), `extractText()`, `extractWords()`,
 // `findTables()`, then `page.objects` again (cached in the core: the cost
 // of the boundary alone, encoding, copy and decoding of the page's
-// objects). Writes, per file, `path pages open objects text words tables
-// objects-again` (seconds), then a summary line `# total ...` with the
+// objects), then `extractTables()` (which finds the tables again, as
+// pdfplumber does). Writes, per file, `path pages open objects text words
+// tables objects-again extract-tables` (seconds), then a summary line `# total ...` with the
 // peak RSS of the process and the size of the module's linear memory.
 //
 //   node js/bench/phases.mjs [--dist DIR] < list.tsv
@@ -24,11 +25,11 @@ const api = await import(pathToFileURL(join(DIST, "src/index.js")).href);
 const internal = await import(pathToFileURL(join(DIST, "src/internal.js")).href);
 
 const lines = readFileSync(0, "utf8").split("\n").filter((l) => l && !l.startsWith("#"));
-const totals = [0, 0, 0, 0, 0, 0];
+const totals = [0, 0, 0, 0, 0, 0, 0];
 let pagesTotal = 0;
 for (const line of lines) {
   const [path, password] = line.split("\t");
-  const t = [0, 0, 0, 0, 0, 0];
+  const t = [0, 0, 0, 0, 0, 0, 0];
   const started = performance.now();
   let pdf;
   let pages;
@@ -36,13 +37,20 @@ for (const line of lines) {
     pdf = await api.open(path, { pages: Array.from({ length: 20 }, (_, k) => k + 1), password: password || undefined });
     pages = await pdf.pages;
   } catch {
-    console.log(`${path}\t0\t${((performance.now() - started) / 1000).toFixed(4)}\t0\t0\t0\t0\t0`);
+    console.log(`${path}\t0\t${((performance.now() - started) / 1000).toFixed(4)}\t0\t0\t0\t0\t0\t0`);
     if (pdf) await pdf.release();
     continue;
   }
   t[0] = performance.now() - started;
   for (const p of pages) {
-    const phases = [() => p.objects, () => p.extractText(), () => p.extractWords(), () => p.findTables(), () => p.objects];
+    const phases = [
+      () => p.objects,
+      () => p.extractText(),
+      () => p.extractWords(),
+      () => p.findTables(),
+      () => p.objects,
+      () => p.extractTables(),
+    ];
     for (let k = 0; k < phases.length; k++) {
       const s = performance.now();
       try {

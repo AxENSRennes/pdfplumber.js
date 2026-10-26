@@ -56,23 +56,25 @@ function preorder(children: readonly PDFStructElement[]): PDFStructElement[] {
   return out;
 }
 
-/** What the core takes for a matcher: the truth of a `RegExp` or a
- * function on every element of the tree (`{mask}`), or any other value as
- * it is (a tag, a `str`; anything else Python calls: `TypeError`, not
- * callable). */
-function matcherArg(tree: PDFStructTree, matcher: unknown): unknown {
+/** The arguments of `struct_find_all`/`struct_find` after the path: for
+ * a `RegExp` or a function, its truth on every element of the tree (the
+ * mask, an argument of its own); any other value as it is (a tag, a `str`;
+ * anything else Python calls: `TypeError`, not callable, a plain object
+ * such as `{ mask: [...] }` included). */
+function matcherArgs(tree: PDFStructTree, matcher: unknown): unknown[] {
   if (matcher instanceof RegExp) {
     // `matcher.match(x.type)`: a match at the start (sticky, from 0)
     const re = new RegExp(matcher.source, matcher.flags.replace(/[gy]/g, "") + "y");
-    return {
-      mask: preorder(tree.children).map((el) => {
+    return [
+      null,
+      preorder(tree.children).map((el) => {
         re.lastIndex = 0;
         return re.test(el.type);
       }),
-    };
+    ];
   }
-  if (typeof matcher === "function") return { mask: preorder(tree.children).map((el) => Boolean(matcher(el))) };
-  return matcher;
+  if (typeof matcher === "function") return [null, preorder(tree.children).map((el) => Boolean(matcher(el)))];
+  return [matcher];
 }
 
 /** A structure element (`PDFStructElement`): its fields (snake_case, as
@@ -200,8 +202,8 @@ export class PDFStructTree {
   find_(path: Path | null, matcher: unknown, all: boolean): Promise<PDFStructElement[] | PDFStructElement | null> {
     const pdf = this.pdf;
     return pdf.job(async (call) => {
-      const m = matcherArg(this, matcher);
-      const found = await call(all ? "struct_find_all" : "struct_find", this.handle, [path, m], pdf.callOptions(this.page?.page_number));
+      const args = [path, ...matcherArgs(this, matcher)];
+      const found = await call(all ? "struct_find_all" : "struct_find", this.handle, args, pdf.callOptions(this.page?.page_number));
       if (all) return (found as Path[]).map((p) => this.#at(p));
       return found === null ? null : this.#at(found as Path);
     });

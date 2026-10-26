@@ -41,10 +41,10 @@ const { server, url } = await startServer(ROOT, { mounts: { "/phases-list.json":
 
 const summarize = (rows) => {
   const pages = rows.reduce((n, r) => n + r[1], 0);
-  const totals = [0, 0, 0, 0, 0, 0];
-  for (const r of rows) for (let k = 0; k < 6; k++) totals[k] += r[k + 2];
+  const totals = [0, 0, 0, 0, 0, 0, 0];
+  for (const r of rows) for (let k = 0; k < 7; k++) totals[k] += r[k + 2];
   const ms = totals.map((x) => Number(((x * 1000) / pages).toFixed(2)));
-  return { files: rows.length, pages, open: ms[0], objects: ms[1], text: ms[2], words: ms[3], tables: ms[4], objectsAgain: ms[5] };
+  return { files: rows.length, pages, open: ms[0], objects: ms[1], text: ms[2], words: ms[3], tables: ms[4], objectsAgain: ms[5], extractTables: ms[6] };
 };
 
 for (const [name, type] of [

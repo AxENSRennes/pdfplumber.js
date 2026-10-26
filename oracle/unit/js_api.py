@@ -1848,7 +1848,10 @@ ADV_STRUCTURE = ["000-basic.pdf", "001-no-struct-tree-root.pdf", "023-root-k-obj
 #: The matchers of the structure sessions (``Session.struct_find``).
 MATCHERS: list[tuple[str, Any]] = [("tag", "P"), ("tag", "Span"), ("regexp", "H[0-9]"), ("regexp", "S"), ("regexp", "an"),
                                    ("regexp", ""), ("predicate", "starts-with-H"), ("predicate", "has-mcids"),
-                                   ("value", 5)]
+                                   ("value", 5),
+                                   # a plain object Python calls (TypeError), shaped as the
+                                   # boundary's mask argument once was (join of wave 5)
+                                   ("value", {"mask": [True]})]
 
 
 def structure_session(name: str, rel: str | None = None, data: bytes | None = None) -> Session:

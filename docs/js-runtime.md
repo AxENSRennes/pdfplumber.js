@@ -439,11 +439,15 @@ du `TableSettings` résolu),
   autre document est `NotPorted`), puis sur l'arbre, un élément nommé par
   son chemin (les indices depuis `tree.children`) : `struct_find_all`
   (`list(x.find_all(m))`), `struct_find` (`x.find(m)`) — `x` l'arbre ou un
-  élément, `m` un type (`match_tag`), `{"mask": [...]}` (la vérité de la
-  fonction ou de la `RegExp` que JS a évaluée sur chaque élément, dans
-  l'ordre de `_find_all`, lue par identité dans une fonction d'un cadre),
-  ou une autre valeur, appelée comme Python l'appelle (`TypeError` au
-  premier élément) ; les chemins des éléments trouvés —,
+  élément, `m` un type (`match_tag`) ou une autre valeur, appelée comme
+  Python l'appelle (`TypeError` au premier élément, un `dict` compris) ;
+  avec un troisième argument, le masque `[...]` (la vérité de la fonction
+  ou de la `RegExp` que JS a évaluée sur chaque élément, dans l'ordre de
+  `_find_all`, lue par identité dans une fonction d'un cadre), `m` n'est
+  pas lu : le masque a son propre argument pour qu'aucune valeur d'un
+  appelant ne soit prise pour lui (jonction de la vague 5 : un
+  `{mask: [...]}` d'un utilisateur était lu comme masque, là où Python
+  appelle le `dict`) ; les chemins des éléments trouvés —,
   `struct_element_bbox` (`obj.element_bbox(el)`), `struct_all_mcids`
   (`list(el.all_mcids())`), `struct_element_repr` (`repr(el)`).
 - **Flux** (vague 5, `crates/wasm/src/streams.rs`) : avec
