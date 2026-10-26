@@ -397,7 +397,7 @@ class Reader {
         } else if (top.k === K.PAGE) {
           top.arr![top.i++] = value;
           if (top.i < top.n) break;
-          value = new PageRef(top.arr![0] as number, top.arr![1] as number | bigint);
+          value = pageRef(top.arr![0] as number, top.arr![1] as number | bigint);
         } else if (top.k === K.STREAM_REF) {
           top.arr![top.i++] = value;
           if (top.i < top.n) break;
@@ -614,7 +614,7 @@ export function decodeBinary(u8: Uint8Array, offset = 0, typed = false): unknown
 }
 
 // ---------------------------------------------------------------------------
-// Streams by reference
+// Streams and pages by reference
 
 /** What makes the `PDFStream` of a stream reference (its handle, `objid`,
  * `genno`, `attrs`): the core whose response is decoded
@@ -622,17 +622,28 @@ export function decodeBinary(u8: Uint8Array, offset = 0, typed = false): unknown
  * one object per stream. */
 export type StreamRefMaker = (handle: number, objid: number | bigint | null, genno: number | bigint | null, attrs: Record<string, unknown>) => PDFStream;
 
-let streamRefMaker: StreamRefMaker | undefined;
+/** What makes the `PageRef` of a page held as a value: the core whose
+ * response is decoded, which notes the document it belongs to. */
+export type PageRefMaker = (handle: number, pageNumber: number | bigint) => PageRef;
 
-/** Runs `f` (the decoding of a response) with the maker of its stream
- * references. */
-export function withStreamRefs<T>(maker: StreamRefMaker | undefined, f: () => T): T {
-  const previous = streamRefMaker;
-  streamRefMaker = maker;
+/** The makers of the objects by reference of a response (its streams and
+ * pages). */
+export interface RefMakers {
+  stream?: StreamRefMaker;
+  page?: PageRefMaker;
+}
+
+let refMakers: RefMakers | undefined;
+
+/** Runs `f` (the decoding of a response) with the makers of its streams
+ * and pages by reference. */
+export function withRefMakers<T>(makers: RefMakers | undefined, f: () => T): T {
+  const previous = refMakers;
+  refMakers = makers;
   try {
     return f();
   } finally {
-    streamRefMaker = previous;
+    refMakers = previous;
   }
 }
 
@@ -641,7 +652,15 @@ export function withStreamRefs<T>(maker: StreamRefMaker | undefined, f: () => T)
  * read. */
 function streamRef(fields: unknown[]): PDFStream {
   const [handle, objid, genno, attrs] = fields as [number, number | bigint | null, number | bigint | null, Record<string, unknown>];
-  return streamRefMaker ? streamRefMaker(handle, objid, genno, attrs) : PDFStream.reference(objid, genno, attrs, handle, null);
+  const maker = refMakers?.stream;
+  return maker ? maker(handle, objid, genno, attrs) : PDFStream.reference(objid, genno, attrs, handle, null);
+}
+
+/** A page value's `PageRef`: from the maker, or, decoded outside a core,
+ * a reference no document takes (`pdf.page()` refuses it). */
+function pageRef(handle: number, pageNumber: number | bigint): PageRef {
+  const maker = refMakers?.page;
+  return maker ? maker(handle, pageNumber) : new PageRef(handle, pageNumber);
 }
 
 // ---------------------------------------------------------------------------
@@ -743,7 +762,7 @@ function fixup(root: unknown): unknown {
           pending.push([
             holder,
             key,
-            (x: Record<string, unknown>) => new PageRef(x.handle as number, x.page_number as number),
+            (x: Record<string, unknown>) => pageRef(x.handle as number, x.page_number as number),
           ]);
           break;
         }
@@ -870,16 +889,44 @@ class ByteWriter {
  * below it. */
 const EXIT = Symbol("exit");
 
+/** Whether `v` is a plain object (`{...}`, `Object.create(null)`, or a
+ * plain object of another realm): the objects that cross as a `dict`, with
+ * `Map`s. An instance of any other class (`Set`, `Date`, a typed array
+ * other than `Uint8Array`, a class of the caller's...) has no Python value
+ * (docs/public-api.md, "Arguments"). */
+export function isPlainObject(v: unknown): v is Record<string, unknown> {
+  if (v === null || typeof v !== "object") return false;
+  const proto = Object.getPrototypeOf(v) as object | null;
+  return proto === null || Object.getPrototypeOf(proto) === null;
+}
+
+/** The class of an object, for an error message. */
+function className(v: unknown): string {
+  const name = (v as { constructor?: { name?: unknown } } | null)?.constructor?.name;
+  return typeof name === "string" && name ? name : "object";
+}
+
+/** Decides whether an object by reference of a result (a `PageRef`, a
+ * `PDFStream`) can be an argument of a request: one of the core the request
+ * goes to (core/runtime.ts `StreamRefs.owns`). */
+export type RefCheck = (ref: PageRef | PDFStream) => boolean;
+
+const OTHER_CORE = (kind: string): string =>
+  `a ${kind} of a document of another core (read before configure() or a CoreCrash) cannot be an argument`;
+
 /** Encodes a JavaScript value as a PJB1 block of plain Python values:
  * `null`/`undefined` → `None`, booleans, safe integers → `int` (and
  * `bigint`), other numbers and `PyFloat` → `float`, strings → `str` (lone
  * surrogates kept), `Uint8Array`/`ArrayBuffer` → `bytes`, arrays → `list`,
- * `PyTuple` → `tuple`, plain objects and `Map`s with string keys → `dict`
- * (`undefined` properties left out). Without recursion: any depth
- * encodes, and the core decodes and frees it without recursion too. A
- * container inside itself is a `TypeError` (Python's `json.dumps` raises
- * "Circular reference detected"); the same object twice is not. */
-export function encodeValue(value: unknown): Uint8Array {
+ * `PyTuple` → `tuple`, plain objects (`isPlainObject`) and `Map`s with
+ * string keys → `dict` (`undefined` values left out, in both). Without
+ * recursion: any depth encodes, and the core decodes and frees it without
+ * recursion too. A container inside itself is a `TypeError` (Python's
+ * `json.dumps` raises "Circular reference detected"); the same object twice
+ * is not. Any other object is a `TypeError` (a `Set`, a `Date`, a
+ * `Float64Array`... has no Python value: never an empty `dict`), and so is
+ * an object by reference that `accept` refuses (one of another core). */
+export function encodeValue(value: unknown, accept?: RefCheck): Uint8Array {
   const w = new ByteWriter();
   w.raw(new Uint8Array([0x50, 0x4a, 0x42, 0x31, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]));
   const str = (s: string): void => {
@@ -969,12 +1016,14 @@ export function encodeValue(value: unknown): Uint8Array {
       return;
     }
     if (v instanceof PageRef) {
+      if (accept && !accept(v)) throw new TypeError(OTHER_CORE("PageRef"));
       w.u8(TAG.PAGE);
       stack.push(v.page_number, v.handle);
       return;
     }
     if (v instanceof PDFStream) {
       if (v.handle === undefined) throw new TypeError("a PDFStream snapshot (made from its values) cannot be an argument");
+      if (accept && !accept(v)) throw new TypeError(OTHER_CORE("PDFStream"));
       w.u8(TAG.STREAM_REF);
       stack.push(v.attrs, v.genno, v.objid, v.handle);
       return;
@@ -987,12 +1036,11 @@ export function encodeValue(value: unknown): Uint8Array {
       for (let i = items.length - 1; i >= 0; i--) stack.push(items[i]);
       return;
     }
-    const entries: [unknown, unknown][] =
-      v instanceof PyDict
-        ? v.entries
-        : v instanceof Map
-          ? [...v.entries()]
-          : Object.entries(v as object).filter(([, x]) => x !== undefined);
+    let entries: [unknown, unknown][];
+    if (v instanceof PyDict) entries = v.entries;
+    else if (v instanceof Map) entries = [...v.entries()].filter(([, x]) => x !== undefined);
+    else if (isPlainObject(v)) entries = Object.entries(v).filter(([, x]) => x !== undefined);
+    else throw new TypeError(`a ${className(v)} cannot cross to Python (docs/public-api.md, "Arguments")`);
     w.u8(TAG.DICT);
     w.varint(entries.length);
     enter(v as object);

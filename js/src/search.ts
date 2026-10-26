@@ -19,6 +19,20 @@ export function pythonBuiltinError(name: "ValueError" | "TypeError", message: st
   });
 }
 
+/** The `TypeError` of a method called without a required argument
+ * (`Page.search()`: "Page.search() missing 1 required positional argument:
+ * 'pattern'"), raised by the call, before its body runs. */
+export function missingArgument(qualname: string, name: string): PDFPlumberError {
+  return pythonBuiltinError("TypeError", `${qualname}() missing 1 required positional argument: '${name}'`);
+}
+
+/** Whether `search` runs a pattern itself (a string or a `RegExp`); any
+ * other value goes to the core, where `TextMap.search` raises Python's
+ * error for it (`re.compile`'s, `re.escape`'s). */
+export function runnablePattern(pattern: unknown): pattern is string | RegExp {
+  return typeof pattern === "string" || pattern instanceof RegExp;
+}
+
 /** `re.escape` for a JavaScript pattern in `u` mode: escapes the syntax
  * characters. */
 export function escapeRegExp(s: string): string {

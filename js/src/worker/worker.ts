@@ -11,6 +11,9 @@ import { CoreCrash } from "../errors.js";
 import { fetchCMapSource } from "../platform/platform.js";
 import type { WorkerReply, WorkerRequest } from "./client.js";
 
+// (this script is built on its own, without chunks shared with the page's:
+// it can be copied as one file next to an application's bundle)
+
 let core: Promise<WasmCore> | undefined;
 const serial = new Serial();
 

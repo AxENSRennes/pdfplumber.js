@@ -19,7 +19,10 @@
 //!   `get_textmap`, computed at the depth Python's `search` computes it),
 //!   JavaScript runs its `RegExp` over it, and `page_search` takes the
 //!   spans of each match (UTF-16 offsets) as `re.finditer` would give them
-//!   (`docs/public-api.md`, "Search": the semantics are JavaScript's);
+//!   (`docs/public-api.md`, "Search": the semantics are JavaScript's), or,
+//!   for a pattern JavaScript cannot run (neither a string nor a
+//!   `RegExp`), the pattern itself, for which `TextMap.search` raises
+//!   Python's `TypeError` (`search_pattern_error`);
 //! - **filter**: JavaScript evaluates its function on the parent page's
 //!   objects (`page_objects`, which computes them) and gives, for each
 //!   kind, the truth of each result; the `FilteredPage`'s test function
@@ -41,7 +44,7 @@ use pdfplumber::obj::{bbox_value, Obj, PyValue};
 use pdfplumber::page::{CropFn, FilterFn, Page};
 use pdfplumber::pdf::{OpenOptions, Source, PDF};
 use pdfplumber::table::{CellGroup, Table, TableSettings};
-use pdfplumber::utils::text::RegexMatch;
+use pdfplumber::utils::text::{search_pattern_error, RegexMatch};
 use pycompat::call::Signature;
 use pycompat::recursion::{eval_entry, py_frame, Guard};
 use pycompat::specialize::{AttrSite, CallSite};
@@ -339,14 +342,36 @@ fn derived_value(handle: PyValue, page: &Page) -> PyValue {
 /// function's frame, which reads `page.objects` at a site of its own
 /// (computed there if no statement computed them before; JavaScript's
 /// `filter` computes them with `page_objects` first, to run its function).
-fn mask_filter(parent: &Page, mask: &PyValue) -> PyResult<FilterFn> {
-    let mask = kwargs(mask)?;
+///
+/// `mask` `None` and a `value`: `page.filter(value)` of a value that is not
+/// a function (JavaScript's `null`, a number...), whose truth `mask_of`
+/// takes as the builtin `filter` does on each kind's list: `None` keeps the
+/// objects that are true (every object: a non-empty dict), and anything
+/// else is called, which raises `TypeError` (`'int' object is not
+/// callable`) at the first object (none raises for a page without
+/// objects).
+fn mask_filter(parent: &Page, mask: &PyValue, value: Option<&PyValue>) -> PyResult<FilterFn> {
+    let mask = match value {
+        None => Some(kwargs(mask)?),
+        Some(_) => None,
+    };
     let objects = {
         let _mask_of = py_frame()?;
         MASK_OF_OBJECTS.get(parent.class_name(), || parent.objects())?
     };
     let mut kept: Vec<(Obj, bool)> = Vec::new();
     for (kind, objs) in objects.iter() {
+        let Some(mask) = &mask else {
+            // list(filter(value, objs))
+            match value {
+                Some(PyValue::None) => kept.extend(objs.iter().map(|o| (o.clone(), !o.is_empty()))),
+                Some(v) if !objs.is_empty() => {
+                    return Err(exc::TypeError(format!("'{}' object is not callable", v.type_name())))
+                }
+                _ => {}
+            }
+            continue;
+        };
         let truth = match mask.get(kind) {
             Some(v) => seq(v)?,
             None => &[],
@@ -583,20 +608,31 @@ impl Core {
             }
             "page_search" => {
                 // [kwargs, matches, return_groups, return_chars, main_group,
-                // named, code_points], as `textmap_search` (crate::ops)
+                // named, code_points, refused?], as `textmap_search` (crate::ops)
                 // takes them; `code_points` true (the harness of js/trace,
                 // which gives Python's matches): the offsets are Python's
                 // code point offsets, not JavaScript's UTF-16 ones
                 let a = a()?;
                 let page = self.page(h)?;
-                let raw_matches = seq(arg(a, 1)?)?;
                 let none = PyValue::None;
+                // [pattern, regex] instead of the matches: a pattern that is
+                // neither a string nor a RegExp, which JavaScript cannot run;
+                // `TextMap.search` raises Python's error for it, where the
+                // matches would be read
+                let refused = match a.get(7) {
+                    None | Some(PyValue::None) => None,
+                    Some(p) => Some(seq(p)?),
+                };
+                let raw_matches = if refused.is_some() { &[][..] } else { seq(arg(a, 1)?)? };
                 let named_arg = a.get(5).unwrap_or(&none);
                 let code_points = a.get(6).is_some_and(PyValue::truthy);
                 // the named groups of each match, read with the matches
                 // (inside `search`, before the main group of any of them)
                 let named = std::cell::RefCell::new(None::<Vec<NamedGroups>>);
                 let mut read = |text: &PyStr| -> PyResult<Vec<RegexMatch>> {
+                    if let Some(r) = refused {
+                        return Err(search_pattern_error(arg(r, 0)?, arg(r, 1)?));
+                    }
                     let index = if code_points { Utf16Index::identity(text) } else { Utf16Index::new(text) };
                     let mut matches = Vec::with_capacity(raw_matches.len());
                     for m in raw_matches {
@@ -657,9 +693,11 @@ impl Core {
                 derived_value(handle, &derived)
             }
             "page_filter" => {
-                // page.filter(test): [mask], {kind: [truth of each object]}
+                // page.filter(test): [mask], {kind: [truth of each object]};
+                // or [None, value], a value that is not a function
+                let a = a()?;
                 let page = self.page(h)?;
-                let test = mask_filter(&page, arg(a()?, 0)?)?;
+                let test = mask_filter(&page, arg(a, 0)?, a.get(1))?;
                 let derived = page.filter(test)?;
                 let handle = self.insert_page(self.page_doc(h), derived.clone())?;
                 derived_value(handle, &derived)

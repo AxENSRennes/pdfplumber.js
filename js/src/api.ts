@@ -13,10 +13,11 @@
  */
 
 import { fromPython, type PythonErrorInfo } from "./errors.js";
-import { WasmCore, type CallOptions, type Core, type CoreCall, type Diagnostic } from "./core/runtime.js";
+import { WasmCore, pageRefOwner, type CallOptions, type Core, type CoreCall, type Diagnostic } from "./core/runtime.js";
 import { platform } from "./platform/platform.js";
 import { ORACLE, TYPED, type OracleOpen, type OracleSearch } from "./hooks.js";
-import { compilePattern, matchSpans } from "./search.js";
+import { compilePattern, matchSpans, missingArgument, runnablePattern } from "./search.js";
+import { isPlainObject } from "./core/wire.js";
 import { PageRef } from "./pdfobjects.js";
 import { PDFStructTree, type TreeValue } from "./api/structure.js";
 import type {
@@ -89,6 +90,9 @@ export async function getCore(): Promise<Core> {
   if (corePromise) {
     const core = await corePromise.catch(() => undefined);
     if (core && !core.crashed) return core;
+    // a crashed core in a worker: stop the worker before starting another
+    // (its memory is lost; the documents that still hold it reject)
+    core?.terminate?.();
   }
   const options = runtimeOptions;
   corePromise = (async () => {
@@ -159,6 +163,13 @@ function apiOptions(options: OpenOptions): OpenOptions {
 /** The options of `open()` that are the API's own. */
 const OPEN_OWN = new Set(["logLevel", "onWarning"]);
 
+/** An option of a method's own (a positional parameter with a default,
+ * `strip=True`): its default when it is not given (`undefined`), else the
+ * value as it is (`null` is `None`, which Python takes as given). */
+function given(v: unknown, fallback: unknown): unknown {
+  return v === undefined ? fallback : v;
+}
+
 function setOwn(o: Record<string, unknown>, k: string, v: unknown): void {
   // a key such as `__proto__` is an own property, as in a Python dict
   Object.defineProperty(o, k, { value: v, enumerable: true, writable: true, configurable: true });
@@ -169,9 +180,12 @@ function setOwn(o: Record<string, unknown>, k: string, v: unknown): void {
  * enumerable properties) or a `Map` with string keys (docs/public-api.md,
  * "Arguments"). Any other value is not split: it goes to the core as the
  * `**kwargs` it is, where Python's `TypeError` ("argument after ** must be
- * a mapping") is raised. */
+ * a mapping") is raised (an object that has no Python value, a `Set`...,
+ * is the encoder's `TypeError`). An option `undefined` is not given,
+ * whatever the form: `own` holds it as `undefined` (its default), and the
+ * encoder leaves it out of `**kwargs`. */
 function splitOptions(options: unknown, own: ReadonlySet<string>): [Record<string, unknown>, unknown] {
-  if (options === null || typeof options !== "object" || Array.isArray(options)) return [{}, options];
+  if (!(options instanceof Map) && !isPlainObject(options)) return [{}, options];
   const entries = options instanceof Map ? [...options.entries()] : Object.entries(options);
   const mine: Record<string, unknown> = {};
   const kw: Record<string, unknown> = {};
@@ -220,6 +234,40 @@ const registry =
         core.call("free", handle, null).catch(() => undefined);
       })
     : undefined;
+
+/** The objects whose handles the registry frees (`track`) since a job last
+ * gave the event loop a turn. A finalizer runs in a task of its own, after
+ * the collection that found its object unreachable, and an object a
+ * `WeakRef` reached in a job stays alive until the microtasks run out; but
+ * a loop that awaits only the API's promises (`for (...) { const c = await
+ * page.crop(b); await c.extractText(); }`) runs in microtasks only (the
+ * core's calls are synchronous): without a turn of the event loop, no
+ * derived page it drops would ever be freed in the core, whose memory
+ * would grow with every iteration. Every `YIELD_AFTER` tracked objects,
+ * the next job first waits for a task (`yieldTurn`): the finalizers queued
+ * by then run, and their frees go after it in the queue. A yield changes
+ * no result (the job still runs in the order of the calls). */
+let tracked = 0;
+const YIELD_AFTER = 64;
+
+/** A turn of the event loop: a task (`setImmediate` in Node; a
+ * `MessageChannel` message in browsers, which `setTimeout` would delay by
+ * its clamping; `setTimeout` elsewhere). */
+function yieldTurn(): Promise<void> {
+  const g = globalThis as { setImmediate?: (f: () => void) => void; MessageChannel?: typeof MessageChannel };
+  return new Promise((resolve) => {
+    if (typeof g.setImmediate === "function") return g.setImmediate(resolve);
+    if (typeof g.MessageChannel === "function") {
+      const channel = new g.MessageChannel();
+      channel.port1.onmessage = () => {
+        channel.port1.close();
+        resolve();
+      };
+      return channel.port2.postMessage(null);
+    }
+    setTimeout(resolve, 0);
+  });
+}
 
 /** Opens a PDF (`pdfplumber.open`): a filesystem path (Node) as
  * `pdfplumber.open(path)`, any other input as
@@ -286,7 +334,8 @@ type ListName =
 /** An open PDF (`pdfplumber.PDF`). */
 export class PDFPlumberDocument {
   readonly #life: Life = { released: false };
-  #pages: Promise<PDFPlumberPage[]> | undefined;
+  /** The pages of `pdf.pages` (Python's `PDF._pages`), once a read made them. */
+  #pages: PDFPlumberPage[] | undefined;
   /** The pages by handle (`PageRef` resolution): the pages of `pdf.pages`,
    * of `page(ref)`, and the derived pages a value may name (`pin`). */
   readonly #byHandle = new Map<number, PDFPlumberPage>();
@@ -325,13 +374,22 @@ export class PDFPlumberDocument {
    * the document after it, in the order of the calls.) */
   job<T>(f: (call: CoreCall) => Promise<T>): Promise<T> {
     if (this.#life.released) return Promise.reject(new DocumentReleased());
-    return this.core.exclusive(f);
+    if (tracked < YIELD_AFTER) return this.core.exclusive(f);
+    tracked = 0;
+    // many objects were tracked since the last turn of the event loop:
+    // give the finalizers of those that became unreachable a turn first
+    // (`yieldTurn`), still in the order of the calls
+    return this.core.exclusive(async (call) => {
+      await yieldTurn();
+      return f(call);
+    });
   }
 
   /** @internal Frees the core's handle of `obj` (a derived page, a table)
    * once it is unreachable, while this document lives. */
   track(obj: object, handle: number): void {
     registry?.register(obj, { core: this.core, handle, life: this.#life }, obj);
+    tracked++;
   }
 
   /** @internal A derived page whose handle a value may hold (a `PageRef`
@@ -381,33 +439,36 @@ export class PDFPlumberDocument {
    * computes them lazily (an error of the page tree or of a page's boxes
    * rejects this promise, not `open()`); the same array until `close()`,
    * which flushes them, as `PDF.close()` does. A rejected read is not
-   * kept: the next read runs `pdf.pages` again, as Python does. */
+   * kept: the next read runs `pdf.pages` again, as Python does. Each read
+   * is a job, decided in the order of the calls: a read after a `close()`
+   * not awaited yet gives the pages `close()` makes again. */
   get pages(): Promise<PDFPlumberPage[]> {
-    if (this.#pages) return this.#pages;
-    const p = this.job(async (call) => {
+    return this.job(async (call) => {
+      if (this.#pages) return this.#pages;
       const list = (await call("doc_pages", this.handle, null, this.callOptions())) as Geometry[];
       const typed = this.core.lastTyped as unknown[] | undefined;
       // a page `page(ref)` made of a reference read since the last
       // `close()` is one of these: the same object (as Python's
       // `annot["data"]["P"] is pdf.pages[i]`), called through the handle
       // it was made with
-      return list.map((g, i) => {
+      const pages = list.map((g, i) => {
         const page = this.#current.get(g.page_number) ?? this.page_(g, g.handle!, typed?.[i]);
         this.#current.set(g.page_number, page);
         return page;
       });
+      this.#pages = pages;
+      return pages;
     });
-    this.#pages = p;
-    p.catch(() => {
-      if (this.#pages === p) this.#pages = undefined;
-    });
-    return p;
   }
 
   /** The page of a `PageRef` (a `Page` held in a result: an annotation's
-   * `data.P`...): the same `PDFPlumberPage` as `pdf.pages` gives for it. */
+   * `data.P`...): the same `PDFPlumberPage` as `pdf.pages` gives for it.
+   * The reference must be one of this document's results (one of another
+   * document, or of a core of before `configure()` or a crash, names
+   * another page, or none). */
   page(ref: PageRef): Promise<PDFPlumberPage> {
-    if (!(ref instanceof PageRef)) return Promise.reject(new TypeError("page() takes a PageRef of this document"));
+    if (!(ref instanceof PageRef) || pageRefOwner(ref) !== this)
+      return Promise.reject(new TypeError("page() takes a PageRef of this document (read from one of its results)"));
     // decided when the job runs, in the order of the calls (a `pages` or a
     // `close()` called before runs before)
     return this.job(async (call) => {
@@ -854,8 +915,8 @@ export class PDFPlumberPage {
     } catch (e) {
       return Promise.reject(e);
     }
-    // (an option `undefined` is not given: its default)
-    return this.#run("page_extract_text_lines", [own.strip ?? true, own.return_chars ?? true, kw]);
+    // an option `undefined` is not given (its default); `null` is `None`
+    return this.#run("page_extract_text_lines", [given(own.strip, true), given(own.return_chars, true), kw]);
   }
   extract_text_lines(options?: TextLineOptions): Promise<SearchResult[]> {
     return this.extractTextLines(options);
@@ -866,6 +927,8 @@ export class PDFPlumberPage {
    * (`page_search_text`), the pattern run over it here, then the results
    * of the spans (`page_search`), in one job. */
   search(pattern: string | RegExp, options: SearchOptions = {}): Promise<SearchResult[]> {
+    // `page.search()`: Python's TypeError, raised by the call
+    if (pattern === undefined) return Promise.reject(missingArgument("Page.search", "pattern"));
     const oracle = (options as { [ORACLE]?: OracleSearch } | null)?.[ORACLE];
     let own: Record<string, unknown>, kw: unknown;
     try {
@@ -879,21 +942,22 @@ export class PDFPlumberPage {
       // pdfplumber raises its errors (a RegExp with `regex: false`...) in
       // `TextMap.search`, once the text map is computed
       const text = (await call("page_search_text", this.handle, [kw], opts)) as string;
-      let spans: ([number, number] | null)[][];
-      let named: Record<string, [number, number] | null>[] | null;
+      let spans: ([number, number] | null)[][] | null = null;
+      let named: Record<string, [number, number] | null>[] | null = null;
+      // a pattern that is neither a string nor a RegExp: the core raises
+      // the error Python's `re` raises for it (`[pattern, regex]`)
+      let refused: unknown[] | null = null;
       if (oracle) {
         // Python's matches, in code points: the core takes them as they are
         spans = oracle.spans;
         named = oracle.named ?? null;
+      } else if (!runnablePattern(pattern)) {
+        refused = [pattern, given(own.regex, true)];
       } else {
         ({ spans, named } = matchSpans(text, compilePattern(pattern, { regex: own.regex as boolean, case: own.case as boolean })));
       }
-      return (await call(
-        "page_search",
-        this.handle,
-        [kw, spans, own.return_groups ?? true, own.return_chars ?? true, own.main_group ?? 0, named, oracle !== undefined],
-        opts,
-      )) as SearchResult[];
+      const args = [kw, spans, given(own.return_groups, true), given(own.return_chars, true), given(own.main_group, 0), named];
+      return (await call("page_search", this.handle, [...args, oracle !== undefined, refused], opts)) as SearchResult[];
     });
   }
 
@@ -931,6 +995,12 @@ export class PDFPlumberPage {
    * (`page_objects`), the truth of each result goes to the core
    * (`page_filter`), in one job (docs/public-api.md). */
   filter(test: (obj: PDFObject) => unknown): Promise<PDFPlumberPage> {
+    // `page.filter()`: Python's TypeError, raised by the call
+    if (test === undefined) return Promise.reject(missingArgument("Page.filter", "test_function"));
+    // a value that is not a function (`null`: Python's `None`, which keeps
+    // the true objects; a number...: not callable, Python's TypeError at
+    // the first object): the core takes it as the builtin `filter` does
+    if (typeof test !== "function") return this.#derive("page_filter", [null, test]);
     return this.#derive("page_filter", null, async (call) => {
       const objects = (await call("page_objects", this.handle, null, this.pdf.callOptions(this.page_number))) as Record<
         string,

@@ -5,9 +5,18 @@
  */
 
 import { CoreCrash, fromPython, type PythonErrorInfo } from "../errors.js";
-import { PDFStream, type StreamSource } from "../pdfobjects.js";
+import { PageRef, PDFStream, type StreamSource } from "../pdfobjects.js";
 import { project } from "./typed.js";
-import { decodeBinary, decodeJson, encodeValue, withStreamRefs, type StreamRefMaker } from "./wire.js";
+import {
+  decodeBinary,
+  decodeJson,
+  encodeValue,
+  withRefMakers,
+  type PageRefMaker,
+  type RefCheck,
+  type RefMakers,
+  type StreamRefMaker,
+} from "./wire.js";
 
 /** Where the predefined CMaps come from. */
 export interface CMapSource {
@@ -76,40 +85,101 @@ export interface Core {
   terminate?(): void;
 }
 
-/** The streams by reference of a core's results (wire.ts
- * `withStreamRefs`): one `PDFStream` per stream while it is alive (a
- * handle names one stream of one document as long as the document lives:
- * the core frees its stream handles with it), reading its data in its
- * document's jobs (`CallOptions.owner`), or as plain requests of the core
- * (the internal API, which has no document object). */
+/** The document that decoded each `PageRef` of a result (the owner of the
+ * request: `CallOptions.owner`): `pdf.page(ref)` takes the references of
+ * its own document only (`pageRefOwner`). */
+const pageRefOwners = new WeakMap<PageRef, StreamOwner | undefined>();
+
+/** The document whose request decoded `ref` (`undefined`: a reference of
+ * the internal API, of another decoding, or made by hand). */
+export function pageRefOwner(ref: PageRef): StreamOwner | undefined {
+  return pageRefOwners.get(ref);
+}
+
+type Live = WeakRef<PDFStream> | PDFStream;
+
+/** The objects by reference of a core's results (wire.ts `withRefMakers`):
+ * one `PDFStream` per stream while it is alive (a handle names one stream
+ * of one document as long as the document lives: the core frees its stream
+ * handles with it), reading its data in its document's jobs
+ * (`CallOptions.owner`), or as plain requests of the core (the internal
+ * API, which has no document object); and the `PageRef`s, each noted as
+ * its document's (`pageRefOwner`).
+ *
+ * The streams are kept by document, in a `WeakMap` keyed by the document:
+ * nothing here keeps a document alive (a stream does, while the caller
+ * keeps the stream), so an unreachable document is still released by its
+ * `FinalizationRegistry` entry, its stream handles with it. A dead entry is
+ * replaced when its handle comes again, and swept as the map grows. */
 export class StreamRefs {
-  readonly #live = new Map<number, { ref: WeakRef<PDFStream> | PDFStream; owner: StreamOwner | undefined }>();
+  readonly #byOwner = new WeakMap<StreamOwner, Map<number, Live>>();
+  /** The streams of the requests without an owner (the internal API). */
+  readonly #unowned = new Map<number, Live>();
+  /** The objects by reference this core made: what an argument of its
+   * requests may hold (`owns`). */
+  readonly #made = new WeakSet<object>();
 
   constructor(private readonly core: Core) {}
 
-  /** The maker of the streams of a response to a request made with
-   * `options`. */
-  maker(options: CallOptions): StreamRefMaker {
+  /** Whether `ref` is an object by reference of this core's results. */
+  owns(ref: object): boolean {
+    return this.#made.has(ref);
+  }
+
+  #streams(owner: StreamOwner | undefined): Map<number, Live> {
+    if (owner === undefined) return this.#unowned;
+    let m = this.#byOwner.get(owner);
+    if (!m) this.#byOwner.set(owner, (m = new Map()));
+    return m;
+  }
+
+  /** The makers of the objects by reference of a response to a request
+   * made with `options`. */
+  makers(options: CallOptions): RefMakers {
     const owner = options.owner;
-    return (handle, objid, genno, attrs) => {
-      const known = this.#live.get(handle);
-      if (known && known.owner === owner) {
-        const s = known.ref instanceof PDFStream ? known.ref : known.ref.deref();
+    const stream: StreamRefMaker = (handle, objid, genno, attrs) => {
+      const live = this.#streams(owner);
+      const known = live.get(handle);
+      if (known) {
+        const s = known instanceof PDFStream ? known : known.deref();
         if (s) return s;
       }
       const source: StreamSource = owner
         ? { read: (op, h) => owner.job((call) => call(op, h, null, owner.callOptions?.())) }
         : { read: (op, h) => this.core.call(op, h, null) };
       const s = PDFStream.reference(objid, genno, attrs, handle, source);
-      this.#live.set(handle, { ref: typeof WeakRef === "function" ? new WeakRef(s) : s, owner });
+      this.#made.add(s);
+      if (typeof WeakRef !== "function") {
+        live.set(handle, s);
+        return s;
+      }
+      if (live.size >= 1024 && !known) sweep(live);
+      live.set(handle, new WeakRef(s));
       return s;
     };
+    const page: PageRefMaker = (handle, pageNumber) => {
+      const ref = new PageRef(handle, pageNumber);
+      this.#made.add(ref);
+      pageRefOwners.set(ref, owner);
+      return ref;
+    };
+    return { stream, page };
   }
 }
 
-/** Decodes a response with the stream references of `refs`. */
+/** Drops the dead entries of a map of streams once it has doubled since
+ * the last sweep (amortized: each insertion pays a constant share). */
+function sweep(live: Map<number, Live>): void {
+  const sizes = sweptSizes.get(live) ?? 0;
+  if (live.size < 2 * sizes) return;
+  for (const [h, r] of live) if (!(r instanceof PDFStream) && r.deref() === undefined) live.delete(h);
+  sweptSizes.set(live, Math.max(live.size, 512));
+}
+const sweptSizes = new WeakMap<Map<number, Live>, number>();
+
+/** Decodes a response with the objects by reference of `refs`. */
 export function decodeWithRefs(u8: Uint8Array, refs: StreamRefs, options: CallOptions): Response {
-  return withStreamRefs(refs.maker(options), () => decodeResponse(u8));
+  return withRefMakers(refs.makers(options), () => decodeResponse(u8));
 }
 
 /** The FIFO of a core's requests and jobs (see `Core`). */
@@ -169,9 +239,10 @@ export function historyLong(u8: Uint8Array): boolean {
   return (u8[6] & 2) !== 0;
 }
 
-/** The request block of an operation. */
-export function encodeRequest(op: string, handle: number, args: unknown, minLevel: number): Uint8Array {
-  return encodeValue([op, handle, args ?? null, minLevel]);
+/** The request block of an operation (`accept`: the objects by reference
+ * its arguments may hold, those of the core it goes to: `StreamRefs.owns`). */
+export function encodeRequest(op: string, handle: number, args: unknown, minLevel: number, accept?: RefCheck): Uint8Array {
+  return encodeValue([op, handle, args ?? null, minLevel], accept);
 }
 
 /** The status of a response. */
@@ -265,8 +336,11 @@ export class WasmCore implements Core {
     }
   }
 
+  /** Copies `bytes` into a buffer of the module. Addresses and lengths
+   * of wasm32 are `i32` values, which JavaScript reads signed: `>>> 0`
+   * reads them unsigned (an address past 2 GiB is not negative). */
   private put(bytes: Uint8Array): number {
-    const ptr = this.ex.pp_alloc(bytes.length);
+    const ptr = this.ex.pp_alloc(bytes.length) >>> 0;
     new Uint8Array(this.ex.memory.buffer, ptr, bytes.length).set(bytes);
     return ptr;
   }
@@ -278,7 +352,7 @@ export class WasmCore implements Core {
       const reqPtr = this.put(request);
       const dataPtr = data ? this.put(data) : 0;
       this.ex.pp_call(reqPtr, dataPtr);
-      return new Uint8Array(this.ex.memory.buffer, this.ex.pp_result_ptr(), this.ex.pp_result_len());
+      return new Uint8Array(this.ex.memory.buffer, this.ex.pp_result_ptr() >>> 0, this.ex.pp_result_len() >>> 0);
     });
   }
 
@@ -287,12 +361,14 @@ export class WasmCore implements Core {
     this.guard(() => this.ex.pp_result_free());
   }
 
-  /** The streams of the results (`StreamRefs`). */
+  /** The streams and pages of the results (`StreamRefs`). */
   private readonly refs = new StreamRefs(this);
+  /** The objects by reference an argument may hold: this core's. */
+  private readonly accept: RefCheck = (ref) => this.refs.owns(ref);
 
   /** One request, no CMap loading. */
   callRaw(op: string, handle: number, args: unknown, options: CallOptions = {}): Response {
-    const view = this.run(encodeRequest(op, handle, args, options.minLevel ?? 0), options.data);
+    const view = this.run(encodeRequest(op, handle, args, options.minLevel ?? 0, this.accept), options.data);
     try {
       return decodeWithRefs(view, this.refs, options);
     } finally {
