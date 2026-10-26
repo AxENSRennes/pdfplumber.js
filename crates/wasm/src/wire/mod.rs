@@ -342,3 +342,38 @@ fn enter(active: &mut FxHashSet<usize>, stack: &mut Vec<Work<'_>>, addr: usize) 
     stack.push(Work::Exit(addr));
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `is_shallow` (the dispatch of `write_value` to `write_shallow`):
+    /// every scalar at any depth, sequences of scalars nested at most
+    /// `depth` levels, nothing else.
+    #[test]
+    fn is_shallow_takes_scalars_and_sequences_up_to_its_depth() {
+        let scalars = [
+            PyValue::None,
+            PyValue::Bool(true),
+            PyValue::Int(PyInt::from(1)),
+            PyValue::float(1.5),
+            PyValue::str("s"),
+            PyValue::Bytes(Rc::from(&b"b"[..])),
+        ];
+        for v in &scalars {
+            assert!(is_shallow(v, 0), "{v:?}");
+        }
+        let x = PyValue::float(1.0);
+        let l1 = PyValue::list([x.clone(), PyValue::None]);
+        let t2 = PyValue::tuple([l1.clone(), x.clone()]);
+        let l3 = PyValue::list([t2.clone()]);
+        let l4 = PyValue::list([l3.clone()]);
+        assert!(is_shallow(&l1, 1) && !is_shallow(&l1, 0));
+        assert!(is_shallow(&t2, 2) && !is_shallow(&t2, 1));
+        assert!(is_shallow(&l3, 3) && !is_shallow(&l3, 2));
+        assert!(!is_shallow(&l4, 3));
+        assert!(is_shallow(&PyValue::list([]), 1));
+        assert!(!is_shallow(&PyValue::Dict(Obj::new()), 3));
+        assert!(!is_shallow(&PyValue::list([PyValue::Dict(Obj::new())]), 3));
+    }
+}

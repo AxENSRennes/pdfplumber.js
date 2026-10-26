@@ -746,3 +746,52 @@ pub fn decode(block: &[u8]) -> PyResult<PyValue> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The kind of the one column of the table `encode` writes for rows
+    /// `{"k": cell}`: the byte after the header (16 bytes), `TAG_TABLE`, the
+    /// row count, the shape count, the shape's row count and width, and the
+    /// index of its key (one byte each here).
+    fn written_kind(cells: &[PyValue]) -> u8 {
+        let rows = PyValue::list(cells.iter().map(|c| PyValue::Dict(Obj::from_pairs([("k", c.clone())]))));
+        let block = encode(&rows).unwrap();
+        assert_eq!(block[16], TAG_TABLE, "{cells:?}");
+        assert_eq!(&block[17..21], &[cells.len() as u8, 1, cells.len() as u8, 1]);
+        block[22]
+    }
+
+    /// The writer classifies each column of a table as [`column_kind`]
+    /// does (the cells read row by row, `Cell` and `seen`).
+    #[test]
+    fn a_table_column_is_written_with_the_kind_column_kind_gives() {
+        let f = PyValue::float(1.0);
+        let i = PyValue::Int(PyInt::from(1));
+        let big = PyValue::Int(PyInt::from(1_i64 << 60));
+        let n = PyValue::None;
+        let t = PyValue::str("x");
+        let b = PyValue::Bool(true);
+        let seq = PyValue::tuple([f.clone(), i.clone()]);
+        let cases: [(&[PyValue], u8); 13] = [
+            (&[n.clone(), n.clone()], COL_NONE),
+            (&[b.clone(), b.clone()], COL_BOOL),
+            (&[f.clone(), i.clone()], COL_F64),
+            (&[n.clone(), i.clone(), f.clone()], COL_OPT_F64),
+            (&[t.clone(), t.clone()], COL_STR),
+            (&[t.clone(), n.clone()], COL_OPT_STR),
+            (&[seq.clone(), n.clone()], COL_NUM_SEQ),
+            (&[seq.clone(), seq.clone()], COL_NUM_SEQ),
+            (&[b.clone(), n.clone()], COL_GENERIC),
+            (&[f.clone(), big.clone()], COL_GENERIC),
+            (&[t.clone(), f.clone()], COL_GENERIC),
+            (&[seq.clone(), f.clone()], COL_GENERIC),
+            (&[PyValue::list([t.clone()]), PyValue::Dict(Obj::new())], COL_GENERIC),
+        ];
+        for (cells, kind) in cases {
+            assert_eq!(column_kind(&cells.iter().collect::<Vec<_>>()), kind, "{cells:?}");
+            assert_eq!(written_kind(cells), kind, "{cells:?}");
+        }
+    }
+}
