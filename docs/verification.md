@@ -384,7 +384,10 @@ Mode d'emploi détaillé : [`oracle/README.md`](../oracle/README.md).
   Python) vérifient chaque membre de l'API, et la récursion là où l'API
   l'atteint (les étapes appellent pdfplumber depuis des générateurs : sur
   les fenêtres de profondeur, une trace par l'API diffère par
-  construction, la parité y est celle des sessions).
+  construction, la parité y est celle des sessions : `depth.jsonl` de
+  `js_api.py` en tient une pour chacune des fenêtres `depth-*` et
+  `climit-*` des ensembles adverses, rejouée dans Node par
+  `js/test/node/api-depth.test.ts`).
 
 ### Mesurer une profondeur de cadres
 

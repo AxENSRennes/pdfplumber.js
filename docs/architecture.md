@@ -2477,7 +2477,45 @@ BOUNDARY.
     cœur lit `null` et une liste de dicts vides de la même façon
     (`ops.rs`, `group_index` : `no_such_group`, l'`IndexError` de
     Python ; session `main_group: "w"` sur `(J)`).
-- **Vérification** : VERIFICATION
+- **Vérification** (`heavy.sh`, `HEAVY_SLOTS=1`) :
+  - sessions dans Node : 57/57 sur les sources et sur `dist` (4 112
+    appels), `api-lifetime` 12/12, `api-runtime` 8/8 ; fenêtres de
+    profondeur (`depth.jsonl`, `api-depth.test.ts`) : DEPTH ;
+  - `scripts/check-browsers.sh` : 456 tests verts (23 min), dont 55
+    sessions (les 57 moins les deux de Node) dans Chromium, Firefox et
+    WebKit, dans la page et en worker ;
+  - `oracle.verify --engine js-api` (`-j 3`) : `quick` 150/150 pour les
+    quatre étapes ; `all` (1 853, 20 premières pages) : `plumber_objects`
+    1 852 (la ligne `ids` de `pdfjs-issue19624-text.pdf`, écart connu),
+    `plumber_text` et `plumber_tables` 1 853, `plumber_doc` 1 850 ; sur
+    les cinq ensembles adverses, chaque différence est d'une de ces
+    sortes :
+    - une fenêtre de profondeur (`depth-*`, `climit-*`, 332 fichiers
+      différents) : les étapes appellent pdfplumber depuis des générateurs
+      imbriqués, l'API au niveau supérieur d'un script ; la trace par l'API
+      diffère par construction (y compris « the oracle's trace has no
+      spans line left » : la recherche de Python a levé `RecursionError`
+      où celle de l'API aboutit) ; ces fenêtres, les 448, sont comparées à
+      Python par les sessions de `depth.jsonl` ;
+    - l'ordre des NaN de `cluster_objects` sur `adv-interp`
+      (`plumber_text` 16 et `plumber_tables` 12 fichiers `op-*`/`text-*`,
+      les mêmes que par `pdftrace` ; `096-text-TL.pdf` : oracle tué par la
+      limite de 5 Go) ;
+    - `filter()` d'une page dont les objets ne se calculent pas
+      (`plumber_doc` : 3 fichiers de `all`, 10 d'`adv-interp`, 1
+      d'`adv-plumber`, `083-mc-mcid-deep.pdf`) : le filtre de l'API évalue
+      sa fonction sur les objets du parent dans son job (contrat), il
+      rejette donc avec leur erreur, là où `page.filter()` de Python rend
+      la page et lève à la première lecture de ses objets
+      (`public-api.md`, « Cropping, Filtering »). Le rendre paresseux
+      demanderait au cœur un `page_filter` dont le masque vient plus tard
+      (BOUNDARY : `mask_filter` de `pages.rs` calcule les objets du parent
+      à la création) ;
+    - un défaut du harnais, corrigé (`366-annot-stream-no-p.pdf`
+      d'`adv-structure` : `plumber_doc.mjs` écrivait les annotations dans
+      le `try` là où le `else:` de Python laisse l'erreur de l'écriture
+      sortir de l'étape) ;
+  - `scripts/check.sh` : CHECK.
 
 **Chantier PERF** : chemins chauds de `crates/pdfplumber`,
 `crates/pdfminer`, `crates/pycompat` (`page.objects`/`process_object` :
