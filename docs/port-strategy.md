@@ -395,8 +395,17 @@ Lecture :
   Chromium, Firefox, WebKit, page et worker ; traces `plumber_*` par
   l'API sur `all` et les ensembles adverses, différences toutes
   classées) ; API publique ×6,3 sur Python dans Node, ×6,0 dans
-  Chromium, natif ×8,4 (`quick`). Ce qui suit est la liste d'origine de
-  la vague.
+  Chromium, natif ×8,4 (`quick`). Corrections de la revue (`wave5/fix`,
+  `architecture.md`, « Corrections de la revue ») : `pdf.page()` limité
+  aux références du document, `null` pris pour `None`, objets sans valeur
+  Python refusés, `pdf.pages` en FIFO, erreurs de `re` et de `filter`
+  pour les arguments qui ne sont ni motifs ni fonctions, `toDict` et
+  itération des éléments de structure ; fuites (flux, pages dérivées dans
+  une boucle sans tour d'événements, historique d'une CMap absente),
+  adresses au-delà de 2 Gio, worker planté arrêté ; une unité C de
+  `re.sub` qui n'existait pas retirée ; fenêtres de profondeur propres à
+  l'API ; licence, avis tiers, déclarations et bundlers. Ce qui suit est
+  la liste d'origine de la vague.
 - **Vague 5 (liste d'origine)** : l'API JS publique
   (`PDFPlumberDocument`, `PDFPlumberPage`), construite sur les opérations
   de la frontière que la vague 4 a vérifiées (`js-runtime.md`,

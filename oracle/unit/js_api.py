@@ -76,6 +76,7 @@ from typing import Any
 from pdfminer.pdftypes import PDFStream
 
 from .. import typed_json
+from ..adversarial import interp, objects, pages, plumber, structure
 from ..canon import ExcValue, Named
 from ..corpus import cache_dir, corpus_root
 from ..stages.plumber_objects import VALID_DIRS_REPR
@@ -1651,8 +1652,6 @@ def depth_families() -> dict[str, dict[str, Callable[[int], bytes]]]:
     (the stem of its files without their rank and depth: ``depth-chain``,
     ``climit-tf-list``) -> the PDF of a nesting ``n``, from the generators
     of the sets (``oracle/adversarial``)."""
-    from ..adversarial import interp, objects, pages, plumber, structure
-
     return {
         "adv-plumber": {**{f"depth-{k}": m for k, (m, _) in plumber.depth_kinds().items()},
                         **{f"climit-{k}": m for k, m in plumber.climit_kinds().items()}},

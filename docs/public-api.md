@@ -15,8 +15,9 @@ contract of wave 5, its workstreams and its harness in
 > by the sessions of `oracle/unit/js_api.py` (every member, option, alias,
 > error path and lifetime case, on real and adversarial PDFs; replayed in
 > Node on the sources and on the dist build, and in Chromium, Firefox and
-> WebKit, in the page and in worker mode; and the 448 depth windows of the
-> adversarial sets, in Node), by `js/test/node/api-lifetime.test.ts`
+> WebKit, in the page and in worker mode; and the depth windows of the
+> adversarial sets, with each family's window at the API's own
+> `RecursionError` limit, in Node), by `js/test/node/api-lifetime.test.ts`
 > (identities and the garbage collector) and `api-runtime.test.ts`, and by
 > the four `plumber_*` stage traces written through this API
 > (`oracle.verify --engine js-api`) on `all` and the adversarial sets.

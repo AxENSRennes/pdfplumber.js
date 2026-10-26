@@ -3186,6 +3186,91 @@ seule.
   balayage ni aucune fenêtre ne les atteint au point le plus profond.
 - Les mesures des navigateurs sont d'une passe, sans base alternée.
 
+### Corrections de la revue (branche `wave5/fix`)
+
+Branche `wave5/fix` (depuis `wave5/join`, `94326ed`) : les constats des
+quatre revues indépendantes de la vague 5 (fidélité de l'API, frontière,
+performance, tests/docs/paquet), chacun vérifié, corrigé à sa cause avec
+un cas généré qui échoue avant la correction (session de `js_api.py`,
+test unitaire, ou test de `api-lifetime`/`api-runtime` pour ce qu'une
+valeur Python ne montre pas : identités, mémoire, worker).
+
+**API.**
+
+- `pdf.page(ref)` ne prend que les `PageRef` décodés par une requête du
+  document (`pageRefOwner` : le décodeur les fabrique par
+  `withRefMakers`, comme les flux) ; une référence d'un autre document, d'un
+  cœur d'avant `configure()` ou d'un plantage, ou faite à la main, est un
+  `TypeError` (avant : la page d'un autre document, attribuée à celui-ci, ou
+  la page qui avait ce numéro de handle dans le nouveau cœur). En argument,
+  un `PageRef` ou un `PDFStream` d'un autre cœur est un `TypeError`
+  (`StreamRefs.owns`) ; d'un autre document du même cœur, il passe (Python
+  prend tout objet).
+- `null` est `None` pour les options propres d'une méthode (`strip`,
+  `return_chars` d'`extractTextLines` ; `regex`, `case`, `main_group`,
+  `return_chars`, `return_groups` de `search`) : seul `undefined` prend le
+  défaut (`given`). Une entrée `undefined` d'un `Map` est omise comme une
+  propriété d'objet ; seuls les objets simples et les `Map` traversent
+  comme `dict` (`isPlainObject`) : un `Set`, une `Date`, un tableau typé,
+  une instance d'une classe de l'appelant sont un `TypeError` (avant : un
+  `dict` de leurs propriétés, souvent vide, en silence).
+- `pdf.pages` est un job (FIFO) : lu après un `close()` pas encore
+  attendu, il donne les pages que `close()` refait, comme Python.
+- `search()` d'un motif qui n'est ni une chaîne ni une `RegExp` : le cœur
+  lève l'erreur de `re` de Python (`search_pattern_error` :
+  `re.compile` hache la clé puis refuse, `re.escape` avec `regex=False`,
+  motif `bytes`) ; `search()` et `filter()` sans argument : le
+  `TypeError` d'argument manquant ; `filter()` d'une valeur qui n'est pas
+  une fonction : `filter(None, ...)` garde les objets vrais, toute autre
+  valeur n'est pas appelable au premier objet (`page_filter [None, v]`).
+  La différence de `filter` (fonction évaluée une fois, à l'appel) est
+  documentée comme telle (`public-api.md`), sans plus prétendre à
+  l'équivalence.
+- `PDFStructElement.toDict()`/`to_dict()` (`struct_element_to_dict`,
+  `el.to_dict()`) et l'itération d'un arbre ou d'un élément sur ses enfants
+  (`__iter__`).
+
+**Frontière.**
+
+- `StreamRefs` garde les flux par document dans une `WeakMap` : un
+  document jamais libéré dont un résultat a tenu un flux redevient
+  libérable (avant : ~5 Mo de fuite par document dans le scénario de la
+  revue ; après : 3 handles stables sur 61 documents).
+- Adresses de wasm32 lues non signées (`>>> 0`) : au-delà de 2 Gio de
+  mémoire linéaire, chaque appel plantait (`CoreCrash`).
+- Les finaliseurs reçoivent un tour de boucle d'événements tous les 64
+  objets suivis (`yieldTurn` avant le job suivant) : une boucle qui
+  n'attend que l'API (`crop` + `extractText`) gardait chaque page dérivée
+  dans le cœur (1 534 Mo à 2 000 itérations, puis `CoreCrash`) ; après :
+  115 à 290 handles et 289 Mo stables sur 4 000 itérations, sans `gc()`
+  explicite, et le même résultat.
+- CMaps que le chargeur ne peut pas fournir : marquées indisponibles dans
+  le cœur après le `loadAll` d'un historique long (`cmap_unavailable`) ;
+  l'historique s'en va et n'est plus rechargé à chaque appel (scénario de
+  la revue : 148 chargements en tout au lieu d'un par appel). L'historique
+  est aussi borné par la taille des requêtes (4 Mio).
+- Mode worker : un worker planté est arrêté (`WorkerCore.stop`, et
+  `getCore()` avant d'en démarrer un autre) ; les requêtes en attente
+  reçoivent `CoreCrash` ; un worker qui ne se charge pas nomme son URL.
+
+**Profondeur.** L'unité C « comparaison de la clé de `_cache2` » de
+`process_object` n'existe pas dans CPython (mesure de la revue refaite :
+`re._cache2.get(...)` 9 995 comme l'instruction vide, `re._compile` et
+`re.sub` 9 993) : retirée ; elle ne pouvait jamais être la première à
+manquer, aucun résultat ne change. Les fenêtres de profondeur de l'API
+sont maintenant les siennes (`verification.md`, « Harnais ») : par
+famille, la première imbrication où une instruction de la session lève
+`RecursionError`, cherchée par dichotomie, et ses deux voisines.
+
+**Paquet.** `LICENSE` (MIT, celui du `Cargo.toml`),
+`THIRD_PARTY_NOTICES`, champs `license`, `repository`, `engines` ;
+`exports` avec `default`, `./worker` et `./package.json` ; liens des
+Markdown livrés vers des fichiers non livrés rendus absolus ; worker d'un
+seul fichier ; déclarations sans la bibliothèque DOM et avec
+`esnext.disposable` ; README : prérequis, recettes de bundlers, notes de
+migration complétées ; `scripts/check-package.mjs` et
+`bundlers.spec.ts` (`js-runtime.md`, « Paquet JS »).
+
 ## Sémantique Python centralisée (`crates/pycompat`)
 
 Tout ce qui imite Python vit ici, une seule fois, testé contre CPython :
