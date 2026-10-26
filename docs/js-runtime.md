@@ -247,15 +247,20 @@ puis donne le texte de l'enregistrement, `msg % args` comme
 `record.getMessage()` le formate (`%r` des opérandes par le `repr` porté,
 `pdfminer::log_text`), seulement si quelqu'un le collecte ; un texte dont
 le formatage lève n'est pas émis (`logging` jette l'enregistrement). Le
-texte ne change aucun résultat. Les `log.debug` de pdfminer (un par jeton,
+texte ne change aucun résultat ni aucune récursion : le rejeu de
+`pages.jsonl` passe une fois sans collecte et une fois en collectant tout
+(niveau `debug`, fenêtres de profondeur comprises ; en natif le second
+format, sous WASI le binaire deux fois). Les `log.debug` de pdfminer (un par jeton,
 par opérateur, par objet lu) ne comptent que leurs cadres : ils ne sont
 pas transmis (`logLevel: "debug"` ne montre que les niveaux `info` et
 plus de pdfminer, aucun aujourd'hui). `diagnostics.jsonl` de
 `oracle/unit/js_runtime.py` (ce que Python montre, avertissements et
 enregistrements des loggers de pdfplumber et de pdfminer au niveau
 `WARNING`, dans un processus neuf, pour des documents faits pour produire
-chaque sorte d'enregistrement : opérandes invalides, boîtes de page,
-polices, table xref, flux Flate corrompu) est rejoué par
+chaque sorte d'enregistrement : opérandes invalides et étiquettes
+valides, qui n'écrivent rien, boîtes de page, y compris celles dont
+l'analyse lève une autre erreur que `PDFValueError`, que pdfminer laisse
+passer, polices, table xref, flux Flate corrompu) est rejoué par
 `js_runtime_unit.rs` et, par l'API publique (`onWarning`), par
 `js/test/shared/tests.mjs`. La frontière exécute chaque requête dans un
 `diagnostics::collect` au niveau demandé par JS (0 : rien n'est collecté ni
@@ -328,9 +333,10 @@ dans `check.sh`).
   octets et du même mot de passe, son arbre de pages et les polices des
   ressources de chaque nœud ; aucun flux de contenu ni XObject, dont les
   données seraient copiées pour rien) et ajoute aux noms manquants
-  l'`/Encoding` de chaque police `Type0` (ou l'`/UseCMap` d'une CMap
-  embarquée) et la carte unicode `to-unicode-<Registry>-<Ordering>` de
-  chaque `/CIDSystemInfo`, parmi celles que JS peut fournir et n'a pas
+  l'`/Encoding` de chaque police `Type0` (son `/Subtype`, comme
+  `PDFResourceManager.get_font` le lit) et la carte unicode
+  `to-unicode-<Registry>-<Ordering>` du `/CIDSystemInfo` de chacune de ses
+  descendantes (chaînes Latin-1 sans espaces autour, comme `PDFCIDFont`), parmi celles que JS peut fournir et n'a pas
   données. Un appel nul par document au lieu d'un par CMap ; un document
   qui n'en manque aucune ne coûte rien (mesuré sur
   `pdfjs-pdf-reference-1-7.pdf`, 1 310 pages : une analyse à l'ouverture
@@ -543,7 +549,8 @@ du `TableSettings` résolu),
   la dernière échoue, met les objets de la page en cache, et la dernière
   ne descend plus. Rejouées par `js_runtime_unit.rs`
   (`page_operations_match_pdfplumber_through_the_boundary`, deux formats,
-  un fil neuf par session) et par JS (Node, navigateurs, cœur direct et
+  l'un sans collecte de diagnostics, l'autre au niveau `debug`, un fil
+  neuf par session) et par JS (Node, navigateurs, cœur direct et
   worker) avec la `RegExp` de JS pour `search`, dont les spans doivent être
   ceux de `re` ; `a_void_call_rebuilds_its_document_by_replaying_its_history`
   compare une session aux appels nuls (pages dérivées, page libérée,
@@ -641,10 +648,21 @@ la couche page ajoutera l'interpréteur et les polices. Budget (brotli) :
   avant et après décodage et après `doc_close`, `page_close` puis les
   flux refaits, objets d'un résultat rendus en argument), et dans
   `documents` `page_info` aux exceptions séparées, `debug_tablefinder`,
-  arguments `PSLiteral`/`PSKeyword`/`PDFObjRef`/page ; fenêtres de
+  arguments `PSLiteral`/`PSKeyword`/`PDFObjRef`/page (jamais un littéral
+  mêlé à des nombres dans ce que pdfplumber met dans un `set` :
+  `cluster_list` trie `set(xs)`, dont l'ordre suit alors l'adresse du
+  littéral, `id()`, et le `TypeError` de Python change d'un processus à
+  l'autre ; non portable, comme l'ordre des NaN) ; fenêtres de
   profondeur de `debug_tablefinder` (unités C), de `PDFStructTree`
   (récursion de `prune`, `str(s)` de `decode_text`) et de `repr(el)`
-  (cadres).
+  (cadres), et `flate-warning-*` : une chaîne de formes dont la dernière
+  a des données Flate corrompues, si bien que le point le plus profond
+  est le `log.warning` de `decompress_corrupted` (les cadres de l'appel,
+  logging coupé : `Logger::log`). La session `streams` ouvre aussi un
+  document par chemin (`doc_open_file`, rejoué avec le nom et les octets
+  du fichier) dont les flux d'image ont un `/Filter` indirect, lus après
+  `PDF.close()`, et une annotation qui tient des flux dans un dict, une
+  liste et un dict dans une liste.
 - **API publique** (vague 5) : les sessions de `oracle/unit/js_api.py`
   (`sessions.jsonl`), rejouées par `js/test/shared/api-sessions.mjs` par
   l'API publique seulement, dans Node sur les sources (`api.test.ts`) et

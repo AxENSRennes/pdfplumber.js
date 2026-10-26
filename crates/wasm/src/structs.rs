@@ -66,7 +66,10 @@ fn preorder(tree: &PDFStructTree) -> PyResult<Vec<Rc<PDFStructElement>>> {
 
 /// More elements than any document can hold: the walk of a tree whose
 /// children hold an ancestor never ends (pdfplumber's own walks would
-/// loop, or raise `RecursionError`, first).
+/// loop, or raise `RecursionError`, first), and a DAG whose walk reaches
+/// this many elements took pdfplumber as many steps to build
+/// (pdfplumber/structure.py:419 `PDFStructTree._resolve_children` queues
+/// a child once per parent that lists it).
 const MAX_ELEMENTS: usize = 1 << 24;
 
 /// The elements of a tree as values: each `PDFStructElement`'s fields in
@@ -135,8 +138,12 @@ fn paths(tree: &PDFStructTree) -> PyResult<FxHashMap<usize, PyValue>> {
     let mut out = FxHashMap::default();
     let mut stack: Vec<(Vec<usize>, Rc<PDFStructElement>)> =
         tree.children.iter().enumerate().rev().map(|(i, el)| (vec![i], el.clone())).collect();
+    // (the elements visited, as preorder counts them: in a DAG, the
+    // distinct elements stay few while the walk grows)
+    let mut visited = 0_usize;
     while let Some((path, el)) = stack.pop() {
-        if out.len() > MAX_ELEMENTS {
+        visited += 1;
+        if visited > MAX_ELEMENTS {
             return Err(exc::MemoryError("a structure tree whose walk does not end"));
         }
         for (j, child) in el.children.borrow().iter().enumerate().rev() {

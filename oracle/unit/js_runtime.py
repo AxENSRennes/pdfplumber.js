@@ -359,8 +359,9 @@ class Session:
         return doc, list(range(first, first + pages))
 
 
-def _page_count(rel: str, options: dict[str, Any] | None = None) -> int:
-    with pdfplumber.open(corpus_root() / rel, **(options or {})) as pdf:
+def _page_count(rel: str | bytes, options: dict[str, Any] | None = None) -> int:
+    src = io.BytesIO(rel) if isinstance(rel, bytes) else corpus_root() / rel
+    with pdfplumber.open(src, **(options or {})) as pdf:
         return len(pdf.pages)
 
 
@@ -471,8 +472,13 @@ def documents_session() -> list[list[Any]]:
     s.add("page_extract_text", p, {"x_tolerance": KWD(b"BT")})
     s.add("page_extract_text", p, {"x_tolerance": {"$obj": p}})
     s.add("page_extract_words", p, {"extra_attrs": [LIT("fontname")]})
+    # (one literal twice: cluster_list sorts set(xs), whose order for a
+    # literal and a number follows the literal's address, id(): which of
+    # the two TypeErrors of the comparison Python raises changes from run
+    # to run)
     s.add("page_extract_tables", p, {"vertical_strategy": "explicit", "horizontal_strategy": "explicit",
-                                     "explicit_vertical_lines": [LIT("x"), 1], "explicit_horizontal_lines": [1, 2]})
+                                     "explicit_vertical_lines": [LIT("x"), LIT("x")],
+                                     "explicit_horizontal_lines": [1, 2]})
     s.add("page_crop", p, [0, 0, 10, 10], {"bbox": 1})
     s.add("page_extract_text", p, [1, 2])
     s.add("page_extract_text", p, None)
@@ -639,7 +645,9 @@ STRUCTURE_FILES = [f"upstream/pdfplumber-python/tests/pdfs/{n}_structure.pdf"
 #: predicates (functions), patterns whose ``re.match`` and ``RegExp`` (at
 #: the start of the type) agree, values Python calls (``TypeError``).
 STRUCT_MATCHERS: list[Any] = ["Span", "Nope", {"predicate": "starts-with-H"}, {"predicate": "has-mcids"},
-                              {"regexp": "H[0-9]"}, {"regexp": "[A-Z][a-z]+"}, None, 5]
+                              {"regexp": "H[0-9]"}, {"regexp": "[A-Z][a-z]+"}, None, 5,
+                              # dicts Python calls (TypeError), not the boundary's mask
+                              {"x": 1}, {"mask": [True], "x": 1}]
 
 
 def _tree_shape(data: Any, page: int | None, crop: bool = False) -> list[list[int]] | None:
@@ -757,6 +765,60 @@ STREAM_FILES: list[tuple[str, dict[str, Any]]] = [
 ]
 
 
+_SCRATCH: list[Path] = []
+
+
+def _scratch_file(name: str, data: bytes) -> str:
+    """A file of this run holding ``data`` (removed when the generator
+    exits): the path of a ``doc_open_file`` case, which the written case
+    replaces by the file's name and bytes (``_portable``)."""
+    import atexit
+    import shutil
+
+    if not _SCRATCH:
+        _SCRATCH.append(Path(tempfile.mkdtemp(prefix="js_runtime-")))
+        atexit.register(shutil.rmtree, _SCRATCH[0], True)
+    path = _SCRATCH[0] / name
+    path.write_bytes(data)
+    return str(path)
+
+
+def _portable(case: list[Any]) -> list[Any]:
+    """A case as the replays run it: a ``doc_open_file`` case gives its
+    file's name and bytes (JavaScript reads the file, the core gets its
+    bytes: ``crates/wasm/src/pages.rs`` ``open_file``)."""
+    op, target, args, data, js = case
+    if op == "doc_open_file":
+        path = Path(data)
+        return [op, target, [path.name, *args[1:]], path.read_bytes(), js]
+    return case
+
+
+def _indirect_filter_pdf() -> bytes:
+    """Image XObjects whose ``/Filter`` and ``/DecodeParms`` are indirect
+    objects that nothing reads before ``get_data()`` (``PDFStream.decode``
+    resolves them: after ``PDF.close()``, from a closed file), next to one
+    whose filter is direct, and an annotation holding streams."""
+    import zlib
+
+    b = adv_interp.Builder()
+    flate = b.obj(Name("FlateDecode"))
+    parms = b.obj({"Predictor": 1})
+    image = {"Type": Name("XObject"), "Subtype": Name("Image"), "Width": 2, "Height": 1,
+             "ColorSpace": Name("DeviceGray"), "BitsPerComponent": 8}
+    indirect = b.stream(zlib.compress(b"\x10\x80"), **image, Filter=flate, DecodeParms=parms)
+    direct = b.stream(zlib.compress(b"\x20\x90"), **image, Filter=Name("FlateDecode"))
+    # an annotation holding streams in a dict, a list and a dict in a
+    # list, each stream reached only there (Page.annots: its data,
+    # resolve_all of the annotation)
+    in_dict, in_list, in_both = (b.stream(b"0 0 %d %d re f" % (k, k)) for k in (1, 2, 3))
+    annot = b.obj({"Type": Name("Annot"), "Subtype": Name("Square"), "Rect": [0, 0, 5, 5],
+                   "AP": {"N": in_dict}, "X": [in_list, [direct], {"N": in_both}]})
+    b.page(b"q 10 0 0 10 0 0 cm /A Do Q q 10 0 0 10 20 0 cm /B Do Q", {"XObject": {"A": indirect, "B": direct}},
+           Annots=[annot])
+    return b.build()
+
+
 def _stream_labels(v: Any, out: list[int]) -> None:
     """The objects (``#k``) of the streams a result holds by reference, in
     order."""
@@ -798,9 +860,18 @@ def streams_session() -> list[list[Any]]:
     s.add("set_stream_refs", None, True)
     docs = []
     out: dict[str, Any] = {}
-    for rel, options in STREAM_FILES:
-        n = _page_count(rel, options)
-        doc, pages = s.open(rel, options, pages=n)
+    for rel, options in [*STREAM_FILES, (_indirect_filter_pdf(), "file")]:
+        if options == "file":
+            # pdfplumber.open(path): PDF.close() closes the file, and a
+            # later read of the document raises (doc_open_file)
+            path = _scratch_file("indirect-filter.pdf", rel)
+            doc = s.add("doc_open_file", None, path, {}, data=path, makes=1)
+            n = _page_count(rel)
+            first = s.add("doc_pages", doc, makes=n)
+            pages = list(range(first, first + n))
+        else:
+            n = _page_count(rel, options)
+            doc, pages = s.open(rel, options, pages=n)
         docs.append((doc, pages))
         for p in pages[:3]:
             s.add("page_objects", p)
@@ -1049,6 +1120,8 @@ _BAD_OPERATORS = (
     b"/DeviceGray CS /q SCN /DeviceRGB cs 1 /r 0 scn /DeviceCMYK cs 0 0 0 /s scn "
     b"/DeviceGray cs 1 2 sc /Pattern CS 0.5 SCN /Pattern cs [1] scn "
     b"1 MP (t) BMC 3 << >> DP [4] << >> BDC "
+    # and valid tags, which log nothing
+    b"/ta MP /tb BMC EMC /tc << >> DP /td << >> BDC EMC "
     b"BT /F1 /s Tf /t Tc /u Tw /v Tz (w) TL /x Ts /y Tr 1 0 0 1 0 /z Tm "
     b"[(a) /lit 3 [1]] TJ ET "
 )
@@ -1060,9 +1133,12 @@ def _interp_warnings_pdf() -> bytes:
 
 def _page_boxes_pdfs() -> list[bytes]:
     """Pages whose boxes pdfminer replaces (a MediaBox missing or invalid,
-    a CropBox invalid), one document each."""
+    a CropBox invalid), one document each; and boxes whose parsing raises
+    another error than ``PDFValueError`` (``float`` of a name: a
+    ``TypeError``), which pdfminer does not catch."""
     out = []
-    for attrs in ({"MediaBox": None}, {"MediaBox": [0, 0, Name("a"), 10]}, {"CropBox": [0, b"x", 1, 1]}):
+    for attrs in ({"MediaBox": None}, {"MediaBox": [0, 0, Name("a"), 10]}, {"CropBox": [0, b"x", 1, 1]},
+                  {"MediaBox": [0, 0, 10]}, {"CropBox": [0, Name("a"), 1, 1]}):
         b = adv_interp.Builder()
         font = b.obj(adv_interp.HELVETICA)
         b.page(b"BT /F1 12 Tf 10 10 Td (a) Tj ET", {"Font": {"F1": font}}, **attrs)
@@ -1181,6 +1257,27 @@ EXPLICIT = {"vertical_strategy": "explicit", "horizontal_strategy": "explicit",
             "explicit_vertical_lines": [1, 50, 100], "explicit_horizontal_lines": [1, 50, 100]}
 
 
+def _corrupt_flate_chain(n: int) -> bytes:
+    """Forms 1 to ``n``, each drawing the next; the last one's content is a
+    FlateDecode stream whose checksum is wrong: pdfminer decompresses it
+    byte by byte and logs the loss of data. Nothing is decoded beforehand,
+    so the deepest point is that decoding and its ``log.warning``."""
+    import zlib
+
+    b = adv_interp.Builder()
+    refs = [b.reserve() for _ in range(n)]
+    data = zlib.compress(b"0 0 m 1 1 l S")
+    data = data[:-1] + bytes([data[-1] ^ 0xFF])
+    form = {"Type": Name("XObject"), "Subtype": Name("Form"), "BBox": [0, 0, 10, 10]}
+    for i, ref in enumerate(refs):
+        if i + 1 < n:
+            b.put(ref, {**form, "Resources": {"XObject": {"X": refs[i + 1]}}}, b"0 0 m 1 1 l /X Do")
+        else:
+            b.put(ref, {**form, "Filter": Name("FlateDecode")}, data)
+    b.page(b"/X Do", {"XObject": {"X": refs[0]}})
+    return b.build()
+
+
 def depth_session(make: Any, ops: list[tuple[str, tuple[Any, ...]]], n: int) -> list[list[Any]]:
     """A document of nesting ``n`` and the operations, on its page (``doc:``
     before a name: on the document; ``table:``: on the first table the
@@ -1219,6 +1316,11 @@ def depth_windows() -> Iterator[tuple[str, list[list[Any]]]]:
         # the filter's mask_of: a frame above page.objects
         ("figures-filter", figures, [("page_filter", ("upright",))], 2, 1200),
         ("dash-json", dash, [("page_to_json", ({"object_types": ["rect"]},))], 2, 1200),
+        # the deepest point logs a warning: the decoding of the last form's
+        # corrupted data (pdfminer/pdftypes.py decompress_corrupted, then
+        # log.warning's frames, logging disabled), from two depths
+        ("flate-warning-objects", _corrupt_flate_chain, [("page_objects", ())], 2, 1200),
+        ("flate-warning-tables", _corrupt_flate_chain, [("page_find_tables", ())], 2, 1200),
         ("climit-tf-list-objects", climit["tf-list"], [("page_objects", ())], 9000, 10100),
         ("climit-tf-list-chars", climit["tf-list"], [("page_attr", ("chars",))], 9000, 10100),
         ("climit-tf-list-text", climit["tf-list"], [("page_extract_text", ({},))], 9000, 10100),
@@ -1328,7 +1430,7 @@ def page_cases() -> Iterator[tuple[list[Any], Any]]:
         limit = sys.getrecursionlimit()
         sys.setrecursionlimit(max(limit, 20000))
         try:
-            yield [name, cases], {"depth": out["depth"], "results": out["results"]}
+            yield [name, [_portable(c) for c in cases]], {"depth": out["depth"], "results": out["results"]}
         finally:
             sys.setrecursionlimit(limit)
 

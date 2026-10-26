@@ -2316,6 +2316,76 @@ Détails dans [`js-runtime.md`](js-runtime.md) (« Format des résultats »,
   `js-runtime.md` ; aucun résultat ni aucune récursion ne change
   (relecture à part, état du processus remis ; historique vidé seulement
   quand plus aucun appel ne peut être nul).
+- **Vérification** : le rejeu de `pages.jsonl` passe aussi en collectant
+  tous les diagnostics (le texte des `log.*` ne change ni résultat ni
+  récursion, fenêtres de profondeur comprises) ; la session `streams`
+  ouvre un document par chemin (`doc_open_file`) dont les flux d'image ont
+  un `/Filter` indirect : `get_data()` après `PDF.close()` lève
+  `ValueError("seek of closed file")` comme Python (un document ouvert
+  d'octets garde ses flux lisibles, `BytesIO` n'étant pas fermé par
+  pdfplumber) ; deux fenêtres de profondeur (`flate-warning-*`) dont le
+  point le plus profond est un `log.warning` (le décodage des données
+  Flate corrompues de la dernière forme d'une chaîne).
+- **Mutations** (diff `wave5/base..wave5/boundary`, `crates/wasm`,
+  `crates/pdfminer`, `crates/pycompat`) :
+  - `cargo mutants --in-diff` (`-j 1`, profil `mutants`), reprise de la
+    passe interrompue (`--iterate`) : 210 mutants, 82 détectés, 95 non
+    viables, 33 manqués ; après les tests ajoutés (borne des nœuds de
+    `cmap_scan` en paramètre, flux d'un document dans le résultat d'un
+    autre, arbre d'un document avec la page d'un autre, matchers dict non
+    masques, annotation tenant des flux dans un dict, une liste, un dict
+    dans une liste), la passe ciblée sur les manqués de `crates/wasm` :
+    28 mutants, 10 détectés, 18 manqués ; le bras `PDFObject::Dict` de
+    `label_values` est ensuite tué par l'annotation dont chaque flux
+    n'est atteint que par son conteneur ; les 17 autres sont justifiés
+    ci-dessous ;
+  - les mutants de `crates/pdfminer` et `crates/pycompat` avec les rejeux
+    de la frontière (`--test=js_runtime_unit --test=boundary` : cargo
+    mutants ne teste sinon que le paquet muté) : 228 mutants, 19 détectés,
+    206 non viables (`PyResult::new`), 1 délai (`emit_record` → `()`,
+    détecté avec un délai de 300 s), 2 manqués (`log_text::d`, gardes
+    `is_finite`, que ses sites d'appel n'atteignent pas avec un flottant :
+    tués par le test unitaire de `log_text`, à la main) ;
+  - passe `Ok(..)` (`scripts/mutants-ok.sh`) : `log_text.rs` 10/10
+    détectés ; `cmap_scan.rs`, `streams.rs`, `structs.rs` 15 mutants,
+    9 détectés, 6 non viables (pas de `Default`), remplacés à la main par
+    une valeur concrète (un flux vide, un autre arbre de la table des
+    handles, le premier élément, `Out::Value(None)`...) ; fonctions du
+    diff dans les fichiers existants (diff des fichiers réécrits) :
+    pdfminer/pycompat 45 mutants, 40 détectés, 3 non viables (corps
+    inchangés hors du texte du journal, remplacés à la main aux vagues 2
+    et 3), 2 manqués (`_format_page_label`, détectés par `document_unit`) ;
+    `crates/wasm` 13 mutants, 9 détectés, 4 non viables (`Core::op`,
+    `run`, `run_op`, `page_op`, remplacés à la main) ; les 10
+    remplacements à la main sont tous détectés ;
+  - à la main : `Logger::log`, `warning_with`, `frames::log_text` →
+    `Ok(())`, `decode_args` → `Ok(None)` détectés ; le retrait des cadres
+    de l'appel dans `Logger::log` (instruction de comptage) survivait aux
+    étapes de tous les ensembles adverses : tué par les fenêtres
+    `flate-warning-*` ;
+  - justifiés (équivalents) : `Object::reset` → `()` (le rejeu remplit
+    chaque objet de nouveau, comme à la vague 4) ; `!refs` et le bras
+    `Object::Document` de `Core::decode_request` (le document auquel un
+    `PDFObjRef` passé en argument est lié n'est lu par aucune opération :
+    pdfplumber ne résout pas ses arguments) ; les 10 mutants de
+    `oracle.rs` (compilé seulement avec `oracle-hooks`, que `cargo test`
+    ne construit pas : vérifié par les traces des étapes par l'API,
+    `oracle.verify --engine js-api` dans `check.sh`) ; `>` → `==`/`>=` de
+    `MAX_ELEMENTS` dans `preorder` et `paths` (une garde qu'atteint
+    seulement une marche de 2^24 éléments, que pdfplumber met autant de
+    pas à construire ; `==`/`>=` ne changent que le compte exact) ;
+  - JavaScript : `scripts/js-boundary-mutants.mjs`, 34 mutants, 1
+    survivant équivalent (passe précédente ; le code JS de la frontière
+    n'a pas changé depuis).
+- **Vérification de la reprise** (26 octobre 2026) : `scripts/check.sh`
+  vert (natif, `wasm32-wasip1`, porte de profondeur, Node 129/129, API
+  sur micro 17/17 + 17/17) ; `scripts/check-browsers.sh` vert (360
+  tests) ; `oracle.verify` identique : `pages` `adv-pages` 285/285 et
+  `quick` 150/150, `objects` et `streams` `adv-objects` 333/333,
+  `interp` et `fonts` `adv-interp` 353/353 et `quick` 150/150,
+  `plumber_objects` et `plumber_text` `adv-plumber` 199/199 ;
+  `oracle.wasm_parity --set quick --stages interp,fonts,layout` : 0
+  différence sur 3 × 150.
 
 **Pour le chantier API et la jonction** (changements hors de la propriété
 de BOUNDARY, faits pour que la frontière soit vérifiable par l'API, raison
