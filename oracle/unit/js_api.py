@@ -1906,6 +1906,9 @@ def arguments_session() -> Session:
     s.text(page, "extractWords", {"extra_attrs": Refused("set")})
     s.text(page, "extractText", {"x_tolerance": Refused("date")})
     s.text(page, "extractText", Refused("set"))  # type: ignore[arg-type]
+    # (the methods that split their options: a Set is no options object)
+    s.text(page, "extractTextLines", Refused("set"))  # type: ignore[arg-type]
+    cid, _ = s._async(page, "call", "search", ["a", Refused("set")])
     s.derive(page, "crop", Refused("float64array"))
     s.dedupe(page, "dedupeChars", {"tolerance": Refused("instance")})
     s.tables(page, "findTables", Refused("instance"))
@@ -1918,7 +1921,7 @@ def arguments_session() -> Session:
         else:
             c = s.case({"extractText": "page_extract_text", "extractWords": "page_extract_words"}[member], page.target, [None])
         s._expect(cid, page, lambda r, c=c: r.plain(c))
-    for options in (None, [1]):
+    for options in (None, [1], (1,)):
         cid = s._call(page, "call", "search", ["a", options])
         c = s.case("search", page.target, ["a", options], js="a")
         s._expect(cid, page, lambda r, c=c: r.plain(c))
