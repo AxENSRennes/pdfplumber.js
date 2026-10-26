@@ -1625,7 +1625,7 @@ impl<'a> IndexOf<'a> {
     }
 }
 
-// pdfplumber/utils/text.py:181 TextMap.search
+// pdfplumber/utils/text.py:172 TextMap.search (its lines 181-196)
 /// The exception `search` raises for a pattern that is neither a `str`
 /// nor a compiled pattern (a caller's `str` and compiled patterns are
 /// run by the caller: `re` is not ported, and their matches are
