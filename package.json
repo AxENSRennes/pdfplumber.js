@@ -3,6 +3,14 @@
   "version": "0.0.0",
   "type": "module",
   "description": "pdfplumber for JavaScript: a faithful Rust/Wasm port of pdfplumber and pdfminer.six, verified against Python.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AxENSRennes/pdfplumber.js.git"
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
   "main": "./dist/src/index.js",
   "module": "./dist/src/index.js",
   "browser": "./dist/browser/index.js",
@@ -11,15 +19,19 @@
     ".": {
       "types": "./dist/src/index.d.ts",
       "browser": "./dist/browser/index.js",
-      "import": "./dist/src/index.js"
+      "import": "./dist/src/index.js",
+      "default": "./dist/src/index.js"
     },
     "./internal": {
       "types": "./dist/src/internal.d.ts",
       "browser": "./dist/browser/internal.js",
-      "import": "./dist/src/internal.js"
+      "import": "./dist/src/internal.js",
+      "default": "./dist/src/internal.js"
     },
+    "./worker": "./dist/browser/worker.js",
     "./pdfplumber.wasm": "./dist/pdfplumber.wasm",
-    "./cmaps/*": "./dist/cmaps/*"
+    "./cmaps/*": "./dist/cmaps/*",
+    "./package.json": "./package.json"
   },
   "files": [
     "dist/src",
@@ -27,7 +39,8 @@
     "dist/pdfplumber.wasm",
     "dist/cmaps",
     "docs/public-api.md",
-    "docs/js-runtime.md"
+    "docs/js-runtime.md",
+    "THIRD_PARTY_NOTICES"
   ],
   "sideEffects": [
     "./dist/src/index.js",

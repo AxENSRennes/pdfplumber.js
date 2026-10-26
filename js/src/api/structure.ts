@@ -11,7 +11,9 @@
  * function is run here on every element of the tree, in `_find_all`'s
  * depth-first order, and the core takes the truth of each: the mask),
  * `elementBbox` (`struct_element_bbox`), an element's `allMcids`
- * (`struct_all_mcids`) and `repr` (`struct_element_repr`).
+ * (`struct_all_mcids`), `repr` (`struct_element_repr`) and `toDict`
+ * (`struct_element_to_dict`). Iterating over a tree or an element gives
+ * its children, as `__iter__` does.
  */
 
 import type { PDFPlumberDocument, PDFPlumberPage } from "../api.js";
@@ -150,6 +152,21 @@ export class PDFStructElement {
   repr(): Promise<string> {
     return this.tree.run_("struct_element_repr", [this.path]) as Promise<string>;
   }
+
+  /** `el.to_dict()`: the compacted dict of the element and its subtree
+   * (`dataclasses.asdict`, then every `None`, `[]` and `{}` value removed),
+   * as `structure_tree` gives each element. */
+  toDict(): Promise<Record<string, unknown>> {
+    return this.tree.run_("struct_element_to_dict", [this.path]) as Promise<Record<string, unknown>>;
+  }
+  to_dict(): Promise<Record<string, unknown>> {
+    return this.toDict();
+  }
+
+  /** `iter(el)`: its children (`PDFStructElement.__iter__`). */
+  [Symbol.iterator](): Iterator<PDFStructElement> {
+    return this.children[Symbol.iterator]();
+  }
 }
 
 /** `PDFStructTree(pdf, page)`: the structure tree of a document, or the
@@ -215,6 +232,11 @@ export class PDFStructTree {
   }
   find_all(matcher: StructMatcher<PDFStructElement>): Promise<PDFStructElement[]> {
     return this.findAll(matcher);
+  }
+
+  /** `iter(tree)`: its children (`PDFStructTree.__iter__`). */
+  [Symbol.iterator](): Iterator<PDFStructElement> {
+    return this.children[Symbol.iterator]();
   }
 
   /** `tree.find(matcher)`: the first matching element, or `null`. */

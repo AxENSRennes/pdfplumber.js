@@ -187,7 +187,8 @@ class Missing extends Error {}
  * tuples as tuples), with the JavaScript forms of oracle/unit/js_api.py
  * (`JSForm`): `$num` a plain number, `$bigint`, `$map` a `Map`,
  * `$undefined`, `$ref` a value of an earlier result (`resolve`), `$cyclic`
- * an array holding itself, `$function`, `$warnings` an `onWarning`
+ * an array holding itself, `$function`, `$set`, `$date`, `$float64array`,
+ * `$instance` (objects the encoder refuses), `$warnings` an `onWarning`
  * collector (`warnings`); a search pattern `{regexp, flags}` is a
  * `RegExp`. */
 function argument(j, lib, call, resolve, warnings) {
@@ -218,6 +219,17 @@ function argument(j, lib, call, resolve, warnings) {
           }
           case "$function":
             return () => 1;
+          // objects that are neither plain objects nor Maps (TypeError)
+          case "$set":
+            return new Set(["fontname"]);
+          case "$date":
+            return new Date(0);
+          case "$float64array":
+            return new Float64Array([0, 0, 100, 100]);
+          case "$instance":
+            return new (class Options {
+              x_tolerance = 1;
+            })();
           case "$warnings":
             return (w) => warnings.push(w);
           case "t":
@@ -308,7 +320,7 @@ export async function replayApiSession(lib, line, env) {
       try {
         if ("get" in call) p = target[call.get];
         else if (call.call === "open") p = lib.open(inputs.get(call.id), ...args);
-        else if (call.call === "filter") p = target.filter(PREDICATES[call.predicate]);
+        else if (call.call === "filter" && call.predicate !== undefined) p = target.filter(PREDICATES[call.predicate]);
         else if (call.call === "asyncDispose") p = target[Symbol.asyncDispose]();
         else if (call.element_predicate) p = target[call.call](ELEMENT_PREDICATES[call.element_predicate]);
         else p = target[call.call](...args);

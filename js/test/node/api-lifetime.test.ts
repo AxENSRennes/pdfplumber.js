@@ -5,6 +5,7 @@
 // object while it lives, an element found is an element of the tree, and
 // unreachable derived pages, tables and trees free their handles in the
 // core, never a handle of another document.
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import v8 from "node:v8";
 import vm from "node:vm";
@@ -96,7 +97,8 @@ describe("public API identities and lifetimes", () => {
   it("a reference whose handle the API does not hold is the current page of its number", async () => {
     api.configure({});
     for (const read of ["annots", "toDict", "docToDict", "hyperlinks"] as const) {
-      const pdf = await api.open(ANNOTATED);
+      // (issue-463-example.pdf has no link: alphatrans.pdf's first page has)
+      const pdf = await api.open(read === "hyperlinks" ? join(PDFPLUMBER_ROOT, "upstream/pdfjs/test/pdfs/alphatrans.pdf") : ANNOTATED);
       // the document's annotations first: their pages get handles of
       // their own, which later values name (the first live handle)
       await pdf.annots;
@@ -106,7 +108,8 @@ describe("public API identities and lifetimes", () => {
       else if (read === "hyperlinks") annots = (await pdf.hyperlinks) as unknown as Annot[];
       else if (read === "toDict") annots = (await pages[0].toDict()).annots as Annot[];
       else annots = ((await pdf.toDict()).pages as { annots: Annot[] }[])[0].annots;
-      if (annots.length) expect(await pdf.page(annots[0].data.P)).toBe(pages[annots[0].data.P.page_number as number - 1]);
+      expect(annots.length).toBeGreaterThan(0);
+      expect(await pdf.page(annots[0].data.P)).toBe(pages[(annots[0].data.P.page_number as number) - 1]);
       await pdf.release();
     }
   });
@@ -296,5 +299,114 @@ describe("public API identities and lifetimes", () => {
     for (const k of kept) expect((await k.chars).length).toBeGreaterThan(0);
     await b.release();
     void crops;
+  });
+
+  it("pdf.pages read after a close() not awaited yet is the list close() makes again (Python: pdf.close(); pdf.pages is not old)", async () => {
+    api.configure({});
+    const pdf = await api.open(ANNOTATED);
+    const old = await pdf.pages;
+    const closing = pdf.close();
+    const after = pdf.pages;
+    await closing;
+    const again = pdf.pages;
+    const [a, b] = await Promise.all([after, again]);
+    expect(a).not.toBe(old);
+    expect(a[0]).not.toBe(old[0]);
+    expect(b).toBe(a);
+    await pdf.release();
+  });
+
+  it("page(ref) takes only a PageRef of its own document; a reference of another core is no argument", async () => {
+    api.configure({});
+    const a = await api.open(join(pdfs, "pdffill-demo.pdf"));
+    const [pa] = await a.pages;
+    // (its last annotation has a /P)
+    const annots = ((await pa.annots) as unknown as Annot[]).filter((x) => x.data.P);
+    expect(annots.length).toBeGreaterThan(0);
+    const ref = annots[0].data.P;
+    const images = await pa.images;
+    const other = await api.open(join(pdfs, "scotus-transcript-p1.pdf"));
+    // another document of the same core: a page of `a`, not of `other`
+    await expect(other.page(ref)).rejects.toThrow(TypeError);
+    // a reference made by hand is no result of the document
+    await expect(a.page(new api.PageRef(ref.handle, ref.page_number))).rejects.toThrow(TypeError);
+    expect(await a.page(ref)).toBe(pa);
+    // a new core (configure()): the references of before name nothing in it
+    api.configure({});
+    const b = await api.open(join(pdfs, "scotus-transcript-p1.pdf"));
+    const [pb] = await b.pages;
+    await expect(b.page(ref)).rejects.toThrow(TypeError);
+    const lines = { vertical_strategy: "explicit", horizontal_strategy: "explicit" } as const;
+    const vertical = [annots[0], 10, 600] as never[];
+    await expect(pb.extractTables({ ...lines, explicit_vertical_lines: vertical, explicit_horizontal_lines: [10, 700] })).rejects.toThrow(
+      /another core/,
+    );
+    expect(images.length).toBeGreaterThan(0);
+    const stream = (images[0] as unknown as { stream: api.PDFStream }).stream;
+    const withStream = [{ x0: 1, s: stream }, 600] as never[];
+    await expect(pb.extractTables({ ...lines, explicit_vertical_lines: withStream, explicit_horizontal_lines: [10, 700] })).rejects.toThrow(
+      /another core/,
+    );
+    await b.release();
+    await a.release();
+    await other.release();
+  });
+
+  it("a document dropped without release() is freed in the core, even after its results held a stream", async () => {
+    api.configure({});
+    const bytes = new Uint8Array(await readFile(join(pdfs, "issue-1147-example.pdf")));
+    // (in a function of its own: the frame of a suspended async function
+    // may keep its last values)
+    const use = async () => {
+      const pdf = await api.open(bytes);
+      const [page] = await pdf.pages;
+      const images = await page.images;
+      expect(images.length).toBeGreaterThan(0);
+      expect((images[0] as unknown as { stream: unknown }).stream).toBeInstanceOf(api.PDFStream);
+    };
+    await use();
+    await collect();
+    const before = await handles();
+    for (let i = 0; i < 5; i++) await use();
+    await collect();
+    expect(await handles()).toBe(before);
+  });
+
+  it("a loop that awaits only the API frees the derived pages it drops (the finalizers get turns of the event loop)", async () => {
+    api.configure({});
+    const pdf = await api.open(join(pdfs, "nics-background-checks-2015-11.pdf"));
+    const [page] = await pdf.pages;
+    await page.chars;
+    await collect();
+    const before = await handles();
+    let peak = 0;
+    // (no timer, no I/O: every await is of the API's promises; the
+    // collections are synchronous)
+    const loop = async () => {
+      for (let i = 0; i < 400; i++) {
+        const crop = await page.crop([0, 0, 200 + (i % 50), 300]);
+        await crop.extractText();
+        if (i % 25 === 0) {
+          gc();
+          peak = Math.max(peak, (await handles()) - before);
+        }
+      }
+    };
+    await loop();
+    // without the turns, every crop of the loop would still hold its handle
+    expect(peak).toBeLessThan(300);
+    await pdf.release();
+  });
+
+  it("iterating over a structure tree or an element gives its children (__iter__)", async () => {
+    api.configure({});
+    const pdf = await api.open(join(pdfs, "word365_structure.pdf"));
+    const tree = await pdf.structTree();
+    expect([...tree]).toEqual(tree.children);
+    for (const [i, el] of [...tree].entries()) expect(el).toBe(tree.children[i]);
+    const el = tree.children[0];
+    expect([...el]).toEqual(el.children);
+    expect(await el.toDict()).toEqual(await el.to_dict());
+    await pdf.release();
   });
 });

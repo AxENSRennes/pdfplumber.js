@@ -40,6 +40,9 @@ struct State {
     /// Names asked for and not loaded, in order, since the last
     /// [`take_missing`].
     missing: Vec<String>,
+    /// Names JavaScript could not provide when it handed over every CMap
+    /// ([`mark_unavailable`]), until one is handed over after all.
+    unavailable: FxHashSet<String>,
 }
 
 thread_local! {
@@ -80,14 +83,31 @@ pub fn configure(names: impl IntoIterator<Item = String>) {
 }
 
 /// Whether every name JavaScript can provide was handed over (none, for an
-/// installation without CMaps): then no call can miss one, and no call is
-/// ever void (`crate::ops`, "Void calls": the history of the documents is
-/// no longer needed).
+/// installation without CMaps), or found unavailable ([`mark_unavailable`]):
+/// then no call can miss one that JavaScript will hand over later, and the
+/// history of the documents is no longer kept (`crate::ops`, "Void calls").
 pub fn complete() -> bool {
     STATE.with(|s| {
         let s = s.borrow();
-        s.configured && s.known.iter().all(|n| s.loaded.contains_key(n))
+        s.configured && s.known.iter().all(|n| s.loaded.contains_key(n) || s.unavailable.contains(n))
     })
+}
+
+/// Marks names JavaScript failed to provide when it handed over every CMap
+/// (a file its server or its loader does not have): [`complete`] holds
+/// without them, so the history of the documents goes and stays bounded
+/// (the core would otherwise keep it, and JavaScript fetch every missing
+/// file again, at every call). A call that asks for one is still void,
+/// and JavaScript fetches it then; a document whose history went cannot be
+/// rebuilt by that void call (`crate::ops`, "Void calls": every later
+/// operation on it raises), where without the file its call could only
+/// fail. A name handed over later ([`add`]) is available again.
+pub fn mark_unavailable(names: impl IntoIterator<Item = String>) {
+    STATE.with(|s| {
+        let mut s = s.borrow_mut();
+        let names: Vec<String> = names.into_iter().filter(|n| s.known.contains(n) && !s.loaded.contains_key(n)).collect();
+        s.unavailable.extend(names);
+    });
 }
 
 /// The magic of an inflated compact CMap.
@@ -103,7 +123,11 @@ pub fn add(name: &str, data: &[u8]) -> PyResult<()> {
     if !inflated.starts_with(COMPACT_MAGIC) {
         return Err(exc::ValueError(format!("the file of CMap {name:?} is not a compact CMap")));
     }
-    STATE.with(|s| s.borrow_mut().loaded.insert(name.to_owned(), Rc::from(inflated)));
+    STATE.with(|s| {
+        let mut s = s.borrow_mut();
+        s.unavailable.remove(name);
+        s.loaded.insert(name.to_owned(), Rc::from(inflated));
+    });
     Ok(())
 }
 
@@ -152,5 +176,25 @@ mod tests {
         assert!(JsCMapProvider.load("Z").is_none());
         assert!(!complete());
         assert_eq!(take_missing(), ["Z"]);
+    }
+
+    #[test]
+    fn unavailable_names_complete_the_set_until_one_is_handed_over() {
+        install();
+        configure(["U".to_owned(), "V".to_owned(), "W".to_owned()]);
+        add("U", b"PMCM\x01\x00").unwrap();
+        assert!(!complete());
+        // an unknown name and a loaded one are not marked
+        mark_unavailable(["V".to_owned(), "X".to_owned(), "U".to_owned()]);
+        assert!(!complete(), "W is neither loaded nor unavailable");
+        mark_unavailable(["W".to_owned()]);
+        assert!(complete());
+        // still asked for (the call is void: JavaScript fetches it again)
+        assert!(JsCMapProvider.load("V").is_none());
+        assert_eq!(take_missing(), ["V"]);
+        add("V", b"PMCM\x01\x00").unwrap();
+        assert!(complete());
+        assert!(STATE.with(|s| !s.borrow().unavailable.contains("V")), "handed over: available again");
+        assert!(STATE.with(|s| !s.borrow().unavailable.contains("U") && !s.borrow().unavailable.contains("X")));
     }
 }

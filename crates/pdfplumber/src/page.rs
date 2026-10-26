@@ -1847,17 +1847,19 @@ impl Page {
         // re.sub(lt_pat, "", obj.__class__.__name__).lower(): re.sub ->
         // re._compile (a compiled pattern: returned as it is)
         leaf(2)?;
-        // (C units, measured: oracle/unit/plumber_frames.py) _compile's
+        // (C units, measured on CPython 3.12 under nested list comparisons:
+        // re.sub(...) and re._compile(lt_pat, 0) both run two units below
+        // the noop's deepest point, `.lower()` alone one) _compile's
         // isinstance(flags, RegexFlag): an enum class, whose metaclass's
         // __instancecheck__ is looked up and called (" in __instancecheck__",
         // then the builtin's call); its `_cache2[type(pattern), pattern,
-        // flags]`, a key tuple compared with the cached one; then `.lower()`,
-        // a method of no argument (a unit while it runs)
+        // flags]` takes none (a compiled pattern is never a key: the look-up
+        // misses without comparing keys); then `.lower()`, a method of no
+        // argument (a unit while it runs)
         {
             let _check = c_call(IN_INSTANCECHECK)?;
             drop(c_call(WHILE_CALLING)?);
         }
-        drop(c_call(IN_COMPARISON)?);
         drop(c_call(WHILE_CALLING)?);
         // def process_attr(item: Tuple[str, Any]) -> Optional[Tuple[str,
         // Any]]: its annotations, evaluated at each call

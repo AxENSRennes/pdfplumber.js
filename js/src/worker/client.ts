@@ -18,6 +18,7 @@ import {
   type CoreCall,
 } from "../core/runtime.js";
 import type { RefCheck } from "../core/wire.js";
+import type { WasmModule } from "../types.js";
 
 /** Messages from the worker. */
 export type WorkerReply =
@@ -27,7 +28,7 @@ export type WorkerReply =
 
 /** Messages to the worker. */
 export type WorkerRequest =
-  | { type: "init"; id: number; module: WebAssembly.Module; cmapBase: string | null }
+  | { type: "init"; id: number; module: WasmModule; cmapBase: string | null }
   | { type: "call"; id: number; request: Uint8Array; data?: Uint8Array };
 
 /** What this module uses of a `Worker` (a stand-in in the tests). */
@@ -68,7 +69,7 @@ export class WorkerCore implements Core {
 
   /** Starts the core in `worker` (`url`: the script it runs, for the error
    * messages). */
-  static async start(worker: WorkerLike, module: WebAssembly.Module, cmapBase: string | null, url = "script"): Promise<WorkerCore> {
+  static async start(worker: WorkerLike, module: WasmModule, cmapBase: string | null, url = "script"): Promise<WorkerCore> {
     const core = new WorkerCore(worker, url);
     const r = await core.post({ type: "init", id: 0, module, cmapBase });
     if ("error" in r) {

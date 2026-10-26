@@ -114,6 +114,113 @@ describe("public API cores", () => {
     expect(call).not.toHaveBeenCalled();
   });
 
+  it("addresses of the module past 2 GiB are read unsigned (wasm32 memory up to 4 GiB)", async () => {
+    api.configure({});
+    lib.dropCore();
+    const core = (await lib.getCore()) as unknown as {
+      ex: { pp_alloc(n: number): number; pp_free(p: number): void };
+      memoryBytes(): number;
+    };
+    // a buffer the core keeps (a large document's bytes would be one):
+    // the next allocations land past 2 GiB, where an i32 is negative
+    const big = core.ex.pp_alloc(2 ** 31 - 2 ** 24);
+    let small = 0;
+    for (let i = 0; i < 4096 && small >= 0; i++) small = core.ex.pp_alloc(2 ** 20);
+    expect(small).toBeLessThan(0);
+    expect(core.memoryBytes()).toBeGreaterThan(2 ** 31);
+    const pdf = await api.open(new Uint8Array(await readFile(join(PDFPLUMBER_ROOT, "corpus/micro/text-operators.pdf"))));
+    const [page] = await pdf.pages;
+    expect((await page.extractText()).length).toBeGreaterThan(0);
+    await pdf.release();
+    core.ex.pp_free(big >>> 0);
+    lib.dropCore();
+  });
+
+  it("CMaps the loader cannot provide: the history goes once every other one is handed over, and they are not fetched at each call", async () => {
+    const names = new Map<string, number>();
+    const cmapDir = new URL("../../../dist/cmaps/", import.meta.url);
+    api.configure({
+      cmaps: {
+        load: async (name: string) => {
+          names.set(name, (names.get(name) ?? 0) + 1);
+          if (name === "UniKS-UTF16-V") throw new Error("HTTP 404");
+          return new Uint8Array(await readFile(new URL(`${encodeURIComponent(name)}.pdfcmap.zlib`, cmapDir)));
+        },
+      },
+    });
+    const { call, info } = await internal.internals();
+    await call("set_history_limit", [20]);
+    const pdf = await api.open(new Uint8Array(await readFile(join(PDFPLUMBER_ROOT, "corpus/micro/text-operators.pdf"))));
+    const [page] = await pdf.pages;
+    for (let i = 0; i < 60; i++) await page.extractText();
+    expect((await info()).history).toBe(0);
+    // every name once, the missing one at most twice (never at each call)
+    expect(names.get("UniKS-UTF16-V")).toBeLessThanOrEqual(2);
+    expect(Math.max(...names.values())).toBeLessThanOrEqual(2);
+    await pdf.release();
+    lib.dropCore();
+    api.configure({});
+  });
+
+  it("the history is bounded by its size too (a filter's mask is kept with its call)", async () => {
+    api.configure({});
+    lib.dropCore();
+    const { call, info } = await internal.internals();
+    await call("set_history_limit", [4096, 50_000]);
+    const pdf = await api.open(join(PDFPLUMBER_ROOT, "upstream/pdfplumber-python/tests/pdfs/nics-background-checks-2015-11.pdf"));
+    const [page] = await pdf.pages;
+    let peak = 0;
+    for (let i = 0; i < 40; i++) {
+      await page.filter((o) => i % 2 === 0 || o.object_type === "char");
+      peak = Math.max(peak, (await info()).history_bytes as number);
+    }
+    // the history went once it was larger than the limit (every CMap was
+    // handed over): a mask of this page is some 2 kB of the request
+    expect((await info()).history).toBe(0);
+    expect(peak).toBeLessThan(100_000);
+    await pdf.release();
+    lib.dropCore();
+  });
+
+  it("a worker core whose instance crashed stops its worker and answers the waiting requests", async () => {
+    const { WorkerCore } = await import("../../src/worker/client.js");
+    type Reply = { id: number; [k: string]: unknown };
+    const sent: { id: number; type: string }[] = [];
+    let terminated = 0;
+    const worker = {
+      onmessage: null as ((e: { data: Reply }) => void) | null,
+      onerror: null as ((e: { message: string }) => void) | null,
+      postMessage(m: { id: number; type: string }) {
+        sent.push(m);
+        if (m.type === "init") queueMicrotask(() => worker.onmessage!({ data: { id: m.id, ready: true } }));
+      },
+      terminate() {
+        terminated++;
+      },
+    };
+    const core = await WorkerCore.start(worker as never, {} as WebAssembly.Module, null, "http://x/worker.js");
+    // two requests: the first crashes the instance, the second waits
+    const first = core.call("info", 0, null);
+    await Promise.resolve();
+    const reply = sent.at(-1)!;
+    worker.onmessage!({ data: { id: reply.id, error: { name: "CoreCrash", message: "out of memory" } } });
+    await expect(first).rejects.toThrow(api.CoreCrash);
+    expect(core.crashed).toBe(true);
+    expect(terminated).toBe(1);
+    await expect(core.call("info", 0, null)).rejects.toThrow(api.CoreCrash);
+    // a worker that cannot load: an error event without a message names it
+    const failing = {
+      ...worker,
+      postMessage(m: { id: number; type: string }) {
+        sent.push(m);
+        queueMicrotask(() => failing.onerror!({ message: "" }));
+      },
+    };
+    await expect(WorkerCore.start(failing as never, {} as WebAssembly.Module, null, "http://x/moved/worker.js")).rejects.toThrow(
+      /http:\/\/x\/moved\/worker\.js/,
+    );
+  });
+
   it("a new core instantiates the module compiled before (the default source)", async () => {
     api.configure({});
     await lib.getCore();

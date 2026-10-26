@@ -241,9 +241,17 @@ PREDICATES = {"upright": _upright, "not-rect": _not_rect, "small": _small, "text
 def mask_of(page, name):
     """The truth of the predicate on each of the page's objects, by kind,
     and the test function looking it up by identity (``pages.rs``
-    ``mask_filter``)."""
-    predicate = PREDICATES[name]
-    mask = {k: [bool(predicate(o)) for o in v] for k, v in page.objects.items()}
+    ``mask_filter``). ``{"value": v}``: ``page.filter(v)`` of a value that
+    is not a function (the API's ``filter(null)``, ``filter(5)``), taken as
+    the builtin ``filter`` takes it on each kind's list (``None``: the true
+    objects; anything else is called: ``TypeError``)."""
+    if type(name) is dict:
+        value = name["value"]
+        kept = {id(o) for k, v in page.objects.items() for o in filter(value, v)}
+        mask = {k: [id(o) in kept for o in v] for k, v in page.objects.items()}
+    else:
+        predicate = PREDICATES[name]
+        mask = {k: [bool(predicate(o)) for o in v] for k, v in page.objects.items()}
     table = {id(o): t for k, v in page.objects.items() for o, t in zip(v, mask[k])}
 
     def test(o):
@@ -682,13 +690,17 @@ if __name__ == "__main__":
                 result = obj.extract_text_lines(*args[:2], **args[2])
             elif op == "search":
                 pattern, options = args
-                if type(pattern) is dict:
-                    # {"$compiled": source}: a compiled pattern (a RegExp
-                    # of the API), compiled before the statement
-                    import re
+                if pattern == {"$missing": True}:
+                    # the API's search() without a pattern
+                    result = obj.search(**options)
+                else:
+                    if type(pattern) is dict and set(pattern) == {"$compiled"}:
+                        # {"$compiled": source}: a compiled pattern (a
+                        # RegExp of the API), compiled before the statement
+                        import re
 
-                    pattern = re.compile(pattern["$compiled"])
-                result = obj.search(pattern, **options)
+                        pattern = re.compile(pattern["$compiled"])
+                    result = obj.search(pattern, **options)
             elif op == "page_crop":
                 derived = obj.crop(args[0], **args[1])
                 result = {"handle": handle(objs, derived), "page_number": derived.page_number, "bbox": derived.bbox}
@@ -698,6 +710,9 @@ if __name__ == "__main__":
             elif op == "page_outside_bbox":
                 derived = obj.outside_bbox(args[0], **args[1])
                 result = {"handle": handle(objs, derived), "page_number": derived.page_number, "bbox": derived.bbox}
+            elif op == "page_filter" and args[0] == {"$missing": True}:
+                # the API's filter() without a function
+                derived = obj.filter()
             elif op == "page_filter":
                 extra, test = mask_of(obj, args[0])
                 derived = obj.filter(test)
@@ -765,6 +780,9 @@ if __name__ == "__main__":
             elif op == "struct_element_repr":
                 el = element_at(obj, args[0])
                 result = repr(el)
+            elif op == "struct_element_to_dict":
+                el = element_at(obj, args[0])
+                result = el.to_dict()
             elif op == "set_stream_refs":
                 # the streams of the following results by reference
                 STREAM_REFS[0] = bool(args[0])
@@ -797,13 +815,13 @@ if __name__ == "__main__":
             import re
 
             pattern, options = args
-            if type(pattern) is dict:
+            if type(pattern) is dict and set(pattern) == {"$compiled"}:
                 pattern = pattern["$compiled"]
             kw = {k: v for k, v in options.items()
                   if k not in ("regex", "case", "main_group", "return_chars", "return_groups")}
             text = obj.get_textmap(**tuplify_list_kwargs(kw)).as_string
             regex, case = options.get("regex", True), options.get("case", True)
-            compiled = re.compile(pattern if regex else re.escape(pattern), re.I if case is False else 0)
+            compiled = re.compile(re.escape(pattern) if regex is False else pattern, re.I if case is False else 0)
             found = list(compiled.finditer(text))
             spans = [[span_of(text, m, g) for g in range(compiled.groups + 1)] for m in found]
             named = [{k: span_of(text, m, k) for k in compiled.groupindex} for m in found] if compiled.groupindex else None

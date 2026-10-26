@@ -4,7 +4,7 @@ Comment le cœur Rust (`crates/`) est servi à JavaScript : la crate
 `crates/wasm` (ABI, encodage des résultats, erreurs, diagnostics, CMaps) et le
 paquet `js/` (chargement, API publique, mode worker). L'API publique est
 décrite dans [`public-api.md`](public-api.md), les règles générales de la
-frontière dans [`architecture.md`](architecture.md) (« Frontière
+frontière dans [`architecture.md`](https://github.com/AxENSRennes/pdfplumber.js/blob/HEAD/docs/architecture.md) (« Frontière
 JavaScript »).
 
 ## Vue d'ensemble

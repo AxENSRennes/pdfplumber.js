@@ -1,3 +1,6 @@
+/// <reference lib="esnext.disposable" preserve="true" />
+// (`Symbol.asyncDispose` and `AsyncDisposable` in the declarations: a
+// program whose `lib` lacks them gets them from here)
 /**
  * The public API (docs/public-api.md): `open()`, `PDFPlumberDocument`,
  * `PDFPlumberPage`, `Table`.

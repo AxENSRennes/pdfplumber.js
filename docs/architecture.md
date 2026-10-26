@@ -2990,8 +2990,14 @@ comparaisons de listes imbriquées, `oracle/unit/plumber_frames.py`) :
 - `re.sub(lt_pat, "", ...).lower()` au début de `process_object` :
   l'`isinstance(flags, RegexFlag)` de `re._compile` (une classe d'enum :
   le `__instancecheck__` de sa métaclasse cherché puis appelé, deux
-  unités), la comparaison de la clé de `_cache2`, `.lower()` (une méthode
-  sans argument).
+  unités), `.lower()` (une méthode sans argument). (La recherche de
+  `_cache2[type(pattern), pattern, flags]` n'en prend aucune : un motif
+  compilé n'est jamais une clé du cache, la recherche échoue sans comparer
+  de clé ; l'unité « comparaison de la clé » que la jonction avait ajoutée
+  n'existait pas dans CPython, retirée par `wave5/fix` après mesure :
+  `re._cache2.get(...)` va aussi profond que l'instruction vide, 9 995
+  sous les comparaisons imbriquées, `re._compile(lt_pat, 0)` et
+  `re.sub(...)` à 9 993, `.lower()` seul à 9 994.)
 
 `plumber_frames` vérifie maintenant les unités C par défaut
 (`PLUMBER_FRAMES_C` n'existe plus), et la `RecursionError` un à six
@@ -3083,7 +3089,9 @@ spécialisation (aucun site de ce type n'atteint la limite ici).
     masque (bras du type, argument lu, longueur) et de `path_segment`
     fusionné (drapeau, segment, corps) : 34 détectés, 4 survivants
     équivalents — les unités transitoires de `(LTChar, LTTextContainer)`,
-    de `(LTCurve,)`, de la comparaison de `_cache2` et de `.lower()` :
+    de `(LTCurve,)`, de la comparaison de `_cache2` (une unité que
+    CPython ne prend pas : retirée depuis, voir plus haut) et de
+    `.lower()` :
     chacune n'en demande qu'une, après l'`isinstance` de `re._compile` qui
     en demande deux dans le même appel de `process_object` ; aucune n'est
     donc jamais la première à manquer (Python les prend, le port aussi) ;

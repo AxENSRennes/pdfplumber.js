@@ -16,6 +16,7 @@
 //! | `struct_element_bbox [path]` | `obj.element_bbox(el)` | a bbox |
 //! | `struct_all_mcids [path]` | `list(el.all_mcids())` | `(page_number, mcid)` tuples |
 //! | `struct_element_repr [path]` | `repr(el)` | a `str` |
+//! | `struct_element_to_dict [path]` | `el.to_dict()` | a `dict` |
 //!
 //! (`x`: the tree when `path` is `None`, else the element.) With a third
 //! argument, the *mask* `[truth...]`, the matcher is the truth of a
@@ -325,6 +326,15 @@ impl Core {
                 let el = element(&tree, arg(a()?, 0)?)?;
                 let _call = c_call(WHILE_CALLING)?;
                 PyValue::Str(el.repr()?)
+            }
+            "struct_element_to_dict" => {
+                // el.to_dict(): a method call the evaluation loop inlines
+                // (its frame is the method's own); the deep copy of
+                // `asdict` depends on the document's file object
+                let tree = self.tree(h)?;
+                let el = element(&tree, arg(a()?, 0)?)?;
+                let file = tree.doc.file_kind()?;
+                el.to_dict(file)?
             }
             _ => return Ok(None),
         };

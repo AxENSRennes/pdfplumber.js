@@ -7,6 +7,7 @@
 import { CoreCrash, fromPython, type PythonErrorInfo } from "../errors.js";
 import { PageRef, PDFStream, type StreamSource } from "../pdfobjects.js";
 import { project } from "./typed.js";
+import type { WasmModule } from "../types.js";
 import {
   decodeBinary,
   decodeJson,
@@ -98,6 +99,11 @@ export function pageRefOwner(ref: PageRef): StreamOwner | undefined {
 
 type Live = WeakRef<PDFStream> | PDFStream;
 
+/** The core whose results gave each object by reference (`StreamRefs`):
+ * an argument of another core's request cannot hold it
+ * (`StreamRefs.owns`). */
+const origins = new WeakMap<object, StreamRefs>();
+
 /** The objects by reference of a core's results (wire.ts `withRefMakers`):
  * one `PDFStream` per stream while it is alive (a handle names one stream
  * of one document as long as the document lives: the core frees its stream
@@ -115,15 +121,15 @@ export class StreamRefs {
   readonly #byOwner = new WeakMap<StreamOwner, Map<number, Live>>();
   /** The streams of the requests without an owner (the internal API). */
   readonly #unowned = new Map<number, Live>();
-  /** The objects by reference this core made: what an argument of its
-   * requests may hold (`owns`). */
-  readonly #made = new WeakSet<object>();
-
   constructor(private readonly core: Core) {}
 
-  /** Whether `ref` is an object by reference of this core's results. */
+  /** Whether an argument of this core's requests may hold `ref`: an object
+   * by reference this core's results gave, or one no core gave (made by
+   * hand, as the tests of the internal API make the pages they name), not
+   * one of another core (its handle names another object here, or none). */
   owns(ref: object): boolean {
-    return this.#made.has(ref);
+    const origin = origins.get(ref);
+    return origin === undefined || origin === this;
   }
 
   #streams(owner: StreamOwner | undefined): Map<number, Live> {
@@ -148,7 +154,7 @@ export class StreamRefs {
         ? { read: (op, h) => owner.job((call) => call(op, h, null, owner.callOptions?.())) }
         : { read: (op, h) => this.core.call(op, h, null) };
       const s = PDFStream.reference(objid, genno, attrs, handle, source);
-      this.#made.add(s);
+      origins.set(s, this);
       if (typeof WeakRef !== "function") {
         live.set(handle, s);
         return s;
@@ -159,7 +165,7 @@ export class StreamRefs {
     };
     const page: PageRefMaker = (handle, pageNumber) => {
       const ref = new PageRef(handle, pageNumber);
-      this.#made.add(ref);
+      origins.set(ref, this);
       pageRefOwners.set(ref, owner);
       return ref;
     };
@@ -301,8 +307,8 @@ export class WasmCore implements Core {
   }
 
   /** Instantiates a compiled module (it imports nothing). */
-  static async create(module: WebAssembly.Module, cmaps: CMapSource | null): Promise<WasmCore> {
-    const instance = await WebAssembly.instantiate(module, {});
+  static async create(module: WasmModule, cmaps: CMapSource | null): Promise<WasmCore> {
+    const instance = await WebAssembly.instantiate(module as WebAssembly.Module, {});
     return new WasmCore(instance, cmaps);
   }
 
@@ -408,11 +414,17 @@ export class WasmCore implements Core {
   voidCalls = 0;
 
   /** Hands over every CMap not handed over yet: what a response whose
-   * history is long asks for (`Response.historyLong`). A file that cannot
-   * be fetched now is fetched again when a call asks for it. */
+   * history is long asks for (`Response.historyLong`). The files that
+   * cannot be fetched are marked unavailable in the core
+   * (`cmap_unavailable`): the history then goes, and no later call asks
+   * for every CMap again (each would fetch the missing files once more); a
+   * call that needs one of them still fetches it (`loadMissing`). */
   async loadAll(): Promise<void> {
     if (!this.cmaps) return;
-    await Promise.all(this.cmaps.names.filter((n) => !this.added.has(n)).map((n) => this.addCMap(n).catch(() => undefined)));
+    const names = this.cmaps.names.filter((n) => !this.added.has(n));
+    await Promise.all(names.map((n) => this.addCMap(n).catch(() => undefined)));
+    const failed = names.filter((n) => !this.added.has(n));
+    if (failed.length) responseValue(this.callRaw("cmap_unavailable", 0, failed), "cmap_unavailable");
   }
 
   /** Loads the CMaps a void call missed; refuses a name already handed

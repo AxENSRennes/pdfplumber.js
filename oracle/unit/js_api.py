@@ -176,7 +176,8 @@ class Big(JSForm):
 
 
 class JSMap(JSForm):
-    """A ``Map`` with string keys: a ``dict``."""
+    """A ``Map`` with string keys: a ``dict`` (an entry ``undefined`` left
+    out, as a property ``undefined`` of a plain object)."""
 
     def __init__(self, d: dict[str, Any]) -> None:
         self.d = d
@@ -185,7 +186,7 @@ class JSMap(JSForm):
         return {"$map": [[k, enc(v)] for k, v in self.d.items()]}
 
     def py(self, conv: Callable[[Any], Any]) -> Any:
-        return {k: conv(v) for k, v in self.d.items()}
+        return {k: conv(v) for k, v in self.d.items() if not isinstance(v, Undefined)}
 
 
 class Undefined(JSForm):
@@ -216,7 +217,11 @@ class Ref(JSForm):
 
 class Refused(JSForm):
     """An argument the JavaScript encoder refuses (``TypeError``, before any
-    statement): a container holding itself, a function."""
+    statement): a container holding itself (``cyclic``), a function, an
+    object that is neither a plain object nor a ``Map`` nor a value class
+    of the API (``set``: a ``Set`` of strings, ``date``, ``float64array``,
+    ``instance``: an object of a class of the caller's), whatever Python
+    would make of a value of its own (a ``set`` of attribute names...)."""
 
     def __init__(self, kind: str) -> None:
         self.kind = kind
@@ -911,11 +916,13 @@ class Session:
         self._expect(cid, el, lambda r: element_at_path(r.value(tree_case)["children"], path)[field])
 
     def element_call(self, el: Obj, name: str) -> None:
-        """``el.allMcids()`` (``all_mcids``), ``el.repr()``."""
+        """``el.allMcids()`` (``all_mcids``), ``el.repr()``,
+        ``el.toDict()`` (``to_dict``)."""
         cid, skipped = self._async(el, "call", name, [])
         if skipped:
             return
-        op = {"allMcids": "struct_all_mcids", "repr": "struct_element_repr"}[ALIASES.get(name, name)]
+        op = {"allMcids": "struct_all_mcids", "repr": "struct_element_repr",
+              "toDict": "struct_element_to_dict"}[ALIASES.get(name, name)]
         c = self.case(op, el.target, [el.path])  # type: ignore[attr-defined]
         self._expect(cid, el, lambda r: r.plain(c))
 
@@ -945,6 +952,16 @@ class Session:
         page = Obj("page", [call], target, doc.doc, lambda r: doc.alive(r) and not r.unresolved(c) and not r.failed(c))
         page.geometry = geometry
         return page
+
+    def page_ref_of_other(self, doc: Obj, cid: int, *path: Any) -> None:
+        """``pdf.page(ref)`` of a ``PageRef`` another document's result
+        holds (at ``path`` in call ``cid``'s value): a ``TypeError`` of the
+        API, no statement (Python has no such call)."""
+        ref = Ref(cid, *path)
+        call, released = self._async(doc, "call", "page", [ref])
+        if released:
+            return
+        self._expect(call, doc, lambda r: UNRESOLVED if self.ref_missing(r, ref) else js_error("TypeError"))
 
     # --------------------------------------------------------------- the page
 
@@ -1077,6 +1094,31 @@ class Session:
         objects = self.case("page_objects", page.target, [])
         made = self.case("page_filter", page.target, [predicate])
         return self._derived(page, cid, made, before=objects)
+
+    def filter_value(self, page: Obj, value: Any) -> Obj | None:
+        """``filter(value)`` of a value that is not a function (``null``:
+        Python's ``None``; a number...): no function to run, the core takes
+        the value as the builtin ``filter`` does (``page_filter [None,
+        value]``: the statement's ``mask_of(page, {"value": v})``), then
+        ``page_info``; ``filter()`` (``value`` ``Undefined``): Python's
+        ``TypeError`` of the missing argument (``obj.filter()``)."""
+        missing = isinstance(value, Undefined)
+        cid, released = self._async(page, "call", "filter", [] if missing else [value])
+        if released:
+            return None
+        made = self.case("page_filter", page.target, [{"$missing": True} if missing else {"value": value}])
+        return self._derived(page, cid, made)
+
+    def search_missing(self, page: Obj, options: dict[str, Any] | None = None) -> None:
+        """``search()`` without a pattern (``undefined``): Python's
+        ``TypeError`` of the missing argument, raised by the call (no
+        statement in JavaScript; ``obj.search(**options)`` raises it at
+        once in Python)."""
+        cid, released = self._async(page, "call", "search", [Undefined()] + ([] if options is None else [options]))
+        if released:
+            return
+        c = self.case("search", page.target, [{"$missing": True}, dict(options or {})])
+        self._expect(cid, page, lambda r: r.plain(c))
 
     def dedupe(self, page: Obj, name: str = "dedupeChars", options: dict[str, Any] | None = None) -> Obj | None:
         cid, released = self._async(page, "call", name, [] if options is None else [options])
@@ -1333,6 +1375,8 @@ def file_session(k: int, rel: str) -> Session:
     if crop is not None:
         s.page_get(crop, "bbox")
         s.page_get(crop, "chars")
+        s.page_get(crop, "parent")
+        s.page_get(crop, "pdf")
         s.text(crop, "extractText", None)
         chained = s.derive(crop, "crop", [5, 5, 50, 50], {"relative": True, "strict": False})
         if chained is not None:
@@ -1397,6 +1441,17 @@ def file_session(k: int, rel: str) -> Session:
     return s
 
 
+def has_float(v: Any) -> bool:
+    """Whether a value holds a ``float``."""
+    if type(v) is float:
+        return True
+    if type(v) in (list, tuple):
+        return any(has_float(x) for x in v)
+    if type(v) is dict:
+        return any(has_float(x) for x in v.values())
+    return False
+
+
 def open_session() -> Session:
     """``open()`` options (and their errors), passwords, inputs that are
     not PDFs."""
@@ -1407,6 +1462,10 @@ def open_session() -> Session:
                     {"strict_metadata": True}, {"raise_unicode_errors": False}, {"password": "x"},
                     {"repair": False}, {"bogus": 1}]:
         doc = s.open(rel, options)
+        if not has_float(options):
+            # (pdf.options: the object as given; a float given as a PyFloat
+            # is that object, not a number)
+            s.options(doc, options)
         page = s.pages(doc)[0]
         s.page_get(page, "objects")
         s.text(page, "extractText", None)
@@ -1457,6 +1516,13 @@ def order_session() -> Session:
     with s.concurrently([0, 2, 1]):
         s.doc_get(doc, "objects")
         s.close(doc)
+        s.pages(doc)
+    # pdf.pages read after a close() not awaited yet: decided in its job,
+    # after close() (the pages made again), whatever the order of the awaits
+    with s.concurrently([2, 0, 1, 3]):
+        s.pages(doc)
+        s.close(doc)
+        s.pages(doc)
         s.pages(doc)
     # calls made before release() run (the core frees the document after
     # them), calls made after reject
@@ -1547,6 +1613,7 @@ def depth_session(aset: str, path: Path) -> Session:
         el = s.element(tree, 0)
         s.element_call(el, "repr")
         s.element_call(el, "allMcids")
+        s.element_call(el, "toDict")
         s.element_bbox(tree, el)
     return s
 
@@ -1579,13 +1646,143 @@ def with_room(f: Callable[[], None]) -> None:
         raise error[0]
 
 
-def depth_sessions() -> list[Session]:
+def depth_families() -> dict[str, dict[str, Callable[[int], bytes]]]:
+    """The families of the depth windows of ``DEPTH_SETS``: set -> family
+    (the stem of its files without their rank and depth: ``depth-chain``,
+    ``climit-tf-list``) -> the PDF of a nesting ``n``, from the generators
+    of the sets (``oracle/adversarial``)."""
+    from ..adversarial import interp, objects, pages, plumber, structure
+
+    return {
+        "adv-plumber": {**{f"depth-{k}": m for k, (m, _) in plumber.depth_kinds().items()},
+                        **{f"climit-{k}": m for k, m in plumber.climit_kinds().items()}},
+        "adv-structure": {f"depth-{k}": m for k, (m, first) in structure.WINDOWS.items() if first > 0},
+        "adv-interp": {**{f"depth-{k}": m for k, m in interp.depth_kinds().items()},
+                       **{f"climit-{k}": m for k, m in interp.climit_kinds().items()}},
+        "adv-objects": {f"depth-{k}": m for k, m, *_ in objects.depth_windows()},
+        "adv-pages": {f"depth-{k}": m for k, m, *_ in pages.depth_windows()},
+    }
+
+
+#: Where the PDFs of the API's own depth windows are written (under
+#: ``PDFPLUMBER_ROOT``: their sessions open them by path, as the stage
+#: windows'), and the cache of the probes that found them.
+API_DEPTH_DIR = "js-api-depth"
+
+#: How far the search for the API's first failing nesting goes: the
+#: frame limit's families (about 1000 levels) and the C limit's (10000).
+API_DEPTH_CAP = {"depth": 6000, "climit": 12000}
+
+
+class ApiDepth:
+    """The API's own first failing nesting of each depth family: the
+    smallest ``n`` whose ``depth_session`` (the statements the API runs)
+    raises ``RecursionError`` in some statement (itself or as the cause of
+    the exception it raises), found by bisection from the stage's windows;
+    the probes are cached by the PDF's bytes and the sources of the
+    statements."""
+
+    def __init__(self) -> None:
+        import hashlib
+        import inspect
+
+        self.dir = cache_dir() / "corpus" / API_DEPTH_DIR
+        self.cache_path = self.dir / "probes.json"
+        source = Path(js_pages_run.__file__).read_bytes() + inspect.getsource(depth_session).encode()
+        self.key = hashlib.sha256(source).hexdigest()[:16]
+        try:
+            self.cache: dict[str, bool] = json.loads(self.cache_path.read_text())
+        except (OSError, ValueError):
+            self.cache = {}
+
+    def path(self, aset: str, family: str, n: int, data: bytes) -> Path:
+        d = self.dir / aset
+        d.mkdir(parents=True, exist_ok=True)
+        p = d / f"api-{family}-{n}.pdf"
+        if not p.is_file() or p.read_bytes() != data:
+            p.write_bytes(data)
+        return p
+
+    def fails(self, aset: str, family: str, make: Callable[[int], bytes], n: int) -> bool:
+        import hashlib
+
+        data = make(n)
+        key = f"{self.key}:{hashlib.sha256(data).hexdigest()}"
+        if key not in self.cache:
+            s = depth_session(aset, self.path(aset, family, n, data))
+            r = run_cases(s.cases)
+            self.cache[key] = any(
+                r.failed(c) and any(x.name == "RecursionError" for x in [r.value(c), *r.causes[c]])
+                for c in range(len(s.cases)))
+            self.dir.mkdir(parents=True, exist_ok=True)
+            self.cache_path.write_text(json.dumps(self.cache, indent=0, sort_keys=True))
+        return self.cache[key]
+
+    def first(self, aset: str, family: str, make: Callable[[int], bytes], window: list[int]) -> int | None:
+        """The first failing ``n`` (``None``: none up to the cap, or every
+        ``n`` down to 1 fails)."""
+        cap = API_DEPTH_CAP[family.split("-", 1)[0]]
+        lo, hi = min(window), max(window)
+        step = 2
+        if self.fails(aset, family, make, lo):
+            hi = lo
+            while self.fails(aset, family, make, lo):
+                if lo <= 1:
+                    return None
+                hi, lo = lo, max(1, lo - step)
+                step *= 2
+        elif not self.fails(aset, family, make, hi):
+            while not self.fails(aset, family, make, hi):
+                if hi >= cap:
+                    return None
+                lo, hi = hi, min(cap, hi + step)
+                step *= 2
+        while hi - lo > 1:
+            mid = (lo + hi) // 2
+            if self.fails(aset, family, make, mid):
+                hi = mid
+            else:
+                lo = mid
+        return hi
+
+
+def depth_sessions(summary: dict[str, Any] | None = None) -> list[Session]:
+    """The sessions of the depth windows of ``DEPTH_SETS``: each window of
+    the stages (the sets' files), then, for each family, the API's own
+    window: the first failing nesting of the statements the API runs and
+    one level on each side (``ApiDepth``; a nesting the stage windows have
+    is not repeated). ``summary`` receives each family's first failing
+    nesting (``None``: no ``RecursionError`` up to the cap, or one at every
+    nesting down to 1)."""
     out = []
+    families = depth_families()
+    api = ApiDepth()
     for aset in DEPTH_SETS:
         d = cache_dir() / "corpus" / aset
         if not d.is_dir():
             raise SystemExit(f"js_api: {d} is missing: generate {aset} first (python -m oracle.unit)")
-        out += [depth_session(aset, p) for p in sorted(d.glob("*.pdf")) if re.search(r"(^|-)(depth|climit)-", p.stem)]
+        files = [p for p in sorted(d.glob("*.pdf")) if re.search(r"(^|-)(depth|climit)-", p.stem)]
+        out += [depth_session(aset, p) for p in files]
+        windows: dict[str, list[int]] = {}
+        for p in files:
+            m = re.fullmatch(r"\d+-((?:depth|climit)-.+)-(\d+)", p.stem)
+            assert m, p
+            windows.setdefault(m.group(1), []).append(int(m.group(2)))
+        missing = sorted(set(windows) - set(families[aset]))
+        if missing:
+            raise SystemExit(f"js_api: no generator for the families {missing} of {aset} (depth_families)")
+        for family, ns in sorted(windows.items()):
+            make = families[aset][family]
+            first = api.first(aset, family, make, ns)
+            if summary is not None:
+                summary[f"{aset}/{family}"] = first
+            if first is None:
+                continue
+            # the generator's check: one side passes, the other fails
+            assert not api.fails(aset, family, make, first - 1) and api.fails(aset, family, make, first), (aset, family)
+            for n in (first - 1, first, first + 1):
+                if n not in ns:
+                    out.append(depth_session(aset, api.path(aset, family, n, make(n))))
     return out
 
 
@@ -1671,6 +1868,19 @@ def arguments_session() -> Session:
     s.text(page, "extractText", {"layout": True, "layout_bbox": (0, 0, 400.0, 400), "x_density": Num(7.0)})
     s.text(page, "extractText", {"x_tolerance": Refused("function")})
     s.text(page, "extractText", {"extra_attrs": Refused("cyclic")})
+    # a Map's entry undefined is not given, as a plain object's property
+    s.text(page, "extractText", JSMap({"x_tolerance": Undefined(), "layout": True}))  # type: ignore[arg-type]
+    s.text(page, "extractTextLines", JSMap({"strip": Undefined(), "return_chars": False, "x_tolerance": Undefined()}))  # type: ignore[arg-type]
+    s.search(page, "Alabama", "Alabama", JSMap({"main_group": Undefined(), "return_chars": False, "y_tolerance": Undefined()}))  # type: ignore[arg-type]
+    s.tables(page, "extractTable", JSMap({"snap_tolerance": Undefined(), "intersection_tolerance": 2.0}))
+    # objects that are neither plain objects nor Maps: TypeError, never a
+    # dict of their own properties (a Set of names, a typed array as a bbox)
+    s.text(page, "extractWords", {"extra_attrs": Refused("set")})
+    s.text(page, "extractText", {"x_tolerance": Refused("date")})
+    s.text(page, "extractText", Refused("set"))  # type: ignore[arg-type]
+    s.derive(page, "crop", Refused("float64array"))
+    s.dedupe(page, "dedupeChars", {"tolerance": Refused("instance")})
+    s.tables(page, "findTables", Refused("instance"))
     # options that are not a mapping: Python's TypeError (argument after **)
     for name in ("extractText", "extractWords", "extractTextLines"):
         cid = s._call(page, "call", name, [None])
@@ -1757,6 +1967,20 @@ def lifetime_session() -> Session:
     # await using: close(), then release()
     other = s.open("upstream/pdfplumber-python/tests/pdfs/pdffill-demo.pdf")
     p = s.pages(other)[0]
+    # a PageRef of another (live) document's result: page() refuses it (it
+    # names a page of that document); as an argument it is the object it
+    # stands for, which Python takes from any document (explicit lines)
+    third = s.open(rel)
+    theirs = s.doc_get(third, "annots")
+    mine = s.page_get(p, "annots")
+    s.page_ref_of_other(other, theirs, 0, "data", "P")
+    # (the last of the 13 annotations of its first page has a /P)
+    s.page_ref_of_other(third, mine, 12, "data", "P")
+    s.page_ref(other, mine, 12, "data", "P")
+    s.tables(p, "extractTables", {"vertical_strategy": "explicit", "horizontal_strategy": "explicit",
+                                  "explicit_vertical_lines": [Ref(theirs, 0), Ref(mine, 0), 10, 600],
+                                  "explicit_horizontal_lines": [Ref(theirs, 1), 10, 700]})
+    s.release(third)
     tables = s.tables(p, "findTables")
     s.dispose(other)
     s.page_get(p, "chars")
@@ -1821,6 +2045,41 @@ def calls_session() -> Session:
         s.serialize(page, "toCsv", options)
     s.serialize(page, "toDict", None)
     s.serialize(page, "toDict", ["char", "rect", "line", "curve", "image", "annot"])
+    # filter() of a value that is not a function: None keeps the true
+    # objects, anything else is not callable (at the first object: none on
+    # a page without objects); filter() without a function
+    for value in (None, 5, "x", {"a": 1}, Undefined()):
+        f = s.filter_value(page, value)
+        if f is not None:
+            s.page_get(f, "chars")
+    empty = s.derive(page, "crop", [0, 0, 1, 1])
+    if empty is not None:
+        f = s.filter_value(empty, 5)
+        if f is not None:
+            s.page_get(f, "objects")
+    # search() of a pattern that is neither a string nor a RegExp: the
+    # error Python's re raises (re.compile's, re.escape's with regex=False);
+    # search() without a pattern
+    for value in (5, 5.5, None, b"J", [1], (1,), {"a": 1}, True):
+        s.search(page, value, value, None)
+        s.search(page, value, value, {"regex": False, "return_chars": False})
+    s.search(page, b"J", b"J", {"case": False})
+    s.search_missing(page)
+    s.search_missing(page, {"layout": True})
+    if empty is not None:
+        s.search_missing(empty)
+    # null is None, not "not given": strip=None, return_chars=None,
+    # return_groups=None, main_group=None (m.group(None): IndexError)
+    for options in [{"strip": None, "layout": True, "return_chars": False}, {"return_chars": None},
+                    JSMap({"strip": None, "return_chars": None, "layout": True}), {"strip": False, "return_chars": None}]:
+        s.text(page, "extractTextLines", options)  # type: ignore[arg-type]
+    for py, js, options in [("(O)(f)", "(O)(f)", {"main_group": None}), ("(O)(f)", "(O)(f)", {"return_groups": None}),
+                            ("(O)(f)", "(O)(f)", {"return_chars": None, "return_groups": False}),
+                            ("a.b", "a.b", {"regex": None, "return_chars": False}),
+                            ("justice", "justice", {"case": None, "return_chars": False}),
+                            ("zzzz", "zzzz", {"main_group": None}),
+                            ("(J)", "(J)", JSMap({"main_group": None, "return_chars": False}))]:
+        s.search(page, py, js, options)  # type: ignore[arg-type]
     s.serialize(doc, "toCsv", {"precision": 2})
     s.serialize(doc, "to_csv")
     s.serialize(doc, "toDict", ["char"])
@@ -1882,6 +2141,7 @@ def structure_session(name: str, rel: str | None = None, data: bytes | None = No
             el = s.element(tree, *path)
             s.element_call(el, "allMcids" if len(path) % 2 else "all_mcids")
             s.element_call(el, "repr")
+            s.element_call(el, "toDict" if (len(path) + k) % 2 else "to_dict")
             for name in pick(["altText", "actualText", "pageNumber", "alt_text", "page_number", "type", "mcids"], len(path) + k, 3):
                 s.element_get(el, name)
             s.element_bbox(tree, el, "elementBbox" if len(path) % 2 else "element_bbox")
@@ -1949,37 +2209,82 @@ def sessions() -> list[Session]:
     return out
 
 
+#: The getters of an element's fields, counted as their field.
+ELEMENT_GETTERS = {"altText": "alt_text", "actualText": "actual_text"}
+
+
+class Tally:
+    """The calls of written sessions: in all, and those actually made (an
+    expectation other than ``Unresolved``: a call on an object that was
+    made, with arguments that exist), in all and by member (an alias
+    counted as its member)."""
+
+    def __init__(self) -> None:
+        self.sessions = 0
+        self.calls = 0
+        self.made = 0
+        self.by_member: dict[str, int] = {}
+        self.unresolved = typed_json.encode(UNRESOLVED)
+
+    def add(self, out: dict[str, Any]) -> None:
+        self.sessions += 1
+        names = {c["id"]: c.get("get", c.get("call")) for step in out["session"]["steps"] for c in step["calls"]}
+        for e in out["expect"]:
+            self.calls += 1
+            member = names[e["id"]]
+            member = ALIASES.get(member, ELEMENT_GETTERS.get(member, member))
+            self.by_member.setdefault(member, 0)
+            if e["value"] != self.unresolved:
+                self.made += 1
+                self.by_member[member] += 1
+
+    def summary(self) -> str:
+        return f"{self.sessions} sessions, {self.calls} calls ({self.made} made, {self.calls - self.made} Unresolved)"
+
+
+#: The fewest calls made of each member the sessions call: a member whose
+#: calls are mostly ``Unresolved`` (made on an object that a failing call
+#: did not make) is not checked.
+MIN_MADE = 3
+
+
 def main() -> None:
     require_oracle_python()
     path = unit_dir(MODULE) / "sessions.jsonl"
     tmp = path.with_name(f".{path.name}.tmp")
-    n_sessions = n_calls = 0
+    tally = Tally()
     with open(tmp, "w", encoding="ascii") as f:
         for s in sessions():
             out = s.run()
             f.write(json.dumps({"in": [out["session"]], "out": out["expect"]}, ensure_ascii=True, separators=(",", ":")) + "\n")
-            n_sessions += 1
-            n_calls += len(out["expect"])
+            tally.add(out)
+    few = {m: n for m, n in sorted(tally.by_member.items()) if n < MIN_MADE}
+    if few:
+        raise SystemExit(f"js_api: members with fewer than {MIN_MADE} calls made: {few}")
     tmp.replace(path)
     # the depth windows of the adversarial sets (Node only: js/test/node/api-depth.test.ts)
     depth = unit_dir(MODULE) / "depth.jsonl"
     tmp = depth.with_name(f".{depth.name}.tmp")
-    n_depth = n_depth_calls = 0
-    counts = [0, 0]
+    depth_tally = Tally()
+    firsts: dict[str, Any] = {}
 
     def write_depth() -> None:
         with open(tmp, "w", encoding="ascii") as f:
-            for s in depth_sessions():
+            for s in depth_sessions(firsts):
                 out = s.run()
                 f.write(dumps_deep({"in": [out["session"]], "out": out["expect"]}) + "\n")
-                counts[0] += 1
-                counts[1] += len(out["expect"])
+                depth_tally.add(out)
 
     with_room(write_depth)
-    n_depth, n_depth_calls = counts
     tmp.replace(depth)
-    write_meta(MODULE, cases={"sessions": n_sessions, "calls": n_calls, "depth_sessions": n_depth, "depth_calls": n_depth_calls})
-    print(f"{MODULE}: {n_sessions} sessions, {n_calls} calls; depth windows: {n_depth} sessions, {n_depth_calls} calls")
+    write_meta(MODULE, cases={"sessions": tally.sessions, "calls": tally.calls, "calls_made": tally.made,
+                              "calls_made_by_member": tally.by_member, "depth_sessions": depth_tally.sessions,
+                              "depth_calls": depth_tally.calls, "depth_calls_made": depth_tally.made,
+                              "depth_api_first_failing": firsts})
+    print(f"{MODULE}: {tally.summary()}; depth windows: {depth_tally.summary()}")
+    print(f"{MODULE}: calls made by member: " + ", ".join(f"{m} {n}" for m, n in sorted(tally.by_member.items())))
+    print(f"{MODULE}: the API's first failing nesting of each depth family: "
+          + ", ".join(f"{k} {v}" for k, v in sorted(firsts.items())))
 
 
 if __name__ == "__main__":

@@ -5,12 +5,12 @@
 
 import type { CMapSource, Core } from "../core/runtime.js";
 import { CMAP_NAMES } from "../generated/cmap-names.js";
-import type { PDFInput, RuntimeOptions } from "../types.js";
+import type { PDFInput, RuntimeOptions, WasmModule } from "../types.js";
 
 export interface Platform {
   readonly name: "node" | "browser";
   /** Compiles the module given by the options, or the default one. */
-  compileWasm(source: RuntimeOptions["wasm"]): Promise<WebAssembly.Module>;
+  compileWasm(source: RuntimeOptions["wasm"]): Promise<WasmModule>;
   /** The CMap source of the options. */
   cmapSource(option: RuntimeOptions["cmaps"]): CMapSource | null;
   /** The bytes of an input. */
@@ -21,7 +21,7 @@ export interface Platform {
    * other input, opened as `pdfplumber.open(io.BytesIO(bytes))`. */
   filePath?(input: PDFInput): string | undefined;
   /** A core in a worker, when the platform has workers. */
-  workerCore?(module: WebAssembly.Module, options: RuntimeOptions): Promise<Core>;
+  workerCore?(module: WasmModule, options: RuntimeOptions): Promise<Core>;
 }
 
 let current: Platform | undefined;

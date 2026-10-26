@@ -628,23 +628,33 @@ def fallback_float_id(r: int, cfm: str | None, later: bytes, id_token: bytes = b
     return bytes(out)
 
 
+#: A window of ``cases_depth``: its label, the PDF of a depth ``n``, the
+#: first failing ``n`` and the levels before and after it.
+Window = tuple[str, Callable[[int], bytes], int, int, int]
+
+
+def depth_windows() -> list[Window]:
+    """The windows of ``cases_depth`` (also the families of the API's own
+    depth windows: ``oracle/unit/js_api.py``)."""
+    return [
+        # PDFDocument.__init__ fails from 985 /Prev sections on
+        ("prev-tables", lambda n: prev_chain(n, "none"), 985, 5, 5),
+        ("prev-streams", lambda n: prev_chain(n, "all"), 985, 2, 1),
+        ("prev-stream-bottom", lambda n: prev_chain(n, "bottom"), 985, 2, 1),
+        # getobj of the first stream fails from 142 on
+        ("length-chain", length_chain, 142, 2, 1),
+    ]
+
+
 def cases_depth() -> list[Case]:
     """Recursions around the depth where Python runs out of frames (the
     first failing N in the comments): docs/architecture.md, "Profondeur de
     récursion"; and the boundaries the mutation pass of pdfparser.rs found
     untested."""
     out: list[Case] = []
-
-    def window(label: str, make: Callable[[int], bytes], first_failing: int, before: int = 2, after: int = 1) -> None:
+    for label, make, first_failing, before, after in depth_windows():
         for n in range(first_failing - before, first_failing + after + 1):
             out.append((f"depth-{label}-{n}", make(n), None))
-
-    # PDFDocument.__init__ fails from 985 /Prev sections on
-    window("prev-tables", lambda n: prev_chain(n, "none"), 985, before=5, after=5)
-    window("prev-streams", lambda n: prev_chain(n, "all"), 985)
-    window("prev-stream-bottom", lambda n: prev_chain(n, "bottom"), 985)
-    # getobj of the first stream fails from 142 on
-    window("length-chain", length_chain, 142)
     # obj and endobj inside an object stream are skipped by PDFStreamParser
     out.append(("objstm-obj-endobj", xref_stream_file(objstm_nums=(5, 6), objstm_items=lambda items: [
         (Raw(b"5"), Raw(b"obj << /A 1 >> endobj")), *items]), None))

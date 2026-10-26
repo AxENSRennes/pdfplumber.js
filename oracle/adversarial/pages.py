@@ -350,12 +350,18 @@ def box_chain(n: int, refs: bool) -> bytes:
     return table_file(objs)
 
 
-def cases_depth() -> list[Case]:
-    out: list[Case] = []
+#: A window of ``cases_depth``: its label, the PDF of a depth ``n``, the
+#: first failing ``n`` and the levels before and after it.
+Window = tuple[str, Any, int, int, int]
+
+
+def depth_windows() -> list[Window]:
+    """The windows of ``cases_depth`` (also the families of the API's own
+    depth windows: ``oracle/unit/js_api.py``)."""
+    windows: list[Window] = []
 
     def window(label: str, make: Any, first_failing: int, before: int = 2, after: int = 1) -> None:
-        for n in range(first_failing - before, first_failing + after + 1):
-            out.append((f"depth-{label}-{n}", make(n), None))
+        windows.append((label, make, first_failing, before, after))
 
     # pages stage: create_pages fails from N = 983 on (the deepest point:
     # add_results' log.debug at the endobj of the last node)
@@ -382,6 +388,14 @@ def cases_depth() -> list[Case]:
     window("outline-first", lambda n: outline_chain(n, "first"), 984)
     window("outline-next", lambda n: outline_chain(n, "next"), 984)
     window("names-kids", names_chain, 984)
+    return windows
+
+
+def cases_depth() -> list[Case]:
+    out: list[Case] = []
+    for label, make, first_failing, before, after in depth_windows():
+        for n in range(first_failing - before, first_failing + after + 1):
+            out.append((f"depth-{label}-{n}", make(n), None))
     # an error of the file object (an object at a negative offset) under
     # get_page_labels and lookup_name: neither PDFTypeError nor KeyError, it
     # is not turned into PDFNoPageLabels / PDFKeyError

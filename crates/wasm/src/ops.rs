@@ -114,12 +114,20 @@ pub const FORMAT_TYPED: u8 = 2;
 pub const MAX_DIAGNOSTICS: usize = 1000;
 
 /// Bit 1 of the flags of a response: the history of the documents is
-/// longer than [`Core::history_limit`] (see the module documentation,
-/// "Freed handles"): JavaScript bounds it by handing over every CMap.
+/// longer than [`Core::history_limit`] or larger than
+/// [`Core::history_bytes_limit`] (see the module documentation, "Freed
+/// handles"): JavaScript bounds it by handing over every CMap (those it
+/// cannot provide marked unavailable: `cmaps::mark_unavailable`).
 pub const FLAG_HISTORY_LONG: u8 = 2;
 
 /// The length of the history past which the core asks for every CMap.
 pub const HISTORY_LIMIT: usize = 4096;
+
+/// The size of the history (the bytes of the requests of its entries)
+/// past which the core asks for every CMap: an entry keeps its request's
+/// arguments, which can be large (the mask of a `filter`, one truth per
+/// object of the page).
+pub const HISTORY_BYTES_LIMIT: usize = 4 << 20;
 
 /// A result encoding.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -265,6 +273,9 @@ pub struct Entry {
     pub process: ProcessState,
     /// How it ended: its replay must end so.
     pub outcome: Result<(), PyErr>,
+    /// The size of the request it belongs to (its arguments: what it
+    /// keeps), counted against [`Core::history_bytes_limit`].
+    pub bytes: usize,
 }
 
 /// A value written by hand.
@@ -317,6 +328,11 @@ pub struct Core {
     /// The length of the history past which responses ask for every CMap
     /// ([`FLAG_HISTORY_LONG`]; `set_history_limit`, for the tests).
     pub(crate) history_limit: usize,
+    /// The size of the history past which responses ask for every CMap
+    /// ([`HISTORY_BYTES_LIMIT`]; `set_history_limit`, for the tests).
+    pub(crate) history_bytes_limit: usize,
+    /// The size of the running call's request ([`Entry::bytes`]).
+    pub(crate) request_bytes: usize,
 }
 
 impl Default for Core {
@@ -514,6 +530,8 @@ impl Core {
             stream_refs: false,
             stream_values: FxHashMap::default(),
             history_limit: HISTORY_LIMIT,
+            history_bytes_limit: HISTORY_BYTES_LIMIT,
+            request_bytes: 0,
         }
     }
 
@@ -616,14 +634,20 @@ impl Core {
                 ("handles", PyValue::from(self.handles.len() as i64)),
                 // the calls the documents' replays would run
                 ("history", PyValue::from(self.history.len() as i64)),
+                ("history_bytes", PyValue::from(self.history_bytes() as i64)),
             ])),
             "set_format" => {
                 self.format = Format::parse(args)?;
                 PyValue::None
             }
             "set_history_limit" => {
-                // (the tests of the bounded history)
-                self.history_limit = usize::try_from(int(arg(a()?, 0)?)?).map_err(|_| exc::ValueError("a limit"))?;
+                // [entries, bytes?] (the tests of the bounded history)
+                let a = a()?;
+                let limit = |v: &PyValue| usize::try_from(int(v)?).map_err(|_| exc::ValueError("a limit"));
+                self.history_limit = limit(arg(a, 0)?)?;
+                if let Some(bytes) = a.get(1) {
+                    self.history_bytes_limit = limit(bytes)?;
+                }
                 PyValue::None
             }
             "set_stream_refs" => {
@@ -672,6 +696,13 @@ impl Core {
             "cmap_add" => {
                 let data = data.ok_or_else(|| exc::TypeError("cmap_add needs the file"))?;
                 cmaps::add(str_arg(args)?, &data)?;
+                PyValue::None
+            }
+            "cmap_unavailable" => {
+                // [names]: what JavaScript could not provide when a long
+                // history asked for every CMap (cmaps::mark_unavailable)
+                let names = a()?.iter().map(|n| str_arg(n).map(str::to_owned)).collect::<PyResult<Vec<_>>>()?;
+                cmaps::mark_unavailable(names);
                 PyValue::None
             }
             "cmap_decode" => {
@@ -983,10 +1014,16 @@ impl Core {
                 call,
                 process,
                 outcome,
+                bytes: self.request_bytes,
             });
         }
         self.op_doc = outer;
         result
+    }
+
+    /// The size of the history ([`Entry::bytes`]).
+    pub(crate) fn history_bytes(&self) -> usize {
+        self.history.iter().map(|e| e.bytes).sum()
     }
 
     /// `free`: a document goes with its pages, tables and history; a page
@@ -1116,6 +1153,7 @@ impl Core {
         self.stream_values.clear();
         self.op_doc = None;
         self.calls += 1;
+        self.request_bytes = request.len();
         if cmaps::complete() && !self.history.is_empty() {
             // no call can be void any more: the history goes
             self.history = Vec::new();
@@ -1183,7 +1221,7 @@ impl Core {
             },
             Err(e) => response(STATUS_ERROR, FORMAT_BINARY, false, &encode_error(&e), &collected),
         };
-        if self.history.len() > self.history_limit {
+        if self.history.len() > self.history_limit || self.history_bytes() > self.history_bytes_limit {
             out[6] |= FLAG_HISTORY_LONG;
         }
         out

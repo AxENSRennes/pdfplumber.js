@@ -134,15 +134,15 @@ export interface WordOptions {
 /** `search` options: pdfplumber's, plus the `extract_text` ones. The
  * pattern is a JavaScript `RegExp` or string (docs/public-api.md,
  * "Search"). */
-export interface SearchOptions extends ExtractTextOptions {
-  regex?: boolean;
-  case?: boolean;
-  return_groups?: boolean;
-  return_chars?: boolean;
+export interface SearchOptions extends Omit<ExtractTextOptions, "return_chars"> {
+  regex?: boolean | null;
+  case?: boolean | null;
+  return_groups?: boolean | null;
+  return_chars?: boolean | null;
   /** The group whose text and bbox a result has: a number, or the name
    * of a named group (`(?<name>…)`), read for each match as Python's
    * `m.group(main_group)` reads it. */
-  main_group?: number | string;
+  main_group?: number | string | null;
 }
 
 /** A match of `search` (pdfplumber's `match_to_dict`). */
@@ -159,9 +159,9 @@ export interface SearchResult {
 }
 
 /** `extract_text_lines` options. */
-export interface TextLineOptions extends ExtractTextOptions {
-  strip?: boolean;
-  return_chars?: boolean;
+export interface TextLineOptions extends Omit<ExtractTextOptions, "return_chars"> {
+  strip?: boolean | null;
+  return_chars?: boolean | null;
 }
 
 export type Bbox = [number, number, number, number];
@@ -245,11 +245,17 @@ export interface TableFinderResult<T> {
  * element (run on every element of the tree, in Python's order). */
 export type StructMatcher<E> = string | RegExp | ((element: E) => unknown);
 
+/** A compiled `WebAssembly.Module`, where the program's libraries declare
+ * it (the DOM library, a worker's); else any object: the package's
+ * declarations type-check without the DOM library (a Node project with
+ * `@types/node` alone). */
+export type WasmModule = typeof globalThis extends { WebAssembly: { Module: { prototype: infer M } } } ? M : object;
+
 /** Runtime settings (`configure`). */
 export interface RuntimeOptions {
   /** The WebAssembly module: a URL, a path (Node), bytes or a compiled
    * module. Default: `pdfplumber.wasm` next to the package's `dist/`. */
-  wasm?: string | URL | ArrayBuffer | Uint8Array | WebAssembly.Module;
+  wasm?: string | URL | ArrayBuffer | Uint8Array | WasmModule;
   /** Predefined CMaps: `false` to go without them (CJK documents then lose
    * their text, as pdfminer without its `cmap` directory), a base URL or
    * directory, or a loader. Default: `cmaps/` next to the package's
