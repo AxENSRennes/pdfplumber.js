@@ -62,10 +62,13 @@ Usage: PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python -m oracle.unit.js
 from __future__ import annotations
 
 import json
+import json.decoder
+import json.scanner
 import re
 import subprocess
 import sys
 import tempfile
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -1189,6 +1192,31 @@ class _Batch:
         self.s.steps.append({"calls": calls, "await": order})
 
 
+def load_deep(text: str) -> Any:
+    """``json.loads``, or, for a text nested deeper than the C recursion
+    limit of CPython's scanner (a depth window's values: ``with_room``),
+    the pure-Python scanner of ``json``, whose recursion
+    ``sys.setrecursionlimit`` bounds."""
+    try:
+        return json.loads(text)
+    except RecursionError:
+        decoder = json.JSONDecoder()
+        decoder.scan_once = json.scanner.py_make_scanner(decoder)  # type: ignore[attr-defined]
+        return decoder.decode(text)
+
+
+def dumps_deep(value: Any) -> str:
+    """``json.dumps`` (ASCII, compact), or, for a value nested deeper than
+    the C recursion limit of CPython's encoder, the pure-Python encoder
+    (``iterencode`` not in one shot), whose recursion
+    ``sys.setrecursionlimit`` bounds."""
+    try:
+        return json.dumps(value, ensure_ascii=True, separators=(",", ":"))
+    except RecursionError:
+        encoder = json.JSONEncoder(ensure_ascii=True, separators=(",", ":"))
+        return "".join(encoder.iterencode(value, _one_shot=False))
+
+
 def run_cases(cases: list[list[Any]]) -> Results:
     """The results of the statements in a fresh process at the top level of
     ``js_pages_run.py`` (paths made absolute)."""
@@ -1199,7 +1227,7 @@ def run_cases(cases: list[list[Any]]) -> Results:
         inp, out = Path(d) / "in.json", Path(d) / "out.json"
         inp.write_text(json.dumps(typed_json.encode(runnable)))
         subprocess.run([sys.executable, "-I", js_pages_run.__file__, str(inp), str(out)], check=True, timeout=1800)
-        raw = json.loads(out.read_text())
+        raw = load_deep(out.read_text())
     results = [[typed_json.decode(v), typed_json.decode(x)] for v, x in raw["results"]]
     causes = [[typed_json.decode(c) for c in chain] for chain in raw["causes"]]
     return Results(results, causes)
@@ -1516,6 +1544,34 @@ def depth_session(aset: str, path: Path) -> Session:
         s.element_call(el, "allMcids")
         s.element_bbox(tree, el)
     return s
+
+
+def with_room(f: Callable[[], None]) -> None:
+    """Runs ``f`` where values as deep as the statements' limit allows (a
+    chain of structure elements, metadata nested ~1000 levels: four typed
+    JSON levels each) can be decoded, expected and written: a thread with a
+    large stack and a high recursion limit, put back after. The statements
+    themselves run in their own process (``run_cases``), at its limit."""
+    error: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            f()
+        except BaseException as e:  # noqa: BLE001 (raised again below)
+            error.append(e)
+
+    limit = sys.getrecursionlimit()
+    size = threading.stack_size(1 << 30)
+    sys.setrecursionlimit(1_000_000)
+    try:
+        t = threading.Thread(target=run)
+        t.start()
+        t.join()
+    finally:
+        sys.setrecursionlimit(limit)
+        threading.stack_size(size)
+    if error:
+        raise error[0]
 
 
 def depth_sessions() -> list[Session]:
@@ -1901,12 +1957,18 @@ def main() -> None:
     depth = unit_dir(MODULE) / "depth.jsonl"
     tmp = depth.with_name(f".{depth.name}.tmp")
     n_depth = n_depth_calls = 0
-    with open(tmp, "w", encoding="ascii") as f:
-        for s in depth_sessions():
-            out = s.run()
-            f.write(json.dumps({"in": [out["session"]], "out": out["expect"]}, ensure_ascii=True, separators=(",", ":")) + "\n")
-            n_depth += 1
-            n_depth_calls += len(out["expect"])
+    counts = [0, 0]
+
+    def write_depth() -> None:
+        with open(tmp, "w", encoding="ascii") as f:
+            for s in depth_sessions():
+                out = s.run()
+                f.write(dumps_deep({"in": [out["session"]], "out": out["expect"]}) + "\n")
+                counts[0] += 1
+                counts[1] += len(out["expect"])
+
+    with_room(write_depth)
+    n_depth, n_depth_calls = counts
     tmp.replace(depth)
     write_meta(MODULE, cases={"sessions": n_sessions, "calls": n_calls, "depth_sessions": n_depth, "depth_calls": n_depth_calls})
     print(f"{MODULE}: {n_sessions} sessions, {n_calls} calls; depth windows: {n_depth} sessions, {n_depth_calls} calls")
