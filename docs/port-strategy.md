@@ -375,75 +375,117 @@ Lecture :
     `dropCore()` laissant vivre le worker de l'ancien ; le module compilé
     est désormais réutilisé et le worker arrêté (`js-runtime.md`,
     « Paquet JS »).
-- **Vague 5** (en cours ; base `wave5/base`, `architecture.md`,
-  « Vague 5 ») : contrat de l'API (`public-api.md`, table « Operations »),
-  épine de l'API sur les opérations de la frontière (file FIFO des jobs,
-  causes des erreurs, `open(path)` comme `pdfplumber.open(path)`),
-  harnais (sessions `oracle/unit/js_api.py` rejouées par l'API publique
-  dans Node, le build `dist` et les navigateurs ; traces des étapes
-  `plumber_*` par l'API, `oracle.verify --engine js-api`), propriété des
-  fichiers des chantiers API, BOUNDARY et PERF, référence PERF sur
-  `quick`. Jonction (`wave5/join`, `architecture.md`, « Jonction ») : les
-  trois chantiers fusionnés (un conflit, `path_segment`, les deux
-  intentions gardées) ; le masque des matchers de structure dans son
-  propre argument (un objet d'un appelant n'est plus pris pour lui) ;
-  l'écart d'unités C de la couche page que PERF a trouvé, corrigé à ses
-  causes (`isinstance` avec un tuple de classes, `"".join` et `ord` de
-  `decode_text`, escaliers des abonnements `typing`, `re.sub` de
-  `process_object`) et vérifié par `plumber_frames` ; chaque membre de
-  `public-api.md` vérifié par l'API publique (sessions dans Node, `dist`,
-  Chromium, Firefox, WebKit, page et worker ; traces `plumber_*` par
-  l'API sur `all` et les ensembles adverses, différences toutes
-  classées) ; API publique ×6,3 sur Python dans Node, ×6,0 dans
-  Chromium, natif ×8,4 (`quick`). Corrections de la revue (`wave5/fix`,
-  `architecture.md`, « Corrections de la revue ») : `pdf.page()` limité
-  aux références du document, `null` pris pour `None`, objets sans valeur
+- **Vague 5** (octobre 2026, fusionnée dans `rewrite/rust-core` : base
+  `wave5/base`, chantiers `wave5/api`, `wave5/boundary`, `wave5/perf`,
+  jonction `wave5/join`, revue `wave5/fix` ; détails dans
+  `architecture.md`, « Vague 5 ») : l'API JavaScript publique
+  (`public-api.md` : `PDFPlumberDocument`, `PDFPlumberPage`, `Table`,
+  `PDFStructTree`, `PDFStream` par référence ; chaque membre est un job
+  d'une file FIFO, rangé dans la table « Operations » avec les
+  instructions de `js_pages_run.py` qu'il exécute). Base : contrat,
+  épine de l'API, harnais (sessions `oracle/unit/js_api.py` rejouées par
+  l'API publique dans Node, le build `dist` et les navigateurs ; traces
+  des étapes `plumber_*` par l'API, `oracle.verify --engine js-api`),
+  propriété des fichiers des trois chantiers, référence PERF sur `quick`.
+  BOUNDARY : `debug_tablefinder`, opérations de `PDFStructTree`, flux par
+  référence, préchargement des CMaps, texte des `log.*` de pdfminer vers
+  `onWarning` (diagnostic seulement), historique de rejeu borné. PERF :
+  chemins chauds de `process_object`, du layout et de l'encodage, sans
+  changer une trace. Jonction (`wave5/join`) : les trois chantiers
+  fusionnés (un conflit, `path_segment`, les deux intentions gardées) ; le
+  masque des matchers de structure dans son propre argument ; l'écart
+  d'unités C de la couche page corrigé à ses causes (`isinstance` avec un
+  tuple de classes, `"".join` et `ord` de `decode_text`, escaliers des
+  abonnements `typing`, `re.sub` de `process_object`), vérifié par
+  `plumber_frames`. Revue (`wave5/fix`) : `pdf.page()` limité aux
+  références du document, `null` pris pour `None`, objets sans valeur
   Python refusés, `pdf.pages` en FIFO, erreurs de `re` et de `filter`
   pour les arguments qui ne sont ni motifs ni fonctions, `toDict` et
   itération des éléments de structure ; fuites (flux, pages dérivées dans
   une boucle sans tour d'événements, historique d'une CMap absente),
   adresses au-delà de 2 Gio, worker planté arrêté ; une unité C de
   `re.sub` qui n'existait pas retirée ; fenêtres de profondeur propres à
-  l'API ; licence, avis tiers, déclarations et bundlers. Ce qui suit est
-  la liste d'origine de la vague.
-- **Vague 5 (liste d'origine)** : l'API JS publique
-  (`PDFPlumberDocument`, `PDFPlumberPage`), construite sur les opérations
-  de la frontière que la vague 4 a vérifiées (`js-runtime.md`,
-  « Documents et pages » : `pdf.pages` par `doc_pages`, la recherche en
-  deux appels, `filter` par un masque). Ce qu'il lui faut :
-  - le contrat déjà fixé par les types (`public-api.md`, « Asynchrony ») :
-    `pdf.pages` et `pdf.metadata` sont des promesses (pages paresseuses,
-    comme pdfplumber), les pages dérivées (`crop`, `withinBbox`,
-    `outsideBbox`, `dedupeChars`) aussi ; une `Page` dans un résultat est
-    un `PageRef` (son handle) ; `CreationOrder` par défaut pour les
-    `id()` du layout ;
-  - n'exposer que des noms d'attributs que la frontière sait lire :
-    `doc_attr`/`page_attr` lèvent `NotPorted` hors des noms que
-    `to_dict`/`to_csv` construisent (`width`, `bbox`, `layout`... passent
-    par leurs propres opérations) ;
-  - `element_bbox` de l'arbre de structure dans l'API (la fenêtre
-    `climit-tf-list-tagged-nopg` le couvre déjà par l'étape) ;
-  - le préchargement des CMaps d'un document : un appel nul rejoue tout
-    l'historique du document, une fois par CMap manquante, et cet
-    historique ne raccourcit qu'à la libération du document ;
-  - les flux d'images par référence (aujourd'hui `rawdata`/`data` sont
-    copiés entiers dans chaque résultat : un nouveau format de fil, une
-    classe JS et une durée de vie de handle) ;
-  - les mesures JS (`js/bench/`) sur l'API finale ; le point chaud de la bibliothèque est `page.objects`
-    (`process_object`, la moitié du temps sans trace).
-  Restent ouverts, documentés (`public-api.md`, `architecture.md`) : la
-  copie profonde d'un document lu depuis des octets par `structure_tree`
-  (`copy.deepcopy` de tout le `PDFDocument`, non modélisée : la
-  `RecursionError` peut différer vers 320 niveaux d'éléments à attribut
-  référence), le texte des `log.*` de pdfminer (seuls leurs cadres sont
-  comptés ; les avertissements de pdfplumber atteignent `onWarning`), les
-  noms `inline-<k>` répétés d'une page à l'autre dans `pdf.images` et
-  `pdf.objects`, la clé de contenu des `id()` de `plumber_objects` (deux
-  boîtes identiques), l'ordre des NaN dans `cluster_objects`, les
-  constructeurs des vagues 0 à 2 qui comptent deux unités C par appel de
-  classe contre trois pour `pdfinterp` et le layout (sans effet observable
-  aujourd'hui : à unifier si une étape approche la limite C).
-  Les questions ouvertes sont notées dans les en-têtes des modules, dans
-  `architecture.md` et dans `js-runtime.md` (`search` suit la sémantique
-  `RegExp` de JS, choix documenté ; `atan2` et le fournisseur de CMaps sont
-  réglés).
+  l'API (85 familles sur 95) ; licence, avis tiers, déclarations de types
+  et bundlers (Vite, esbuild).
+  - Vérification à l'intégration (la fusion de `wave5/fix` est sans
+    conflit ; `heavy.sh`, `HEAVY_SLOTS=1`, fournisseur de CMaps,
+    `oracle.verify --timeout 600 -j 3`, caches de l'oracle des étapes
+    inchangés) :
+    - `pdftrace` (release), les 13 étapes sur `all` (1 853 fichiers, 20
+      premières pages) et les cinq corpus adverses (`adv-objects` 333,
+      `adv-pages` 285, `adv-interp` 353, `adv-plumber` 199,
+      `adv-structure` 441) : 75 passes sur 78 identiques, les trois
+      autres sont les écarts connus de la vague 4 (`plumber_objects` sur
+      `all` 1 852/1 853, la ligne `ids` de `pdfjs-issue19624-text.pdf` ;
+      `plumber_text` 336/353 et `plumber_tables` 341/353 sur
+      `adv-interp`, l'ordre des NaN de `cluster_objects`, l'oracle de
+      `096-text-TL.pdf` tué à 5 Go) ;
+    - les quatre étapes `plumber_*` par l'API publique (`--engine
+      js-api`) sur les mêmes six ensembles : exactement les nombres de
+      la jonction et de la revue (`all` : 1 852, 1 853, 1 853, 1 850) ;
+      chacun des 838 résultats non identiques classé : fenêtre de
+      profondeur (`depth-*`, `climit-*`, que les traces des étapes ne
+      peuvent pas suivre par l'API ; parité par les 593 sessions de
+      `depth.jsonl`), fichier qui diffère aussi par `pdftrace` (30), ou
+      `filter()` d'une page dont les objets lèvent (14 : 3 de `all`, 10
+      d'`adv-interp`, 1 d'`adv-plumber`) ; aucun autre ;
+    - `oracle.wasm_parity --set quick`, les 13 étapes : 0 différence sur
+      13 × 150 fichiers (`dist wasm = native`) ;
+    - `scripts/check.sh` vert (41 min) : `cargo test` natif (262 réussis,
+      1 ignoré, 37 harnais) et `wasm32-wasip1` (250 réussis, 11 ignorés,
+      plus les 7 tests à processus propre, réussis), porte de profondeur
+      du Wasm `dist` (= natif sur chaque fenêtre), 802 tests de Node (les
+      57 sessions sur les sources et sur `dist`, les 593 fenêtres de
+      profondeur, `api-lifetime`, `api-runtime`, `wire`, le canon),
+      paquet tel qu'un consommateur le reçoit, budget de taille,
+      `plumber_objects` et `plumber_text` par l'API sur `micro` (17/17),
+      47 auto-tests de l'oracle ;
+    - `scripts/check-browsers.sh` vert : 464 tests réussis, 16 sautés
+      (les recettes de bundlers ne tournent que dans Chromium), en
+      25 min : Chromium, Firefox, WebKit, dans la page et en worker.
+  - Mesures à l'intégration (`quick`, 150 fichiers, 302 pages, ms par
+    page ; ouverture, objets, texte, mots, `find_tables` ; médiane de 3
+    passes, Python 1 passe, `heavy.sh`) : Python 139,8 ; Rust natif
+    15,8 (×8,9) ; API publique dans Node 21,2 (×6,6), dont 3,3 ms de
+    transfert des objets vers JavaScript. Rien d'optimisé à
+    l'intégration : la jonction mesurait 16,0 et 21,3 (Python 134,3 ;
+    Chromium 22,2 dans la page, 25,5 en worker ; référence de la base :
+    natif 24,6, Node 33,5). RSS maximale : natif 318 Mio, Python
+    412 Mio, Node 505 à 554 Mio (mémoire linéaire du Wasm 279 Mo).
+    `dist/pdfplumber.wasm` : 2 576 399 octets (662 ko brotli).
+- **Avant de remplacer `main`** (le port pdf.js ; `main` est un ancêtre
+  de `rewrite/rust-core`, l'avance est rapide) :
+  - décisions du propriétaire : la ligne de copyright de `LICENSE` (MIT,
+    « the pdfplumber-js contributors ») ; le nom et la version du paquet
+    npm (`0.0.0`) et sa publication ; le contrat de `filter()` (ci-dessous) ;
+  - `filter()` d'une page dont les objets ne se calculent pas : l'API
+    rejette avec leur erreur, Python rend la page et lève à la première
+    lecture (14 fichiers ; il faudrait une page filtrée sans objet du
+    cœur, dont chaque membre refait les objets du parent, le prédicat et
+    `page_filter` dans son propre job) ; la fonction de `filter()` est
+    évaluée une fois, à l'appel (différence documentée) ;
+  - écarts connus, documentés (`public-api.md`) : la ligne `ids` de
+    `pdfjs-issue19624-text.pdf` (deux boîtes de même contenu), l'ordre
+    des NaN de `cluster_objects`, l'oracle de `096-text-TL.pdf` au-delà
+    de 5 Go, les noms `inline-<k>` répétés d'une page à l'autre, la copie
+    profonde d'un document lu depuis des octets par `structure_tree`
+    (`RecursionError` vers 320 niveaux d'éléments à attribut
+    référence) ; 10 familles de profondeur sans fenêtre propre à l'API
+    (aucune `RecursionError` par ses instructions jusqu'au plafond) ;
+    une CMap marquée indisponible rend inutilisable un document qui en a
+    besoin après son appel nul (l'autre choix était un historique sans
+    borne) ;
+  - unités C non modélisées (règle `pycompat::specialize`) : l'unité de
+    plus du premier appel non spécialisé d'un builtin, les abonnements
+    `typing` des fonctions imbriquées de `table.py`, `utils/text.py` et
+    `structure.py` (aucune fenêtre ne les atteint), les constructeurs des
+    vagues 0 à 2 à deux unités par appel de classe ;
+  - environnement : `engines` dit Node ≥ 22.12, seul Node 26 est testé ;
+    Firefox (Nightly de Playwright) est environ cinq fois plus lent que
+    Chromium et WebKit, et les temps des navigateurs ne sont mesurés que
+    sur une passe ; pas d'intégration continue hors de cette machine
+    (`check.sh`, `check-browsers.sh` locaux) ;
+  - le README remplace celui de `main` (démarrage rapide, notes de
+    migration depuis `legacy-pdfjs`) ; à relire par le propriétaire avant
+    l'avance de `main`, puis pousser.
+

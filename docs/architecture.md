@@ -3339,6 +3339,77 @@ sont un `Set` ou un tuple : les méthodes qui séparent leurs options).
 `join-hand-mutants.py` : r3 et r4 portent sur l'unité de `.lower()`,
 puisque celle de `_cache2` n'est plus.
 
+### Intégration (branche `rewrite/rust-core`)
+
+`git merge --no-ff wave5/fix` dans `rewrite/rust-core` (à `73b88b9`) :
+sans conflit, `rewrite/rust-core` étant un ancêtre de `wave5/fix` ; aucun
+code changé à l'intégration. Données unitaires toutes à jour
+(`python -m oracle.unit --check`), caches de l'oracle des 13 étapes à
+l'empreinte courante (sources des étapes inchangées par la vague).
+
+**Vérification** (`heavy.sh`, `HEAVY_SLOTS=1`, fournisseur de CMaps,
+`oracle.verify --timeout 600 -j 3`) :
+
+- `pdftrace` (release), 13 étapes × 6 ensembles (`all`, 20 premières
+  pages, et les cinq corpus adverses) : 75 passes sur 78 identiques ; les
+  trois autres sont les écarts connus (`plumber_objects` 1 852/1 853 sur
+  `all` ; `plumber_text` 336/353, dont l'oracle de `096-text-TL.pdf` tué
+  à 5 Go, et `plumber_tables` 341/353 sur `adv-interp`) ;
+- les quatre étapes `plumber_*` par l'API publique, mêmes six ensembles :
+  le tableau de la jonction, nombre pour nombre. Les 838 résultats non
+  identiques, classés par script (un fichier est rangé « `pdftrace` »
+  s'il diffère aussi dans la passe `pdftrace` de la même étape et du même
+  ensemble, sinon « fenêtre » si son nom porte `depth` ou `climit`) : 794
+  fenêtres, 30 qui diffèrent aussi par `pdftrace` (1 de `all`, 17 et 12
+  d'`adv-interp`), 14 de `plumber_doc` qui ne sont ni l'un ni l'autre,
+  tous le `filter()` d'une page dont les objets lèvent (3 de `all`,
+  10 d'`adv-interp`, `083-mc-mcid-deep.pdf` d'`adv-plumber` : la première
+  différence est la ligne `dbox` de la page filtrée, que Python écrit
+  avant de lever) ;
+- `oracle.wasm_parity --set quick --stages` (les 13) : 0 différence
+  sur 13 × 150 fichiers (`dist wasm = native`, 12 min) ;
+- `scripts/check.sh` vert (2 487 s) : rustfmt, clippy, références amont,
+  tables générées, `cargo test` natif (262 réussis, 1 ignoré, 37
+  harnais) et `wasm32-wasip1` (250 réussis, 11 ignorés ; les 7 tests à
+  processus propre réussis), porte de profondeur du Wasm `dist` (= natif
+  : 188 fenêtres d'`adv-interp` × 3 étapes, 79 d'`adv-pages`, 23
+  d'`adv-objects`, `adv-plumber` 94, 94, 72, 68, `adv-structure` 64 × 2),
+  802 tests de Node en 8 fichiers, paquet tel qu'un consommateur le
+  reçoit, budget de taille, `plumber_objects` et `plumber_text` par l'API
+  sur `micro` (17/17), 47 auto-tests de l'oracle ;
+- `scripts/check-browsers.sh` vert : 464 réussis, 16 sautés, 25 min.
+
+**Mesures** (méthode de « Référence PERF » ; `quick`, 302 pages ; build
+`dist` avec `wasm-opt -O3` ; natif et Node 3 passes alternées, Python 1
+passe, dans des créneaux de `heavy.sh` successifs ; ms par page) :
+
+| | ouverture | layout | objects | texte | mots | `find_tables` | total | `extract_tables` |
+|---|---|---|---|---|---|---|---|---|
+| Python 3.12 | 5,02 | 72,98 | 45,29 | 7,31 | 4,48 | 4,69 | 139,8 | 5,20 |
+| Rust natif (médiane) | 0,32 | 4,87 | 5,81 | 1,72 | 1,36 | 1,71 | 15,8 | 1,12 |
+| API publique, Node 26 (médiane) | 1,20 | — | 15,10 | 1,83 | 1,64 | 1,46 | 21,2 | 1,27 |
+
+Passes : natif 15,79, 15,77, 16,04 ; Node 21,22, 21,02, 22,19 (la
+seconde lecture de `page.objects`, la frontière seule : 3,06 à 3,28).
+×8,9 et ×6,6 sur Python, qui mesure ici 139,8 contre 134,3 à la
+jonction (une passe : l'écart est celui de la machine) ; natif et Node
+dans l'écart d'une passe à l'autre de la jonction (16,0 et 21,3) et de
+la revue (21,1). RSS maximale : natif 318 Mio, Python 412 Mio, Node 505 à
+554 Mio ; mémoire linéaire finale 279 117 824 octets.
+`dist/pdfplumber.wasm` : 2 576 399 octets, 661 630 brotli (la jonction :
+2 571 923 ; la revue a ajouté des opérations).
+
+**Piège rencontré** : le `node_modules` du dépôt principal datait d'avant
+la vague (sans `binaryen`) ; `scripts/build-wasm.mjs` saute alors
+`wasm-opt` sans le dire et le module fait 3,2 Mo. `npm ci --offline`
+avant toute mesure de taille ou de temps (le lockfile n'a pas changé ;
+`check.sh` construit de toute façon sans `wasm-opt`).
+
+**Caches** : 38 répertoires d'empreinte périmés de `.cache/unit`
+supprimés (`js_api` 16, `js_runtime` 14, `plumber_frames` 8, ceux des
+branches de la vague, 2,4 Go) ; ceux de `.cache/oracle` sont tous à
+l'empreinte courante.
+
 ## Sémantique Python centralisée (`crates/pycompat`)
 
 Tout ce qui imite Python vit ici, une seule fois, testé contre CPython :

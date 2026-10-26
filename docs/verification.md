@@ -415,6 +415,16 @@ Mode d'emploi détaillé : [`oracle/README.md`](../oracle/README.md).
   objet qu'un appel précédent n'a pas fait : aucun côté ne le fait) :
   `calls_made`, `calls_made_by_member`, avec au moins 3 appels faits par
   membre (sinon le générateur échoue).
+  À l'intégration d'une vague, les quatre étapes passent par l'API sur
+  `all` et les cinq corpus adverses, et chaque fichier non identique est
+  classé : fenêtre de profondeur (`depth-*`, `climit-*`, couverte par
+  `depth.jsonl`), fichier qui diffère aussi par `pdftrace`, ou écart
+  documenté de l'API (`filter()` d'une page dont les objets lèvent :
+  `port-strategy.md`, « Avant de remplacer `main` ») ; toute autre
+  différence est un défaut. Intégration de la vague 5 : 838 résultats
+  non identiques sur 24 passes, 794 fenêtres, 30 qui diffèrent aussi par
+  `pdftrace`, 14 `filter()`, aucun autre (`architecture.md`,
+  « Intégration »).
 
 ### Mesurer une profondeur de cadres
 
@@ -733,6 +743,6 @@ l'environnement : sans lui, les deux binaires s'accorderaient sur une trace
 des `id()` de Python ; fichiers dont l'oracle n'est pas `ok` écartés comme
 dans `verify`). Un fichier par processus, la sortie Wasm redirigée vers un
 fichier (le WASI de Node écrit un tube sans bloquer et une longue trace y
-échoue par `EAGAIN`). Vague 3 (finalisation) : `interp`, `fonts`, `layout`, 150 fichiers chacune, identiques.
+échoue par `EAGAIN`). Vague 3 (finalisation) : `interp`, `fonts`, `layout`, 150 fichiers chacune, identiques. Vague 4 (intégration) et vague 5 (intégration) : les 13 étapes (`--stages` les nomme toutes ; le défaut reste `interp,fonts,layout`), 150 fichiers chacune, identiques.
 `oracle.verify` ne mène pas le binaire Wasm lui-même : `--out` nomme ses
 fichiers temporaires par le numéro de processus, que WASI n'a pas.
