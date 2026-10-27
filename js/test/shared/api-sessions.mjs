@@ -270,9 +270,19 @@ function inputOf(bytes, as) {
   throw new Error(`unknown input form ${as}`);
 }
 
-/** Replays one session (a line of sessions.jsonl); returns the number of
- * calls checked. `only`: the runtime's sessions (node_only ones are
- * skipped where open(path) does not exist). */
+/** Whether an expected value is Python's `Unresolved{}`: a call neither
+ * side makes (oracle/unit/js_api.py `UNRESOLVED`). */
+function isUnresolved(j) {
+  return j !== null && typeof j === "object" && j.named === "Unresolved";
+}
+
+/** Replays one session (a line of sessions.jsonl or depth.jsonl):
+ * `{ checked, made }`, the calls compared and those the API made (not
+ * `Unresolved`). Throws at the first difference, and when the session's
+ * expectations were not all compared or Python made no call: every call
+ * Python makes is then one JavaScript makes and compares (an `Unresolved`
+ * on one side only is a difference). `only`: the runtime's sessions
+ * (node_only ones are skipped where open(path) does not exist). */
 export async function replayApiSession(lib, line, env) {
   const [session] = line.in;
   const want = new Map(line.out.map((e) => [e.id, e.value]));
@@ -294,6 +304,7 @@ export async function replayApiSession(lib, line, env) {
   };
   const warnings = [];
   let checked = 0;
+  let made = 0;
   for (const step of session.steps) {
     // the inputs of open() are read first: the calls of a step are made
     // without waiting, in order
@@ -349,8 +360,13 @@ export async function replayApiSession(lib, line, env) {
       const d = difference(anyMessage(actual, expectedValue), expectedValue);
       if (d) throw new Error(`${where}: ${d}`);
       checked++;
+      if (actual !== UNRESOLVED) made++;
     }
   }
   lib.dropCore();
-  return checked;
+  const pythonMade = line.out.filter((e) => !isUnresolved(e.value)).length;
+  if (checked !== line.out.length) throw new Error(`${session.name}: ${checked} calls compared, ${line.out.length} expected`);
+  if (made !== pythonMade) throw new Error(`${session.name}: the API made ${made} calls, Python ${pythonMade}`);
+  if (made === 0) throw new Error(`${session.name}: no call made`);
+  return { checked, made };
 }

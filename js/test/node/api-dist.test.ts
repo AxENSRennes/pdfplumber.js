@@ -4,7 +4,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { describe, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { PDFPLUMBER_ROOT, ROOT, oracleLines } from "../oracle-data.mjs";
 import { replayApiSession } from "../shared/api-sessions.mjs";
@@ -23,7 +23,10 @@ describe("public API sessions on the dist build", async () => {
   for (const line of lines) {
     it(line.in[0].name, async () => {
       api.configure({});
-      await replayApiSession(lib, line, env);
+      const r = await replayApiSession(lib, line, env);
+      // every expectation compared, and the calls Python made made
+      expect(r.checked).toBe(line.out.length);
+      expect(r.made).toBeGreaterThan(0);
     }, 300_000);
   }
 });

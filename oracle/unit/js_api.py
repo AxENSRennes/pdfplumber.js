@@ -21,8 +21,12 @@ Writes ``<cache>/unit/js_api/<fingerprint>/sessions.jsonl``
 
 and, in the same form, ``depth.jsonl``: a session for each depth window
 (``depth-*``, ``climit-*``) of the adversarial sets ``DEPTH_SETS``, where
-Python's ``RecursionError`` happens through the API's statements (replayed
-in Node by ``js/test/node/api-depth.test.ts``).
+Python's ``RecursionError`` happens through the API's statements, opened
+by path (replayed in Node by ``js/test/node/api-depth.test.ts``), and
+``depth-bytes.jsonl``: the same windows opened from their bytes, without
+the members that copy the document by ``dataclasses.asdict``
+(``depth_session``), replayed in Node and in Chromium, Firefox and WebKit,
+in the page and in worker mode (``js/test/browser/api.spec.ts``).
 
     session     = {"name": str, "node_only": bool, "steps": [step, ...]}
     step        = {"calls": [call, ...], "await": [k, ...]}
@@ -1579,20 +1583,27 @@ def adversarial_session(name: str, data: bytes) -> Session:
 DEPTH_SETS = ["adv-plumber", "adv-structure", "adv-interp", "adv-objects", "adv-pages"]
 
 
-def depth_session(aset: str, path: Path) -> Session:
+def depth_session(aset: str, path: Path, by_bytes: bool = False) -> Session:
     """A depth window of an adversarial set: the members of
     ``adversarial_session``, the metadata, and the structure tree (the
     document's tree, an element's ``repr``, ``allMcids``,
-    ``elementBbox``)."""
-    # opened by path, as the stages open them: from bytes, the deep copy of
-    # `structure_tree` (dataclasses.asdict) copies the whole document
-    # through an attribute that is a reference, which the core does not
-    # model (docs/public-api.md, "Not Ported"); from a file, Python raises
-    # the TypeError the core raises
-    s = Session(f"depth-{aset}-{path.stem}", node_only=True)
+    ``elementBbox``).
+
+    ``by_bytes``: the same window opened from its bytes, for every runtime
+    (the browsers, in the page and in worker mode, whose engines put the
+    Wasm frames on stacks of their own): ``depth-bytes-<set>-<file>``,
+    without the members that copy the document by ``dataclasses.asdict``
+    (``structure_tree`` of the page and of the document, an element's
+    ``toDict``), whose deep copy, from bytes, walks the whole document
+    through an attribute that is a reference, which the core does not model
+    (docs/public-api.md, "Not Ported")."""
+    # opened by path, as the stages open them: from a file, Python raises
+    # the TypeError the core raises where asdict meets the document
+    s = Session(f"depth-bytes-{aset}-{path.stem}" if by_bytes else f"depth-{aset}-{path.stem}", node_only=not by_bytes)
     root = corpus_root()
     try:
-        doc = s.open(str(path.relative_to(root)), by_path=True)
+        rel = str(path.relative_to(root))
+        doc = s.open(rel) if by_bytes else s.open(rel, by_path=True)
     except ValueError:
         doc = s.open(data=path.read_bytes())
     s.doc_get(doc, "metadata")
@@ -1606,15 +1617,17 @@ def depth_session(aset: str, path: Path) -> Session:
     s.page_get(page, "annots")
     s.derive(page, "crop", [0, 0, 100, 100], {"strict": False})
     s.serialize(page, "toDict")
-    s.page_get(page, "structure_tree")
-    s.doc_get(doc, "structure_tree")
+    if not by_bytes:
+        s.page_get(page, "structure_tree")
+        s.doc_get(doc, "structure_tree")
     tree = s.struct_tree(doc)
     if tree is not None:
         s.struct_find(tree, "findAll", ("tag", "P"))
         el = s.element(tree, 0)
         s.element_call(el, "repr")
         s.element_call(el, "allMcids")
-        s.element_call(el, "toDict")
+        if not by_bytes:
+            s.element_call(el, "toDict")
         s.element_bbox(tree, el)
     return s
 
@@ -1770,15 +1783,15 @@ class ApiDepth:
         return hi
 
 
-def depth_sessions(summary: dict[str, Any] | None = None) -> list[Session]:
-    """The sessions of the depth windows of ``DEPTH_SETS``: each window of
-    the stages (the sets' files), then, for each family, the API's own
-    window: the first failing nesting of the statements the API runs and
-    one level on each side (``ApiDepth``; a nesting the stage windows have
-    is not repeated). ``summary`` receives each family's first failing
-    nesting (``None``: no ``RecursionError`` up to the cap, or one at every
-    nesting down to 1)."""
-    out = []
+def depth_windows(summary: dict[str, Any] | None = None) -> list[tuple[str, Path]]:
+    """The depth windows of ``DEPTH_SETS`` (set, PDF): each window of the
+    stages (the sets' files), then, for each family, the API's own window:
+    the first failing nesting of the statements the API runs and one level
+    on each side (``ApiDepth``, on the sessions opened by path; a nesting
+    the stage windows have is not repeated). ``summary`` receives each
+    family's first failing nesting (``None``: no ``RecursionError`` up to
+    the cap, or one at every nesting down to 1)."""
+    out: list[tuple[str, Path]] = []
     families = depth_families()
     api = ApiDepth()
     for aset in DEPTH_SETS:
@@ -1786,7 +1799,7 @@ def depth_sessions(summary: dict[str, Any] | None = None) -> list[Session]:
         if not d.is_dir():
             raise SystemExit(f"js_api: {d} is missing: generate {aset} first (python -m oracle.unit)")
         files = [p for p in sorted(d.glob("*.pdf")) if re.search(r"(^|-)(depth|climit)-", p.stem)]
-        out += [depth_session(aset, p) for p in files]
+        out += [(aset, p) for p in files]
         windows: dict[str, list[int]] = {}
         for p in files:
             m = re.fullmatch(r"\d+-((?:depth|climit)-.+)-(\d+)", p.stem)
@@ -1810,7 +1823,7 @@ def depth_sessions(summary: dict[str, Any] | None = None) -> list[Session]:
             assert not api.fails(aset, family, make, first - 1) and api.fails(aset, family, make, first), (aset, family)
             for n in (first - 1, first, first + 1):
                 if n not in ns:
-                    out.append(depth_session(aset, api.path(aset, family, n, make(n))))
+                    out.append((aset, api.path(aset, family, n, make(n))))
     return out
 
 
@@ -2293,26 +2306,35 @@ def main() -> None:
     if few:
         raise SystemExit(f"js_api: members with fewer than {MIN_MADE} calls made: {few}")
     tmp.replace(path)
-    # the depth windows of the adversarial sets (Node only: js/test/node/api-depth.test.ts)
-    depth = unit_dir(MODULE) / "depth.jsonl"
-    tmp = depth.with_name(f".{depth.name}.tmp")
+    # the depth windows of the adversarial sets: opened by path (Node:
+    # js/test/node/api-depth.test.ts), and from their bytes (every runtime:
+    # api-depth.test.ts, and js/test/browser/api.spec.ts in Chromium,
+    # Firefox and WebKit, in the page and in worker mode)
     depth_tally = Tally()
+    bytes_tally = Tally()
     firsts: dict[str, Any] = {}
 
     def write_depth() -> None:
-        with open(tmp, "w", encoding="ascii") as f:
-            for s in depth_sessions(firsts):
-                out = s.run()
-                f.write(dumps_deep({"in": [out["session"]], "out": out["expect"]}) + "\n")
-                depth_tally.add(out)
+        windows = depth_windows(firsts)
+        for name, by_bytes, t in (("depth", False, depth_tally), ("depth-bytes", True, bytes_tally)):
+            final = unit_dir(MODULE) / f"{name}.jsonl"
+            part = final.with_name(f".{final.name}.tmp")
+            with open(part, "w", encoding="ascii") as f:
+                for aset, p in windows:
+                    out = depth_session(aset, p, by_bytes).run()
+                    f.write(dumps_deep({"in": [out["session"]], "out": out["expect"]}) + "\n")
+                    t.add(out)
+            part.replace(final)
 
     with_room(write_depth)
-    tmp.replace(depth)
     write_meta(MODULE, cases={"sessions": tally.sessions, "calls": tally.calls, "calls_made": tally.made,
                               "calls_made_by_member": tally.by_member, "depth_sessions": depth_tally.sessions,
                               "depth_calls": depth_tally.calls, "depth_calls_made": depth_tally.made,
+                              "depth_bytes_sessions": bytes_tally.sessions, "depth_bytes_calls": bytes_tally.calls,
+                              "depth_bytes_calls_made": bytes_tally.made,
                               "depth_api_first_failing": firsts})
-    print(f"{MODULE}: {tally.summary()}; depth windows: {depth_tally.summary()}")
+    print(f"{MODULE}: {tally.summary()}; depth windows: {depth_tally.summary()}; "
+          f"from their bytes: {bytes_tally.summary()}")
     print(f"{MODULE}: calls made by member: " + ", ".join(f"{m} {n}" for m, n in sorted(tally.by_member.items())))
     print(f"{MODULE}: the API's first failing nesting of each depth family: "
           + ", ".join(f"{k} {v}" for k, v in sorted(firsts.items())))

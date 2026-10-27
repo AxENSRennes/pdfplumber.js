@@ -47,23 +47,40 @@
     }
   };
   // the sessions of the public API (oracle/unit/js_api.py): api.spec.ts
-  // calls window.runApiSession(name, { worker }) for each one
-  let apiLines;
-  window.runApiSession = async (name, { worker = false } = {}) => {
-    apiLines ??= (await (await fetch("/oracle-api/sessions.jsonl")).text())
-      .split("\n")
-      .filter(Boolean)
-      .map((l) => JSON.parse(l));
-    const line = apiLines.find((l) => l.in[0].name === name);
-    lib.configure(worker ? { worker: true } : {});
-    try {
-      const checked = await replayApiSession(lib, line, ctx);
-      return { ok: true, checked };
-    } catch (e) {
-      return { ok: false, error: `${e && e.name}: ${e && e.message}\n${e && e.stack}` };
-    } finally {
-      lib.configure({});
+  // calls window.runApiSessions(file, names, { worker }) for sessions.jsonl
+  // (one session a test) and depth-bytes.jsonl (the depth windows opened
+  // from their bytes, a batch a test)
+  const apiLines = new Map();
+  window.runApiSessions = async (file, names, { worker = false } = {}) => {
+    if (!apiLines.has(file)) {
+      const r = await fetch(`/oracle-api/${file}.jsonl`);
+      if (!r.ok) return [{ name: file, ok: false, error: `${file}.jsonl: HTTP ${r.status}` }];
+      const byName = new Map();
+      for (const l of (await r.text()).split("\n")) {
+        if (!l) continue;
+        const line = JSON.parse(l);
+        byName.set(line.in[0].name, line);
+      }
+      apiLines.set(file, byName);
     }
+    const out = [];
+    for (const name of names) {
+      const line = apiLines.get(file).get(name);
+      if (!line) {
+        out.push({ name, ok: false, error: `no session ${name} in ${file}.jsonl` });
+        continue;
+      }
+      lib.configure(worker ? { worker: true } : {});
+      try {
+        const { checked, made } = await replayApiSession(lib, line, ctx);
+        out.push({ name, ok: true, checked, made, expected: line.out.length });
+      } catch (e) {
+        out.push({ name, ok: false, error: `${e && e.name}: ${e && e.message}\n${e && e.stack}` });
+      } finally {
+        lib.configure({});
+      }
+    }
+    return out;
   };
   window.ready = true;
 </script>

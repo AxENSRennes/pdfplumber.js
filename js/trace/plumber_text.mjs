@@ -1,8 +1,12 @@
 // Stage plumber_text through the public API: the traversal and the lines
 // of oracle/stages/plumber_text.py. Search: the matches of Python's `re`
-// (`ORACLE_INPUT`: the oracle's `spans` lines, in order) are given to
-// `search()` through its `ORACLE` hook in place of the JavaScript
-// `RegExp`'s, and each `spans` line is copied.
+// (`ORACLE_INPUT`: the oracle's `spans` lines, by page number and op
+// index, as the Rust stage reads them: crates/pdftrace/src/stages/
+// plumber_text.rs `oracle_spans`) are given to `search()` through its
+// `ORACLE` hook in place of the JavaScript `RegExp`'s, and each `spans`
+// line is copied; an op the oracle has no `spans` line for (its trace
+// stopped earlier: a depth window, whose RecursionError the API meets
+// elsewhere) gets `None`, as in Rust.
 import {
   bounded,
   canon,
@@ -18,19 +22,29 @@ import {
   typed,
 } from "./common.mjs";
 
-/** The `spans` lines of an oracle trace, in order: their text, and the
- * spans as values (`None` when Python's text map raised). */
+/** The `spans <i> <spans>` lines of an oracle trace: `"<page number>
+ * <i>"` -> their text, and the spans as values (`None` when Python's text
+ * map raised). */
 export function oracleSpans(trace) {
-  const out = [];
+  const out = new Map();
+  let page = "";
   for (const line of trace.split("\n")) {
-    const m = /^spans \d+ (.*)$/.exec(line);
+    if (line.startsWith("page ")) {
+      page = line.slice(5);
+      continue;
+    }
+    const m = /^spans (\S+) (.*)$/.exec(line);
     if (!m) continue;
     // canon of a list of lists of tuples of ints or None
-    const json = m[1].replace(/\(/g, "[").replace(/\)/g, "]").replace(/None/g, "null");
-    out.push({ text: m[1], spans: JSON.parse(json) });
+    const json = m[2].replace(/\(/g, "[").replace(/\)/g, "]").replace(/None/g, "null");
+    out.set(`${page} ${m[1]}`, { text: m[2], spans: JSON.parse(json) });
   }
   return out;
 }
+
+/** The spans of an op the oracle has none for: `None`
+ * (crates/pdftrace/src/stages/plumber_text.rs `ops_lines`). */
+const NO_SPANS = { text: "None", spans: null };
 
 const METHODS = {
   extract_text: "extractText",
@@ -57,14 +71,13 @@ async function runOp(page, op, spans) {
   return typed(page.pdf);
 }
 
-async function opsLines(lines, page, ops, counter, oracle) {
+async function opsLines(lines, page, pageNumber, ops, counter, oracle) {
   for (const op of ops) {
     const i = counter.i++;
     lines.push(`op ${i} ` + canon(op));
     let spans;
     if (op[0] === "search") {
-      const s = oracle.shift();
-      if (!s) throw new Error("the oracle's trace has no spans line left");
+      const s = oracle.get(`${pageNumber} ${i}`) ?? NO_SPANS;
       lines.push(`spans ${i} ${s.text}`);
       spans = s.spans;
     }
@@ -99,7 +112,8 @@ export async function run(lines, file) {
     }
     for (let index = 0; index < pages.length; index++) {
       const page = pages[index];
-      lines.push(`page ${geometry(page).get("page_number")}`);
+      const pageNumber = geometry(page).get("page_number");
+      lines.push(`page ${pageNumber}`);
       try {
         await page.chars;
       } catch (e) {
@@ -108,7 +122,7 @@ export async function run(lines, file) {
       }
       const counter = { i: 0 };
       const ops = [...t.TEXT_BASE_OPS, ...select(file.sha, index, t.TEXT_VARIANT_OPS, t.TEXT_VARIANTS_PER_PAGE)];
-      await opsLines(lines, page, ops, counter, oracle);
+      await opsLines(lines, page, pageNumber, ops, counter, oracle);
       for (const steps of select(file.sha, index, t.TEXT_DERIVED, t.TEXT_DERIVED_PER_PAGE)) {
         lines.push("derived " + canon(steps));
         let derived;
@@ -118,7 +132,7 @@ export async function run(lines, file) {
           lines.push("derive " + exc(e));
           continue;
         }
-        await opsLines(lines, derived, t.TEXT_DERIVED_OPS, counter, oracle);
+        await opsLines(lines, derived, pageNumber, t.TEXT_DERIVED_OPS, counter, oracle);
       }
     }
   } finally {

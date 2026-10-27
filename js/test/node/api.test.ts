@@ -5,7 +5,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { describe, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import * as api from "../../src/index.js";
 import * as internal from "../../src/internal.js";
@@ -24,7 +24,10 @@ describe("public API sessions (oracle/unit/js_api.py)", () => {
   for (const line of lines) {
     it(line.in[0].name, async () => {
       api.configure({});
-      await replayApiSession(lib, line, env);
+      const r = await replayApiSession(lib, line, env);
+      // every expectation compared, and the calls Python made made
+      expect(r.checked).toBe(line.out.length);
+      expect(r.made).toBeGreaterThan(0);
     }, 300_000);
   }
 });
