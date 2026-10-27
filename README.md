@@ -326,7 +326,7 @@ the same bytes.
 [documented differences](docs/public-api.md#differences-from-python). Each
 stage of the pipeline (parsing, fonts, layout, objects, text, tables) is
 compared with Python's on 1,853 real PDFs and on generated edge cases; see
-[`docs/verification.md`](docs/verification.md).
+[`docs/verification.md`](https://github.com/AxENSRennes/pdfplumber.js/blob/HEAD/docs/verification.md).
 
 **Can it read scanned PDFs?** No: like pdfplumber, it reads the text a PDF
 contains and does no OCR.
@@ -358,7 +358,7 @@ with:
 ## Contributing
 
 The engine is ported module by module from pdfminer.six and pdfplumber, and
-every change is checked against Python. [`CONTRIBUTING.md`](CONTRIBUTING.md)
+every change is checked against Python. [`CONTRIBUTING.md`](https://github.com/AxENSRennes/pdfplumber.js/blob/HEAD/CONTRIBUTING.md)
 explains how to build, test and investigate a difference.
 
 ## License
