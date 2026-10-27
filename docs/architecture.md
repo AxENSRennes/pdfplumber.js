@@ -3489,9 +3489,13 @@ fenêtres dont la seule différence est l'écart de `filter()`), 777
 | `adv-structure` (441) | 441 | 441 | 441 | 405 / 0 / 0 / 36 |
 
 Durées : `all` 704, 522, 538 et 1 510 s ; chaque ensemble adverse moins
-d'une minute par étape. Node : 57 sessions et 1 186 sessions de
-profondeur (`api.test.ts`, `api-depth.test.ts`) vertes ; Chromium, essai
-des seules fenêtres : 54 lots verts (2,3 min).
+d'une minute par étape. `scripts/check.sh` vert (2 278 s) : 1 395 tests
+de Node en 8 fichiers (les 802 de l'intégration et les 593 fenêtres
+depuis leurs octets), `api_parity` des quatre étapes sur `micro` (17/17
+chacune) et `adv-plumber` (aucun défaut), 61 auto-tests de l'oracle.
+`scripts/check-browsers.sh` vert : 626 réussis, 16 sautés (37 min ; les
+464 de l'intégration et 27 lots de fenêtres × 3 navigateurs × page et
+worker).
 
 ## Sémantique Python centralisée (`crates/pycompat`)
 
