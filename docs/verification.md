@@ -270,64 +270,48 @@ checked by every stage.
 
 ### Traces
 
-- `python -m oracle.trace --stage S [--password P] [--max-pages N] FILE.pdf`
-  prints the Python trace; `pdftrace --stage S ...` the Rust one, with the
-  same defaults. `pdftrace ... --out DIR F1.pdf F2.pdf...` writes
-  `DIR/<sha256>.txt` per file and appends `<sha256>\t<seconds>` to
-  `DIR/_times.tsv`; exit status 2 means "stage not implemented";
-  `pdftrace --list-stages` lists the stages. Both accept `--option=value`;
-  a password is always passed as `--password=P` (it may start with `-`).
-- `pdftrace --oracle-dir DIR`: for a stage whose Python module declares
-  `ORACLE_INPUT` (`layout` and `plumber_objects`: the `id()` ranks;
-  `plumber_text`: the `re` spans), the oracle's trace of each file, which
-  Rust reads (`StageInput::oracle`); other stages refuse it. Without it,
-  `layout` analyzes with `CreationOrder`.
-- `pdftrace --cmap-dir DIR` (default `$PDFPLUMBER_CMAP_DIR`): the provider
-  of the predefined CMaps (`<cache>/cmap/<fingerprint>/`, written by
-  `oracle/codegen/cmaps.py`). Every stage that interprets pages needs it;
-  without it a font with a predefined CMap gives `RuntimeError("no CMap
-  provider installed ...")`.
+`python -m oracle.trace --stage S [--password P] [--max-pages N] FILE.pdf`
+prints the Python trace, `pdftrace --stage S ...` the Rust one (with `--out
+DIR F1.pdf F2.pdf...`, one `DIR/<sha256>.txt` per file and its time in
+`DIR/_times.tsv`). `pdftrace --oracle-dir DIR` hands the Rust side the
+oracle's trace of each file, for the stages whose Python module declares
+`ORACLE_INPUT` (`layout` and `plumber_objects`: the `id()` ranks;
+`plumber_text`: the `re` spans); without it, `layout` analyzes with
+`CreationOrder`. `pdftrace --cmap-dir DIR` (default `$PDFPLUMBER_CMAP_DIR`)
+installs the provider of the predefined CMaps (`<cache>/cmap/<fingerprint>/`,
+written by `oracle/codegen/cmaps.py`), which every stage that interprets
+pages needs.
 
 ### Comparing With Python
 
-`python -m oracle.verify --stage S --set NAME [-j N] [--max-pages N]
-[--pdftrace PATH] [--cmap-dir DIR] [--limit K] [--files ...] [--json]
-[--engine js-api]` builds the missing oracle traces (`-j` processes, 3 by
-default), runs `pdftrace` in batches of files that share a password, always
-with the CMap provider (`--cmap-dir`, by default the directory of
-`oracle/codegen/cmaps.py` under the cache; a directory without `names.txt`
-stops `verify` with status 2) and with `--oracle-dir` for the stages that
-take it, compares byte for byte, and prints the counts (identical,
-different, Rust crashes, Rust timeouts, oracle timeouts, oracle errors) and,
-for each differing file, the first differing line with three lines of
-context on each side.
-
-`--timeout` (120 s by default) applies per file on both sides: a batch is
-killed when no file completes for that long, and a file whose time
-(`_times.tsv`) exceeds it is a Rust timeout even if its trace is right. A
-failing batch keeps the traces it completed and runs each remaining file
-alone, so that a crash is attributed to the right PDF. `--oracle-only` only
-fills the cache (`--retry-timeouts` rebuilds the timeouts). Exit status: 0
-only if at least one file was compared and all are identical; 1 on any
-difference, crash, timeout (unless `--allow-timeouts`, which lists them),
-oracle error, or when nothing was compared; 2 when `pdftrace` is missing or
-does not implement the stage (asked before the oracle cache is built), or
-when the set cannot be listed (unknown name, `adv-<name>` never generated).
+`python -m oracle.verify --stage S --set NAME` (or `--files ...`) builds the
+missing oracle traces (`-j` processes), runs `pdftrace` in batches of files
+that share a password, always with the CMap provider and, for the stages
+that take it, `--oracle-dir`, compares byte for byte, and prints the counts
+(identical, different, Rust crashes and timeouts, oracle timeouts and
+errors) and, for each differing file, the first differing line with its
+context. `--timeout` (120 s by default) applies per file on both sides; a
+failing batch runs its remaining files alone, so that a crash is attributed
+to the right PDF; `--oracle-only` only fills the cache. It exits 0 only when
+at least one file was compared and all are identical; an oracle timeout is
+never a success (`--allow-timeouts` lists them). `--engine js-api` writes the
+Rust side through the public API
+([Parity Through The JavaScript API](#parity-through-the-javascript-api)).
+Options, exit statuses and report format: [`oracle/README.md`](../oracle/README.md).
 
 ### Oracle Cache
 
-`<cache>/oracle/<stage>/<fingerprint>/<sha256>.txt` (`.pw-<12 hex>.txt` with
-a password; `<cache>` is `PDFPLUMBER_CACHE` or `$PDFPLUMBER_ROOT/.cache`).
-The fingerprint hashes the stage module and those of its `DEPENDS`,
-`stages/__init__.py`, `stages/_common.py`, `canon.py`, `typed_json.py`,
-`trace.py`, `environment.py`, the oracle environment (interpreter, every
-installed package version, the installed pdfminer and pdfplumber files,
-zlib, the C library and the CPU flags that select its `pow`) and, for paged
-stages, `--max-pages`: any change rebuilds the cache. Writes are atomic.
-Each trace is computed in its own process; a file that does not finish
-within the timeout gets the trace `!Timeout <limit>`, never counted as a
-success, and rebuilt when a later run allows more time. Building every
-stage on `all` takes hours of CPU; use `--timeout 600` for it.
+`<cache>/oracle/<stage>/<fingerprint>/<sha256>.txt` (`<cache>` is
+`PDFPLUMBER_CACHE` or `$PDFPLUMBER_ROOT/.cache`). The fingerprint hashes the
+stage module and those of its `DEPENDS`, `stages/__init__.py`,
+`stages/_common.py`, `canon.py`, `typed_json.py`, `trace.py`,
+`environment.py`, the oracle environment (interpreter, installed packages
+and files, zlib, the C library and the CPU flags that select its `pow`) and
+`--max-pages`: any change rebuilds the cache, even a comment. Each trace is
+built in its own process; a file that does not finish in time is cached as
+`!Timeout <limit>` and rebuilt when a later run allows more. Building the 13
+stages on `all` and the adversarial sets takes hours of CPU (`--oracle-only
+--timeout 600 -j 3` through `scripts/heavy.sh`).
 
 ### Wasm Parity
 
@@ -436,26 +420,18 @@ The same replays run compiled to `wasm32-wasip1` under Node's WASI
 libm, a browser's arithmetic. Tests that leave state in the process (the
 void-call tests of `js_runtime_unit`) run there one per process.
 
-| Generator | Checks | Replay |
-|---|---|---|
-| `canon` | `canon` and typed JSON, values nested 2·10^5 to 10^6 levels | `canon_unit` |
-| `pycompat` | CPython semantics: `PyStr`, Unicode normalization, `repr`, `pow`, `atan2`, numeric `hash()`, recursion limits | `pycompat_unit` |
-| `exceptions` | pdfminer's and pdfplumber's exception classes | `exceptions_unit` |
-| `pdftypes` | the object model, references, streams, decryption, nesting at the recursion limits, `literal_name` as the first `str(x)` of its site | `pdftypes_unit` |
-| `psparser_base`, `psparser` | `PSStackParser` on a file; `PDFContentParser` on every content stream of `all` and on 4,000 adversarial jobs, each replayed from the depth pdfminer ran it at | `psparser_base_unit`, `psparser_unit` |
-| `utils` | pdfminer's `utils`, `casting`, `data_structures`, `pdfcolor`; pdfplumber's `ctm` | `utils_unit` |
-| `layout` | `LT*` objects and the analysis under several `LAParams`, real and adversarial raw pages, Python's `id()` order | `layout_unit` |
-| `converter` | the device calls of the interpreter replayed on `PDFPageAggregatorWithMarkedContent` without the interpreter (generated, depth boundaries; with `--corpus`, the first 20 pages of `all`) | `converter_unit` |
-| `zlib`, `filters`, `ccitt`, `ccitt_corpus` | CPython's `zlib` on zlib 1.3; every filter, predictor and `PDFStream.get_data`, on generated chains and every stream of `all`; the CCITT decoder, and every `ccittfaxdecode` call pdfminer makes on `all` | `zlib_unit`, `filters_unit`, `ccitt_unit` |
-| `crypto` | RC4, `unpad_aes`, `saslprep` (NFKC of Unicode 3.2.0), every standard security handler | `crypto_unit` |
-| `cmaps`, `fonts` | the font tables, `encodingdb`, `cmapdb`, every predefined CMap, `CMapParser`; fonts from generated dictionaries and from `all`, with their depth boundaries | `cmaps_unit`, `fonts_unit` |
-| `text_tables`, `text_tables_real` | pdfplumber's object model, clustering, geometry, `utils/text.py`, `table.py`, CPython's `list.sort`, NaN pages, user arguments of any type; the same operations on real pages | `text_tables_unit` |
-| `document` | the `objects`, `streams`, `pages`, `psparser` traces on `adv-objects`, `adv-pages`, `micro` and small `quick` files, each in a forked process; `bytes % int` | `document_unit` |
-| `interp`, `interp_deep` | the `interp_text`, `fonts_text`, `interp`, `fonts`, `layout` traces on `adv-interp`, `micro` and small `quick` files; each page interpreted from every depth near its deepest frame | `interp_unit` |
-| `plumber`, `plumber_sweep`, `plumber_frames` | the four `plumber_*` traces on `adv-plumber`, `micro` and small `quick` files; `pdfplumber.open` arguments of any type; each page-layer operation run from every depth through the limit; the deepest depth of `process_object`, `decode_text`, `resolve_all` along both counters | `plumber_unit`, `plumber_sweep`, `plumber_frames` |
-| `structure` | the `plumber_doc` traces on `adv-structure` and on the `quick` files with structure trees, metadata or annotations; codecs | `structure_unit` |
-| `js_runtime` | what crosses the WebAssembly boundary: exception MROs, lazy CMaps and void calls, diagnostics, sessions of boundary operations (`pages.jsonl`) with their depth windows | `crates/wasm/tests/js_runtime_unit.rs`, `js/test/shared/tests.mjs` |
-| `js_api` | the sessions of the public API and its depth windows | `js/test/shared/api-sessions.mjs` |
+The generators cover `canon` and typed JSON, CPython's semantics
+(`pycompat`), the exception classes, the object model, both parsers, the
+utilities, the layout analysis, the converter replayed without the
+interpreter, zlib, the filters and CCITT, the crypto, CMaps and fonts,
+pdfplumber's text and tables, the document layer, the interpreter, the page
+layer (with its depth sweeps and the C units of `process_object`), the
+structure trees, the WebAssembly boundary (`js_runtime`, replayed by
+`crates/wasm/tests/js_runtime_unit.rs` and `js/test/shared/tests.mjs`) and
+the public API (`js_api`). Several replay the whole `all` set (every content
+stream, stream, font, embedded CMap, CCITT call, the device calls of every
+page). Each generator, what it checks and its replay:
+[`oracle/README.md`](../oracle/README.md), "Unit cases".
 
 A Python result that depends on memory addresses (the order of a `set` of
 NaNs: `hash(nan)` is the object's address) is never compared as is: the
