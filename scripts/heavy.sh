@@ -2,7 +2,7 @@
 # Runs a heavy job (cargo mutants, a pass over a whole corpus set, adversarial
 # corpus generation) in one of HEAVY_SLOTS machine-wide slots, inside a cgroup
 # capped at HEAVY_MEM without swap. The machine is shared: a mutant that loops
-# while allocating once filled 16.5 GB of RAM and froze it.
+# while allocating can fill the machine's memory and freeze it.
 #
 #   scripts/heavy.sh cargo mutants --profile mutants -j 1 --timeout 20 -f crates/...
 #   scripts/heavy.sh .venv/bin/python -m oracle.verify --stage objects --set all
@@ -14,9 +14,9 @@
 #
 # Waits for a free slot. Slots are lock files under $PDFPLUMBER_ROOT/.cache/locks,
 # shared by every checkout and worktree of the repository. With HEAVY_SLOTS=1
-# (the rule since the incident of October 2026), the wait is a blocking
-# flock, which takes the slot as soon as it is released; with more slots,
-# each waiter polls every 5 s.
+# (the setting for a shared machine), the wait is a blocking flock, which
+# takes the slot as soon as it is released; with more slots, each waiter
+# polls every 5 s.
 set -uo pipefail
 
 ROOT=${PDFPLUMBER_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}

@@ -1,7 +1,10 @@
-// Hand mutants of the JavaScript boundary layer of wave 5 (BOUNDARY): each
-// mutant replaces one exact text of a source file, runs the tests that
-// cover it (vitest, Node, sources), and is "killed" when they fail. The
-// source is restored after each run.
+// Hand mutants of the JavaScript boundary layer (js/src/pdfobjects.ts,
+// js/src/core/runtime.ts, js/src/core/wire.ts, the stream owner in
+// js/src/api.ts): each mutant replaces one exact text of a source file, runs
+// the tests that cover it (vitest, Node, sources), and is "killed" when they
+// fail. The source is restored after each run.
+// Accepted survivors are listed in docs/verification.md, "Mutation Testing"
+// ("Hand Mutants").
 //
 //   node scripts/js-boundary-mutants.mjs <checkout> [ids...]   (dist/ built: node scripts/build.mjs)
 import { execFileSync } from "node:child_process";

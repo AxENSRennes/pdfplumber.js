@@ -1,17 +1,26 @@
-// Hand mutants of the code wave5/fix wrote (the review findings of wave 5),
-// in JavaScript (js/src) and in Rust (crates: the core's operations, which
-// only the sessions of the public API check through WebAssembly): each
-// mutant replaces one exact text of a source file, runs the tests that check
-// that code (the sessions of oracle/unit/js_api.py through the API,
-// api-lifetime, api-runtime, the runtime tests, the depth windows, the
-// core's unit tests), and is "killed" when they fail. A Rust mutant
-// rebuilds dist/pdfplumber.wasm first (the JavaScript tests load it). The
-// source is restored after each run (and the module rebuilt after a Rust
-// mutant). Survivors are listed in docs/architecture.md ("Vague 5",
-// "Corrections de la revue"), each with its justification.
+// Hand mutants of the public API's runtime, in JavaScript (js/src) and in
+// Rust (crates: the core's operations, which only the sessions of the
+// public API check through WebAssembly): the API's argument handling (null
+// and undefined, Maps' undefined values, objects with no Python value),
+// search() and filter() of what is not a pattern or a function, the
+// finalizers' turns of the event loop, the page and stream references a
+// document or a core owns, the order of the pages read, unsigned wasm32
+// addresses, the CMaps the loader cannot provide, the worker client, the
+// structure element's to_dict and iteration, and in Rust the core's
+// operations (search's refused pattern, filter of a value, the history's
+// size bound, unavailable CMaps). Each mutant replaces one exact text of a
+// source file, runs the tests that check that code (the sessions of
+// oracle/unit/js_api.py through the API, api-lifetime, api-runtime, the
+// runtime tests, the depth windows, the core's unit tests), and is "killed"
+// when they fail. A Rust mutant rebuilds dist/pdfplumber.wasm first (the
+// JavaScript tests load it). The source is restored after each run (and the
+// module rebuilt after a Rust mutant). Accepted survivors are listed in
+// docs/verification.md, "Mutation Testing" ("Hand Mutants"), each with its
+// justification.
 //
-//   node scripts/fix-mutants.mjs <checkout> [ids...]   (a copy of the checkout:
-//   the sources are mutated in place; dist/ built, unit data generated)
+//   node scripts/api-runtime-mutants.mjs <checkout> [ids...]
+//   (<checkout>: a copy of the checkout, whose sources are mutated in place;
+//   dist/ built, unit data generated)
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -116,8 +125,8 @@ const mutants = [
   [CM, "        s.unavailable.remove(name);\n", "", RUNTIME, CMAPS],
   [CM, ".filter(|n| s.known.contains(n) && !s.loaded.contains_key(n))", ".filter(|_| true)", RUNTIME, CMAPS],
   [OP, "                cmaps::mark_unavailable(names);\n", "                drop(names);\n", RUNTIME],
-  // (found by the stage passes through the API: a finalizer's free between
-  // a member's request and the harness's read of lastTyped)
+  // (a finalizer's free between a member's request and js/trace's read of
+  // lastTyped, which the stage passes through the API check)
   [R, '      if (op !== "free") this.typedValue = r.typed;', "      this.typedValue = r.typed;", RUNTIME],
 ];
 

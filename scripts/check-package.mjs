@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The npm package as a consumer gets it (docs/js-runtime.md, "Paquet JS"):
+// The npm package as a consumer gets it (docs/js-runtime.md, "JavaScript Package"):
 // `npm pack` of this checkout (dist/ built), then
 //   - its files: what must ship (the license and notices, the Node and
 //     browser builds, the module, every CMap, the docs) and what must not

@@ -3,25 +3,19 @@
 `pdfplumber.js` exposes a browser-capable JavaScript API modeled on Python
 `pdfplumber` 0.11.9. The extraction engine is a faithful Rust port of
 pdfplumber and pdfminer.six compiled to WebAssembly (`crates/`); results are
-those of Python pdfplumber (CPython ≥ 3.12), verified against it through
-this API itself. Callers use the same `open()` entry point in Node and
-browsers. How the runtime works (WebAssembly loading, result encoding,
-CMaps, workers) is described in [`js-runtime.md`](js-runtime.md); the
-contract of wave 5, its workstreams and its harness in
-[`architecture.md`](https://github.com/AxENSRennes/pdfplumber.js/blob/HEAD/docs/architecture.md) ("Vague 5").
+those of Python pdfplumber (CPython ≥ 3.12). Callers use the same `open()`
+entry point in Node and browsers. How the runtime works (WebAssembly
+loading, result encoding, CMaps, workers) is described in
+[`js-runtime.md`](js-runtime.md).
 
-> **Status (wave 5): implemented.** Every member below is implemented over
-> the operations of the core and checked against Python through this API:
-> by the sessions of `oracle/unit/js_api.py` (every member, option, alias,
-> error path and lifetime case, on real and adversarial PDFs; replayed in
-> Node on the sources and on the dist build, and in Chromium, Firefox and
-> WebKit, in the page and in worker mode; and the depth windows of the
-> adversarial sets, with each family's window at the API's own
-> `RecursionError` limit, in Node), by `js/test/node/api-lifetime.test.ts`
-> (identities and the garbage collector) and `api-runtime.test.ts`, and by
-> the four `plumber_*` stage traces written through this API
-> (`oracle.verify --engine js-api`) on `all` and the adversarial sets.
-> `NotImplemented` remains only for the paths marked "not ported" below.
+Every member, option, alias, error path and lifetime rule below is checked
+against Python through this API itself: sessions of calls that Python runs
+as statements (`oracle/unit/js_api.py`), replayed in Node and in Chromium,
+Firefox and WebKit, in the page and in worker mode, on real and generated
+PDFs, including PDFs nested up to Python's recursion limits; and the
+pdfplumber traces of the verification pipeline written through this API
+([verification](https://github.com/AxENSRennes/pdfplumber.js/blob/HEAD/docs/verification.md#parity-through-the-javascript-api)).
+`NotImplemented` is raised only for the paths marked "not ported" below.
 
 ## Differences From Python
 
@@ -118,7 +112,7 @@ filters show them: a warning once per text for the whole runtime (the
 filters' registry), and of pdfminer's `log.warning` calls (malformed
 operators, page boxes, fonts, xref entries, corrupt streams...: `source`
 is the logger name, `pdfminer.pdfinterp`..., the text `msg % args` as
-`logging` formats it; `js-runtime.md`, "Diagnostics"); pdfminer's
+`logging` formats it; [`js-runtime.md`](js-runtime.md#diagnostics)); pdfminer's
 `log.debug` records (one per token, operator or object read) are not
 forwarded. Diagnostics never change a result. Python prints warnings to
 stderr by default; the JavaScript API is silent by default.
@@ -171,10 +165,10 @@ until `close()` flushes it (`PDF.close()` flushes `_pages`: the next read
 makes new pages); a rejected read is not kept (Python runs `pdf.pages`
 again at the next read). Each read is a job, decided in the order of the
 calls: `pdf.close()` then `pdf.pages`, the first not awaited yet, gives
-the pages `close()` makes again, as Python's `pdf.close(); pdf.pages`. Other getters run their statement at each read
-(a later workstream may keep fulfilled values, never rejections: the
-second run of a statement that raised can succeed, as in Python, where a
-specialized site holds fewer C units).
+the pages `close()` makes again, as Python's `pdf.close(); pdf.pages`.
+Other getters run their statement at each read, and a rejection is never
+kept: the second run of a statement that raised can succeed, as in Python,
+where a specialized site holds fewer C units.
 
 A page's geometry (`page_number`, `bbox`, `width`, `height`, the boxes) is
 known when its promise resolves (read by the same job); a geometry Python
@@ -184,7 +178,7 @@ cannot compute (a crop box kept as given with `strict: false`) throws when
 ## Values
 
 Objects are pdfplumber's dicts, keys in pdfplumber's order. Python values
-map as follows (details in [`js-runtime.md`](js-runtime.md#valeurs)):
+map as follows (details in [`js-runtime.md`](js-runtime.md#values)):
 
 - `None` → `null`; `bool` → boolean; `str` → string (a lone surrogate is
   kept); `bytes` → `Uint8Array`; `list` and `tuple` → arrays.
@@ -212,8 +206,8 @@ map as follows (details in [`js-runtime.md`](js-runtime.md#valeurs)):
 ### Arguments
 
 JavaScript arguments become Python values as the boundary encodes them
-(`js-runtime.md`, "Valeurs"): a safe integer is an `int`, any other number
-a `float` (`-0` included), a `bigint` an `int`, `PyFloat(x)` a `float`,
+([`js-runtime.md`](js-runtime.md#values)): a safe integer is an `int`, any
+other number a `float` (`-0` included), a `bigint` an `int`, `PyFloat(x)` a `float`,
 `PyTuple([...])` a `tuple`, an array a `list`, a plain object (`{...}`,
 `Object.create(null)`) or a `Map` with string keys a `dict` (values
 `undefined` are left out, in both: an option `undefined` is not given),
@@ -465,7 +459,7 @@ reachable (below, "Lifetime").
 ## PDFStream
 
 A `PDFStream` in a result is a reference to the stream in the core
-(workstream BOUNDARY, `js-runtime.md`):
+([`js-runtime.md`](js-runtime.md#operations)):
 `objid`, `genno` and `attrs` are known (values); `rawdata` and `data` are
 promises reading the stream as it is when they are read (`stream.rawdata`,
 `stream.data`: `null` once decoded, resp. before), `getData()` and
@@ -523,53 +517,23 @@ the calling thread; the test functions of `filter` and the `RegExp` of
 CMaps are fetched by the worker (`cmaps.baseUrl`; a loader function cannot
 cross to a worker).
 
-## Operations
+## Recursion Limits
 
-Each member runs the operations of `crates/wasm/src/pages.rs` below, in
-one job; each operation is one statement at the top level of a Python
-script (`oracle/unit/js_pages_run.py`): this is what the sessions of
-`oracle/unit/js_api.py` run in Python to give the expected results, and
-where a `RecursionError` happens through the API.
-
-| Member | Operations (statements) |
-|---|---|
-| `open(bytes)` / `open(path)` | `doc_open` (`pdfplumber.open(io.BytesIO(data), **options)`) / `doc_open_file` (`pdfplumber.open(path, **options)`) |
-| `pdf.pages` | a job: `doc_pages` (`obj.pages`, then each page's geometry) at the first read and after `close()`; none otherwise |
-| `pdf.metadata`, `objects`, `annots`, `hyperlinks`, `structure_tree` | `doc_metadata`, `doc_objects`, `doc_annots`, `doc_hyperlinks`, `doc_structure_tree` (a property load at a site of its own) |
-| `pdf.chars` ... | `doc_attr` (`getattr(obj, name)`) |
-| `pdf.toDict`, `toJson`, `toCsv` | `doc_to_dict`, `doc_to_json`, `doc_to_csv` (`obj.to_dict(**kwargs)`...) |
-| `pdf.close()` | `doc_close` (`obj.close()`) |
-| `pdf.release()` | `free` (no statement) |
-| `pdf.page(ref)` | a job: none when the API holds an object of that page (the ref's handle's, or the current `pdf.pages` list's for a ref read since the last `close()`), else `page_info` |
-| `page.objects`, `structure_tree` | `page_objects`, `page_structure_tree` |
-| `page.chars` ..., `annots`, `hyperlinks` | `page_attr` (`getattr(obj, name)`) |
-| `extractText`, `extractTextSimple`, `extractWords`, `extractTextLines` | `page_extract_text`, `page_extract_text_simple`, `page_extract_words`, `page_extract_text_lines` (`obj.method(*args, **kwargs)`) |
-| `search` | `page_search_text` then `page_search` (one statement, `obj.search(pattern, **options)`; JavaScript runs its `RegExp` between the two; a pattern that is neither a string nor a `RegExp` goes to `page_search`, which raises Python's error); none without a pattern |
-| `crop`, `withinBbox`, `outsideBbox`, `dedupeChars` | `page_crop`... `page_dedupe_chars`, then `page_info` of the derived page (`obj.width`, `obj.height` read at sites of their own) |
-| `filter` | `page_objects`, `page_filter` (`mask_of(page, ...)`: the mask), `page_info`; for a test that is not a function, `page_filter` (`mask_of(page, {"value": v})`) and `page_info`; none without a test |
-| `findTables`, `findTable`, `extractTables`, `extractTable` | `page_find_tables`... (`obj.find_tables(*args)`) |
-| `table.extract` | `table_extract` (`obj.extract(**kwargs)`) |
-| `page.toDict`, `toJson`, `toCsv`, `close` | `page_to_dict`, `page_to_json`, `page_to_csv`, `page_close` |
-| `debugTablefinder` | `page_debug_tablefinder` (`obj.debug_tablefinder(*args)`) |
-| `pdf.structTree(page?)` | `struct_tree` (`PDFStructTree(obj, page)`) |
-| tree's or element's `findAll`, `find` | `struct_find_all` (`list(x.find_all(m))`), `struct_find` (`x.find(m)`); a `RegExp` or a function as the truth of each element (the mask), run in the job first |
-| `elementBbox`, element's `allMcids`, `repr`, `toDict` | `struct_element_bbox` (`tree.element_bbox(el)`), `struct_all_mcids` (`list(el.all_mcids())`), `struct_element_repr` (`repr(el)`), `struct_element_to_dict` (`el.to_dict()`) |
-| `PDFStream.rawdata`, `data`, `getData`, `getRawdata` | `stream_rawdata`, `stream_data`, `stream_get_data`, `stream_get_rawdata` (a job of the stream's document) |
-| a derived page's, table's, tree's finalizer | `free` (no statement) |
-
-Depth: each operation of the core runs as one statement at the top level of
-a Python script (a property read at a site of its own, a method called with
-`**options`), so a `RecursionError` (a PDF nested near Python's limits)
-happens where it happens in that script. A statement written otherwise in
-Python (explicit keyword arguments instead of `**options`, a property read
-at a new site, a call inside a function) takes up to two C recursion units
-more or less, or more frames: it shows only at the recursion limits
-(`js-runtime.md`, "Documents et pages").
+Each member runs one or a few operations of the core, and each operation
+runs as one statement at the top level of a Python script (a property read
+at a site of its own, a method called with `**options`; the plan of every
+member is in [`js-runtime.md`](js-runtime.md#api-operations)). So a
+`RecursionError` (a PDF nested near Python's limits) happens where it
+happens in that script. A statement written otherwise in Python (explicit
+keyword arguments instead of `**options`, a property read at a new site, a
+call inside a function) takes up to two C recursion units more or less, or
+more frames: it shows only at the recursion limits.
 
 ## Not Ported
 
-These parts of pdfplumber 0.11.9 are out of scope (`docs/architecture.md`,
-"Règles de port"):
+These parts of pdfplumber 0.11.9 are out of scope
+([architecture](https://github.com/AxENSRennes/pdfplumber.js/blob/HEAD/docs/architecture.md#porting-rules),
+"Porting Rules"):
 
 - `Page.to_image` and `pdfplumber/display.py` (rendering through pypdfium2
   and PIL).
@@ -618,8 +582,8 @@ coordinate in the sets of `cluster_objects` (words, lines, table edges)
 follows its memory address, which the port cannot reproduce (it puts NaN
 values last).
 
-Structure tree, metadata and annotations (`docs/architecture.md`,
-"Vague 4", workstream DOC):
+Structure tree, metadata and annotations
+([architecture](https://github.com/AxENSRennes/pdfplumber.js/blob/HEAD/docs/architecture.md#structure-tree-metadata-and-annotations)):
 
 - a cycle among the structure elements that a page's parent tree reaches
   makes pdfplumber's `PDFStructTree(pdf, page)` (and `page.structure_tree`)

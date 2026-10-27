@@ -2,15 +2,16 @@
 // Builds dist/pdfplumber.wasm: crates/wasm for wasm32-unknown-unknown with
 // the `dist` profile (LTO, one codegen unit, panic=abort), then wasm-opt
 // (binaryen, a devDependency); `--no-opt` skips it (docs/js-runtime.md,
-// "Taille"). Without `--no-opt`, a missing wasm-opt is an error: a stale
-// node_modules (before `npm ci`) once shipped the unoptimized module
+// "Size"). Without `--no-opt`, a missing wasm-opt is an error: a stale
+// node_modules (before `npm ci`) would ship the unoptimized module
 // (3.2 MB instead of 2.6) without a word, and the size budget, counted in
 // brotli bytes, does not catch it.
 //
 // `--oracle` builds dist/pdfplumber-oracle.wasm instead: the same module
 // with the oracle hooks of the harness (feature `oracle-hooks`,
-// crates/wasm/src/oracle.rs; docs/architecture.md, "Vague 5"), in its own
-// target directory; never shipped (package.json "files").
+// crates/wasm/src/oracle.rs; docs/verification.md,
+// "Parity Through The JavaScript API"), in its own target directory; never
+// shipped (package.json "files").
 //
 //   node scripts/build-wasm.mjs [--no-opt] [--oracle]
 import { execFileSync } from "node:child_process";

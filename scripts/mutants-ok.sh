@@ -9,7 +9,8 @@
 # (non-ignored) files to a scratch directory, rewrites `PyResult<T>` as
 # `Result<T, pycompat::PyErr>` in the files given with -f/--file, and runs
 # cargo mutants there on the `Ok(..)` mutants only. The usual pass, on the
-# checkout itself, covers every other mutant (docs/verification.md).
+# checkout itself, covers every other mutant (docs/verification.md,
+# "Mutation Testing").
 #
 # Every argument goes to cargo mutants; run it through scripts/heavy.sh:
 #
