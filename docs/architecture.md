@@ -3400,10 +3400,10 @@ la revue (21,1). RSS maximale : natif 318 Mio, Python 412 Mio, Node 505 à
 2 571 923 ; la revue a ajouté des opérations).
 
 **Piège rencontré** : le `node_modules` du dépôt principal datait d'avant
-la vague (sans `binaryen`) ; `scripts/build-wasm.mjs` saute alors
-`wasm-opt` sans le dire et le module fait 3,2 Mo. `npm ci --offline`
-avant toute mesure de taille ou de temps (le lockfile n'a pas changé ;
-`check.sh` construit de toute façon sans `wasm-opt`).
+la vague (sans `binaryen`) ; `scripts/build-wasm.mjs` sautait alors
+`wasm-opt` sans le dire et le module faisait 3,2 Mo. Corrigé à la
+finalisation : sans `--no-opt`, un `wasm-opt` absent est une erreur
+(« Finalisation » ci-dessous).
 
 **Caches** : 38 répertoires d'empreinte périmés de `.cache/unit`
 supprimés (`js_api` 16, `js_runtime` 14, `plumber_frames` 8, ceux des

@@ -43,12 +43,14 @@ import argparse
 import json
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 from .cache import DEFAULT_JOBS, OracleCache
-from .corpus import SET_NAMES, CorpusError, cache_dir, files_from_paths, load_set
+from .corpus import SET_NAMES, CorpusError, CorpusFile, cache_dir, files_from_paths, load_set
 from .stages import DEFAULT_MAX_PAGES
 from .verify import (
     DEFAULT_BATCH,
@@ -67,6 +69,11 @@ CLASSES = ("identical", "core", "filter", "window", "defect")
 WINDOW_NAME = re.compile(r"(^|-)(depth|climit)-")
 #: an exception line (``exc`` of the stages) that is, or is caused by, RecursionError
 RECURSION = re.compile(r"!RecursionError\(")
+#: the frames of recursion limit added to Python for a window whose
+#: RecursionError pdfplumber caught: more than the levels by which the
+#: API's statements are above the stages' (0 to 7 levels of nesting,
+#: docs/verification.md)
+HEADROOM = 200
 
 
 def _lines(data: bytes) -> list[str]:
@@ -83,33 +90,43 @@ def _first(a: list[str], b: list[str], start: int = 0) -> int | None:
     return None if len(a) == len(b) else n
 
 
-def align_filters(oracle: list[str], api: list[str]) -> tuple[list[str], int] | None:
-    """``oracle`` with each gap of ``filter()`` replaced by the API's
-    ``derive <exc>`` line, and the number of gaps, when the traces are then
-    identical; ``None`` otherwise. A gap: after the same ``derived <steps>``
-    line, whose steps have a ``filter`` step, Python writes ``dbox ...``,
-    ``dobjects <exc>`` and ``dannots ...`` where the API writes
-    ``derive <exc>``, the same exception."""
+def _gap(out: list[str], api: list[str], k: int, window: bool) -> bool:
+    """Whether line ``k`` starts a gap of ``filter()``: after the same
+    ``derived <steps>`` line, whose steps have a ``filter`` step, Python
+    writes ``dbox ...``, ``dobjects <exc>`` and ``dannots ...`` where the
+    API writes ``derive <exc>``: the same exception, or, in a depth window
+    (``window``), two exceptions one of which is a ``RecursionError`` (the
+    API evaluates the predicate on the parent's objects from another
+    depth)."""
+    if not (
+        0 < k
+        and k + 2 < len(out)
+        and k < len(api)
+        and out[k - 1].startswith("derived ")
+        and '["filter", ' in out[k - 1]
+        and out[k].startswith("dbox ")
+        and out[k + 1].startswith("dobjects !")
+        and out[k + 2].startswith("dannots ")
+        and api[k].startswith("derive !")
+    ):
+        return False
+    python_exc, api_exc = out[k + 1][len("dobjects ") :], api[k][len("derive ") :]
+    return python_exc == api_exc or (window and bool(RECURSION.search(python_exc) or RECURSION.search(api_exc)))
+
+
+def align_filters(oracle: list[str], api: list[str], window: bool = False) -> tuple[list[str], int, int | None]:
+    """``oracle`` with each gap of ``filter()`` (``_gap``) before the first
+    other difference replaced by the API's ``derive <exc>`` line, the number
+    of gaps, and the index of that other difference (``None``: the traces
+    are then identical)."""
     out = list(oracle)
     gaps = 0
     k = _first(out, api)
-    while k is not None:
-        if not (
-            0 < k
-            and k + 2 < len(out)
-            and k < len(api)
-            and out[k - 1].startswith("derived ")
-            and '["filter", ' in out[k - 1]
-            and out[k].startswith("dbox ")
-            and out[k + 1].startswith("dobjects !")
-            and out[k + 2].startswith("dannots ")
-            and api[k] == "derive " + out[k + 1][len("dobjects ") :]
-        ):
-            return None
+    while k is not None and _gap(out, api, k, window):
         out[k : k + 3] = [api[k]]
         gaps += 1
         k = _first(out, api, k + 1)
-    return out, gaps
+    return out, gaps, k
 
 
 def unit_data_dir(module: str) -> Path:
@@ -153,8 +170,13 @@ def window_sessions(aset: str | None) -> set[str]:
     return names[0] & names[1]
 
 
-def classify(stem: str, oracle: bytes, api: bytes | None, rust: bytes | None, windows: set[str], stage: str) -> tuple[str, str]:
-    """The class of a file and a note."""
+def classify(stem: str, oracle: bytes, api: bytes | None, rust: bytes | None, windows: set[str], stage: str,
+             headroom: Callable[[], bytes | None] = lambda: None) -> tuple[str, str]:
+    """The class of a file and a note. ``headroom()``: Python's trace of
+    the file with HEADROOM more frames of recursion limit (``None``: not
+    available), asked only for a depth window whose first difference shows
+    no ``RecursionError`` (pdfplumber caught it: the metadata, decoded in
+    a ``try``)."""
     if api is None:
         return "defect", "the API's run crashed or ran out of time"
     if api == oracle:
@@ -163,20 +185,50 @@ def classify(stem: str, oracle: bytes, api: bytes | None, rust: bytes | None, wi
         return "core", "API = pdftrace"
     a, b = _lines(oracle), _lines(api)
     if stage == "plumber_doc":
-        aligned = align_filters(a, b)
-        if aligned is not None:
-            return "filter", f"{aligned[1]} filtered page(s)"
+        _, gaps, k = align_filters(a, b)
+        if k is None:
+            return "filter", f"{gaps} filtered page(s)"
     if WINDOW_NAME.search(stem):
         if stem not in windows:
             return "defect", "a depth window without its sessions in depth.jsonl and depth-bytes.jsonl"
-        k = _first(a, b)
-        assert k is not None
-        la = a[k] if k < len(a) else ""
+        aligned, gaps, k = align_filters(a, b, window=True) if stage == "plumber_doc" else (a, 0, _first(a, b))
+        if k is None:
+            return "window", f"{gaps} filtered page(s), a RecursionError on one side of each"
+        la = aligned[k] if k < len(aligned) else ""
         lb = b[k] if k < len(b) else ""
+        after = f" (after {gaps} filtered page(s))" if gaps else ""
         if RECURSION.search(la) or RECURSION.search(lb):
-            return "window", f"line {k + 1}: RecursionError on the {'oracle' if RECURSION.search(la) else 'API'} side"
-        return "defect", f"a depth window whose first difference (line {k + 1}) is not a RecursionError"
+            return "window", f"line {k + 1}{after}: RecursionError on the {'oracle' if RECURSION.search(la) else 'API'} side"
+        more = headroom()
+        if more is not None:
+            m = _lines(more)
+            if gaps == 0 and m[: k + 1] == b[: k + 1]:
+                return "window", f"line {k + 1}: Python's line with {HEADROOM} more frames of recursion limit"
+        return "defect", f"a depth window whose first difference (line {k + 1}{after}) is not a RecursionError"
     return "defect", ""
+
+
+def headroom_trace(stage: str, f: CorpusFile, max_pages: int, timeout: float) -> bytes | None:
+    """Python's trace of ``f`` for ``stage`` with ``sys.getrecursionlimit()
+    + HEADROOM`` (a fresh interpreter, as the cache builds its traces):
+    where the trace then gives the API's line, the difference was the
+    recursion limit's."""
+    script = (
+        "import sys\n"
+        "root, extra, stage, path, max_pages, password = sys.argv[1:7]\n"
+        "sys.path.insert(0, root)\n"
+        "sys.setrecursionlimit(sys.getrecursionlimit() + int(extra))\n"
+        "from oracle.stages import trace_text\n"
+        "text = trace_text(stage, path, None if password == '-' else password[1:], int(max_pages))\n"
+        "sys.stdout.buffer.write(text.encode('ascii'))\n"
+    )
+    password = "-" if f.password is None else "=" + f.password
+    try:
+        proc = subprocess.run([sys.executable, "-I", "-c", script, str(REPO_DIR), str(HEADROOM), stage, str(f.path),
+                               str(max_pages), password], capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return None
+    return proc.stdout if proc.returncode == 0 else None
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -242,7 +294,8 @@ def main(argv: list[str] | None = None) -> int:
 
             expected = r.path.read_bytes()
             api, rust = output("js-api"), output("pdftrace")
-            cls, note = classify(Path(f.rel).stem, expected, api, rust, windows, args.stage)
+            cls, note = classify(Path(f.rel).stem, expected, api, rust, windows, args.stage,
+                                 lambda f=f: headroom_trace(args.stage, f, args.max_pages, args.timeout))
             rec["class"] = cls
             if note:
                 rec["note"] = note

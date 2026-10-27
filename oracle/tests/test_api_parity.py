@@ -33,30 +33,32 @@ def b(lines: list[str]) -> bytes:
 
 class AlignFilters(unittest.TestCase):
     def test_a_rejected_filter_is_aligned(self) -> None:
-        out = align_filters(FILTERED, REJECTED)
-        self.assertIsNotNone(out)
-        assert out is not None
-        self.assertEqual(out, (REJECTED, 1))
+        self.assertEqual(align_filters(FILTERED, REJECTED), (REJECTED, 1, None))
 
     def test_two_gaps(self) -> None:
-        self.assertEqual(align_filters(FILTERED + FILTERED, REJECTED + REJECTED), (REJECTED + REJECTED, 2))
+        self.assertEqual(align_filters(FILTERED + FILTERED, REJECTED + REJECTED), (REJECTED + REJECTED, 2, None))
 
     def test_another_exception_is_not_aligned(self) -> None:
         other = [x.replace("RecursionError", "ValueError") if x.startswith("derive ") else x for x in REJECTED]
-        self.assertIsNone(align_filters(FILTERED, other))
+        self.assertEqual(align_filters(FILTERED, other)[1:], (0, 2))
+        # in a window, one of the two is a RecursionError: aligned
+        self.assertEqual(align_filters(FILTERED, other, window=True), (other, 1, None))
+        # neither is: not aligned
+        neither = [x.replace("RecursionError", "TypeError") for x in FILTERED]
+        self.assertEqual(align_filters(neither, other, window=True)[1:], (0, 2))
 
     def test_a_derivation_without_filter_is_not_aligned(self) -> None:
         oracle = [x.replace('["filter", "small"], ', "") for x in FILTERED]
         api = [x.replace('["filter", "small"], ', "") for x in REJECTED]
-        self.assertIsNone(align_filters(oracle, api))
+        self.assertEqual(align_filters(oracle, api)[1:], (0, 2))
 
     def test_objects_that_do_not_raise_are_not_aligned(self) -> None:
         oracle = [('dobjects [["char", 1, "00"]]' if x.startswith("dobjects ") else x) for x in FILTERED]
-        self.assertIsNone(align_filters(oracle, REJECTED))
+        self.assertEqual(align_filters(oracle, REJECTED)[1:], (0, 2))
 
     def test_a_difference_after_the_gap_is_not_aligned(self) -> None:
         api = REJECTED[:-2] + ['dbox (0.0, 0.0, 100.0, 50.0) 100.0 50.0 "<Page:1>"', "!end"]
-        self.assertIsNone(align_filters(FILTERED, api))
+        self.assertEqual(align_filters(FILTERED, api)[1:], (1, 4))
 
 
 class Classify(unittest.TestCase):
@@ -93,6 +95,23 @@ class Classify(unittest.TestCase):
         # a difference before the RecursionError
         early = b(["page 2", f"chars {REC}", "!end"])
         self.assertEqual(classify(stem, early, api, early, {stem}, "plumber_text")[0], "defect")
+
+    def test_a_window_whose_recursion_error_python_caught(self) -> None:
+        stem = "432-depth-metadata-nested-lists-988"
+        oracle = b(['metadata {"K": [[x"78"]]}', "!end"])
+        api = b(['metadata {"K": [["x"]]}', "!end"])
+        # Python with more recursion limit gives the API's line
+        self.assertEqual(classify(stem, oracle, api, oracle, {stem}, "plumber_doc", lambda: api)[0], "window")
+        self.assertEqual(classify(stem, oracle, api, oracle, {stem}, "plumber_doc", lambda: oracle)[0], "defect")
+        self.assertEqual(classify(stem, oracle, api, oracle, {stem}, "plumber_doc", lambda: None)[0], "defect")
+        # not for a file that is not a window
+        self.assertEqual(classify("432-metadata", oracle, api, oracle, {"432-metadata"}, "plumber_doc", lambda: api)[0], "defect")
+
+    def test_a_filtered_page_in_a_window(self) -> None:
+        stem = "327-climit-dict-odd-0-9996"
+        other = [x.replace("RecursionError", "ValueError") if x.startswith("derive ") else x for x in REJECTED]
+        self.assertEqual(classify(stem, b(FILTERED), b(other), b(FILTERED), {stem}, "plumber_doc")[0], "window")
+        self.assertEqual(classify(stem, b(FILTERED), b(other), b(FILTERED), set(), "plumber_doc")[0], "defect")
 
 
 if __name__ == "__main__":
