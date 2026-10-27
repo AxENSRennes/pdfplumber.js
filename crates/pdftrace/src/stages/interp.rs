@@ -17,7 +17,7 @@
 //! known (`pdfinterp::inline_image_name`,
 //! `PDFPageInterpreter::inline_images`): the two agree but on a PDF that
 //! names an XObject like the port names inline images (`inline-0`), which
-//! no corpus does (`docs/architecture.md`, "Vague 3").
+//! no corpus does (`docs/architecture.md`, "Inline Image Names").
 //!
 //! The `interp_text` stage checks the interpreter on pdfminer's
 //! `PDFTextDevice`, without the converter (`stages::interp_text`), whose

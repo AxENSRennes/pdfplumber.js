@@ -1,5 +1,5 @@
 //! The binary value format (`PJB1`) of the JavaScript boundary, specified
-//! in `docs/js-runtime.md` ("Format binaire"); `js/src/core/wire.ts`
+//! in `docs/js-runtime.md` ("Result Encoding"); `js/src/core/wire.ts`
 //! decodes and encodes it.
 //!
 //! A block is a 16-byte header (`"PJB1"`, flags, the offset of the string

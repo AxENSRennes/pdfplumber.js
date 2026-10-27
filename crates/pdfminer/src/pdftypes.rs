@@ -755,8 +755,8 @@ impl PDFObjRef {
 /// a name, a reference...) and where `PDFXRefStream` yields `start + i` for
 /// whatever `start` its `/Index` holds: any hashable value can reach
 /// `getobj`, which stores it in the stream it returns (`set_objid`). `==`
-/// and `hash()` are Python's (`docs/architecture.md`, "Résolution des
-/// références"): numbers by value across `bool`/`int`/`float`
+/// and `hash()` are Python's (`docs/architecture.md`, "PDF Objects"):
+/// numbers by value across `bool`/`int`/`float`
 /// (`1 == 1.0 == True`), `bytes` by content, `None` equal to itself,
 /// literals, keywords, references and streams by identity (no `__eq__`
 /// upstream). A list or a dict is unhashable ([`ObjId::new`]). The id keeps

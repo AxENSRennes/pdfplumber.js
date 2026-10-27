@@ -1,6 +1,7 @@
 //! Differential testing against the Python oracle.
 //!
-//! - [`canon`]: the canonical trace writer (`docs/verification.md`).
+//! - [`canon`]: the canonical trace writer (`docs/verification.md`,
+//!   "Canonical Trace Format").
 //! - [`typed_json`]: the typed JSON exchange format of unit cases.
 //! - [`value`]: [`value::Value`], a dynamic Python value both are written
 //!   from.

@@ -1,5 +1,5 @@
 //! The lazy-CMap protocol of the boundary (`crates/wasm/src/cmaps.rs`,
-//! `docs/architecture.md`, "Vague 3", "Pilotage") through the interpreter:
+//! `docs/architecture.md`, "Driving Pages") through the interpreter:
 //! a predefined CMap that the provider does not have yet is recorded as
 //! asked for even though pdfminer handles its absence (`CMapNotFound`,
 //! caught by `PDFCIDFont.get_cmap_from_spec` and `get_unicode_map`, which

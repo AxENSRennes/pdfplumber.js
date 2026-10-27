@@ -7,7 +7,7 @@
 //! operations go through the functions of `pdfplumber/page.py` that the
 //! generator calls (`Page._get_textmap`, `extract_text`, `search`,
 //! `extract_text_lines`, `find_tables`, `find_table`, `extract_tables`,
-//! `extract_table`), mirrored here (`page.rs` is not ported yet).
+//! `extract_table`), mirrored here.
 //!
 //! To investigate a mismatch: `python -m oracle.unit.text_tables --dump
 //! pages_fuzz:LINE:OP` prints Python's full canon of one operation, and
@@ -862,9 +862,10 @@ fn table_helpers_smoke() {
 /// `MAX_REPEAT_BYTES` (4 GiB of the port's representation, the wasm32
 /// address space) raises `MemoryError` where CPython on the oracle machine
 /// would allocate it (no oracle case: the generator leaves these out, see
-/// `architecture.md`). Smaller results are built as in Python (oracle
-/// cases: a 20 MB `str` in `pages_fuzz`, `user_arg_cases`); beyond
-/// `PY_SSIZE_T_MAX`, CPython's own errors are oracle cases (`ops`).
+/// `docs/architecture.md`, "Sequence Sizes"). Smaller results are built as
+/// in Python (oracle cases: a 20 MB `str` in `pages_fuzz`,
+/// `user_arg_cases`); beyond `PY_SSIZE_T_MAX`, CPython's own errors are
+/// oracle cases (`ops`).
 #[test]
 fn sequence_repeat_address_space_limit() {
     let limit = pdfplumber::obj::MAX_REPEAT_BYTES as i64;

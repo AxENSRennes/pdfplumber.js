@@ -4,9 +4,7 @@
 //! `derive_bbox`, `PREDICATES`), with the option tables of
 //! [`super::plumber_ops`].
 //!
-//! Wave 4 (base): `select`, `exc`, `digest`, `bounded` and the tables are
-//! here; the rest is written with the stages (workstreams PAGE and DOC,
-//! `docs/architecture.md`, "Vague 4"), against the library:
+//! Against the library (`docs/verification.md`, "The plumber Stages"):
 //!
 //! - `open_pdf(input, options)`: `pdfplumber::pdf::PDF::open(Source::Path
 //!   { .. }, OpenOptions { pages: Some(list 1..=max_pages), password, .. })`

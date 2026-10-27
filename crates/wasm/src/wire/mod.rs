@@ -1,19 +1,20 @@
-//! The result encodings of the JavaScript boundary (`docs/js-runtime.md`).
+//! The result encodings of the JavaScript boundary (`docs/js-runtime.md`,
+//! "Result Encoding").
 //!
 //! Python values leave the core through a [`Writer`]: a stream of value
 //! events (`list(n)` followed by `n` values, `dict(n)` followed by `n` keys
 //! and values...). Two writers implement it:
 //!
 //! - [`binary::BinWriter`], the format the JS API uses (chosen by the
-//!   measurements of `docs/js-runtime.md`): tagged values, a shared string
-//!   table, and uniform lists of dicts (page objects) written column by
-//!   column;
+//!   measurements of `docs/js-runtime.md`, "Result Encoding"): tagged
+//!   values, a shared string table, and uniform lists of dicts (page
+//!   objects) written column by column;
 //! - [`json::JsonWriter`]: JSON with an escape for the values JSON lacks,
 //!   kept for the measurements and as a readable debugging form.
 //!
 //! [`write_value`] walks a pdfplumber value ([`PyValue`]) without recursion:
 //! a value nested 10^6 levels deep is written like a flat one
-//! (`docs/architecture.md`, "Profondeur de récursion"). PDF lists and
+//! (`docs/architecture.md`, "Frames And C Units"). PDF lists and
 //! dicts are mutable in Python and may contain themselves; such a value
 //! raises `ValueError("Circular reference detected")`, as `json.dumps`
 //! does, instead of looping.

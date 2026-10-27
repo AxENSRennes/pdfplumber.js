@@ -5,9 +5,9 @@
 //! `extract_text()`, `extract_words()`, `find_tables()`, `extract_tables()`
 //! (which finds the tables again, as pdfplumber does). Writes, per file,
 //! `path pages open layout objects text words tables extract_tables`
-//! (seconds). The Python
-//! twin is `oracle`'s way of measuring the same calls (the join's report,
-//! `docs/architecture.md`).
+//! (seconds). Its Python twin, `plumber_phases.py` next to this file,
+//! measures the same calls in the oracle (`docs/architecture.md`,
+//! "Performance").
 //!
 //! ```sh
 //! cargo run --release -p pdftrace --example plumber_phases -- CMAP_DIR < list.tsv

@@ -3,9 +3,9 @@
 //! `/Length1`).
 //!
 //! Upstream adds `(cid, name)` tuples to `results`, which no other parser
-//! does (`architecture.md`, "Résolution des références"): the generic
-//! parser's results are `(pos, PDFObject)` entries, so each tuple is kept in
-//! the parser's own state ([`Type1Header::pairs`], in the same order) and a
+//! does (`docs/architecture.md`, "Reference Resolution And Parser
+//! Re-entrance"): the generic parser's results are `(pos, PDFObject)`
+//! entries, so each tuple is kept in the parser's own state ([`Type1Header::pairs`], in the same order) and a
 //! placeholder entry stands for it in `results`. Only `do_keyword` adds
 //! results (`flush` does nothing) and the parser seeks only once, at its
 //! creation, so the two queues stay in step.
@@ -15,7 +15,7 @@
 //! time the `psparser` logger is asked since its cache was cleared: the
 //! seek of every parser fills it); `get_encoding` and `do_keyword` take
 //! theirs, and `psparser` counts those of `nextobject` and of everything
-//! below it (`docs/architecture.md`, "Profondeur de récursion").
+//! below it (`docs/architecture.md`, "Recursion Depth").
 
 use std::collections::VecDeque;
 use std::sync::LazyLock;

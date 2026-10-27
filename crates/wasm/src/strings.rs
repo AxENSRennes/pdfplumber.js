@@ -12,7 +12,7 @@
 //! followed by a low surrogate, as two code points, arrives as the same
 //! two units as the supplementary character they would encode
 //! (`"😀"` and `"😀"` are one JS string). `canon` writes both the
-//! same way too (`docs/verification.md`).
+//! same way too (`docs/verification.md`, "Canonical Trace Format").
 
 /// A Python `str`, borrowed in one of the forms a port keeps it in.
 #[derive(Clone, Copy, Debug)]

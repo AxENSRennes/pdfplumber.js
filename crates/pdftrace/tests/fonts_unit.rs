@@ -14,20 +14,22 @@
 //!
 //! # Mutations
 //!
-//! `cargo mutants -f crates/pdfminer/src/pdffont/{mod,cff,truetype,type1,
-//! frames,unpack}.rs --test-package pdftrace --cargo-test-arg=--test=fonts_unit
-//! --profile mutants -j 1 --timeout 20 --baseline skip` (672 mutants: 208
-//! caught, 423 unviable, 4 timeouts, 37 missed), then, after new cases, the
-//! functions of the survivors again (`--re`, 117 mutants + 25), `cmapdb.rs`'s
-//! frame-counting functions with `cmaps_unit` too (56: all caught or
-//! unviable, 1 timeout) and `pycompat::recursion`'s logging model (5); the
-//! `Ok(..)` pass (`scripts/mutants-ok.sh`) of the six files (111: 61 caught,
-//! 46 unviable, 4 missed, then caught by the INDEX iteration cases) and of
-//! `cmapdb.rs` (46: 37 caught, 9 unviable); the unviable `Ok(..)` bodies by
-//! hand with concrete values of each pertinent variant (72: 71 caught); and
-//! hand mutants of the frame model, which cargo mutants does not mutate
-//! (constants, removed frames and logging calls, 37: 27 caught). The
-//! survivors are equivalent:
+//! These tests kill the mutants of `crates/pdfminer/src/pdffont/{mod,cff,
+//! truetype,type1,frames,unpack}.rs` (`cargo mutants -f <files>
+//! --test-package pdftrace --cargo-test-arg=--test=fonts_unit --profile
+//! mutants -j 1 --timeout 20 --baseline skip`), with `cmaps_unit` those of
+//! `cmapdb.rs`'s frame-counting functions, and those of
+//! `pycompat::recursion`'s logging model; the `Ok(..)` mutants
+//! (`scripts/mutants-ok.sh`) of the six files and of `cmapdb.rs` too (the
+//! cff INDEX iteration cases catch the last of them), and the `Ok(..)`
+//! bodies that do not compile, made by hand with concrete values of each
+//! pertinent variant. Hand mutants of the frame model, which cargo mutants
+//! does not make (constants, removed frames and logging calls), are caught
+//! by the `depth` and `corpus_depth` cases: a frame of `get_data` (`decode`,
+//! `get_data`, `get_filters`, `resolve1`) removed or dropped before the
+//! decode ends, a frame added in `get_data` or in `CMapParser.run`, the
+//! `get_filters` call moved before the decipher callback. The survivors are
+//! equivalent:
 //!
 //! - `|` made `^` (`getdict` 3, `unpack_be`): the bits combined never
 //!   overlap (`b1 << 8 | b2` with `b2 < 256`...);
@@ -51,36 +53,13 @@
 //!   (one below `get_cmap`, under `_parse_bbox`'s 4 or the parser's 7);
 //!   `_load_data`'s second `log.debug` (the logger is cached by the first,
 //!   2 frames under the 8 of the load); the evaluation loop entry of
-//!   `CMapParser(...)` (C units only, never near their limit there).
+//!   `CMapParser(...)` (C units only, never near their limit there); a
+//!   frame added in the Type 1 parser's `do_keyword`.
 //! - Timeouts are mutants that loop (`k += 1` made `*=`, `WidthKey::hash`
 //!   constant), a format 4 `segcount` multiplied.
 //!
-//! After the review fixes (`get_data` holding its frames across the decode,
-//! `PDFStream::decode_with`, `psbaseparser_seek` filling the `psparser`
-//! logger cache, `pycompat::recursion::fill_logger_cache`): `cargo mutants`
-//! on those functions (`--re 'get_data|decode_with|PDFStream::decode|
-//! fill_logger_cache|psbaseparser_seek'`, the four files, `fonts_unit`,
-//! `filters_unit`, `pdftypes_unit`, `psparser_base_unit`, corpus tests
-//! skipped, `--timeout 60`: 41 mutants, 13 caught, 26 unviable, 2 missed),
-//! their `Ok(..)` pass, and 7 hand mutants of the frame model (the
-//! `fill_logger_cache` call removed; `get_data`'s `decode`, `get_data`,
-//! `get_filters` and `resolve1` frames removed or dropped early; the
-//! `get_filters` call moved before the decipher callback: all caught by
-//! `depth`; the `get_any` leaf removed: equivalent, above). The 2 missed:
-//! `decode_with`'s two `ZlibError` guards made `true`, equivalent: with
-//! their constant arguments (`MAX_WBITS`, the default buffer size and
-//! `max_length`), `zlib::decompress` and `decompress_corrupted` raise only
-//! `ZlibError` (their `ValueError` branches check those arguments) and
-//! count no frames.
-//!
-//! At the integration of wave 2, `psparser` and `pdftypes` count their own
-//! frames (`wave2/document`): `decode_with`, `fill_logger_cache`,
-//! `PSStackParser::init_frames` and the frames `pdffont` and `cmapdb` took
-//! for them are gone, and the logger caches are `pycompat::logging`'s.
-//! Every set passes unchanged; hand mutants re-adding one frame in
-//! `get_data` or in `CMapParser.run` are caught (`depth`, `corpus_depth`),
-//! one in the Type 1 parser's `do_keyword` is equivalent (above: under the
-//! parser's construction).
+//! `psparser` and `pdftypes` count their own frames, and the logger caches
+//! are `pycompat::logging`'s: `pdffont` and `cmapdb` take no frame for them.
 
 use std::cell::RefCell;
 use std::fs;

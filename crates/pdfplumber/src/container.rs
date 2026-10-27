@@ -1,7 +1,7 @@
 //! Port of `pdfplumber/container.py`: `Container`, the base of `PDF` and
 //! `Page` (object lists by kind, edges, JSON and CSV output).
 //!
-//! Wave 4, workstream PAGE (`docs/architecture.md`, "Vague 4").
+//! See `docs/architecture.md`, "The pdfplumber Page Layer".
 //!
 //! # Python classes in Rust
 //!

@@ -22,10 +22,10 @@
 //! (`pdfinterp::inline_image_name(k)`, `k` below
 //! `PDFPageInterpreter::inline_images`): the two agree but on a PDF that
 //! names an XObject like the port names inline images (`inline-0`)
-//! (`docs/architecture.md`, "Vague 3").
+//! (`docs/architecture.md`, "Inline Image Names").
 //!
-//! The statistic of `docs/architecture.md` ("Vague 3": how often the
-//! library's default order, `CreationOrder`, gives Python's result) is
+//! The statistic of `docs/architecture.md` ("Layout Tie Order": how often
+//! the library's default order, `CreationOrder`, gives Python's result) is
 //! this stage run without `--oracle-dir`, compared page by page with the
 //! oracle's trace, the `ids` lines left out.
 

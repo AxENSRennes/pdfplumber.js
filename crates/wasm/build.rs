@@ -1,5 +1,5 @@
 //! The shadow stack of the WebAssembly module (`docs/architecture.md`,
-//! "Profondeur de récursion"): the interpreter recurses in Rust where
+//! "Stack Size"): the interpreter recurses in Rust where
 //! Python recurses (`execute` -> `do_Do` -> `render_contents` for each
 //! nested Form XObject), down to Python's recursion limit. The deepest
 //! chain Python accepts takes about 1.2 MiB of the `dist` build's stack

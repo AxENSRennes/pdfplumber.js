@@ -1,6 +1,6 @@
 //! The diagnostics channel: where the text of pdfminer's `logging` calls
 //! and of pdfplumber's `warnings.warn` goes (`docs/architecture.md`,
-//! "Avertissements").
+//! "Warnings And Logging").
 //!
 //! Their text never changes a result, so the port does not print it: an
 //! entry point that wants it (the Wasm boundary forwards it to the `onWarning`
@@ -17,8 +17,8 @@
 //!
 //! This module only carries text. The cost of a logging call in Python
 //! frames (which decides where a `RecursionError` falls, see
-//! `docs/verification.md`) is the business of the code that ports the call,
-//! whether or not anything is collected.
+//! `docs/verification.md`, "Logging Disabled") is the business of the code
+//! that ports the call, whether or not anything is collected.
 //!
 //! The number of entries one [`collect`] keeps is bounded ([`Collected::dropped`]
 //! counts the others): a warning inside a loop over a hostile document must

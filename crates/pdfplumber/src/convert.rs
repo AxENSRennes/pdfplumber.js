@@ -1,7 +1,7 @@
 //! Port of `pdfplumber/convert.py`: the `Serializer` of `to_json` and
 //! `to_csv` (`crate::container::Container`).
 //!
-//! Wave 4, workstream PAGE (`docs/architecture.md`, "Vague 4").
+//! See `docs/architecture.md`, "Serialization".
 //!
 //! `Serializer.serialize` dispatches on `type(obj)` (`do_<type name>`), so
 //! the values it meets in pdfplumber's dicts decide the output:

@@ -648,9 +648,9 @@ impl PDFResourceManager {
 /// The name the port gives the `n`-th inline image (from 0) of a page's
 /// interpretation, where upstream's `do_EI` gives `str(id(obj))`, a
 /// memory address (pdfminer/pdfinterp.py:1309 `PDFPageInterpreter.do_EI`):
-/// deterministic, and unique among the
-/// inline images of a page (`docs/architecture.md`, "Vague 3"). The name
-/// reaches `LTFigure.name`, `LTImage.name` and pdfplumber's image `name`.
+/// deterministic, and unique among the inline images of a page
+/// (`docs/architecture.md`, "Inline Image Names"). The name reaches
+/// `LTFigure.name`, `LTImage.name` and pdfplumber's image `name`.
 pub fn inline_image_name(n: usize) -> String {
     format!("inline-{n}")
 }

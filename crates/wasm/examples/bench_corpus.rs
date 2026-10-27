@@ -1,7 +1,7 @@
 //! Writes the corpus of the result-encoding benchmark (`js/bench/`,
-//! `docs/js-runtime.md`): the `chars` and `edges` of the real pages of
-//! `oracle/unit/text_tables_real.py` (pdfplumber's own objects, from the
-//! oracle), as one `PJB1` block without tables (a list of
+//! `docs/js-runtime.md`, "Result Encoding"): the `chars` and `edges` of the
+//! real pages of `oracle/unit/text_tables_real.py` (pdfplumber's own
+//! objects, from the oracle), as one `PJB1` block without tables (a list of
 //! `{"chars": [...], "edges": [...]}`), which the `bench_load` operation
 //! reads.
 //!

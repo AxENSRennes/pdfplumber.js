@@ -1,5 +1,6 @@
 //! The Python frames of the calls `pdffont` makes into code that does not
-//! count its own (`docs/architecture.md`, "Profondeur de récursion").
+//! count its own (`docs/architecture.md`, "Recursion Depth", "Where Depth
+//! Is Counted").
 //!
 //! A font is built and queried by the interpreter at any depth: a Form
 //! XObject's resources are initialized (fonts created) and its text shown
@@ -16,10 +17,10 @@
 //! - `cmapdb`'s query methods (`UnicodeMap.get_unichr`, `CMap.decode` and
 //!   their `log.debug`) and the constructors of its maps, and
 //!   `encodingdb.EncodingDB.get_encoding`;
-//! - logging calls, logging disabled (the reference, `docs/verification.md`:
-//!   an enabled `log.warning` goes deeper, not modeled), through
-//!   `pycompat::logging` ([`log_frames`]), whose per-thread model of the
-//!   loggers' caches is shared with every other module;
+//! - logging calls, logging disabled (the reference, `docs/verification.md`,
+//!   "Logging Disabled": an enabled `log.warning` goes deeper, not modeled),
+//!   through `pycompat::logging` ([`log_frames`]), whose per-thread model of
+//!   the loggers' caches is shared with every other module;
 //!   `pycompat::logging::disable` is `logging.disable()`.
 //!
 //! Some of these frames are never the deepest of a font's creation, so

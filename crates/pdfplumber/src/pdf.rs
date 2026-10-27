@@ -1,13 +1,13 @@
 //! Port of `pdfplumber/pdf.py`: `PDF`, what `pdfplumber.open` returns.
 //!
-//! Workstream PAGE wrote `open`, `close`, `pages`, `objects`, `to_dict`;
-//! the metadata ([`read_metadata`]), `annots`, `hyperlinks` and
-//! `structure_tree` are workstream DOC's (`docs/architecture.md`, "Vague
-//! 4").
+//! `open`, `close`, `pages`, `objects`, `to_dict`: `docs/architecture.md`,
+//! "Opening, Pages And Caches"; the metadata ([`read_metadata`]), `annots`,
+//! `hyperlinks` and `structure_tree`: "Structure Tree, Metadata And
+//! Annotations".
 //!
-//! Out of scope (`docs/public-api.md`): `repair=True` (pdfplumber/repair.py
-//! runs Ghostscript in a subprocess: `PDF::open` refuses it with
-//! `NotPorted`), `gs_path`, `repair_setting`. Not modelled (documented
+//! Out of scope (`docs/public-api.md`, "Not Ported"): `repair=True`
+//! (pdfplumber/repair.py runs Ghostscript in a subprocess: `PDF::open`
+//! refuses it with `NotPorted`), `gs_path`, `repair_setting`. Not modelled (documented
 //! deviations): a `laparams` margin that is not a number (Python stores
 //! any object and fails at its first use in the analysis; the port refuses
 //! it at `open` with `NotPorted`), a `password` that is neither `None` nor
@@ -70,8 +70,8 @@
 //! metadata value, `resolve_and_decode` (recursive: one frame per level,
 //! `map()` calling it from C for a list) and the `logger.warning` of an
 //! unparsable value (`pycompat::logging`, logger `pdfplumber.pdf`, disabled
-//! as everywhere: `docs/verification.md`, "Étapes"). `pdf.pages` is a
-//! frame, its `iter_pages` generator a frame per resumption from C
+//! as everywhere: `docs/verification.md`, "Logging Disabled"). `pdf.pages`
+//! is a frame, its `iter_pages` generator a frame per resumption from C
 //! (`enumerate`), whose `next(gen)` resumes `create_pages` from C, and each
 //! `Page(...)` a class call and the frames of `Page.__init__`.
 
@@ -491,8 +491,8 @@ impl PDF {
     }
 
     // pdfplumber/pdf.py:184 PDF.annots
-    /// `list(itertools.chain(*(p.annots for p in self.pages)))`. Workstream
-    /// DOC (`Page::annots`).
+    /// `list(itertools.chain(*(p.annots for p in self.pages)))`
+    /// (`Page::annots`).
     pub fn annots(&self) -> PyResult<Vec<Obj>> {
         let _frame = py_frame()?;
         let pages = ANNOTS_PAGES.get("PDF", || self.pages())?;
@@ -511,8 +511,8 @@ impl PDF {
     }
 
     // pdfplumber/pdf.py:189 PDF.hyperlinks
-    /// `list(itertools.chain(*(p.hyperlinks for p in self.pages)))`.
-    /// Workstream DOC (`Page::hyperlinks`).
+    /// `list(itertools.chain(*(p.hyperlinks for p in self.pages)))`
+    /// (`Page::hyperlinks`).
     pub fn hyperlinks(&self) -> PyResult<Vec<Obj>> {
         let _frame = py_frame()?;
         let pages = HYPERLINKS_PAGES.get("PDF", || self.pages())?;
@@ -530,7 +530,7 @@ impl PDF {
 
     // pdfplumber/pdf.py:194 PDF.structure_tree
     /// `[elem.to_dict() for elem in PDFStructTree(self)]`, `[]` when the
-    /// document has no structure. Workstream DOC (`crate::structure`).
+    /// document has no structure (`crate::structure`).
     pub fn structure_tree(&self) -> PyResult<Vec<PyValue>> {
         let _frame = py_frame()?;
         let tree = match PDFStructTree::new(&self.core.doc, Scope::Document(self)) {

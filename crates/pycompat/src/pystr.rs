@@ -55,12 +55,11 @@
 //!
 //! # Mutation testing
 //!
-//! Wave 2 review: `cargo mutants -f crates/pycompat/src/pystr.rs
-//! --profile mutants -j 1` against `pycompat_unit`, `canon_unit`,
-//! `text_tables_unit` (without `pages_real`), `layout_unit` and
-//! `cmaps_unit` (253 mutants, then the functions with survivors again with
-//! every replay; the `Ok(..)` pass has no target here). Every mutant is
-//! caught or times out except these, which change no result:
+//! `cargo mutants -f crates/pycompat/src/pystr.rs --profile mutants -j 1`
+//! against `pycompat_unit`, `canon_unit`, `text_tables_unit` (without
+//! `pages_real`), `layout_unit` and `cmaps_unit` (the `Ok(..)` pass has no
+//! target here): every mutant is caught or times out except these, which
+//! change no result:
 //!
 //! - `|` made `^` in [`encode_code_point`], `decode_at` and
 //!   [`PyStr::to_utf16`]: the lead-byte or surrogate tag and the payload

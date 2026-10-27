@@ -1,6 +1,6 @@
 //! The WebAssembly boundary of the port: the coarse-grained API the
-//! JavaScript package (`js/`) calls (`docs/architecture.md`, "Frontière
-//! JavaScript"; `docs/js-runtime.md` for the ABI, the result format and
+//! JavaScript package (`js/`) calls (`docs/architecture.md`, "JavaScript
+//! Boundary"; `docs/js-runtime.md` for the ABI, the result format and
 //! its measurements, the CMap loading and the error and warning channels).
 //!
 //! - `abi`: the exported functions (`pp_alloc`, `pp_call`...), no

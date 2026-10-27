@@ -1,5 +1,5 @@
-//! The typed JSON exchange format of `docs/verification.md` ("Format
-//! d'échange typé"), shared with `oracle/typed_json.py`: Python values
+//! The typed JSON exchange format of `docs/verification.md` ("Typed
+//! JSON"), shared with `oracle/typed_json.py`: Python values
 //! encoded in JSON without loss, keeping int/float and tuple/list apart.
 //!
 //! | Python | JSON |
@@ -632,8 +632,9 @@ fn write_value(out: &mut String, v: &Value) {
 
 #[cfg(test)]
 mod tests {
-    //! The examples of the table in docs/verification.md; the exhaustive
-    //! cross-test against `oracle/typed_json.py` is `tests/canon_unit.rs`.
+    //! The examples of the table in docs/verification.md ("Typed JSON");
+    //! the exhaustive cross-test against `oracle/typed_json.py` is
+    //! `tests/canon_unit.rs`.
     use super::*;
 
     fn roundtrip(text: &str) -> Value {

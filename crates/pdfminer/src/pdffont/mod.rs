@@ -45,8 +45,9 @@
 //! Every ported function takes its Python frame, and the calls into
 //! modules that do not count theirs take them through [`frames`], so that a
 //! font built or queried at the depth of a nested Form XObject raises
-//! `RecursionError` where Python does (`docs/architecture.md`). A class
-//! instantiation is a call from C (`type.__call__` runs `__init__`).
+//! `RecursionError` where Python does (`docs/architecture.md`, "Recursion
+//! Depth"). A class instantiation is a call from C (`type.__call__` runs
+//! `__init__`).
 //! `pdftypes` and `psparser` count their own frames (accessors, streams and
 //! filters, parsers), and `cmapdb` those of `CMapDB` (loading a predefined
 //! CMap included) and of the `CMapParser` methods. What is not modeled, and

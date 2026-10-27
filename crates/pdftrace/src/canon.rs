@@ -1,5 +1,5 @@
-//! The canonical writer `canon(v)` of `docs/verification.md` ("Format
-//! canonique"), shared with `oracle/canon.py`.
+//! The canonical writer `canon(v)` of `docs/verification.md` ("Canonical
+//! Trace Format"), shared with `oracle/canon.py`.
 //!
 //! | value | written as |
 //! |---|---|
@@ -332,7 +332,8 @@ pub fn write_canon_obj(out: &mut String, obj: &PDFObject) {
 
 #[cfg(test)]
 mod tests {
-    //! The examples of the table in docs/verification.md.
+    //! The examples of the table in docs/verification.md ("Canonical Trace
+    //! Format").
     use super::*;
     use pycompat::{ExcKind, PyInt};
 

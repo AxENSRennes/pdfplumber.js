@@ -1,6 +1,6 @@
 //! The Python frames of a `logging` call, which decide where a
 //! `RecursionError` happens in a deep recursion (`docs/architecture.md`,
-//! "Profondeur de récursion").
+//! "Recursion Depth").
 //!
 //! pdfminer logs with `log = logging.getLogger(__name__)` and
 //! `log.debug(...)`, `log.warning(...)`... It never reads its log level, so

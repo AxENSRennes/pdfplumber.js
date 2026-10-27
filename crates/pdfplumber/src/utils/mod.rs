@@ -1,4 +1,5 @@
-//! Port of `pdfplumber/utils/__init__.py`: not ported yet.
+//! Port of `pdfplumber/utils/__init__.py`, which only re-exports names of
+//! its submodules: Rust code names the submodules.
 
 pub mod clustering;
 pub mod exceptions;

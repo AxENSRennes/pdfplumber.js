@@ -4,7 +4,7 @@
 //!
 //! Some Python state outlives a call and changes how deep a later call
 //! goes, so where a `RecursionError` happens (`docs/architecture.md`,
-//! "Profondeur de récursion"): the symbols interned so far (interning a
+//! "Process State"): the symbols interned so far (interning a
 //! name for the first time instantiates it, a frame more:
 //! `pdfminer::psparser::py_intern`), the patterns `re` compiled
 //! (`pycompat::re_cache`: none at the start of a trace), the CMaps

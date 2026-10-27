@@ -15,8 +15,8 @@
 //!
 //! Mutation testing (`cargo mutants -f crates/pycompat/src/unicodedata.rs
 //! --profile mutants -j 1 -- --package=pdftrace --test=pycompat_unit
-//! --test=canon_unit`, review of wave 2): 159 mutants, every one caught
-//! or timed out except these, equivalent for every input:
+//! --test=canon_unit`): every mutant is caught or times out except these,
+//! equivalent for every input:
 //!
 //! - `is_nfc_first` and `is_nfc_last` made `true`: they only skip a
 //!   [`compose`] look-up, and the composition table holds exactly the
