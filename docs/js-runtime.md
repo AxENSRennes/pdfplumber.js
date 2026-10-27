@@ -66,7 +66,7 @@ Python running that statement ([Documents And Pages](#documents-and-pages)).
   (`PyValue` frees with a worklist, like CPython's trashcan; `PDFObject`
   too): a list nested 200,000 levels deep crosses the boundary both ways.
   Where Python recurses, the core recurses up to Python's limit, on an
-  8 MiB stack ([Stack Size](architecture.md#stack-size)).
+  8 MiB stack ([Stack Size](https://github.com/AxENSRennes/pdfplumber.js/blob/HEAD/docs/architecture.md#stack-size)).
 
 ## Result Encoding
 
