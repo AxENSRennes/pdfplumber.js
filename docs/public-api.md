@@ -23,6 +23,44 @@ contract of wave 5, its workstreams and its harness in
 > (`oracle.verify --engine js-api`) on `all` and the adversarial sets.
 > `NotImplemented` remains only for the paths marked "not ported" below.
 
+## Differences From Python
+
+Results are Python pdfplumber's everywhere else. These differences are
+known, deliberate or out of reach (they depend on CPython memory
+addresses), and each is described in its section:
+
+- **`filter(test)` evaluates `test` once, when it is called**, on the
+  parent page's objects. Python calls it later, at the first read of the
+  derived page's objects. So a closure variable changed in between is not
+  seen, a test with side effects runs earlier, and an error (a test that
+  throws, or parent objects that cannot be computed because of a corrupt
+  content stream) rejects the `filter()` promise itself, where Python
+  returns the page and raises at its first read. Same error, earlier.
+  ([Cropping, Filtering, And Dedupe](#cropping-filtering-and-dedupe))
+- **`search()` and structure-tree matchers use JavaScript `RegExp`
+  semantics**, not Python's `re`: ASCII `\w`/`\d`/`\b`, no `(?P<name>…)`,
+  `$` before a final newline... ([Search](#search))
+- **Matcher functions of the structure tree run on every element**, even
+  where Python stops at the first match. ([Structure Tree](#structure-tree))
+- **Layout ties**: where boxes are at equal distance, pdfminer breaks the
+  tie by memory address (which changes from one Python run to another);
+  the port uses creation order, which gives Python's result on 98.6 % of
+  the corpus pages where Python itself is stable from run to run.
+  ([Not Ported](#not-ported))
+- **Inline image names** are `inline-<k>` (rank in the page) instead of a
+  memory address, so they repeat across pages. ([Not Ported](#not-ported))
+- **NaN coordinates** come last in the sets of `cluster_objects` (words,
+  lines, table edges); Python orders them by memory address.
+  ([Not Ported](#not-ported))
+- **`structure_tree` of a document read from bytes** does not deep-copy
+  the whole document behind a reference attribute, so a very deep tree
+  that makes Python raise `RecursionError` is returned.
+  ([Not Ported](#not-ported))
+- **Not modelled inputs** raise `NotImplemented` where Python would go on
+  (a non-numeric `laparams` margin, a non-string password, serializing into
+  a stream...), and `to_image`, `repair=True` and the command line are not
+  ported. ([Not Ported](#not-ported))
+
 ## Entrypoint
 
 ```ts

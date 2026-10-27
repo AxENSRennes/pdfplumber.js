@@ -48,6 +48,10 @@ them elsewhere or runs the engine in a dedicated worker.
 The engine (pdfminer.six and pdfplumber's page layer) and the public API are
 ported and verified (docs/architecture.md, "Vague 5"). Not ported:
 `Page.to_image` (`display.py`), `repair=True` (Ghostscript), the command line.
+The few known differences from Python (`filter()` runs its test at the call,
+`search()` uses JavaScript `RegExp` semantics, and a handful of cases that
+depend on CPython memory addresses) are listed in
+[Differences From Python](docs/public-api.md#differences-from-python).
 
 - Why and how: [`docs/port-strategy.md`](https://github.com/AxENSRennes/pdfplumber.js/blob/HEAD/docs/port-strategy.md)
 - Layout and porting rules: [`docs/architecture.md`](https://github.com/AxENSRennes/pdfplumber.js/blob/HEAD/docs/architecture.md)

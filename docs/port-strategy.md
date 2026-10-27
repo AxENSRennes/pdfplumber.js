@@ -467,17 +467,25 @@ Lecture :
     natif 24,6, Node 33,5). RSS maximale : natif 318 Mio, Python
     412 Mio, Node 505 à 554 Mio (mémoire linéaire du Wasm 279 Mo).
     `dist/pdfplumber.wasm` : 2 576 399 octets (662 ko brotli).
-- **Avant de remplacer `main`** (le port pdf.js ; `main` est un ancêtre
-  de `rewrite/rust-core`, l'avance est rapide) :
-  - décisions du propriétaire : la ligne de copyright de `LICENSE` (MIT,
-    « the pdfplumber-js contributors ») ; le nom et la version du paquet
-    npm (`0.0.0`) et sa publication ; le contrat de `filter()` (ci-dessous) ;
+- **`main` remplacé par le port** (27 octobre 2026) : le dernier commit
+  du `main` de l'ancien port (`25770a8`, fixture `encrypted-password.pdf`
+  déterministe, que `oracle/generate_micro_pdfs.py` écrit déjà sans
+  hasard) est fusionné en gardant l'arbre du port (`git merge -s ours`),
+  puis `main` avance jusqu'au port : l'historique de l'ancien port reste
+  dans celui de `main`, et son dernier état est l'étiquette
+  `legacy-pdfjs`. Les vagues suivantes s'intègrent dans `main`
+  (`rewrite/rust-core` reste sur le commit du remplacement). Décisions du
+  propriétaire : licence MIT, « the pdfplumber-js contributors » ; la
+  différence de `filter()` est gardée, documentée dans `public-api.md`
+  (« Differences From Python », qui rassemble aussi les autres écarts) ;
+  le paquet npm reste `pdfplumber-js` `0.0.0`, non publié.
+- **Points ouverts** (après le remplacement de `main`) :
   - `filter()` d'une page dont les objets ne se calculent pas : l'API
     rejette avec leur erreur, Python rend la page et lève à la première
     lecture (14 fichiers ; il faudrait une page filtrée sans objet du
     cœur, dont chaque membre refait les objets du parent, le prédicat et
     `page_filter` dans son propre job) ; la fonction de `filter()` est
-    évaluée une fois, à l'appel (différence documentée) ;
+    évaluée une fois, à l'appel. Différence gardée et documentée ;
   - écarts connus, documentés (`public-api.md`) : la ligne `ids` de
     `pdfjs-issue19624-text.pdf` (deux boîtes de même contenu), l'ordre
     des NaN de `cluster_objects`, l'oracle de `096-text-TL.pdf` au-delà
@@ -499,7 +507,7 @@ Lecture :
     Chromium et WebKit, et les temps des navigateurs ne sont mesurés que
     sur une passe ; pas d'intégration continue hors de cette machine
     (`check.sh`, `check-browsers.sh` locaux) ;
-  - le README remplace celui de `main` (démarrage rapide, notes de
-    migration depuis `legacy-pdfjs`) ; à relire par le propriétaire avant
-    l'avance de `main`, puis pousser.
+  - la parité n'est vérifiée que sur les 20 premières pages de chaque
+    fichier de `all`, et sur des corpus adverses écrits à la main : aucun
+    fuzzing.
 

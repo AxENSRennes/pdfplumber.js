@@ -426,7 +426,7 @@ Mode d'emploi détaillé : [`oracle/README.md`](../oracle/README.md).
   dérivée par un pas `filter` dont les objets lèvent alignée (Python écrit
   `dbox`, `dobjects <exc>` et `dannots` de la page filtrée, l'API rejette
   `filter()` avec la même exception : `derive <exc>` ; écart documenté,
-  `port-strategy.md`, « Avant de remplacer `main` ») les traces sont
+  `port-strategy.md`, « Points ouverts ») les traces sont
   identiques ; `window`, une fenêtre `depth-*`/`climit-*` qui a ses
   sessions dans `depth.jsonl` et `depth-bytes.jsonl` (où la parité à la
   limite est vérifiée), identique jusqu'à une première différence où la
