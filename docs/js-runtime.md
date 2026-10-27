@@ -535,16 +535,96 @@ only `dist/pdfplumber.wasm`; see
 
 ## Size
 
-`node scripts/size.mjs` (gzip -9, brotli 11); `--budget` in
-`scripts/check.sh`: 1 MB brotli for the module, 40 kB for the browser entry.
+`node scripts/size.mjs` (gzip -9 and brotli 11: what a compressing server
+sends); `--budget` in `scripts/check.sh` (brotli: 1 MB for the module,
+40 kB for the browser entry). `scripts/wasm-size.py` shows where the bytes
+go (sections; code by crate, module and generic function, on a module that
+keeps its names; data by crate with `wasm-ld`'s map; the recipe is in its
+header). Measured in October 2026.
 
-| File | raw | gzip | brotli |
+What a page downloads at first use, with an empty cache:
+
+| | raw | gzip | brotli |
 |---|---|---|---|
-| `dist/pdfplumber.wasm` (`wasm-opt -O3`) | 2,576,399 | 939,137 | 661,630 |
-| `dist/browser/index.js` and its chunks | 46,099 | 15,158 | 13,757 |
-| `dist/browser/worker.js` | 25,143 | 8,908 | 8,162 |
-| `dist/src` (Node, `.js`) | 139,908 | 42,167 | 37,087 |
-| `dist/cmaps` (148 zlib files, loaded on demand) | 2,976,819 | | |
+| `dist/browser/index.js` and its chunk | 46,099 | 15,158 | 13,757 |
+| `dist/pdfplumber.wasm` | 2,592,273 | 919,867 | 642,258 |
+| **total, core in the page** | **2,638,372** | **935,025** | **656,015** |
+| worker mode adds `dist/browser/worker.js` | 25,143 | 8,908 | 8,162 |
+| a Japanese document adds `UniJIS-UCS2-H` + `to-unicode-Adobe-Japan1` (zlib, served as they are) | 155,903 | | |
+| `dist/cmaps` (148 files, each on demand) | 2,976,819 | | |
+| `dist/src` (Node, not for a page) | 139,908 | 42,167 | 37,087 |
+
+That is 3.3 s at 1.6 Mbit/s (Lighthouse's mobile profile), 0.6 s at
+9 Mbit/s, 0.1 s at 50 Mbit/s, then the cache. A server that does not
+compress the `.wasm` (nginx only does if `gzip_types` lists
+`application/wasm`) sends four times as much, and without that MIME type
+there is no `compileStreaming`. V8 compiles lazily: `WebAssembly.compile`
+takes 9 ms in Node 26, `compileStreaming` 38 ms in Chromium 148,
+instantiation 1 ms; the first document pays for compiling the functions it
+reaches (`nics-background-checks-2015-11.pdf`, text and tables: 207 ms the
+first time and 87 ms the second in Node, 270 and 91 ms in Chromium).
+
+For comparison (brotli 11 of the published files): pdf.js 5.7.284,
+`pdf.min.mjs` + `pdf.worker.min.mjs`, 401,825 bytes (text runs and
+positions, without pdfplumber's objects, words or tables); PDFium
+(`@embedpdf/pdfium` 2.15.1) 1,703,183; MuPDF.js 1.27.0 3,546,404;
+Pyodide 314.0.7 with pdfplumber 0.11.9, pdfminer.six 20260107 and
+cryptography, about 14.8 MB.
+
+**Where the bytes go** (with names): code 1,991,869 bytes (about 528 kB
+brotli, 80 %), data 580,602 (about 128 kB brotli). Code by crate: pdfminer
+606 kB, pdfplumber 591 kB, pdfplumber-wasm 277 kB (`Core::op` alone
+139 kB), pycompat 170 kB, core 140 kB, num-bigint 44 kB, hashbrown 40 kB,
+alloc 32 kB, indexmap and sha2 19 kB, std 15 kB. There is no large dead
+block: the cryptography (RC4, AES, SHA-2, MD5, 86 kB) serves encrypted PDFs,
+Python's integers (66 kB) their arithmetic. Generics: 615 more instances
+than functions (`drop` glue 45 kB in 194 functions, `listsort::MergeState`
+67 kB in 10 instances). Panics: `panic=abort`, 1.6 kB of machinery;
+`core::fmt` 24 kB; correctly rounded float parsing 8 kB plus an
+incompressible 10 kB table. What each data table costs (emptied in a copy,
+for measurement only):
+
+| Table | raw | brotli |
+|---|---|---|
+| `pycompat::unicodedata_tables` (NFKC of Unicode 15.0: `unicode_norm` only) | 139,706 | 15,165 |
+| `pdfminer::saslprep_tables` (NFKC of Unicode 3.2 and stringprep: AES-256 passwords) | 133,602 | 14,077 |
+| both (brotli shares what they have in common) | 273,310 | 39,668 |
+| `pdfminer::glyphlist` | 127,469 | 34,474 |
+| widths of the 14 standard fonts (`fontmetrics`) | 41,552 | 3,211 |
+| operations only the internal API reaches (tests, benchmarks) and the JSON format | 60,661 | 14,687 |
+
+**Build variants** (cargo `dist`, then `wasm-opt -O3` unless stated; speed
+by `js/bench/phases.mjs` on `quick`, alternated passes, medians):
+
+| Variant | raw | brotli | Node speed |
+|---|---|---|---|
+| `opt-level = 3`, fat LTO, one codegen unit, `wasm-opt -O3` | 2,576,399 | 661,630 | reference |
+| the same, `wasm-opt -O3` without its inlining (**shipped**) | 2,592,273 | 642,258 (−2.9 %) | same |
+| the same, `wasm-opt -O1` / no `wasm-opt` | 2,637,815 / 2,732,235 | 642,725 / 648,970 | same |
+| `wasm-opt -O2` / `-O4` / `-Os` / `-Oz` / `-O3 --converge` | | 661,693 to 667,646 | |
+| thin LTO | 2,576,527 | 662,237 | |
+| `opt-level = 2` | 2,516,312 | 649,306 | +5 % |
+| LLVM inline threshold 150 / 100 / 50 / 10 (250 at `-O3`) | 2,456,194 to 2,273,779 | 636,704 / 620,359 / 615,327 / 607,038 | +0–4 % / +6–11 % / +6–7 % / +9 % |
+| `opt-level = "s"` | 2,259,656 | 597,431 (−9.7 %) | +41 % |
+| `opt-level = "z"`, `wasm-opt -Os` | 1,887,886 | 521,332 (−21 %) | +77 % |
+
+`strip` and `debug` change nothing (`--strip-debug` drops the names; no
+DWARF in `dist`). `panic_immediate_abort`, which would drop panic
+formatting, needs `-Zbuild-std` (nightly).
+
+**Decision.** `wasm-opt -O3` without its own inlining
+(`scripts/build-wasm.mjs`, `NO_INLINING`): LLVM has already inlined, and
+binaryen inlining again saved 0.6 % raw but cost 2.9 % brotli (2.1 % gzip)
+with no speed gain (Node +0.2 %, Chromium 148 −3.4 %, WebKit 26.4 +0.6 %,
+Firefox 158 −4.4 %: within noise; the first document is 19 % faster in
+Node and 21 % in Chromium, with less code to compile). The Rust profile
+stays at `opt-level = 3`: every point of size that `opt-level` or a lower
+inline threshold gives costs at least a point of speed, three or four with
+`opt-level` ("z": −21 % for +77 %), on work redone for every document while
+the module downloads once. Still possible without a speed cost: loading the
+two normalization tables on demand, like the CMaps (−40 kB brotli); moving
+the test-only operations and the JSON format out of the shipped module
+(−15 kB); a denser glyph list (−15 kB).
 
 ## Tests
 

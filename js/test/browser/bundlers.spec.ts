@@ -1,5 +1,5 @@
 // The package bundled into an application, with esbuild and with Vite,
-// following the README's recipes ("Requirements and bundlers"; built from
+// following the README's recipes ("Bundlers and CDN"; built from
 // the packed package by scripts/check-package.mjs --bundles into
 // dist/bundler-tests/), in the page and in worker mode, on a Latin and a
 // CJK document (its CMaps fetched from where the recipe put them). The

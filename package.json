@@ -1,8 +1,25 @@
 {
   "name": "pdfplumber-js",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
-  "description": "pdfplumber for JavaScript: a faithful Rust/Wasm port of pdfplumber and pdfminer.six, verified against Python.",
+  "description": "pdfplumber for JavaScript: extract chars, words, text, lines and tables from PDFs in the browser and Node, with the same results as Python pdfplumber.",
+  "keywords": [
+    "pdf",
+    "pdfplumber",
+    "pdfminer",
+    "pdf-parser",
+    "pdf-extraction",
+    "text-extraction",
+    "table-extraction",
+    "tables",
+    "webassembly",
+    "wasm",
+    "browser"
+  ],
+  "homepage": "https://github.com/AxENSRennes/pdfplumber.js#readme",
+  "bugs": {
+    "url": "https://github.com/AxENSRennes/pdfplumber.js/issues"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",

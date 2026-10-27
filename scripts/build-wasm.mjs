@@ -4,8 +4,14 @@
 // (binaryen, a devDependency); `--no-opt` skips it (docs/js-runtime.md,
 // "Size"). Without `--no-opt`, a missing wasm-opt is an error: a stale
 // node_modules (before `npm ci`) would ship the unoptimized module
-// (3.2 MB instead of 2.6) without a word, and the size budget, counted in
-// brotli bytes, does not catch it.
+// (3.2 MB instead of 2.6: the function names included) without a word,
+// and the size budget, counted in brotli bytes, does not catch it.
+//
+// `-O3` without binaryen's own inlining (`NO_INLINING`; docs/js-runtime.md,
+// "Size"): LLVM has already inlined (opt-level 3, LTO); inlining again made
+// the module 0.6 % smaller raw but 2.9 % larger in brotli and 2.1 % in gzip,
+// the bytes a page downloads, and no faster in Node, Chromium, WebKit or
+// Firefox, whose optimizing tiers inline themselves.
 //
 // `--oracle` builds dist/pdfplumber-oracle.wasm instead: the same module
 // with the oracle hooks of the harness (feature `oracle-hooks`,
@@ -37,6 +43,12 @@ const out = join(ROOT, name);
 mkdirSync(dirname(out), { recursive: true });
 const wasmOpt = join(ROOT, "node_modules/binaryen/bin/wasm-opt");
 const optimize = !process.argv.includes("--no-opt");
+// no function is small enough, or alone enough to its caller, to be inlined
+const NO_INLINING = [
+  "--always-inline-max-function-size=0",
+  "--flexible-inline-max-function-size=0",
+  "--one-caller-inline-max-function-size=0",
+];
 if (optimize && !existsSync(wasmOpt)) {
   console.error(
     `build-wasm: ${wasmOpt} is missing (binaryen, a devDependency): run \`npm ci --offline\`, ` +
@@ -47,10 +59,12 @@ if (optimize && !existsSync(wasmOpt)) {
 if (optimize) {
   execFileSync(
     process.execPath,
-    [wasmOpt, "-O3", "--strip-debug", "--strip-producers", "--all-features", built, "-o", out],
+    [wasmOpt, "-O3", ...NO_INLINING, "--strip-debug", "--strip-producers", "--all-features", built, "-o", out],
     { stdio: "inherit" },
   );
 } else {
   copyFileSync(built, out);
 }
-console.log(`${name}: ${statSync(out).size} bytes (cargo: ${statSync(built).size}${optimize ? ", wasm-opt -O3" : ", --no-opt"})`);
+console.log(
+  `${name}: ${statSync(out).size} bytes (cargo: ${statSync(built).size}${optimize ? ", wasm-opt -O3 without inlining" : ", --no-opt"})`,
+);
