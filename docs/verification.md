@@ -632,8 +632,8 @@ first past the limit).
 ## Parity Status
 
 Traces through `pdftrace` (release), the 13 stages on `all` (1,853 files,
-first 20 pages) and the five adversarial sets: 75 of 78 runs identical to
-Python, no timeout, no crash. `oracle.wasm_parity` on `quick`: the
+first 20 pages) and the five adversarial sets: 75 or 76 of 78 runs
+identical to Python, no timeout, no crash. `oracle.wasm_parity` on `quick`: the
 WebAssembly build gives the native traces for the 13 stages. Through the
 public API (`oracle.api_parity`, the four `plumber_*` stages on the same six
 sets): no `defect`; every other difference is a `core` difference of the
@@ -643,7 +643,7 @@ browsers.
 
 | Known difference | Where | Why |
 |---|---|---|
-| the `ids` line of `pdfjs-issue19624-text.pdf` | `plumber_objects` on `all` (1,852/1,853) | two text boxes with the same content, which the key of the `id()` ranks cannot tell apart ([Layout Tie Order](architecture.md#layout-tie-order)) |
+| the `ids` line of `pdfjs-issue19624-text.pdf` | `plumber_objects` on `all`, for some builds of the oracle cache (1,852/1,853) | two text boxes with the same content, which the key of the `id()` ranks cannot tell apart; whether Python's draw hits them changes from one cache build to the next ([Layout Tie Order](architecture.md#layout-tie-order)) |
 | NaN order in `cluster_objects` | `plumber_text` (16 files) and `plumber_tables` (12) on the `op-*`/`text-*` files of `adv-interp` | CPython orders a `set` of NaNs by address; Python itself changes from one process to another |
 | the oracle of `096-text-TL.pdf` | `plumber_text` on `adv-interp` | Python needs more than the 5 GB cap of `heavy.sh` |
 | `filter()` evaluated at the call | `plumber_doc` through the API (31 files of `all` and the adversarial sets) | the API runs the test in the `filter()` job: a page whose objects raise rejects `filter()` instead of raising at the first read ([Differences From Python](public-api.md#differences-from-python)) |

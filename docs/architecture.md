@@ -555,10 +555,13 @@ about half. A statistic, not a parity criterion; it is why the library
 keeps `CreationOrder` (`CONVERTER_CREATION_ORDER=1 cargo test --release -p
 pdftrace --test converter_unit corpus` measures it on the replayed corpus).
 
-The `ids` lines are the only part of a trace that changes from one oracle
-cache build to the next (checked with several `PYTHONHASHSEED`s). One file
-stays out of reach of the content key: `pdfjs-issue19624-text.pdf`, whose
-duplicated text boxes (fake bold) have the same content.
+From one oracle cache build to the next, the `ids` lines change, and so does
+the analysis of the pages with ties (a rebuild of the `layout` cache on `all`
+and the adversarial sets changed 87 of 3,463 traces beyond their `ids`
+lines); nothing else does. Parity holds for whichever draw the cache holds,
+since `pdftrace` replays it. One file can fall out of reach of the content
+key, depending on the draw: `pdfjs-issue19624-text.pdf`, whose duplicated
+text boxes (fake bold) have the same content.
 
 ## The pdfplumber Page Layer
 
