@@ -59,24 +59,30 @@ ported and verified (docs/architecture.md, "Vague 5"). Not ported:
 
 Milliseconds per page on the `quick` set (150 files, their first 20
 pages: 302 pages), each phase as pdfplumber runs it, on a shared 8-core
-Linux VPS (one benchmark at a time; median of 3 runs, Python 1 run):
+Linux VPS (one benchmark at a time; median of 3 runs, Python 1 run;
+measured at the integration of wave 5 on `rewrite/rust-core`, the
+Chromium row at the wave's join, a few commits earlier):
 
 | ms per page | open | objects (layout included) | `extract_text` | `extract_words` | `find_tables` | total | `extract_tables` |
 |---|---|---|---|---|---|---|---|
-| Python pdfplumber 0.11.9 (CPython 3.12) | 4.85 | 113.75 | 6.76 | 4.12 | 4.84 | 134.3 | 4.76 |
-| pdfplumber-js in Node 26, public API | 1.21 | 14.91 | 1.96 | 1.69 | 1.55 | 21.3 | 1.33 |
-| pdfplumber-js in Chromium 148, public API | 1.11 | 15.64 | 2.02 | 1.79 | 1.68 | 22.2 | 1.37 |
-| the Rust core, native (no JavaScript) | 0.33 | 10.80 | 1.70 | 1.33 | 1.80 | 16.0 | 1.22 |
+| Python pdfplumber 0.11.9 (CPython 3.12) | 5.02 | 118.27 | 7.31 | 4.48 | 4.69 | 139.8 | 5.20 |
+| pdfplumber-js in Node 26, public API | 1.20 | 15.10 | 1.83 | 1.64 | 1.46 | 21.2 | 1.27 |
+| the Rust core, native (no JavaScript) | 0.32 | 10.68 | 1.72 | 1.36 | 1.71 | 15.8 | 1.12 |
+| pdfplumber-js in Chromium 148, public API (join) | 1.11 | 15.64 | 2.02 | 1.79 | 1.68 | 22.2 | 1.37 |
 
-The public API in Node is about 6.3 times as fast as Python on these
-pages, in Chromium 6.0 times (5.3 with the engine in a worker; WebKit is
-on par with Chromium, Playwright's Firefox Nightly about five times
-slower), native Rust 8.4 times. `objects` includes moving every object into
-JavaScript values (3.3 ms of its 14.9 ms: a second read, the objects
-already computed). The WebAssembly module is 2.57 MB (661 kB brotli); the
-CJK CMaps are loaded only when a document needs them. Method, per-phase
-history and memory: [`docs/architecture.md`](https://github.com/AxENSRennes/pdfplumber.js/blob/HEAD/docs/architecture.md),
-"Jonction (branche `wave5/join`)".
+The public API in Node is about 6.6 times as fast as Python on these
+pages, native Rust 8.9 times. Chromium was measured at the join, against
+a Python run of 134.3 ms per page there (Python's time varies by a few
+percent from run to run on this machine): 6.0 times as fast as that run,
+5.3 with the engine in a worker; WebKit is on par with Chromium,
+Playwright's Firefox Nightly about five times slower. `objects` includes
+moving every object into JavaScript values (about 3.2 ms of its 15.1 ms:
+a second read, the objects already computed). The WebAssembly module is
+2.58 MB (662 kB brotli); the CJK CMaps are loaded only when a document
+needs them. Method, per-phase history and memory:
+[`docs/architecture.md`](https://github.com/AxENSRennes/pdfplumber.js/blob/HEAD/docs/architecture.md),
+"Intégration (branche `rewrite/rust-core`)" and "Jonction (branche
+`wave5/join`)".
 
 ## Migrating from the pdf.js-based port (`legacy-pdfjs`)
 

@@ -5,8 +5,9 @@
 # (scripts/wasm-depth-gate.sh), the JavaScript package (Wasm build, Node
 # tests and the sessions of the public API on the sources and the dist
 # build, size budget; the browsers are scripts/check-browsers.sh), the
-# plumber_* stages through the public API on micro, and the oracle
-# self-tests. Regenerates the unit oracle data first when it is
+# four plumber_* stages through the public API on micro and adv-plumber
+# (oracle.api_parity: each trace that is not Python's classified by its
+# content), and the oracle self-tests. Regenerates the unit oracle data first when it is
 # missing or stale (`python -m oracle.unit`).
 #
 #   scripts/check.sh            # from any directory
@@ -102,10 +103,13 @@ step "the npm package as a consumer gets it: files, notices, links, declarations
 node scripts/third-party-notices.mjs --check
 capped node scripts/check-package.mjs
 
-step "the plumber_* stages through the public JavaScript API on micro (js/trace, dist/pdfplumber-oracle.wasm)"
-node scripts/build-wasm.mjs --oracle --no-opt
-for stage in plumber_objects plumber_text; do
-  capped "$PY" -m oracle.verify --engine js-api --stage "$stage" --set micro -j 2
+step "the four plumber_* stages through the public JavaScript API on micro and adv-plumber, against Python and pdftrace (oracle.api_parity; dist/pdfplumber-oracle.wasm with wasm-opt, as the package ships its module)"
+node scripts/build-wasm.mjs --oracle
+cargo build --release -p pdftrace
+for stage in plumber_objects plumber_text plumber_tables plumber_doc; do
+  for set in micro adv-plumber; do
+    capped "$PY" -m oracle.api_parity --stage "$stage" --set "$set" -j 2
+  done
 done
 
 step "oracle self-tests"

@@ -744,10 +744,18 @@ la couche page ajoutera l'interpréteur et les polices. Budget (brotli) :
   l'API publique seulement, dans Node sur les sources (`api.test.ts`) et
   sur le build `dist` (`api-dist.test.ts`), et dans les navigateurs, dans
   la page et en worker (`api.spec.ts` ; `js/test/serve.mjs` sert aussi
-  `/upstream/` et `/oracle-api/`) ; voir `architecture.md`, « Vague 5 »,
-  « Harnais ».
+  `/upstream/`, `/oracle-api/` et `/.cache/corpus/`) ; les fenêtres de
+  profondeur des ensembles adverses et de l'API, ouvertes par chemin dans
+  Node (`depth.jsonl`, `api-depth.test.ts`) et depuis leurs octets
+  partout (`depth-bytes.jsonl` : `api-depth.test.ts`, et `api.spec.ts`
+  par lots de 25 sessions, dans les trois navigateurs, dans la page et en
+  worker) ; voir `architecture.md`, « Vague 5 », « Harnais », et
+  `verification.md`, « Parité par l'API JavaScript publique ».
 - `scripts/check.sh` : noms de CMaps, build (sans `wasm-opt`), types, vitest,
-  budget. `scripts/check-browsers.sh` : build complet puis Playwright.
+  budget, puis les quatre étapes `plumber_*` par l'API sur `micro` et
+  `adv-plumber` (`oracle.api_parity`, module d'oracle avec `wasm-opt`).
+  `scripts/build-wasm.mjs` échoue sans `wasm-opt` (`node_modules` sans
+  `binaryen`) sauf `--no-opt` explicite. `scripts/check-browsers.sh` : build complet puis Playwright.
 - **Mutations** (`docs/verification.md`), sur tout `crates/wasm/src` et sur
   le code de la frontière dans `crates/pdfplumber` (libération de
   `PyValue`, `TextMap::search_with`, `resolved`), tests du paquet

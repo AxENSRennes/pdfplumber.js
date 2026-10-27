@@ -416,15 +416,39 @@ Mode d'emploi détaillé : [`oracle/README.md`](../oracle/README.md).
   `calls_made`, `calls_made_by_member`, avec au moins 3 appels faits par
   membre (sinon le générateur échoue).
   À l'intégration d'une vague, les quatre étapes passent par l'API sur
-  `all` et les cinq corpus adverses, et chaque fichier non identique est
-  classé : fenêtre de profondeur (`depth-*`, `climit-*`, couverte par
-  `depth.jsonl`), fichier qui diffère aussi par `pdftrace`, ou écart
-  documenté de l'API (`filter()` d'une page dont les objets lèvent :
-  `port-strategy.md`, « Avant de remplacer `main` ») ; toute autre
-  différence est un défaut. Intégration de la vague 5 : 838 résultats
-  non identiques sur 24 passes, 794 fenêtres, 30 qui diffèrent aussi par
-  `pdftrace`, 14 `filter()`, aucun autre (`architecture.md`,
-  « Intégration »).
+  `all` et les cinq corpus adverses par `python -m oracle.api_parity
+  --stage S --set NOM` (`oracle/api_parity.py`), qui lance l'oracle (en
+  cache), `pdftrace` et `pdftrace-js` et classe chaque trace de l'API qui
+  n'est pas celle de Python **par son contenu**, non par le nom du
+  fichier : `core`, la trace de l'API est celle de `pdftrace` octet pour
+  octet et celle-ci diffère de Python (un écart connu du cœur, que l'API
+  n'aggrave pas) ; `filter`, étape `plumber_doc`, une fois chaque page
+  dérivée par un pas `filter` dont les objets lèvent alignée (Python écrit
+  `dbox`, `dobjects <exc>` et `dannots` de la page filtrée, l'API rejette
+  `filter()` avec la même exception : `derive <exc>` ; écart documenté,
+  `port-strategy.md`, « Avant de remplacer `main` ») les traces sont
+  identiques ; `window`, une fenêtre `depth-*`/`climit-*` qui a ses
+  sessions dans `depth.jsonl` et `depth-bytes.jsonl` (où la parité à la
+  limite est vérifiée), identique jusqu'à une première différence où la
+  ligne d'un des deux côtés est une exception qui est `RecursionError` ou
+  en a une pour cause ; `defect`, tout le reste, y compris une trace de
+  l'API qui manque (plantage, délai) : statut 1. Les règles ont leurs
+  tests (`oracle/tests/test_api_parity.py`). `scripts/check.sh` lance
+  `api_parity` sur `micro` et `adv-plumber` pour les quatre étapes, avec
+  le module d'oracle optimisé par `wasm-opt`, comme le paquet expédie le
+  sien. Les fenêtres sont aussi des sessions ouvertes depuis leurs octets
+  (`depth-bytes.jsonl`, sans les membres qui copient le document par
+  `dataclasses.asdict` : `structure_tree` de la page et du document,
+  `toDict` d'un élément, la copie profonde d'un document lu depuis des
+  octets n'étant pas modélisée), rejouées dans Node et dans Chromium,
+  Firefox et WebKit, dans la page et en worker
+  (`js/test/browser/api.spec.ts`, par lots de 25), où les moteurs posent
+  les cadres du Wasm sur leurs propres piles. Le rejoueur rend les appels
+  comparés et faits (`{ checked, made }`) et échoue si une attente n'est
+  pas comparée, si l'API ne fait pas exactement les appels que Python
+  fait, ou si aucun appel n'est fait ; chaque test le vérifie.
+  Intégration de la vague 5 et sa finalisation : voir
+  `architecture.md`, « Intégration » et « Finalisation ».
 
 ### Mesurer une profondeur de cadres
 
