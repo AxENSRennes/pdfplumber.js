@@ -1,7 +1,7 @@
 """Check the upstream ``file:line`` references of the port.
 
 Every ported function carries a comment naming the upstream code it ports
-(``docs/architecture.md``, "Règles de port")::
+(``docs/architecture.md``, "Porting Rules")::
 
     // pdfminer/pdfinterp.py:276 PDFContentParser.seek
     /// pdfminer/psparser.py:161 `PSBaseParser` and :522 `PSStackParser`, ...

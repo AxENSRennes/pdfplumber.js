@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Makes Playwright's WebKit runnable on a Debian/Ubuntu machine without root
-# (docs/js-runtime.md, "Navigateurs"): downloads the system libraries it
+# (docs/js-runtime.md, "Tests"): downloads the system libraries it
 # lacks with `apt-get download` (no installation), extracts them under
 # $PDFPLUMBER_ROOT/.cache/webkit-libs/root, and writes a launcher,
 # .cache/webkit-libs/webkit.sh, that starts Playwright's MiniBrowser with

@@ -596,7 +596,7 @@ fn run(
 /// `creation_order`, also counts the runs of `LAParams()` whose analysis
 /// with the library's default ids (`CreationOrder`) gives Python's result
 /// (the `ids` line left out): the statistic of `docs/architecture.md`
-/// ("Vague 3").
+/// ("Layout Tie Order").
 fn replay(set: &str, min_cases: usize, creation_order: bool) {
     let data = open();
     let fonts = load_fonts(&data, set);

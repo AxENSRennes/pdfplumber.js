@@ -1,8 +1,9 @@
 """Canonical text serialization of Python values for stage traces.
 
-This is the Python half of the contract in ``docs/verification.md`` ("Format
-canonique"); ``crates/pdftrace/src/canon.rs`` is the Rust half. Both are
-cross-tested on the generated cases of ``oracle/unit/canon.py``.
+This is the Python half of the contract in ``docs/verification.md``
+("Canonical Trace Format"); ``crates/pdftrace/src/canon.rs`` is the Rust
+half. Both are cross-tested on the generated cases of
+``oracle/unit/canon.py``.
 
 Rules (``canon(v)``):
 

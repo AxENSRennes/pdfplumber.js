@@ -64,7 +64,7 @@
 //! A font is built at the depth of the page or Form XObject that uses it
 //! (`pdffont`), so a `RecursionError` can happen while a CMap is loaded or
 //! a `/ToUnicode` stream parsed. These count their Python frames
-//! (`docs/architecture.md`, "Profondeur de récursion"):
+//! (`docs/architecture.md`, "Recursion Depth"):
 //!
 //! - [`CMapDB::get_cmap`], [`CMapDB::get_unicode_map`] and
 //!   [`CMapDB::load_data`], `_load_data` with the frames of the standard
@@ -301,8 +301,9 @@ const MAX_CHECKED_ENTRIES: usize = 1 << 22;
 
 /// With debug assertions (`--profile mutants`), panics when a result outgrows
 /// `limit`: a mutant that loops while it allocates then fails at once instead
-/// of exhausting the memory (`docs/verification.md`, "Mutations"; like
-/// `psparser::ProgressGuard`). Release builds check nothing.
+/// of exhausting the memory (`docs/verification.md`, "Mutation Testing",
+/// "Resource Guards"; like `psparser::ProgressGuard`). Release builds check
+/// nothing.
 #[inline]
 fn check_growth(len: usize, limit: usize) {
     debug_assert!(len <= limit, "runaway growth: {len} > {limit}");

@@ -50,7 +50,7 @@ pdfminer/pdfinterp.py:1309 ``PDFPageInterpreter.do_EI``, a memory address: a nam
 ``do_EI`` (``begin_figure``, ``render_image``, ``end_figure`` called from
 ``do_EI``'s frame) is written ``inline{"n": k}``, ``k`` counting the inline
 images of the page from 0 in order of appearance (the port names them
-deterministically, see ``docs/architecture.md``).
+deterministically, see ``docs/architecture.md``, "Inline Image Names").
 
 The module imports the UTF-16BE codec first: the first
 ``bytes.decode("UTF-16BE")`` of a process imports it, deep below the caller,

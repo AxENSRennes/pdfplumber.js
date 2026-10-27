@@ -1,7 +1,7 @@
-// The result-encoding benchmark (docs/js-runtime.md, "Format des
-// résultats"): the core encodes the chars and edges of real pages (the
-// corpus written by crates/wasm/examples/bench_corpus.rs), in the binary
-// PJB1 format and in JSON; JavaScript decodes them into the same objects.
+// The result-encoding benchmark (docs/js-runtime.md, "Result Encoding"):
+// the core encodes the chars and edges of real pages (the corpus written by
+// crates/wasm/examples/bench_corpus.rs), in the binary PJB1 format and in
+// JSON; JavaScript decodes them into the same objects.
 // Runtime-agnostic: `lib` is the internal module (dist/src/internal.js in
 // Node, dist/browser/internal.js in browsers).
 //

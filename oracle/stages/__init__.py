@@ -44,9 +44,9 @@ eleven frames below the caller at the deepest (``Formatter.format`` ->
 configuration can therefore see a ``RecursionError`` one Form XObject level
 earlier, or on a deep operand that warns; a DEBUG configuration does the
 same for every ``log.debug``. Not modeled (``docs/verification.md``,
-"Étapes"). The Rust side counts the frames of disabled logging like the
-others (``pycompat::logging``, ``pycompat::recursion``). Warnings keep their
-default filters.
+"Stages", "Logging Disabled"). The Rust side counts the frames of disabled
+logging like the others (``pycompat::logging``, ``pycompat::recursion``).
+Warnings keep their default filters.
 
 ``entry_depth()`` measures the recursion depth a stage function's body runs
 at (``oracle.depth.depth_here``); the Rust stages start from it
@@ -170,4 +170,6 @@ __all__ = [
 ]
 
 if sys.version_info < (3, 12):  # pragma: no cover
-    raise RuntimeError("the oracle runs on CPython >= 3.12 (sum() semantics, docs/port-strategy.md)")
+    raise RuntimeError(
+        'the oracle runs on CPython >= 3.12 (sum() semantics: docs/architecture.md, "Upstream Sources And Python Version")'
+    )

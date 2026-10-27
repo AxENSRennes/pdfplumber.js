@@ -65,7 +65,7 @@ export type CoreCall = (op: string, handle: number, args: unknown, options?: Cal
  * Requests run one at a time, in the order they are made (FIFO), each to
  * its end (the re-runs after a void call included) before the next starts:
  * the core is one Python process running one statement after the other
- * (docs/architecture.md, "Vague 5", "Contrat de l'API"). A job
+ * (docs/js-runtime.md, "API Layer", "Jobs And Order"). A job
  * (`exclusive`) holds the core for several requests and the JavaScript
  * between them (`search` runs its `RegExp` between two requests,
  * `filter` its function): no other request runs in between. */

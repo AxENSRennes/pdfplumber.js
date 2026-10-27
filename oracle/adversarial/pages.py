@@ -153,7 +153,7 @@ def cases_tree() -> list[Case]:
 # (its PSLiteral.__init__), an object stream per level (its parser and its
 # filter), decryption, the fallback xref, the number tree of the page
 # labels, pdfplumber's resolve_all, the outline search and the name tree
-# lookup (api_trace). docs/architecture.md, "Profondeur de récursion".
+# lookup (api_trace). docs/architecture.md, "Recursion Depth".
 
 
 def table_file(objs: dict[int, bytes], header: bytes = b"%PDF-1.4\n", tail: tuple[int, bytes] | None = None) -> bytes:

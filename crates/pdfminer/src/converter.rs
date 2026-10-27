@@ -2,7 +2,7 @@
 //! layout objects, `PDFLayoutAnalyzer` and `PDFPageAggregator`.
 //!
 //! Not ported (out of scope: pdfplumber never uses them, see
-//! `docs/architecture.md`, "Règles de port"): `PDFConverter`,
+//! `docs/architecture.md`, "Porting Rules", rule 5): `PDFConverter`,
 //! `TextConverter`, `HTMLConverter`, `XMLConverter`, `HOCRConverter` (text,
 //! HTML, XML and hOCR outputs, with `ImageWriter`).
 //!

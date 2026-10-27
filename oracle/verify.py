@@ -58,9 +58,9 @@ time, slowest files); it is how the oracle cache is warmed.
 ``--engine js-api`` runs, in place of ``pdftrace``, the harness that writes
 the ``plumber_*`` stages through the public JavaScript API
 (``js/trace/pdftrace-js``: the same command line, the built package of
-``dist/`` with ``dist/pdfplumber-oracle.wasm``; ``docs/architecture.md``,
-"Vague 5", "Harnais"); build them first (``node scripts/build.mjs``,
-``node scripts/build-wasm.mjs --oracle``).
+``dist/`` with ``dist/pdfplumber-oracle.wasm``; ``docs/verification.md``,
+"Parity Through The JavaScript API"); build them first
+(``node scripts/build.mjs``, ``node scripts/build-wasm.mjs --oracle``).
 """
 
 from __future__ import annotations

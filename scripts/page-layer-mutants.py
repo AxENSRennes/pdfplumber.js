@@ -1,11 +1,15 @@
-"""Hand mutants of the Rust code the join of wave 5 wrote (docs/architecture.md,
-"Jonction"): the struct matcher's mask argument, the C units of the page layer,
-the typing staircases, the merged path_segment. Each replaces one exact text (the
-n-th occurrence when given), runs its tests in a copy of the sources, and is
-killed when they fail; the source is restored after each. The copy must be fresh
-(no build products from another copy: cargo compares mtimes).
+"""Hand mutants of the Rust code around the page layer's depth counting: the
+structure matcher's mask argument (crates/wasm/src/structs.rs), the C units of
+the page layer (isinstance with a tuple, "".join and ord in decode_text,
+resolve_all, process_object's re.sub and .lower()), the typing subscription
+staircases (pycompat's typing_cache) and pdfinterp's path_segment. Each
+replaces one exact text (the n-th occurrence when given), runs its tests in a
+copy of the sources, and is killed when they fail; the source is restored
+after each. The copy must be fresh (no build products from another copy: cargo
+compares mtimes). Accepted survivors are listed in docs/verification.md,
+"Mutation Testing" ("Hand Mutants").
 
-    scripts/heavy.sh python3 scripts/join-hand-mutants.py COPY_DIR [ids...]
+    scripts/heavy.sh python3 scripts/page-layer-mutants.py COPY_DIR [ids...]
 """
 import subprocess
 import sys
@@ -57,7 +61,7 @@ MUTANTS = [
     ("m5", TC, "let constant = self.miss == self.hit && self.c_miss == self.c_hit;", "let constant = self.miss == self.hit && self.c_miss != self.c_hit;", None, [FRAMES, TYPING]),
     ("r1", PG, "            let _check = c_call(IN_INSTANCECHECK)?;\n            drop(c_call(WHILE_CALLING)?);\n", "            drop(c_call(WHILE_CALLING)?);\n", None, [FRAMES]),
     ("r2", PG, "            let _check = c_call(IN_INSTANCECHECK)?;\n            drop(c_call(WHILE_CALLING)?);\n", "            let _check = c_call(IN_INSTANCECHECK)?;\n", None, [FRAMES]),
-    # (.lower()'s unit; _cache2's look-up takes none: wave5/fix removed it)
+    # (.lower()'s unit; _cache2's look-up takes none)
     ("r3", PG, "        }\n        drop(c_call(WHILE_CALLING)?);\n        // def process_attr", "        }\n        // def process_attr", None, [FRAMES]),
     ("r4", PG, "        }\n        drop(c_call(WHILE_CALLING)?);\n        // def process_attr", "        }\n        drop(c_call(IN_COMPARISON)?);\n        // def process_attr", None, [FRAMES]),
     ("r5", PG, "            let _check = c_call(IN_INSTANCECHECK)?;\n            drop(c_call(WHILE_CALLING)?);\n", "            drop(c_call(IN_INSTANCECHECK)?);\n            drop(c_call(WHILE_CALLING)?);\n", None, [FRAMES]),

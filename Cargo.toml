@@ -28,7 +28,7 @@ unsafe_code = "forbid"
 
 # Lints allowed workspace-wide. Faithful ports keep upstream names
 # (PDFObjRef, do_Tj, LITERAL_FONT, KEYWORD_BI...) and upstream signatures,
-# see docs/architecture.md ("Règles de port").
+# see docs/architecture.md ("Porting Rules").
 [workspace.lints.clippy]
 upper_case_acronyms = "allow"
 too_many_arguments = "allow"
@@ -39,9 +39,10 @@ module_inception = "allow"
 opt-level = 3
 codegen-units = 16
 
-# Mutation testing (docs/verification.md, "Mutations"): release speed with
-# debug assertions, so that psparser::ProgressGuard turns a mutant that stops
-# consuming input into an immediate panic.
+# Mutation testing (docs/verification.md, "Mutation Testing", "Resource
+# Guards"): release speed with debug assertions, so that
+# psparser::ProgressGuard turns a mutant that stops consuming input into an
+# immediate panic.
 [profile.mutants]
 inherits = "release"
 debug-assertions = true

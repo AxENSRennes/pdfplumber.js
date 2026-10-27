@@ -8,8 +8,8 @@ Runs, on the files of the set, the Python oracle (cached, as
 ``oracle.verify`` builds it), the Rust library (``pdftrace``, release) and
 the public API (``js/trace/pdftrace-js``, the build of ``dist/`` with
 ``dist/pdfplumber-oracle.wasm``), then sorts each file whose API trace is
-not Python's (``docs/verification.md``, "Parité par l'API JavaScript
-publique"):
+not Python's (``docs/verification.md``,
+"Parity Through The JavaScript API"):
 
 - ``core``: the API's trace is the Rust library's byte for byte, and the
   Rust library's differs from Python's: a known difference of the core
@@ -72,7 +72,7 @@ RECURSION = re.compile(r"!RecursionError\(")
 #: the frames of recursion limit added to Python for a window whose
 #: RecursionError pdfplumber caught: more than the levels by which the
 #: API's statements are above the stages' (0 to 7 levels of nesting,
-#: docs/verification.md)
+#: docs/verification.md, "Parity Through The JavaScript API")
 HEADROOM = 200
 
 

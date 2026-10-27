@@ -268,7 +268,7 @@ pub fn decode_text_value(s: &PyValue) -> PyResult<PyStr> {
 /// its frame: the same checks and result as the general path, whose items
 /// would be the one-character strings of `text` (`ord(c)` is a code point,
 /// never negative, so an `IndexError` is a code point past 255), without
-/// making them. Performance (`docs/architecture.md`, "Vague 5", PERF): a
+/// making them. Performance (`docs/architecture.md`, "Performance"): a
 /// `str` that PDFDocEncoding maps to itself (the color space names
 /// `process_object` decodes for every char) is returned as it is (a
 /// `str` is immutable and its identity is not modeled).

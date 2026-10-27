@@ -1,6 +1,6 @@
 //! The operations of documents and pages: pdfplumber's `PDF` and `Page`
 //! (`crates/pdfplumber`), as JavaScript reaches them (`docs/js-runtime.md`,
-//! "Documents et pages").
+//! "Documents And Pages").
 //!
 //! A document handle keeps the `PDF` of `pdfplumber.open(io.BytesIO(data),
 //! **options)` (`doc_open`, `crate::ops`); `doc_pages` gives a handle to

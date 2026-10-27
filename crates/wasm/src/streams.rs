@@ -1,5 +1,5 @@
 //! Streams by reference (`docs/public-api.md`, "PDFStream";
-//! `docs/js-runtime.md`, "Documents et pages"): with `set_stream_refs`
+//! `docs/js-runtime.md`, "Documents And Pages"): with `set_stream_refs`
 //! (what the JavaScript runtime asks for), the `PDFStream`s of a result
 //! cross as a handle, `objid`, `genno` and `attrs`, and JavaScript reads
 //! their data on demand, instead of the core copying every image's bytes

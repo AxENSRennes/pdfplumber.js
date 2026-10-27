@@ -19,7 +19,7 @@ identical trace is Python parity for the Wasm build wherever
   ``oracle/codegen/cmaps.py``, written when missing), whatever the
   environment holds: without it both builds would agree on a "no CMap
   provider" trace for the files that load a predefined CMap (3 of the 150
-  files of ``quick`` in October 2026);
+  files of ``quick``);
 - for a stage whose module sets ``ORACLE_INPUT`` (``layout``), the oracle
   cache directory of the stage (``--oracle-dir``, Python's ``id()``
   ranking), built first for the missing files as ``oracle.verify`` builds

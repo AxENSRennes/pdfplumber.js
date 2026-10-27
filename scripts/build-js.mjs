@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Builds the JavaScript package (docs/js-runtime.md, "Build"):
+// Builds the JavaScript package (docs/js-runtime.md, "JavaScript Package"):
 //   dist/src/      Node ESM + type declarations (tsc, js/tsconfig.json)
 //   dist/browser/  browser ESM bundles (esbuild): index.js (public API) and
 //                  internal.js (tests, benchmark), sharing their chunks;
@@ -38,6 +38,7 @@ await build({
   splitting: true,
 });
 // the worker on its own, without shared chunks: one file, which an
-// application can copy next to its bundle (docs/public-api.md, "Bundlers")
+// application can copy next to its bundle (docs/js-runtime.md,
+// "JavaScript Package")
 await build({ ...common, entryPoints: { worker: join(ROOT, "js/src/worker/worker.ts") }, splitting: false });
 console.log("built dist/src and dist/browser");

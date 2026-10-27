@@ -1125,10 +1125,10 @@ impl Deref for Buf {
 /// twice in a row. (Something else moving `fp`, as `revreadlines` and
 /// `PDFParser` do, restarts the guard.) The reading loops (`nexttoken`,
 /// `nextline`, `get_inline_data`) report the position after each step; a
-/// broken port (or a mutant, see `docs/verification.md`, "Mutations") that
-/// stops consuming its input, or rereads it, panics after a few steps
-/// instead of looping, often while allocating, until a timeout or the
-/// memory limit. Without `debug_assertions` it is empty and costs nothing.
+/// broken port (or a mutant, see `docs/verification.md`, "Mutation Testing",
+/// "Resource Guards") that stops consuming its input, or rereads it, panics
+/// after a few steps instead of looping, often while allocating, until a
+/// timeout or the memory limit. Without `debug_assertions` it is empty and costs nothing.
 #[derive(Default)]
 pub struct ProgressGuard {
     /// The furthest position reached since the last seek.

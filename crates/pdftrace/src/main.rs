@@ -23,7 +23,7 @@
 //! (`CMapDB::set_default_provider`), from the compact files that
 //! `oracle/codegen/cmaps.py` writes (`<cache>/cmap/<fingerprint>/`); without
 //! one, a stage that loads a predefined CMap raises `RuntimeError` there
-//! (`docs/architecture.md`, "Données upstream").
+//! (`docs/architecture.md`, "Upstream Data").
 //!
 //! Every option also takes the form `--option=value` (`--password=-x`: a
 //! password may start with `-`). `--max-pages` defaults to 20 for

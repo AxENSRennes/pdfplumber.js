@@ -1,5 +1,6 @@
 //! The JSON result encoding (measured against the binary one in
-//! `docs/js-runtime.md`; kept as a readable debugging form).
+//! `docs/js-runtime.md`, "Result Encoding"; kept as a readable debugging
+//! form).
 //!
 //! Plain values are plain JSON, so `JSON.parse` alone decodes a result
 //! without the values JSON lacks. Numbers are written in their shortest

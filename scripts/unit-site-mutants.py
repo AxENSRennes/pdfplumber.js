@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Hand mutants of the C-unit sites (docs/verification.md, « Mutants
-manuels des sites d'unités C »): each site added since a base revision is
+"""Hand mutants of the C-unit sites (docs/verification.md, "Mutation Testing",
+"Hand Mutants"): each site added since a base revision is
 removed in turn (an ``AttrSite`` load becomes its getter, ``page_load`` its
 getter, ``kind_list`` the list without the load, ``getattr`` the attribute,
 an ``eval_entry``/``method_call``/``builtin_call``/``plain`` statement

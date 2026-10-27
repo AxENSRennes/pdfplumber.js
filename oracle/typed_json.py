@@ -1,6 +1,6 @@
 """Typed JSON: lossless exchange of Python values with the Rust side.
 
-Python half of "Format d'échange typé" in ``docs/verification.md``;
+Python half of "Typed JSON" in ``docs/verification.md``;
 ``crates/pdftrace/src/typed_json.rs`` is the Rust half. Unit cases
 (``oracle/unit/*.py``) are JSON Lines files whose values use this encoding.
 

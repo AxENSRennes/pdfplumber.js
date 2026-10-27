@@ -21,10 +21,10 @@
 //! matches: `finditer` retries a non-empty match where an empty one was
 //! found (`x*|abc` on `abc`), `\w`, `\d`, `\s` and `\b` are Unicode-aware,
 //! the syntax differs (`(?P<name>...)`, inline flags, `$` before a final
-//! newline), and JS indices count UTF-16 units. A matcher with Python's
-//! semantics for the browser is an open item of the JavaScript API
-//! (`docs/architecture.md`, "Frontière JavaScript"); the replay feeds the
-//! spans Python computed.
+//! newline), and JS indices count UTF-16 units. The JavaScript API runs a
+//! `RegExp` with JavaScript's semantics, a documented difference
+//! (`docs/public-api.md`, "Search"); the replay feeds the spans Python
+//! computed.
 //!
 //! Upstream's `logger.warning` calls (deprecated `vertical_ttb`,
 //! `horizontal_ltr`) have no effect on results and are not reproduced.

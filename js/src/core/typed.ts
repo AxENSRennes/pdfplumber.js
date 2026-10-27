@@ -2,12 +2,12 @@
  * Typed values: the results of the core with Python's types kept
  * (`int` and `float`, `list` and `tuple`, a `dict`'s key order), what the
  * harness that writes stage traces through the public API reads
- * (`js/trace/`, docs/architecture.md, "Vague 5"). The core writes them in
- * its typed format (`set_format("typed")`: PJB1 without tables,
- * crates/wasm/src/ops.rs `FORMAT_TYPED`); `decodeBinary(.., true)` reads
- * them; `project` gives the public value of a typed one, which is what the
- * API returns: the public values are a projection of the typed ones, never
- * another computation.
+ * (`js/trace/`, docs/verification.md, "Parity Through The JavaScript API").
+ * The core writes them in its typed format (`set_format("typed")`: PJB1
+ * without tables, crates/wasm/src/ops.rs `FORMAT_TYPED`);
+ * `decodeBinary(.., true)` reads them; `project` gives the public value of
+ * a typed one, which is what the API returns: the public values are a
+ * projection of the typed ones, never another computation.
  *
  * In a typed value: a Python `float` is a `PyFloat`, an `int` a number
  * (a `bigint` beyond ±2^53), a `tuple` a `PyTuple`, a `dict` a `PyDict`

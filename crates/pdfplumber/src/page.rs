@@ -6,13 +6,11 @@
 //! `initial_doctop`, and the `width`/`height` properties), the device
 //! `Page.layout` drives, `PDFPageAggregatorWithMarkedContent`
 //! ([`PDFPageAggregatorWithMarkedContent`], its methods' bodies
-//! [`marked_content`], the layout payload [`PlumberPayload`]; wave 3,
-//! `docs/architecture.md`, "Vague 3") and the body of `Page.layout`
-//! ([`page_layout`], moved here from `pdftrace` in wave 4).
-//!
-//! Wave 4 (base): the interface of [`Page`] (`Page`, `DerivedPage`,
-//! `CroppedPage`, `FilteredPage`), bodies `todo!()` (see the section
-//! "`Page`" below and `docs/architecture.md`, "Vague 4"). Out of scope:
+//! [`marked_content`], the layout payload [`PlumberPayload`];
+//! `docs/architecture.md`, "Driving Pages") and the body of `Page.layout`
+//! ([`page_layout`]), and [`Page`] (`Page`, `DerivedPage`, `CroppedPage`,
+//! `FilteredPage`; see the section "`Page`" below and
+//! `docs/architecture.md`, "The pdfplumber Page Layer"). Out of scope:
 //! `Page.to_image` (pdfplumber/display.py: rendering with pypdfium2 and
 //! PIL).
 //!
@@ -541,7 +539,7 @@ impl MarkedContent for PDFPageAggregatorWithMarkedContent {
 }
 
 // ---------------------------------------------------------------------------
-// `Page.layout`'s driving (wave 3 code, moved from `pdftrace` in wave 4).
+// `Page.layout`'s driving (`docs/architecture.md`, "Driving Pages").
 
 // pdfplumber/page.py:256 Page.layout
 /// The body of `Page.layout`, on the document's resource manager, with
@@ -566,11 +564,9 @@ pub fn page_layout<D: PDFDevice + 'static>(
 }
 
 // ---------------------------------------------------------------------------
-// `Page`, `DerivedPage`, `CroppedPage`, `FilteredPage` (wave 4).
-//
-// Wave 4 (base): the interface, bodies `todo!()`; workstream PAGE, except
-// `structure_tree`, `annots`, `hyperlinks` (workstream DOC):
-// `docs/architecture.md`, "Vague 4".
+// `Page`, `DerivedPage`, `CroppedPage`, `FilteredPage`
+// (`docs/architecture.md`, "Opening, Pages And Caches"; `structure_tree`,
+// `annots` and `hyperlinks`: "Structure Tree, Metadata And Annotations").
 //
 // # Classes
 //
@@ -595,16 +591,17 @@ pub fn page_layout<D: PDFDevice + 'static>(
 // - `dedupe_chars` returns a `FilteredPage` whose `_objects` is set at
 //   once (the parent's dict copied, `"char"` replaced).
 //
-// # Recursion (frame-counting plan)
+// # Recursion
 //
 // pdfplumber's calls, each a Python frame unless said otherwise (counted
 // with `pycompat::recursion`, measured with `oracle/depth_probe.py` where
-// the standard library is involved):
+// the standard library is involved; `docs/architecture.md`, "Recursion
+// Depth", "Where Depth Is Counted"):
 // - `Page(...)`: class call, `__init__`, `get_attr` (nested) and
-//   `resolve_all` for each box (`PageBoxes::new` already counts them),
+//   `resolve_all` for each box (`PageBoxes::new` counts them),
 //   `_normalize_box`/`_invert_box`, then `lru_cache()` (`functools.lru_cache`,
 //   `decorating_function`, `update_wrapper`: Python frames of the standard
-//   library, to measure);
+//   library);
 // - `objects` -> `parse_objects` -> `layout` (see [`page_layout`]) ->
 //   `iter_layout_objects` (a generator: `yield from` itself for each
 //   `LTContainer` level, so the chain of suspended generators is resumed at
@@ -619,18 +616,20 @@ pub fn page_layout<D: PDFDevice + 'static>(
 //   children, recursive), `normalize_unicode` (C), `map(self.point2coord,
 //   ...)` (each call from C);
 // - text and tables: `utils/text.rs`, `table.rs`, `utils/geometry.rs`,
-//   `utils/clustering.rs` (wave 1) count no frames: they never recurse,
-//   and pdfplumber calls them from a user's level; their only
-//   depth-dependent behavior is C recursion inside values (`==`, `<`,
-//   `hash`, `repr` of nested `tuple`/`list` values: an `mcid` list nested
-//   10^4 deep compared by `extract_words(extra_attrs=["mcid"])` or
-//   `dedupe_chars(extra_attrs=("mcid",))`), which `obj.rs` does not count
-//   yet: to add (C units per level, as `PDFObject::repr` counts them) with
-//   cases of `adv-plumber` at the limit;
+//   `utils/clustering.rs` count frames only on the paths down to a page
+//   property that interprets the page (`TableFinder.__init__`,
+//   `get_edges`, `Table.extract`, `test_proposed_bbox`); elsewhere they
+//   never recurse, and pdfplumber calls them from a user's level. Their
+//   other depth-dependent behavior is C recursion inside values (`==`,
+//   `<`, `hash`, `repr` of nested `tuple`/`list` values: an `mcid` list
+//   nested deep compared by `extract_words(extra_attrs=["mcid"])` or
+//   `dedupe_chars(extra_attrs=("mcid",))`), which `obj.rs` does not count:
+//   such a value never reaches the C limit before `resolve_all`'s frames do
+//   (`docs/architecture.md`, "Frames And C Units");
 // - `annots` -> `resolve_all(self.page_obj.annots)` -> `parse` (from C, a
-//   `map`), `rotate_point`, `_normalize_box`, `_invert_box`; the
-//   `warnings.warn` of `raise_unicode_errors=False` runs Python frames of
-//   `warnings` (`_showwarnmsg`, `_formatwarnmsg`...: to measure);
+//   `map`), `rotate_point`, `_normalize_box`, `_invert_box`; the Python
+//   frames of the `warnings.warn` of `raise_unicode_errors=False`
+//   (`_showwarnmsg`, `_formatwarnmsg`...) are not modelled;
 // - `to_json`/`to_csv`: `crate::container`, `crate::convert`.
 // `decode_text` of a `str` or `bytes` (`begin_tag`) is counted
 // (`pdfinternals.rs`).
@@ -690,7 +689,7 @@ pub enum CropFn {
 /// `test_function` of `Page.filter`: called on each object (from C:
 /// `filter()`), its result taken for its truthiness. The JavaScript
 /// boundary evaluates a JavaScript function on the objects already made
-/// and gives a mask (`docs/architecture.md`, "Frontière JavaScript").
+/// and gives a mask (`docs/architecture.md`, "JavaScript Boundary").
 pub type FilterFn = Rc<dyn Fn(&Obj) -> PyResult<PyValue>>;
 
 /// The `lru_cache` of `get_textmap`: the text maps by keyword arguments
@@ -1527,8 +1526,8 @@ impl Page {
     }
 
     // pdfplumber/page.py:248 Page.structure_tree
-    /// Workstream DOC (`crate::structure`): the `to_dict()` of each element
-    /// of `PDFStructTree(self.pdf, self)`, `[]` without a structure tree.
+    /// The `to_dict()` of each element of `PDFStructTree(self.pdf, self)`
+    /// (`crate::structure`), `[]` without a structure tree.
     pub fn structure_tree(self: &Rc<Self>) -> PyResult<Vec<PyValue>> {
         let _frame = py_frame()?;
         let tree = match PDFStructTree::new(&self.pdf.doc, Scope::Page(self)) {
@@ -1579,7 +1578,7 @@ impl Page {
     }
 
     // pdfplumber/page.py:273 Page.annots
-    /// Workstream DOC. The annotations of the page (`resolve_all` of
+    /// The annotations of the page (`resolve_all` of
     /// `/Annots`), each parsed (`rotate_point`, `parse`, nested): its
     /// geometry, `uri`/`title`/`contents` decoded (UTF-8, then UTF-16; with
     /// `raise_unicode_errors` false, a `warnings.warn` and the bytes kept),
@@ -1737,8 +1736,8 @@ impl Page {
     }
 
     // pdfplumber/page.py:339 Page.hyperlinks
-    /// Workstream DOC: the annotations whose `uri` is not `None`
-    /// (`self.annots` computed again).
+    /// The annotations whose `uri` is not `None` (`self.annots` computed
+    /// again).
     pub fn hyperlinks(&self) -> PyResult<Vec<Obj>> {
         let _frame = py_frame()?;
         let annots = HYPERLINKS_ANNOTS.get(self.class_name(), || self.annots())?;
@@ -1822,7 +1821,7 @@ impl Page {
     /// `fontname` bytes fixed, a curve's `pts`, `path`, `dash`, then `top`,
     /// `bottom`, `doctop`, and `x0`/`x1` shifted by a mediabox that does
     /// not start at 0. Inline image names are `inline-<k>`
-    /// (`docs/architecture.md`, "Vague 3").
+    /// (`docs/architecture.md`, "Inline Image Names").
     fn process_layout_obj(&self, obj: &LayoutObj) -> PyResult<Obj> {
         ATTR_KEYS.with(|k| self.process_layout_obj_with(obj, k))
     }
@@ -1836,7 +1835,7 @@ impl Page {
     }
 
     /// [`Page::process_layout_obj`] with the shared keys. Performance
-    /// (`docs/architecture.md`, "Vague 5", PERF): the dict is made with
+    /// (`docs/architecture.md`, "Performance"): the dict is made with
     /// room for its items, and a key it cannot hold yet (an attribute of
     /// the `__dict__`, whose keys are distinct; a key `process_object`
     /// adds that no layout class has) is appended without a look-up
@@ -2219,8 +2218,8 @@ impl Page {
     /// caller's (`matches` gets `as_string` of the text map and returns
     /// the spans of each match, as Python's `re.finditer` of
     /// `re.compile(pattern if regex else re.escape(pattern), re.I if case
-    /// is False else 0)` would: `docs/architecture.md`, "Frontière
-    /// JavaScript").
+    /// is False else 0)` would: `docs/architecture.md`, "JavaScript
+    /// Boundary").
     pub fn search(
         &self,
         matches: &mut dyn FnMut(&PyStr) -> PyResult<Vec<RegexMatch>>,
@@ -2256,7 +2255,7 @@ impl Page {
     /// The text `page.search(pattern, **kwargs)` runs its pattern over:
     /// `self.get_textmap(**tuplify_list_kwargs(kwargs)).as_string`, in the
     /// frame of `search`. The JavaScript boundary searches in two calls
-    /// (`docs/architecture.md`, "Frontière JavaScript"): this text, which
+    /// (`docs/architecture.md`, "JavaScript Boundary"): this text, which
     /// JavaScript's `RegExp` runs over, then [`Page::search_with`] with its
     /// matches, which finds the text map in the cache this call filled; so
     /// the text map is computed (the page interpreted, if it was not) at

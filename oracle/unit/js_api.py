@@ -5,8 +5,8 @@ on the dist build.
 
 A session is a sequence of calls of the public API, written in a neutral
 JSON form. This generator turns each call into the statements of
-``oracle/unit/js_pages_run.py`` the API runs for it (``docs/public-api.md``,
-"Operations": every member, its boundary operation, its statement), runs
+``oracle/unit/js_pages_run.py`` the API runs for it (``docs/js-runtime.md``,
+"API Operations": every member, its boundary operation, its statement), runs
 the statements of the session in a fresh Python process (a session, a new
 core: a new Python process), and derives from their results what each call
 must give: a value, a Python exception (with the exceptions it wraps,
@@ -1579,7 +1579,8 @@ def adversarial_session(name: str, data: bytes) -> Session:
 #: The adversarial sets whose depth windows (``depth-*``, ``climit-*``
 #: files) ``depth.jsonl`` holds: where Python's ``RecursionError`` happens
 #: through the API's statements, which the stage traces cannot show (their
-#: oracle calls pdfplumber from nested generators: docs/verification.md).
+#: oracle calls pdfplumber from nested generators: docs/verification.md,
+#: "Parity Through The JavaScript API").
 DEPTH_SETS = ["adv-plumber", "adv-structure", "adv-interp", "adv-objects", "adv-pages"]
 
 
@@ -2152,8 +2153,8 @@ ADV_STRUCTURE = ["000-basic.pdf", "001-no-struct-tree-root.pdf", "023-root-k-obj
 MATCHERS: list[tuple[str, Any]] = [("tag", "P"), ("tag", "Span"), ("regexp", "H[0-9]"), ("regexp", "S"), ("regexp", "an"),
                                    ("regexp", ""), ("predicate", "starts-with-H"), ("predicate", "has-mcids"),
                                    ("value", 5),
-                                   # a plain object Python calls (TypeError), shaped as the
-                                   # boundary's mask argument once was (join of wave 5)
+                                   # a plain object Python calls (TypeError), shaped like a
+                                   # mask (the boundary passes the mask in an argument of its own)
                                    ("value", {"mask": [True]})]
 
 

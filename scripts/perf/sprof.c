@@ -1,5 +1,5 @@
 // A sampling profiler for the native binaries where `perf` is not allowed
-// (perf_event_paranoid; docs/architecture.md, "Vague 5", PERF): loaded with
+// (perf_event_paranoid; docs/architecture.md, "Performance"): loaded with
 // LD_PRELOAD, active only in the program SPROF_EXE names (a timer survives
 // exec), SIGPROF every SPROF_US microseconds of CPU time (500 by default),
 // walks the frame pointers (build with RUSTFLAGS="-C force-frame-pointers=yes",

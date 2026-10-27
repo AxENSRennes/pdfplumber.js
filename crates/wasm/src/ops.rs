@@ -107,7 +107,8 @@ pub const FORMAT_JSON: u8 = 1;
 /// `PJB1` without tables (every value tagged: `int` and `float`, `list` and
 /// `tuple` stay apart), which JavaScript decodes into typed values: the
 /// format of the harness that writes stage traces through the public API
-/// (`js/trace/`, `docs/architecture.md`, "Vague 5"), never the API's.
+/// (`js/trace/`, `docs/verification.md`, "Parity Through The JavaScript
+/// API"), never the API's.
 pub const FORMAT_TYPED: u8 = 2;
 
 /// The most diagnostics one call keeps (the others are counted).

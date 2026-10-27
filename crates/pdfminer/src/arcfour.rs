@@ -2,7 +2,7 @@
 //!
 //! Each method takes the Python frame of its upstream method (a security
 //! handler decrypts from `decipher_all`, whose recursion can run close to
-//! the frame limit); see `docs/architecture.md`, "Profondeur de récursion".
+//! the frame limit); see `docs/architecture.md`, "Recursion Depth".
 
 use pycompat::recursion;
 use pycompat::{exc, PyResult};

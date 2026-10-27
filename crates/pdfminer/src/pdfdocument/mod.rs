@@ -1,5 +1,5 @@
-//! Port of `pdfminer/pdfdocument.py`, a folder (`docs/architecture.md`
-//! allows it for a large module):
+//! Port of `pdfminer/pdfdocument.py`, a folder (`docs/architecture.md`,
+//! "Porting Rules", rule 1, allows it for a large module):
 //!
 //! - `mod.rs`: `PDFDocument` (xref discovery and fallback, password,
 //!   `getobj` with object streams, outlines, page labels, names and
@@ -20,7 +20,7 @@
 //! trailers) while it runs, and the parser resolves `/Length` through the
 //! document: [`PDFDocument::new`] creates the document in an `Rc` whose
 //! state is interior first, then runs `__init__` (`docs/architecture.md`,
-//! "Résolution des références et ré-entrance du parseur"). The document
+//! "Reference Resolution And Parser Re-entrance"). The document
 //! owns its parser in a slot: an operation that reads the file takes it
 //! ([`PDFDocument::with_parser`]), and a resolution started while the
 //! parser runs lends it back ([`crate::pdfparser::lend`]), so a nested
@@ -39,7 +39,7 @@
 //! class instantiations (an `__init__` called from C) and the generators,
 //! so a loop in the file ends in `RecursionError("maximum recursion depth
 //! exceeded")` and a long finite chain fails at the same level as in Python
-//! (`docs/architecture.md`, "Profondeur de récursion").
+//! (`docs/architecture.md`, "Recursion Depth").
 
 mod pyval;
 mod security;

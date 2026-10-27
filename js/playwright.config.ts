@@ -27,7 +27,7 @@ export default defineConfig({
       use: {
         ...devices["Desktop Safari"],
         // the launcher of scripts/webkit-local-libs.sh, on a machine without
-        // WebKit's system libraries (see docs/js-runtime.md)
+        // WebKit's system libraries (see docs/js-runtime.md, "Tests")
         launchOptions: process.env.PDFPLUMBER_WEBKIT ? { executablePath: process.env.PDFPLUMBER_WEBKIT } : {},
       },
     },

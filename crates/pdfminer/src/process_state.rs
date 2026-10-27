@@ -1,7 +1,7 @@
 //! Not a pdfminer module: the state of the Python process that the port
 //! models because it decides how deep a later call goes, so where a
-//! `RecursionError` happens (`docs/architecture.md`, "Profondeur de
-//! récursion"), taken and put back as a whole.
+//! `RecursionError` happens (`docs/architecture.md`, "Recursion Depth",
+//! "Process State"), taken and put back as a whole.
 //!
 //! A Python process remembers what it has done: the symbols it interned
 //! (`psparser::py_intern`), the patterns `re` compiled

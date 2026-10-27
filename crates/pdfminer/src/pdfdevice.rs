@@ -2,9 +2,8 @@
 //! drives (`PDFDevice`) and the text device that turns a shown string into
 //! characters (`PDFTextDevice`).
 //!
-//! The signatures are the contract between the interpreter (workstream
-//! INTERP) and the devices (workstream CONVERTER, `docs/architecture.md`,
-//! "Vague 3").
+//! The signatures are the contract between the interpreter and the devices
+//! (`docs/architecture.md`, "Classes, Overrides And super()").
 //!
 //! Not ported (out of scope, pdfplumber never uses them): `TagExtractor`
 //! (an XML-like dump of the tags), `PDFDevice.__repr__`, and the context

@@ -110,6 +110,6 @@ pub fn canon_id(id: &ObjId) -> String {
 /// `interp.page_layout` of `oracle/stages/interp.py`, shared by the
 /// `fonts`, `interp` and `layout` stages: the body of
 /// pdfplumber/page.py:256 `Page.layout` with `laparams=None`, which the
-/// library has (`pdfplumber::page::page_layout`, moved there in wave 4:
-/// `Page::layout` drives pages with it).
+/// library has (`pdfplumber::page::page_layout`: `Page::layout` drives
+/// pages with it).
 pub use pdfplumber::page::page_layout;

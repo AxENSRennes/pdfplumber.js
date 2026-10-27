@@ -1,5 +1,5 @@
 //! The stage registry: one file per stage of `docs/verification.md`
-//! ("Étapes"), each with the same name as its Python twin
+//! ("Stages"), each with the same name as its Python twin
 //! `oracle/stages/<name>.py`.
 //!
 //! Every stage file exports `pub const STAGE: Stage`. To implement a stage,

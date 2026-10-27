@@ -1,8 +1,8 @@
 //! The oracle hooks of the harness that writes stage traces through the
-//! public JavaScript API (`js/trace/`, `docs/architecture.md`, "Vague 5",
-//! "Harnais"): what a Python stage reads that the public semantics
-//! intentionally do not give, and nothing else. Compiled only with the
-//! `oracle-hooks` feature (`node scripts/build-wasm.mjs --oracle`:
+//! public JavaScript API (`js/trace/`, `docs/verification.md`, "Parity
+//! Through The JavaScript API"): what a Python stage reads that the public
+//! semantics intentionally do not give, and nothing else. Compiled only
+//! with the `oracle-hooks` feature (`node scripts/build-wasm.mjs --oracle`:
 //! `dist/pdfplumber-oracle.wasm`, never shipped); every operation is
 //! prefixed `oracle_`.
 //!

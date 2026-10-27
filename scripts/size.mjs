@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Sizes of the built package (docs/js-runtime.md, "Taille"): raw, gzip -9 and
+// Sizes of the built package (docs/js-runtime.md, "Size"): raw, gzip -9 and
 // brotli (quality 11) of the WebAssembly module, the browser bundles, the
 // Node build and the CMaps. With --budget, exits 1 when the module or the
 // browser entry exceed the budget below.

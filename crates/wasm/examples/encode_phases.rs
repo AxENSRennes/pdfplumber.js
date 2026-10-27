@@ -1,5 +1,5 @@
-//! Times the result encoding of the JavaScript boundary natively (the
-//! PERF measurements, `docs/architecture.md`, "Vague 5"): for each file
+//! Times the result encoding of the JavaScript boundary natively
+//! (`docs/architecture.md`, "Performance"): for each file
 //! (`path<TAB>password` lines on stdin), `pdfplumber.open` with its first
 //! 20 pages, then for each page `page.objects` (not timed) and the `PJB1`
 //! block of what the `page_objects` operation returns (`objects_value`),

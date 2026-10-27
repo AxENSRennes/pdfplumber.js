@@ -4,7 +4,7 @@
 // of sessions.jsonl but the node_only ones (open(path) is Node's), and the
 // depth windows of depth-bytes.jsonl (opened from their bytes), where the
 // engines run the Wasm frames on stacks of their own (docs/js-runtime.md,
-// "Vue d'ensemble", "Panique": RangeError, InternalError).
+// "ABI": RangeError, InternalError).
 import { expect, test } from "@playwright/test";
 
 import { oracleLines } from "../oracle-data.mjs";

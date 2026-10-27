@@ -2,14 +2,13 @@
 //!
 //! One Rust module per Python module, with the same names; every ported
 //! function carries its upstream `file:line` reference. See
-//! `docs/architecture.md` for the porting rules and the value model, and the
-//! module documentation of [`psparser`] (parser extension points) and
-//! [`pdftypes`] (object model, references) for the core design.
+//! `docs/architecture.md` ("Porting Rules", "Value Model"), and the module
+//! documentation of [`psparser`] (parser extension points) and [`pdftypes`]
+//! (object model, references) for the core design.
 //!
-//! Modules marked "not ported yet" only hold their header. Out of scope
-//! (see `docs/architecture.md`): `high_level.py`, `image.py`, `jbig2.py`
-//! (used only by `image.py`), and the HTML/XML/hOCR parts of
-//! `converter.py`.
+//! Out of scope (see `docs/architecture.md`, "Porting Rules", rule 5):
+//! `high_level.py`, `image.py`, `jbig2.py` (used only by `image.py`), and
+//! the HTML/XML/hOCR parts of `converter.py`.
 
 pub mod arcfour;
 pub mod ascii85;

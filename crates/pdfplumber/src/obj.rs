@@ -69,11 +69,11 @@
 //!
 //! # Mutation testing
 //!
-//! Wave 2 review (`cargo mutants` on the lines of `obj.rs`, `table.rs`,
-//! `utils/{text,clustering,geometry}.rs` changed since wave 1, `--in-diff`,
-//! with `--test=text_tables_unit -- --skip pages_real`; then
-//! `scripts/mutants-ok.sh` for the `Ok(..)` mutants): every mutant is caught
-//! except these, which change no result:
+//! The tests of `obj.rs`, `table.rs` and `utils/{text,clustering,
+//! geometry}.rs` are `text_tables_unit` (`cargo mutants` with
+//! `--test=text_tables_unit -- --skip pages_real`; then
+//! `scripts/mutants-ok.sh` for the `Ok(..)` mutants). These mutants survive
+//! and change no result:
 //!
 //! - `intern`: the size cap of the interning table (`< 4096` made `<=`,
 //!   `==`, `>`), and `Hot::of` made `None` (its only caller is `intern`):
@@ -93,11 +93,10 @@
 //!   other false value: `x in v` or `v[k] = ...` fails on `0`, `""`,
 //!   `[]`, `()`...; the `user_arg_cases` check these).
 //!
-//! The `Ok(..)` pass (diff made from the rewritten files): 79 mutants, 72
-//! caught; the 7 unviable ones (`Ok(Default::default())` for types without
-//! a default) were replaced by hand with concrete values (`num_operands`,
-//! `set_clusters`, `clusters`, `cluster_objects`, `WordMap::to_textmap`),
-//! and each fails the replay.
+//! The `Ok(..)` mutants that do not compile (`Ok(Default::default())` for
+//! types without a default) are made by hand with concrete values
+//! (`num_operands`, `set_clusters`, `clusters`, `cluster_objects`,
+//! `WordMap::to_textmap`): each fails the replay.
 
 use rustc_hash::FxHashMap as HashMap;
 use std::cell::RefCell;
@@ -422,7 +421,7 @@ impl Default for PyValue {
 // Objects/tupleobject.c tupledealloc, Objects/dictobject.c dict_dealloc:
 // Py_TRASHCAN_BEGIN): the items of a list, tuple or dict dropped last are
 // moved to a work list first. A list nested 10^6 levels deep is freed like a
-// flat one (docs/architecture.md, "Profondeur de récursion"); PDF objects
+// flat one (docs/architecture.md, "Frames And C Units"); PDF objects
 // have their own (pdfminer::pdftypes).
 impl Drop for PyValue {
     #[inline]
@@ -1333,7 +1332,8 @@ pub fn py_sum<'a>(items: impl IntoIterator<Item = &'a PyValue>) -> PyResult<PyVa
 /// when the allocation is refused, which on the oracle machine happens
 /// from about 26 GiB on, see `pdfminer::utils`); the port raises
 /// `MemoryError` from 4 GiB on, as CPython would on a machine whose
-/// allocator cannot grant more (an accepted deviation, `architecture.md`).
+/// allocator cannot grant more (an accepted deviation,
+/// `docs/architecture.md`, "Sequence Sizes").
 /// Below, the port allocates as Python does.
 pub const MAX_REPEAT_BYTES: u64 = 1 << 32;
 

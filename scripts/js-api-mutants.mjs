@@ -1,4 +1,4 @@
-// Hand mutants of the public API layer of wave 5 (workstream API: js/src/api.ts,
+// Hand mutants of the public API layer (js/src/api.ts,
 // js/src/api/structure.ts, js/src/search.ts, js/src/errors.ts), Stryker not
 // being available offline: each mutant replaces one exact text of a source
 // file (a branch removed or inverted, a constant, an operation, an
@@ -6,8 +6,9 @@
 // API itself (the sessions of oracle/unit/js_api.py, js/test/node/api.test.ts,
 // and js/test/node/api-lifetime.test.ts; the diagnostics test of the runtime
 // for the diagnostics policy), and is "killed" when they fail. The source is
-// restored after each run. Survivors are listed in docs/architecture.md
-// ("Vague 5", API), each with its justification.
+// restored after each run. Accepted survivors are listed in
+// docs/verification.md, "Mutation Testing" ("Hand Mutants"), each with its
+// justification.
 //
 //   node scripts/js-api-mutants.mjs <checkout> [ids...]    (a copy of the checkout:
 //   the sources are mutated in place; dist/ built, unit data generated)
@@ -151,7 +152,7 @@ const mutants = [
   [A, '    this.pdf.pin(this);\n    return this.#list("hyperlinks");', '    return this.#list("hyperlinks");'],
   [S, "if (matcher instanceof RegExp) {", "if (false) {"],
   [S, 'if (typeof matcher === "function") return', 'if (false) return'],
-  // the join: the mask in its own argument, never taken from a caller's value
+  // the structure matcher: the mask in its own argument, never taken from a caller's value
   [S, "  return [matcher];\n}", "  return matcher !== null && typeof matcher === \"object\" && \"mask\" in matcher ? [null, matcher.mask] : [matcher];\n}"],
   [S, "  return [matcher];\n}", "  return [null, matcher];\n}"],
   [S, "    return [\n      null,\n", "    return [\n      matcher,\n"],

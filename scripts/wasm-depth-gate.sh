@@ -2,7 +2,7 @@
 # The deepest recursions Python accepts, run by the production WebAssembly
 # profile (`dist`: LTO, one codegen unit, panic=abort), whose larger frames
 # could exhaust the module's shadow stack where the `release` replays of
-# scripts/check.sh do not (docs/architecture.md, "Profondeur de récursion";
+# scripts/check.sh do not (docs/architecture.md, "Recursion Depth", "Stack Size";
 # the stack size is set by crates/wasm/build.rs and crates/pdftrace/build.rs).
 #
 # Builds `pdftrace` natively (`release`) and for wasm32-wasip1 (`dist`), runs
@@ -17,12 +17,11 @@
 # both builds run here without `--oracle-dir`, so with `CreationOrder`,
 # where `oracle.verify` hands `pdftrace` Python's `id()` ranking (the gate
 # needs no oracle cache). They are the same traces only because these
-# windows have no page whose analysis depends on that ranking: measured in
-# October 2026 at the wave 3 finalization, the 188 `adv-interp` depth and
-# C-limit files give identical native `layout` traces with and without
-# `--oracle-dir` (docs/verification.md, "Outils"). A new depth file whose
-# layout has `id()` ties would still be gated for the stack (wasm = native),
-# not for Python parity.
+# windows have no page whose analysis depends on that ranking: measured,
+# the 188 `adv-interp` depth and C-limit files give identical native
+# `layout` traces with and without `--oracle-dir` (docs/architecture.md,
+# "Layout Tie Order"). A new depth file whose layout has `id()` ties would
+# still be gated for the stack (wasm = native), not for Python parity.
 #
 #   scripts/wasm-depth-gate.sh        # run by scripts/check.sh
 set -euo pipefail
@@ -87,7 +86,7 @@ for stage in layout interp fonts; do
 done
 gate pages adv-pages "$CACHE"/corpus/adv-pages/*depth*.pdf
 gate objects adv-objects "$CACHE"/corpus/adv-objects/*depth*.pdf
-# the page layer (wave 4): the windows of adv-plumber (nested figures,
+# the page layer: the windows of adv-plumber (nested figures,
 # colorspaces, MCIDs: plumber_objects and plumber_text; dash arrays through
 # the Serializer: plumber_doc) and of adv-structure (to_dict, prune, repr,
 # metadata, the C-unit windows of decode_text and repr: plumber_doc and

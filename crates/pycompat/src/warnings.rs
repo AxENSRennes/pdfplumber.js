@@ -11,7 +11,7 @@
 //!
 //! A shown warning goes to the diagnostics channel ([`crate::diagnostics`],
 //! source: the category's name). The Python frames of `warnings.warn` are
-//! not modelled (`docs/architecture.md`, "Avertissements").
+//! not modelled (`docs/architecture.md`, "Where Depth Is Counted").
 
 use std::cell::RefCell;
 

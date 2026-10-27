@@ -29,8 +29,8 @@
 //! `do_keyword(stream)` resolves the stream dictionary and its `/Length`
 //! through the document (`dict_value`, `int_value`), and resolving a
 //! reference parses another object with the document's parser, which is
-//! this very parser (`docs/architecture.md`, "Résolution des références et
-//! ré-entrance du parseur"). The document keeps its parser in a slot that a
+//! this very parser (`docs/architecture.md`, "Reference Resolution And
+//! Parser Re-entrance"). The document keeps its parser in a slot that a
 //! `getobj` takes it from; [`lend`] puts the running parser back in that
 //! slot for the duration of a resolution, so that the nested `seek`/
 //! `reset`/`nextobject` act on the same state, as in Python, and takes it

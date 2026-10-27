@@ -270,7 +270,7 @@ pub trait LTPayload: Clone + 'static {
 /// figures) are tagged: the analysis runs later. The names are never those
 /// of the class's own attributes.
 ///
-/// Performance (`docs/architecture.md`, "Vague 5", PERF): the two
+/// Performance (`docs/architecture.md`, "Performance"): the two
 /// attributes pdfplumber sets on every object are held without an
 /// allocation of their own ([`Attrs`]).
 #[derive(Clone)]

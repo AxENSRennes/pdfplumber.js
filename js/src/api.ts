@@ -9,10 +9,9 @@
  * core's requests): the operations of crates/wasm/src/pages.rs it runs,
  * each a statement of oracle/unit/js_pages_run.py, and the JavaScript
  * between them (a `RegExp` for `search`, the test function of `filter`).
- * The table of members, operations and statements is docs/public-api.md,
- * "Operations"; docs/architecture.md, "Vague 5", has the contract this
- * file implements (wave 5 base: the spine; the API workstream completes
- * it).
+ * The table of members, operations and statements is docs/js-runtime.md,
+ * "API Operations"; docs/js-runtime.md, "API Layer", has the contract this
+ * file implements.
  */
 
 import { fromPython, type PythonErrorInfo } from "./errors.js";
@@ -226,7 +225,7 @@ interface Held {
 /** Frees the handle of an object that became unreachable (a document, a
  * derived page, a table): `free`, queued after the calls made before it.
  * Freeing never changes a result (the core keeps no Python-visible state
- * of a freed object; docs/js-runtime.md, "Handles libérés"). A document's
+ * of a freed object; docs/js-runtime.md, "Freed Handles"). A document's
  * entry marks its life released first: the entries of its pages and tables
  * that run after it free nothing (the document took them along). */
 const registry =

@@ -1148,7 +1148,8 @@ impl TableFinder {
     // pdfplumber/table.py:588 TableFinder.__init__
     pub fn new(page: &dyn TablePage, settings: TableSettings) -> PyResult<TableFinder> {
         // the frames down to the page's properties, whose first access
-        // interprets the page (the rest counts none: docs/architecture.md):
+        // interprets the page (the rest counts none: docs/architecture.md,
+        // "Where Depth Is Counted"):
         // TableSettings.resolve(settings) returns a TableSettings as it is
         pycompat::recursion::leaf(1)?;
         let edges = TableFinder::get_edges(page, &settings)?;

@@ -10,14 +10,13 @@
 //! which the stage traces and the sweeps of `plumber_sweep` cannot see (the
 //! interpretation goes deeper first, and a sweep sees only whether an
 //! operation raised); the performance paths of `process_object`
-//! (`docs/architecture.md`, "Chantier PERF") must keep them.
+//! (`docs/architecture.md`, "Performance") must keep them.
 //!
-//! Both counters are checked (the C units since the join of wave 5,
-//! `docs/architecture.md`: the unit `isinstance` takes while it checks a
-//! tuple of classes, `pycompat::recursion::isinstance_tuple`; the units of
-//! `"".join` and `ord` in `decode_text`; the C staircases of the `typing`
-//! subscriptions of `process_attr`'s annotations,
-//! `pycompat::typing_cache`).
+//! Both counters are checked (`docs/architecture.md`, "Recursion Depth":
+//! the unit `isinstance` takes while it checks a tuple of classes,
+//! `pycompat::recursion::isinstance_tuple`; the units of `"".join` and
+//! `ord` in `decode_text`; the C staircases of the `typing` subscriptions
+//! of `process_attr`'s annotations, `pycompat::typing_cache`).
 
 use std::fs;
 use std::sync::Arc;

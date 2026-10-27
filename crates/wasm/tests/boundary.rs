@@ -1260,7 +1260,7 @@ fn hand_request(op: &str, h: u32, f: impl Fn(&mut BinWriter)) -> Vec<u8> {
 
 /// Streams by reference (`crates/wasm/src/streams.rs`), the objects of a
 /// document given back as arguments (`binary::decode_args`), and the
-/// errors of the operations of wave 5 that no Python session can reach.
+/// errors of these operations that no Python session can reach.
 #[test]
 fn stream_handles_objects_as_arguments_and_their_errors() {
     big_stack(|| {

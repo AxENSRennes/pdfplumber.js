@@ -1,144 +1,92 @@
-# PDF Corpus Expansion
+# Corpus
 
-The current compatibility/parity fixtures already cover the upstream
-`pdfplumber-python/tests/pdfs` corpus. The next useful expansion is a small,
-curated external corpus that stresses document classes not well represented by
-upstream regression PDFs.
+The PDFs the port is checked on, besides the test suites of the upstream
+submodules (`upstream/pdfplumber-python/tests/pdfs`,
+`upstream/pdfminer-six/samples`, `upstream/pdfjs/test/pdfs`) and the
+adversarial corpora generated under the cache (`oracle/adversarial/`). How
+the oracle groups them into sets (`micro`, `quick`, `all`...) is in
+[`docs/verification.md`](../docs/verification.md#corpus-sets).
+
+## Directories
+
+| Directory | Content | In git |
+|---|---|---|
+| `micro/` | 17 small PDFs, one feature each, written by `oracle/generate_micro_pdfs.py` (deterministic, with `manifest.json`) | yes |
+| `upstream-contract/` | 66 regression PDFs of pdf.js's test suite that its repository only links to, with source URL, license and SHA-256 in `manifest.json` | yes |
+| `parity-cycles/cycle-01` to `cycle-06` | small generated PDFs, one feature each, in `working/` and `holdout/` batches with their manifests | yes |
+| `parity-cycles/cycle-10` to `cycle-14` | page selections of the external corpus (manifests only: their `localPath` points into `external/`) | manifests |
+| `external/` | 53 public PDFs, about 129 MB: tagged and accessible PDFs, conformance files, forms, government and legal documents, scientific articles, financial reports, CJK and right-to-left text, scanned books | `manifest.json` only |
+| `external-holdout/` | 20 public PDFs, about 67 MB, kept apart from `external/` (companies, government forms, patents, regulators, arXiv) | `manifest.json` only |
+| `passwords.json` | passwords of upstream test files, each citing the upstream test that opens it | yes |
+
+## Downloading
+
+```sh
+node scripts/download-corpus.mjs        # or npm run corpus:download; scripts/setup-dev.sh runs it
+```
+
+downloads every entry of `corpus/external/manifest.json` and
+`corpus/external-holdout/manifest.json` to its `localPath` and checks its
+SHA-256 (`--manifest PATH` and `--id ID` restrict it, `--force` downloads
+again, `--dry-run` only prints). A file whose source no longer answers can
+be copied from a machine that has it: the SHA-256 identifies it. In a git
+worktree, the downloaded files live in the main checkout
+(`PDFPLUMBER_ROOT`).
+
+## Manifests
+
+Each entry records where a file comes from and why it is there:
+
+```json
+{
+  "id": "pdfua-reference-complex-table",
+  "sourceUrl": "https://example.invalid/file.pdf",
+  "license": "Source-specific terms",
+  "sha256": "...",
+  "size": 123456,
+  "categories": ["tagged-pdf", "table", "form"],
+  "localPath": "corpus/external/pdfua-reference-complex-table.pdf",
+  "selectedPages": [1, 2]
+}
+```
+
+A `password` (or `openOptions.password`) field gives the password of an
+encrypted file; `oracle/corpus.py` reads it, keyed by the file's SHA-256.
 
 ## Selection Criteria
 
-- Prefer public, stable URLs with clear reuse terms.
-- Keep checked-in PDFs small and limited; use a manifest plus downloader for
-  anything large.
-- Cover behavior that matters to pdfplumber parity: character geometry,
-  reading order, tables, annotations, forms, page boxes, tagged structure,
-  images, malformed files, encryption, and edge/path extraction.
-- Store provenance with each fixture: source URL, license/terms note, SHA-256,
-  file size, category, selected pages, and intended checks.
+- Public, stable URLs with clear reuse terms; large files are downloaded
+  from their manifest, never committed.
+- Behavior that matters to pdfplumber: character geometry, reading order,
+  tables, annotations, forms, page boxes, tagged structure, images,
+  malformed files, encryption, edges and paths.
+- Provenance with each file: source URL, license or terms, SHA-256, size,
+  categories and the pages of interest.
+- A difference found on a file is fixed at its cause, never by its name: a
+  failure is classified by its technical family, and a focused case that
+  shows the family is added to `micro/` or to an adversarial corpus. The
+  holdout files are not used to tune anything.
 
-## Recommended Sources
+## Sources
 
-| Source | Why it helps | Suggested use |
-| --- | --- | --- |
-| PDF Association pdf-corpora index: https://github.com/pdf-association/pdf-corpora | Curated index of PDF-centric corpora, including PDF.js, pdfium, iText, PDF/UA, PDF/X, 3D, and stress corpora. | Use as the primary discovery index for low-level PDF feature fixtures. |
-| PDF/UA Reference Suite: https://pdfa.org/resource/pdfua-reference-suite/ | Ten tagged, accessible PDFs covering multi-page content, complex tables, interactive forms, links to structure elements, and scanned documents. | Add targeted parity tests for structure/MCID/tagged content, links, forms, and table extraction. |
-| veraPDF corpus: https://github.com/veraPDF/veraPDF-corpus | Atomic PDF/A, PDF/UA, ISO 32000-1, and ISO 32000-2 conformance files under CC BY 4.0. | Add a small subset for metadata, embedded files, color spaces, structure trees, page boxes, and parser robustness. |
-| Mozilla PDF.js regression PDFs: https://github.com/mozilla/pdf.js/tree/master/test/pdfs | Real and synthetic files that stress the named PDF.js runtime/operator capabilities still used internally. | Add smoke/parity cases for features PDF.js parses differently from pdfminer, especially fonts, CMaps, annotations, and malformed files. |
-| PubLayNet / PMC OA PDFs: https://github.com/ibm-aur-nlp/PubLayNet | Scientific articles from PubMed Central OA with layout annotations from PDF/XML matching. | Select a few born-digital article pages with two-column text, figures, captions, and tables. |
-| PubTables-1M: https://huggingface.co/datasets/bsmock/pubtables-1m/tree/main | Large table-focused corpus from PubMed Central OA; includes PDF annotations and page/table word data. | Use only tiny pinned samples for table detection/extraction parity; do not vendor the full dataset. |
-| TableBank: https://github.com/doc-analysis/TableBank | 417K labeled tables from Word and LaTeX documents, with official train/val/test splits. | Use representative generated PDFs/pages for bordered, borderless, and LaTeX-style tables if original PDFs are accessible under acceptable terms. |
-| DocLayNet v1.2: https://huggingface.co/datasets/docling-project/DocLayNet-v1.2 | Diverse human-annotated layout dataset with embedded PDFs in the dataset rows. | Sample legal, financial, scientific, manual, and magazine-like pages for reading order and object geometry. |
-| IRS forms/publications: https://www.irs.gov/forms-instructions-and-publications | Stable public PDFs with AcroForm-style fields, dense instructions, tables, multilingual variants, and accessibility variants. | Add fillable form and instruction PDF cases for annotations/forms/text extraction. |
-| Federal Register dataset: https://www.archives.gov/open/dataset-fedreg.html | Official daily legal newspaper issues, roughly 250 issues per yearly dataset. | Select a few pages for dense multi-column legal text, tables, headers/footers, and long documents. |
-| CourtListener bulk legal data: https://www.courtlistener.com/help/api/bulk-data/ | Legal opinions and metadata; bulk exports include paths to Harvard Caselaw PDF files. | Sample court opinions for legal layout, citations, page headers, footers, and scanned/older PDFs. |
+| Source | What it brings |
+| --- | --- |
+| PDF Association pdf-corpora index: https://github.com/pdf-association/pdf-corpora | an index of PDF corpora (pdf.js, pdfium, iText, PDF/UA, PDF/X, stress corpora) |
+| PDF/UA Reference Suite: https://pdfa.org/resource/pdfua-reference-suite/ | tagged, accessible PDFs: structure trees, MCIDs, links to structure elements, forms, complex tables |
+| veraPDF corpus: https://github.com/veraPDF/veraPDF-corpus | atomic PDF/A, PDF/UA and ISO 32000 conformance files (CC BY 4.0): metadata, embedded files, color spaces, page boxes |
+| Mozilla pdf.js regression PDFs: https://github.com/mozilla/pdf.js/tree/master/test/pdfs | real and synthetic files that stress fonts, CMaps, annotations and malformed structures |
+| PubLayNet / PMC OA PDFs: https://github.com/ibm-aur-nlp/PubLayNet | born-digital scientific articles: two-column text, figures, captions, tables |
+| PubTables-1M: https://huggingface.co/datasets/bsmock/pubtables-1m/tree/main | table pages from PubMed Central (small pinned samples only) |
+| TableBank: https://github.com/doc-analysis/TableBank | bordered, borderless and LaTeX-style tables |
+| DocLayNet v1.2: https://huggingface.co/datasets/docling-project/DocLayNet-v1.2 | legal, financial, scientific, manual and magazine-like pages |
+| IRS forms and publications: https://www.irs.gov/forms-instructions-and-publications | fillable forms, dense instructions, multilingual and accessible variants |
+| Federal Register: https://www.archives.gov/open/dataset-fedreg.html | dense multi-column legal text, tables, long documents |
+| CourtListener bulk legal data: https://www.courtlistener.com/help/api/bulk-data/ | court opinions: legal layout, headers and footers, scanned and older PDFs |
 
-## First Seed Set
-
-Start with 20-30 files rather than a huge corpus:
-
-- 5 tagged/accessibility PDFs from the PDF/UA Reference Suite.
-- 5 atomic conformance PDFs from veraPDF, chosen for page boxes, structure,
-  metadata, embedded files, and color/path behavior.
-- 5 PDF.js regression PDFs that exercise fonts, CMaps, annotations, and
-  malformed-but-loadable files.
-- 3 scientific article/table PDFs from PubLayNet or PubTables-1M.
-- 3 IRS PDFs: one fillable form, one long instruction document, one
-  multilingual/publication variant.
-- 2 Federal Register pages/issues with dense multi-column text and tables.
-- 2 legal opinion PDFs from CourtListener/Harvard Caselaw.
-
-## Integration Shape
-
-The external corpus lives in `corpus/external/` and is described
-by `corpus/external/manifest.json`. The PDFs are not checked into
-Git; each manifest entry records `sourceUrl`, `size`, and `sha256` so another
-machine can recreate the corpus exactly. Restore the stabilization corpus with:
-
-```bash
-npm run fixtures:download:external
-```
-
-Restore both external corpora with:
-
-```bash
-npm run fixtures:download:external-all
-```
-
-The stabilization corpus currently contains 53 PDFs, about 124 MB total, from
-PDF.js, veraPDF, IRS, DOL, NASA, USPTO, UN ODS, arXiv, SCOTUS, GovInfo Federal
-Register, Wikimedia Commons / Internet Archive, company investor-relations
-sites, U.S. financial regulators, Treasury/Fiscal Data, and the World Bank Open
-Knowledge Repository.
-
-The external parity goldens intentionally compare object-level page snapshots.
-For short PDFs, every page is snapshotted. For long PDFs, the generator selects
-seven representative pages: the first two pages, three pages around the middle,
-and the last two pages. Each selected page records geometry, object counts,
-object samples for `char`, `line`, `rect`, `curve`, `image`, annotations,
-edge counts, extracted text summaries, and extracted word summaries.
-
-The second expansion adds coverage for CJK fonts, Arabic/RTL shaping, missing
-CMaps, file attachments, button widgets, annotations without appearances, bad
-page labels, bitmap/CCITT images, public medical/government forms, tagged NASA
-reports, USPTO patent drawings, multilingual UN documents, and a public-domain
-scanned book with variable page boxes.
-
-The financial expansion adds long annual reports and filings from Berkshire
-Hathaway, JPMorgan Chase, Apple, Walmart, Target, Morgan Stanley, Citigroup, the
-Federal Reserve, Treasury Financial Report of the U.S. Government, FSOC, FDIC,
-OCC, and the World Bank. These fixtures stress dense accounting tables,
-consolidated financial statements, notes, SEC cover pages, mixed portrait/table
-layouts, image-heavy government report pages, and long-document page sampling.
-
-## Holdout Corpus
-
-The anti-overfit holdout lives in
-`corpus/external-holdout/manifest.json`. It contains 20 separate
-PDFs, about 65 MB total, from public companies, government forms, USPTO, FDA,
-CMS, arXiv, Federal Register/GovInfo, the European Banking Authority, the Bank
-of Japan, PDF.js, and SCOTUS.
-
-Restore it with:
-
-```bash
-npm run fixtures:download:external-holdout
-```
-
-The holdout is intentionally separate from the stabilization corpus. Generate
-its Python reference once with:
-
-```bash
-npm run fixtures:generate:external-holdout-parity
-```
-
-Run it only at validation checkpoints:
-
-```bash
-npm run test:external-holdout-parity
-```
-
-Do not move holdout PDFs into the current corpus, tune fixes by file name,
-regenerate holdout goldens from JavaScript, or add allowed failures. If a final
-holdout run fails, classify failures by technical family and add any missing
-family coverage to focused stabilization tests rather than repeatedly targeting
-the holdout document itself.
-
-The manifest shape is:
-
-```json
-[
-  {
-    "id": "pdfua-reference-complex-table",
-    "sourceUrl": "https://example.invalid/file.pdf",
-    "license": "Source-specific terms",
-    "sha256": "...",
-    "category": ["tagged-pdf", "table", "form"],
-    "localPath": "corpus/external/pdfua-reference-complex-table.pdf",
-    "checks": ["document.snapshot", "page.textSummary", "page.findTablesSummary"]
-  }
-]
-```
-
-Then teach the golden generator to read both the vendored upstream directory
-and the external manifest. This keeps current tests deterministic while making
-licensing, provenance, and updates explicit.
+The external corpus also holds long annual reports and filings (accounting
+tables, notes, cover pages, mixed portrait and table layouts), public
+medical and government forms, patent drawings, multilingual UN documents,
+CJK fonts with missing CMaps, Arabic and right-to-left text, file
+attachments, button widgets, annotations without appearances, bad page
+labels, bitmap and CCITT images, and a scanned public-domain book with
+variable page boxes.

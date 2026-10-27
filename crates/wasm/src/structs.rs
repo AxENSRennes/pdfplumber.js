@@ -1,6 +1,7 @@
 //! pdfplumber's structure trees, pdfplumber/structure.py:151 PDFStructTree
 //! as JavaScript reaches them (`docs/js-runtime.md`,
-//! "Documents et pages"; the `PDFStructTree` of `docs/public-api.md`).
+//! "Documents And Pages"; the `PDFStructTree` of `docs/public-api.md`,
+//! "Structure Tree").
 //!
 //! `struct_tree` (on a document, with a page handle or `None`) makes the
 //! tree, `PDFStructTree(pdf, page)`, behind a handle, and returns its
