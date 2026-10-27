@@ -3410,6 +3410,89 @@ supprimés (`js_api` 16, `js_runtime` 14, `plumber_frames` 8, ceux des
 branches de la vague, 2,4 Go) ; ceux de `.cache/oracle` sont tous à
 l'empreinte courante.
 
+### Finalisation (branche `rewrite/rust-core`)
+
+Revue de l'intégration : six points, tous vérifiés et corrigés.
+
+- **`wasm-opt` absent** : `scripts/build-wasm.mjs` échoue (statut 1, le
+  message dit `npm ci --offline`) quand `node_modules/binaryen` manque et
+  que `--no-opt` n'est pas donné ; la ligne finale dit si le module est
+  passé par `wasm-opt -O3`. `build.mjs`, `check-browsers.sh` et les bancs
+  passent par là ; `check.sh` construit toujours `dist/pdfplumber.wasm`
+  avec `--no-opt` (explicite).
+- **Classement des traces de l'API par leur contenu** :
+  `oracle/api_parity.py` (`verification.md`, « Parité par l'API
+  JavaScript publique ») remplace le classement par nom de fichier et
+  par appartenance à la passe `pdftrace`. La première passe a trouvé que
+  les 11 « fenêtres » de `plumber_text` d'`adv-plumber` (et celles des
+  autres ensembles) n'étaient pas comparées : `pdftrace-js` plantait
+  (« the oracle's trace has no spans line left », `rust-crashed`), en
+  prenant les lignes `spans` de l'oracle dans l'ordre ; il les lit
+  maintenant par numéro de page et indice d'opération, `None` sinon,
+  comme `crates/pdftrace/src/stages/plumber_text.rs` (`oracle_spans`).
+  Elle a aussi trouvé cinq fenêtres que la règle de la première
+  différence ne couvrait pas, toutes des effets de la limite : trois
+  `climit-dict-odd-*` d'`adv-interp` où `filter()` rejette avec une
+  autre exception que la `RecursionError` de la page filtrée de Python
+  (le prédicat s'évalue depuis une autre profondeur : alignées comme les
+  écarts de `filter()` quand l'une des deux exceptions est une
+  `RecursionError`), et les deux `depth-metadata-nested-*-988`
+  d'`adv-structure`, où pdfplumber attrape la `RecursionError` du
+  décodage des métadonnées (`pdfplumber/pdf.py:59`) : la ligne `metadata` de Python
+  garde des octets, l'API (au niveau du module) décode tout ; Python
+  relancé avec 200 cadres de limite de plus donne la ligne de l'API
+  (`HEADROOM`). Les règles ont 14 tests (`oracle/tests/test_api_parity.py`) ;
+  21 mutants à la main des règles : 20 tués, 1 équivalent (`rust !=
+  oracle` dans `core` : `api == oracle` est déjà rendu `identical`).
+- **`check.sh`** : les quatre étapes par l'API sur `micro` et
+  `adv-plumber` (`api_parity`, quelques minutes), avec
+  `dist/pdfplumber-oracle.wasm` passé par `wasm-opt` (2 669 667 octets ;
+  le module de l'intégration, 3 338 736, ne l'était pas) et
+  `pdftrace` release.
+- **Profondeur dans les navigateurs et en worker** : `js_api.py` écrit
+  aussi `depth-bytes.jsonl`, les 593 fenêtres ouvertes depuis leurs
+  octets (sans `structure_tree` ni `toDict` d'élément, dont la copie
+  profonde d'un document lu depuis des octets n'est pas modélisée) :
+  10 081 appels, 7 457 faits. `api-depth.test.ts` rejoue les deux
+  fichiers (1 186 sessions, 81 s), `api.spec.ts` le second par lots de
+  25 sessions d'un même ensemble, dans les trois navigateurs, dans la
+  page et en worker ; `js/test/serve.mjs` sert `/.cache/corpus/`. Les
+  sondes d'`ApiDepth` (clé : source de `depth_session`) ont été refaites :
+  mêmes premières profondeurs qu'avant pour les 95 familles,
+  `depth.jsonl` et `sessions.jsonl` identiques octet pour octet.
+- **Comptes du rejoueur** : `replayApiSession` rend `{ checked, made }`
+  et échoue si une attente n'est pas comparée, si l'API ne fait pas
+  exactement les appels que Python fait (`Unresolved` exclus), ou si
+  aucun appel n'est fait ; les trois fichiers de Node et
+  `api.spec.ts` vérifient les deux nombres.
+- **README** : les chiffres de l'intégration (Python 139,8 ; Node 21,2,
+  ×6,6 ; natif 15,8, ×8,9), Chromium donné comme mesuré à la jonction
+  contre le Python de cette passe-là.
+
+**Vérification** (`heavy.sh`, `HEAVY_SLOTS=1`, `-j 3`, `--timeout 600`,
+module d'oracle `wasm-opt -O3`) : `api_parity` des quatre étapes sur
+`all` et les cinq corpus adverses, aucun `defect`. Les 838 résultats non
+identiques (les mêmes fichiers qu'à l'intégration) : 29 `core` (la
+trace de l'API est celle de `pdftrace` octet pour octet : la ligne `ids`
+de `all`, les 16 et 12 NaN d'`adv-interp`), 31 `filter` (3 de `all`, 19
+d'`adv-interp`, 9 d'`adv-plumber` : 14 comme à l'intégration et 17
+fenêtres dont la seule différence est l'écart de `filter()`), 777
+`window`, 1 oracle en erreur (`096-text-TL.pdf`, 5 Go) :
+
+| `api_parity` (identiques / `core` / `filter` / `window`) | `plumber_objects` | `plumber_text` | `plumber_tables` | `plumber_doc` |
+|---|---|---|---|---|
+| `all` (1 853) | 1 852 / 1 / 0 / 0 | 1 853 | 1 853 | 1 850 / 0 / 3 / 0 |
+| `adv-objects` (333) | 318 / 0 / 0 / 15 | 321 / 0 / 0 / 12 | 321 / 0 / 0 / 12 | 318 / 0 / 0 / 15 |
+| `adv-pages` (285) | 228 / 0 / 0 / 57 | 230 / 0 / 0 / 55 | 230 / 0 / 0 / 55 | 228 / 0 / 0 / 57 |
+| `adv-interp` (353) | 221 / 0 / 0 / 132 | 292 / 16 / 0 / 44 (+1 oracle) | 301 / 12 / 0 / 40 | 192 / 0 / 19 / 142 |
+| `adv-plumber` (199) | 159 / 0 / 0 / 40 | 188 / 0 / 0 / 11 | 186 / 0 / 0 / 13 | 149 / 0 / 9 / 41 |
+| `adv-structure` (441) | 441 | 441 | 441 | 405 / 0 / 0 / 36 |
+
+Durées : `all` 704, 522, 538 et 1 510 s ; chaque ensemble adverse moins
+d'une minute par étape. Node : 57 sessions et 1 186 sessions de
+profondeur (`api.test.ts`, `api-depth.test.ts`) vertes ; Chromium, essai
+des seules fenêtres : 54 lots verts (2,3 min).
+
 ## Sémantique Python centralisée (`crates/pycompat`)
 
 Tout ce qui imite Python vit ici, une seule fois, testé contre CPython :

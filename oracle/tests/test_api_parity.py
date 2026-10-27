@@ -56,6 +56,24 @@ class AlignFilters(unittest.TestCase):
         oracle = [('dobjects [["char", 1, "00"]]' if x.startswith("dobjects ") else x) for x in FILTERED]
         self.assertEqual(align_filters(oracle, REJECTED)[1:], (0, 2))
 
+    def test_each_line_of_the_gap_is_checked(self) -> None:
+        # in a window (the most lenient on the exceptions), each line of
+        # the shape must be there: the line before, the three lines of
+        # Python's filtered page, the API's derive line
+        other = [x.replace("RecursionError", "ValueError") if x.startswith("derive ") else x for x in REJECTED]
+        for k, line in [(1, 'serialize ["filter", "small"]'), (2, "page 2"), (3, 'dobjects [["char", 1, "00"], "' + REC + '"]'),
+                        (4, 'derived [["crop", [0.0, 0.0, 0.5, 0.5], {}]]')]:
+            oracle = list(FILTERED)
+            oracle[k] = line
+            self.assertEqual(align_filters(oracle, other, window=True)[1], 0, line)
+        # the same line before on both sides, but not a derived line
+        oracle, api = list(FILTERED), list(other)
+        oracle[1] = api[1] = 'serialize ["filter", "small"]'
+        self.assertEqual(align_filters(oracle, api, window=True)[1], 0)
+        api = list(other)
+        api[2] = f"dannots {REC}"
+        self.assertEqual(align_filters(FILTERED, api, window=True)[1], 0)
+
     def test_a_difference_after_the_gap_is_not_aligned(self) -> None:
         api = REJECTED[:-2] + ['dbox (0.0, 0.0, 100.0, 50.0) 100.0 50.0 "<Page:1>"', "!end"]
         self.assertEqual(align_filters(FILTERED, api)[1:], (1, 4))

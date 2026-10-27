@@ -443,6 +443,20 @@ Lecture :
     - `scripts/check-browsers.sh` vert : 464 tests réussis, 16 sautés
       (les recettes de bundlers ne tournent que dans Chromium), en
       25 min : Chromium, Firefox, WebKit, dans la page et en worker.
+  - Finalisation (revue de l'intégration, `architecture.md`,
+    « Finalisation ») : `build-wasm.mjs` échoue sans `wasm-opt` ; chaque
+    trace de l'API qui n'est pas celle de Python classée par son contenu
+    (`oracle/api_parity.py` : `core` = trace de `pdftrace` octet pour
+    octet, écart de `filter()` aligné, fenêtre dont la première
+    différence est la `RecursionError` ou que Python avec plus de limite
+    reproduit), sur `all` et les cinq corpus adverses : aucun défaut
+    (838 : 29 `core`, 31 `filter`, 777 fenêtres, 1 oracle à 5 Go), le
+    harnais de `plumber_text`, qui plantait sur les fenêtres, corrigé ;
+    `check.sh` passe les quatre étapes par l'API sur `micro` et
+    `adv-plumber` avec le module d'oracle optimisé ; les 593 fenêtres
+    ouvertes depuis leurs octets (`depth-bytes.jsonl`) rejouées dans
+    Node et dans les trois navigateurs, dans la page et en worker ; le
+    rejoueur vérifie que l'API fait les appels que Python fait.
   - Mesures à l'intégration (`quick`, 150 fichiers, 302 pages, ms par
     page ; ouverture, objets, texte, mots, `find_tables` ; médiane de 3
     passes, Python 1 passe, `heavy.sh`) : Python 139,8 ; Rust natif
