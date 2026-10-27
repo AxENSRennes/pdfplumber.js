@@ -1,10 +1,11 @@
-// The table decoder's generic cells (js/src/core/wire.ts, `Reader.item`,
-// the PERF fast path of wave 5): a table whose generic column holds a cell
-// decodes to the value the general reader (`value()`) gives the same bytes
-// in a plain list, for every kind of value a cell can hold (the scalars
-// `item` reads itself, nested lists and tuples up to its depth and beyond,
-// and what it hands to `value()`). The tables the core writes are covered by
-// the runtime tests and the API sessions; these are blocks made here.
+// The table decoder's generic cells (js/src/core/wire.ts, `Reader.item`, a
+// fast path: docs/architecture.md, "Performance"): a table whose generic
+// column holds a cell decodes to the value the general reader (`value()`)
+// gives the same bytes in a plain list, for every kind of value a cell can
+// hold (the scalars `item` reads itself, nested lists and tuples up to its
+// depth and beyond, and what it hands to `value()`). The tables the core
+// writes are covered by the runtime tests and the API sessions; these are
+// blocks made here.
 import { describe, expect, it } from "vitest";
 
 import { decodeBinary, encodeValue } from "../../src/core/wire.js";

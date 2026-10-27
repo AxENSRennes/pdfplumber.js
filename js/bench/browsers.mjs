@@ -2,7 +2,7 @@
 // The result-encoding benchmark in browsers: Chromium, Firefox and WebKit of
 // Playwright, plus a system Firefox (`--firefox PATH`, default
 // /usr/bin/firefox when present: Playwright's Firefox is a Nightly build
-// that runs Wasm much slower, docs/decision-experiments.md).
+// that runs Wasm much slower, docs/architecture.md, "Performance").
 //   node js/bench/browsers.mjs [CORPUS.pjb] [--passes N] [--only chromium,firefox,webkit,system-firefox]
 // Needs `node scripts/build.mjs` (dist/) and the corpus of
 // crates/wasm/examples/bench_corpus.rs.

@@ -4,7 +4,7 @@
 // package (dist/src, with dist/pdfplumber-oracle.wasm: the oracle hooks),
 // with the command line of crates/pdftrace/src/main.rs, so that
 // `python -m oracle.verify --engine js-api` runs it in place of `pdftrace`
-// (docs/architecture.md, "Vague 5", "Harnais"):
+// (docs/verification.md, "Parity Through The JavaScript API"):
 //
 //   pdftrace-js --stage S [--password=P] [--max-pages N] [--cmap-dir DIR] [--oracle-dir DIR] --out DIR F1.pdf ...
 //   pdftrace-js --stage S [...] FILE.pdf          (the trace on stdout)

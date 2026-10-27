@@ -1,5 +1,5 @@
 /**
- * The value encodings of the boundary (docs/js-runtime.md, "Formats"):
+ * The value encodings of the boundary (docs/js-runtime.md, "Result Encoding"):
  * decoding of PJB1 blocks and JSON results written by crates/wasm, and
  * encoding of PJB1 arguments. Mirrors crates/wasm/src/wire/{binary,json}.rs.
  */

@@ -3,7 +3,7 @@
     PDFPLUMBER_ROOT=<main checkout> <root>/.venv/bin/python oracle/codegen/pdfminer_tables.py [--check]
 
 writes, from the modules the oracle imports (never copied by hand,
-``docs/architecture.md``, "Données upstream"):
+``docs/architecture.md``, "Upstream Data"):
 
 - ``crates/pdfminer/src/glyphlist.rs``: ``glyphname2unicode`` (``pdfminer/glyphlist.py``);
 - ``crates/pdfminer/src/latin_enc.rs``: ``ENCODING`` (``pdfminer/latin_enc.py``);

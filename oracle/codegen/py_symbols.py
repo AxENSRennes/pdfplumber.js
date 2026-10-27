@@ -7,9 +7,9 @@ runs pdfminer: those its imports intern (module constants such as
 Interning a name for the first time in a process instantiates the symbol
 (``PSSymbolTable.intern`` calls ``PSLiteral.__init__``), a Python frame more
 than for a name already interned, which decides where a ``RecursionError``
-happens in a deep recursion (``docs/architecture.md``, "Profondeur de
-récursion"; ``pdfminer::psparser::py_intern``). So the port needs the names
-the process starts with:
+happens in a deep recursion (``docs/architecture.md``, "Recursion Depth",
+"Process State"; ``pdfminer::psparser::py_intern``). So the port needs the
+names the process starts with:
 
 - ``crates/pdfminer/src/psparser_symbols.rs``: after ``import pdfplumber``,
   the process of a pdfplumber user (the default of the port);

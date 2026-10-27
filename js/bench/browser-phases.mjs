@@ -6,7 +6,7 @@
 // phase in ms per page, written as JSON lines to --out (default
 // $PDFPLUMBER_ROOT/.cache/bench/browser-phases.jsonl) and on stdout.
 // Playwright's Firefox is a Nightly build, not a speed reference
-// (docs/port-strategy.md).
+// (docs/architecture.md, "Performance").
 //   node js/bench/browser-phases.mjs [--only chromium,firefox,webkit] [--modes page,worker] < list.tsv
 // list.tsv: `path<TAB>password` lines (paths under $PDFPLUMBER_ROOT, served
 // at /corpus/...). Needs `node scripts/build.mjs`; WebKit without its

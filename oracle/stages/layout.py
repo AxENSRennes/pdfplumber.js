@@ -47,7 +47,7 @@ on pages with such ties the analysis is a draw that differs from one run of
 the stage to the next (and from ``pdfplumber.open(f, laparams={})``, which
 allocates differently: no raw dump before the analysis); parity holds for
 whichever draw the cache holds, and the trace is not reproducible across
-cache builds (``docs/architecture.md``, "Statistique ``CreationOrder``").
+cache builds (``docs/architecture.md``, "Layout Tie Order").
 
 Raw objects are numbered depth-first in ``_objs`` order (figures before
 their contents), from 0: the raw index. A raw object is written as its

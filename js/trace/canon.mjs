@@ -1,5 +1,5 @@
 // The canonical text of a typed value (oracle/canon.py; docs/verification.md,
-// "Format canonique"): the JavaScript half of the trace format, for the
+// "Canonical Trace Format"): the JavaScript half of the trace format, for the
 // harness that writes stage traces through the public API (js/trace/).
 //
 // Typed values (js/src/core/typed.ts): an `int` is a number (a bigint

@@ -439,7 +439,7 @@ def _is_index(k):
 
 def cross(v):
     """A value of a result given back as an argument: what the API gives
-    for it (``docs/js-runtime.md``, "Valeurs"), encoded again as a
+    for it (``docs/js-runtime.md``, "Values"), encoded again as a
     JavaScript argument is: an integral ``float`` a JavaScript safe integer
     crosses as an ``int``, a ``tuple`` as a ``list``, a ``dict`` with its
     integer-like keys first, two surrogates as the astral character they
@@ -537,7 +537,7 @@ def page_at(case, path):
 
 if __name__ == "__main__":
     # the reference configuration: logging disabled (docs/verification.md,
-    # "Étapes"), as the boundary runs without onWarning
+    # "Stages", "Logging Disabled"), as the boundary runs without onWarning
     logging.disable(logging.CRITICAL)
     with open(sys.argv[1]) as f:
         cases = decode(json.load(f))

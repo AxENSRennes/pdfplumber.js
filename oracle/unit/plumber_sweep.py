@@ -23,8 +23,8 @@ interprets it, as a call through the JavaScript boundary does), ``"edges"``
 interpretation's and the frames above it are the operation's: the sweep
 checks the frames from the operation down to the interpretation, where a
 ``RecursionError`` can happen through the API. The code that runs after
-(``utils/text.py``, ``table.py``: no frame counted, ``docs/architecture.md``)
-stays shallower than what the interpretation reached before it. The preparation runs in the stage body;
+(``utils/text.py``, ``table.py``: no frame counted, ``docs/architecture.md``,
+"Recursion Depth", "Where Depth Is Counted") stays shallower than what the interpretation reached before it. The preparation runs in the stage body;
 then ``down(n, lambda: deep_apply(...))`` puts the lambda's frame at
 ``LIMIT - room``; ``deep_apply`` catches what the operation raises, and
 what it returns is summarized (``summarize``) back in the stage body, where

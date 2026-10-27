@@ -1,9 +1,10 @@
 // The depth windows of the adversarial sets and the API's own (oracle/unit/js_api.py,
 // depth.jsonl and depth-bytes.jsonl) through the public API, in Node, on the TypeScript sources:
 // where Python's RecursionError happens when each member's statement runs
-// at the top level of a script (docs/public-api.md, "Operations"). The
+// at the top level of a script (docs/js-runtime.md, "API Operations"). The
 // stage traces through the API cannot show it (their oracle calls
-// pdfplumber from nested generators; docs/verification.md).
+// pdfplumber from nested generators; docs/verification.md,
+// "Parity Through The JavaScript API").
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";

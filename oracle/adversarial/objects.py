@@ -630,9 +630,9 @@ def fallback_float_id(r: int, cfm: str | None, later: bytes, id_token: bytes = b
 
 def cases_depth() -> list[Case]:
     """Recursions around the depth where Python runs out of frames (the
-    first failing N in the comments): docs/architecture.md, "Profondeur de
-    récursion"; and the boundaries the mutation pass of pdfparser.rs found
-    untested."""
+    first failing N in the comments): docs/architecture.md,
+    "Recursion Depth"; and the boundaries the mutation pass of pdfparser.rs
+    found untested."""
     out: list[Case] = []
 
     def window(label: str, make: Callable[[int], bytes], first_failing: int, before: int = 2, after: int = 1) -> None:

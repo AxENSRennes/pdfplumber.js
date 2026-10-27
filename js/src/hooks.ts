@@ -1,9 +1,9 @@
 /**
  * The internal hooks of the public API (never documented as public): what
  * the harness that writes stage traces through the public API (js/trace/,
- * docs/architecture.md, "Vague 5", "Harnais") gives the API where the
- * public semantics intentionally differ from Python's, and how it reads
- * typed values. Reached through `pdfplumber-js/internal` only.
+ * docs/verification.md, "Parity Through The JavaScript API") gives the API
+ * where the public semantics intentionally differ from Python's, and how it
+ * reads typed values. Reached through `pdfplumber-js/internal` only.
  *
  * - `ORACLE` in the options of `open()`: `{ ids }`, Python's `id()`
  *   ranking of each page's layout analysis (the `ids` lines of the

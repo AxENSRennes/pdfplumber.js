@@ -1,8 +1,8 @@
-// Typed JSON (oracle/typed_json.py; docs/verification.md, "Format
-// d'échange typé") to typed values (js/src/core/typed.ts): an int is a
-// number (a bigint beyond ±2^53), a float a PyFloat, a tuple a PyTuple, a
-// dict a PyDict, an exception `{ exception, message }`, Named a canon.mjs
-// `Named`. `lib` gives the classes (the package and pdfplumber-js/internal).
+// Typed JSON (oracle/typed_json.py; docs/verification.md, "Typed JSON") to
+// typed values (js/src/core/typed.ts): an int is a number (a bigint beyond
+// ±2^53), a float a PyFloat, a tuple a PyTuple, a dict a PyDict, an
+// exception `{ exception, message }`, Named a canon.mjs `Named`. `lib`
+// gives the classes (the package and pdfplumber-js/internal).
 import { Named } from "./canon.mjs";
 
 const hexBytes = (hex) => Uint8Array.from(Buffer.from(hex, "hex"));

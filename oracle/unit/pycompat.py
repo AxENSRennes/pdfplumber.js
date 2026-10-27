@@ -82,7 +82,7 @@ def rand_num(rng):
 # -- case generators ------------------------------------------------------------
 
 
-#: Upstream modules outside the port (docs/architecture.md, "Règles de port", 5).
+#: Upstream modules outside the port (docs/architecture.md, "Porting Rules", 5).
 OUT_OF_SCOPE = {
     "pdfminer/high_level.py",
     "pdfminer/image.py",

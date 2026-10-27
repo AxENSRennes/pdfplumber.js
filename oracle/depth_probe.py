@@ -1,18 +1,19 @@
 """Bounded measurement of the Python frames a call goes down to.
 
 Where a ``RecursionError`` happens depends on the deepest frame a call
-reaches, standard library included (``docs/architecture.md``, "Profondeur de
-récursion"). The port models those frames as constants where they do not
-depend on the input (``crates/pdfminer/src/cmapdb.rs``: ``_load_data``); this
-module measures them, so that the constants can be checked again when the
-oracle's environment changes.
+reaches, standard library included (``docs/architecture.md``,
+"Recursion Depth", "Frames And C Units"). The port models those frames
+as constants where they do not depend on the input
+(``crates/pdfminer/src/cmapdb.rs``: ``_load_data``); this module measures
+them, so that the constants can be checked again when the oracle's
+environment changes.
 
 A profile hook (``sys.setprofile``) keeps two integers, the current depth
 and the deepest one, relative to the caller of the measured function: memory
 stays constant whatever the call does. ``deepest_path`` also copies the
 names of the frames on the stack, but only when a new maximum is reached
 (at most a few dozen times per call). Never record the stack on every call:
-an unbounded probe that did grew to 18 GB and froze the machine
+an unbounded probe can grow to tens of GB and freeze the machine
 (``AGENTS.md``). Run it under explicit limits::
 
     timeout 15m prlimit --as=4294967296 -- .venv/bin/python -m oracle.depth_probe cmaps

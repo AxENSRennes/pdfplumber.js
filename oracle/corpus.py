@@ -1,6 +1,6 @@
 """PDF sets for oracle traces and parity runs.
 
-Sets (``docs/verification.md``, "Ensembles de PDF"), all relative to the corpus
+Sets (``docs/verification.md``, "Corpus Sets"), all relative to the corpus
 root ``PDFPLUMBER_ROOT`` (default: the repository holding this package; in a
 git worktree, point it at the main checkout, which has the downloaded PDFs and
 initialized submodules):

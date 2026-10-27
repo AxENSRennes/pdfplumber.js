@@ -4,7 +4,7 @@
 
 writes ``crates/pdfminer/src/pdffont/tables.rs``: ``NIBBLES`` and
 ``CFFFont.STANDARD_STRINGS``, read from the imported module (never copied by
-hand, ``docs/architecture.md``, "Données upstream"), with their ``file:line``
+hand, ``docs/architecture.md``, "Upstream Data"), with their ``file:line``
 references. ``--check`` exits 1 if the file is not what this script generates
 (``scripts/check.sh`` runs it).
 """

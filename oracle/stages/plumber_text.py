@@ -52,7 +52,7 @@ A derivation step is a list:
 - ``["dedupe_chars", kwargs]``: ``page.dedupe_chars(**kwargs)``.
 
 Search: the port does not run Python's ``re`` (``docs/architecture.md``,
-"Frontière JavaScript"): ``TextMap.search`` takes the matches. Before the
+"JavaScript Boundary"): ``TextMap.search`` takes the matches. Before the
 result of a ``search`` op, the ``spans`` line gives the matches of Python's
 ``re`` on the page's text map (``re.finditer`` of ``re.compile(pattern if
 regex else re.escape(pattern), re.I if case is False else 0)`` on

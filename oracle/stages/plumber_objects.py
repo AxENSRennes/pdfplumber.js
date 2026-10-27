@@ -44,7 +44,7 @@ figure's) is ``str(id(stream))``
 ``Names`` writes such a name ``inline{"n": k}``, ``k`` numbering the
 distinct inline names of the page's images in the order of
 ``page.objects["image"]`` (the port names them ``inline-<j>``,
-``docs/architecture.md``, "Vague 3"). A value that is a
+``docs/architecture.md``, "Inline Image Names"). A value that is a
 pdfplumber ``Page`` (``annot["P"]``, which ``Page.annots`` replaces by the
 page itself) is written ``Page{"page_number": n}``.
 

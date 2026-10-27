@@ -78,14 +78,14 @@ GENERATORS: dict[str, tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]] = {
     # adv-plumber (written by "plumber", run before; minutes)
     "plumber_sweep": (("meta.json",), ((),)),
     # Page.process_object of each kind of layout object from the deepest
-    # entry along each counter, the layout computed first (wave 5, PERF;
-    # reads adv-plumber, written by "plumber", run before; seconds)
+    # entry along each counter, the layout computed first (reads
+    # adv-plumber, written by "plumber", run before; seconds)
     "plumber_frames": (("meta.json",), ((),)),
     # the adversarial corpus adv-structure (written first), then the
     # plumber_doc traces on it and on the quick files with structure trees,
     # metadata containers or annotations; codecs cases (minutes)
     "structure": (("meta.json",), ((),)),
-    # sessions of the public JavaScript API (wave 5): calls, the statements
+    # sessions of the public JavaScript API: calls, the statements
     # of js_pages_run.py they run, Python's results; reads adv-plumber
     # (written by "plumber", run before; a minute)
     "js_api": (("meta.json",), ((),)),
