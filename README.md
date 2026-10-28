@@ -15,6 +15,9 @@ PDFs and about 1,600 generated edge cases: same characters, same words, same
 tables. It runs entirely on the user's machine, so documents never leave it,
 and it is about 6 times as fast as Python pdfplumber.
 
+**[Try it in your browser →](https://axensrennes.github.io/pdfplumber.js/)** Drop a PDF and see its
+words, lines and tables, extracted on your machine.
+
 - [Why pdfplumber.js](#why-pdfplumberjs)
 - [What works](#what-works)
 - [What doesn't work](#what-doesnt-work)
