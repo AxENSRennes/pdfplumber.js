@@ -5,13 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>pdfplumber.js demo</title>
   <meta name="description" content="pdfplumber for JavaScript: chars, words, text and tables from any PDF, extracted in your browser with WebAssembly. The same results as Python pdfplumber." />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='5' y='3' width='22' height='26' rx='3' fill='%23fff' stroke='%23155e75' stroke-width='2'/%3E%3Crect x='9' y='9' width='14' height='10' fill='none' stroke='%230891b2' stroke-width='2'/%3E%3Cpath d='M9 14h14M16 9v10' stroke='%230891b2' stroke-width='1.5'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="style.css" />
   <link rel="modulepreload" href="pdfplumber/index.js" />
 </head>
 <body>
   <header class="top">
-    <a class="brand" href="./"><span class="brand-mark" aria-hidden="true"></span>pdfplumber.js</a>
+    <a class="brand" href="./">pdfplumber.js</a>
     <nav class="links">
       <a href="https://github.com/AxENSRennes/pdfplumber.js">GitHub</a>
       <a href="https://www.npmjs.com/package/pdfplumber-js">npm</a>
@@ -21,8 +20,8 @@
 
   <section class="hero">
     <h1>Python pdfplumber, in the browser.</h1>
-    <p>Characters, words, lines, rectangles, text and tables from any PDF, with the same results as Python
-      <a href="https://github.com/jsvine/pdfplumber">pdfplumber</a>. A Rust port compiled to WebAssembly: no server, no upload.</p>
+    <p>Words, lines and tables from any PDF, with the same results as
+      <a href="https://github.com/jsvine/pdfplumber">pdfplumber</a>. Your file never leaves your browser.</p>
   </section>
 
   <section class="source" aria-label="Choose a PDF">
@@ -31,7 +30,6 @@
       Open a PDF
     </label>
     <input id="file" type="file" accept="application/pdf,.pdf" hidden />
-    <span class="or">or drop one anywhere, or try</span>
     <div class="samples" id="samples"></div>
   </section>
 
@@ -68,23 +66,18 @@
         <button role="tab" id="tab-code" aria-controls="panel-code" aria-selected="false" tabindex="-1">Code</button>
       </div>
       <div class="tabpanel" role="tabpanel" id="panel-text" aria-labelledby="tab-text">
-        <p class="call"><code>await page.extractText()</code></p>
         <pre class="text" id="text"></pre>
       </div>
       <div class="tabpanel" role="tabpanel" id="panel-layout" aria-labelledby="tab-layout" hidden>
-        <p class="call"><code>await page.extractText({ layout: true })</code></p>
         <pre class="text layout" id="layout"></pre>
       </div>
       <div class="tabpanel" role="tabpanel" id="panel-words" aria-labelledby="tab-words" hidden>
-        <p class="call"><code>await page.extractWords()</code> <span class="hint">Hover a row to find the word on the page.</span></p>
         <div class="scroll"><table class="words" id="words"></table></div>
       </div>
       <div class="tabpanel" role="tabpanel" id="panel-tables" aria-labelledby="tab-tables" hidden>
         <div class="call table-settings">
-          <code>await page.findTables({</code>
-          <label>vertical_strategy: <select id="vstrategy"><option>lines</option><option>text</option></select></label><code>,</code>
-          <label>horizontal_strategy: <select id="hstrategy"><option>lines</option><option>text</option></select></label>
-          <code>})</code>
+          <label>Columns <select id="vstrategy"><option>lines</option><option>text</option></select></label>
+          <label>Rows <select id="hstrategy"><option>lines</option><option>text</option></select></label>
         </div>
         <div id="tables"></div>
       </div>
@@ -97,19 +90,14 @@
           <button class="button small" id="copy">Copy</button>
         </div>
         <pre class="code" id="code"></pre>
-        <p class="code-note" id="code-note"></p>
       </div>
     </section>
   </main>
 
   <footer class="foot">
-    <p><strong>pdfplumber.js</strong> is an independent port of <a href="https://github.com/jsvine/pdfplumber">pdfplumber</a>
-      and <a href="https://github.com/pdfminer/pdfminer.six">pdfminer.six</a>, MIT licensed.
-      <code>npm install pdfplumber-js</code></p>
-    <p>Sample PDFs: U.S. government documents from pdfplumber's test suite. Pages are drawn with
-      <a href="https://github.com/mozilla/pdf.js">pdf.js</a>; everything else comes from pdfplumber.js.
-      In the browser console, <code>demo.page</code> is the current page: try <code>await demo.page.extractTextLines()</code>.</p>
-    <p><a href="LICENSE">License</a> · <a href="THIRD_PARTY_NOTICES">Third-party notices</a></p>
+    <p>An independent port of <a href="https://github.com/jsvine/pdfplumber">pdfplumber</a> and
+      <a href="https://github.com/pdfminer/pdfminer.six">pdfminer.six</a> · MIT ·
+      <a href="THIRD_PARTY_NOTICES">Notices</a></p>
   </footer>
 
   <div class="drop" id="drop" hidden><p>Drop the PDF to open it</p></div>

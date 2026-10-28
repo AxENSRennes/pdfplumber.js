@@ -14,9 +14,9 @@ const SAMPLES = [
 const LAYERS = [
   { id: "chars", color: "#2563eb", on: false },
   { id: "words", color: "#16a34a", on: true },
-  { id: "lines", color: "#dc2626", on: true },
-  { id: "rects", color: "#ea580c", on: true },
-  { id: "curves", color: "#c026d3", on: true },
+  { id: "lines", color: "#dc2626", on: false },
+  { id: "rects", color: "#ea580c", on: false },
+  { id: "curves", color: "#c026d3", on: false },
   { id: "tables", color: "#0891b2", on: true },
 ];
 
@@ -236,35 +236,16 @@ function renderStatus() {
   const d = state.data;
   $("headline").innerHTML = "";
   $("headline").append(
-    `Page ${d.page.page_number} parsed in `,
+    `${state.name}, page ${d.page.page_number}: parsed in `,
     Object.assign(document.createElement("strong"), { textContent: ms(d.pageMs) }),
-    ", in your browser. The file never leaves your machine.",
+    ".",
   );
   renderCounts();
 }
 
 function renderCounts() {
   const d = state.data;
-  const size = state.size > 1e6 ? `${(state.size / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(state.size / 1e3))} kB`;
-  const details = $("details");
-  details.replaceChildren();
-  const line1 = document.createElement("span");
-  line1.textContent = [
-    `${state.name} (${size}, ${plural(state.pages.length, "page")})`,
-    `open() ${ms(state.openMs)}`,
-    `engine startup ${ms(state.engineMs)}, once`,
-    useWorker ? "WebAssembly in a Web Worker" : "WebAssembly on the main thread",
-  ].join(" · ");
-  const line2 = document.createElement("span");
-  line2.textContent = [
-    plural(d.chars.length, "char"),
-    plural(d.words.length, "word"),
-    plural(d.lines.length, "line"),
-    plural(d.rects.length, "rect"),
-    plural(d.curves.length, "curve"),
-    plural(d.tables.length, "table"),
-  ].join(" · ");
-  details.append(line1, line2);
+  $("details").replaceChildren();
   $("count-words").textContent = nf.format(d.words.length);
   $("count-tables").textContent = nf.format(d.tables.length);
 }
@@ -535,18 +516,13 @@ function renderTables() {
   const d = state.data;
   const root = $("tables");
   root.replaceChildren();
-  const timing = document.createElement("p");
-  timing.className = "hint";
-  timing.textContent =
-    `${plural(d.tables.length, "table")} found` + (d.tablesMs === null ? "." : ` and extracted in ${ms(d.tablesMs)}.`);
-  root.append(timing);
   if (!d.tables.length) {
     const p = document.createElement("p");
     p.className = "empty";
     p.textContent =
       state.strategy.v === "lines" || state.strategy.h === "lines"
-        ? 'No table here with these settings. Tables without ruling lines are found with the "text" strategy.'
-        : "No table here with these settings.";
+        ? 'No table found. Try "text" for tables without ruling lines.'
+        : "No table found.";
     root.append(p);
     return;
   }
@@ -556,8 +532,7 @@ function renderTables() {
     figure.dataset.i = String(i);
     const caption = document.createElement("figcaption");
     const cols = Math.max(0, ...t.rows.map((r) => r.length));
-    caption.innerHTML = `<strong>Table ${i + 1}</strong> · ${t.rows.length} × ${cols} · bbox <code></code>`;
-    caption.querySelector("code").textContent = `[${t.bbox.map((v) => num(v)).join(", ")}]`;
+    caption.innerHTML = `<strong>Table ${i + 1}</strong> · ${t.rows.length} × ${cols}`;
     const wrap = document.createElement("div");
     wrap.className = "scroll";
     const table = document.createElement("table");
@@ -673,10 +648,6 @@ function highlightCode(src, lang) {
 function renderCode() {
   if (!state.data) return;
   $("code").innerHTML = highlightCode(codeFor(state.lang), state.lang);
-  $("code-note").textContent =
-    state.lang === "js"
-      ? "The counts are this page's. pdfplumber.js keeps pdfplumber's option and key names; every method also has its snake_case name."
-      : "The same extraction in Python pdfplumber. It gives the same chars, words, text and tables, checked on thousands of PDFs.";
 }
 
 for (const lang of ["js", "py"]) {

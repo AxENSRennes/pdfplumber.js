@@ -819,3 +819,10 @@ pre.code .k {
 [hidden] {
   display: none !important;
 }
+
+/* phones: the five tabs fit without scrolling */
+@media (max-width: 480px) {
+  .tabs { padding: 0 2px; gap: 0; }
+  .tabs button { padding: 11px 8px 9px; }
+  .tabs .count { display: none; }
+}

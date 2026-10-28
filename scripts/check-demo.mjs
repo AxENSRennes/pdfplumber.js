@@ -227,7 +227,7 @@ for (const browserName of BROWSERS) {
       await s.page.goto(URL_());
       check((await ready(s.page)) === "ready", "the default sample is extracted");
       const headline = await s.page.textContent("#headline");
-      check(/^Page 1 parsed in [\d.,]+ ms, in your browser/.test(headline), `headline: "${headline}"`);
+      check(/, page 1: parsed in [\d.,]+ ms\.$/.test(headline), `headline: "${headline}"`);
       check(s.workers.some((u) => u.endsWith("/pdfplumber/worker.js")), "the engine runs in pdfplumber/worker.js");
       await alignedOk(s.page, "NICS table");
       await s.page.click("#tab-tables");
@@ -277,7 +277,7 @@ for (const browserName of BROWSERS) {
       await ready(s.page);
       for (const file of [join(DIR, "samples/senate-expenditures.pdf"), ...PDFS]) {
         await s.page.setInputFiles("#file", file);
-        await s.page.waitForFunction((n) => window.demo?.pdf && document.getElementById("headline").textContent.includes("parsed") && window.demo.data && document.getElementById("details").textContent.startsWith(n), basename(file), { timeout: 60_000 });
+        await s.page.waitForFunction((n) => window.demo?.pdf && document.getElementById("headline").textContent.includes("parsed") && window.demo.data && document.getElementById("headline").textContent.startsWith(n), basename(file), { timeout: 60_000 });
         const state = await ready(s.page);
         check(state === "ready", `${basename(file)} opened from the file picker`);
         if (state === "ready") await alignedOk(s.page, basename(file));
@@ -295,7 +295,7 @@ for (const browserName of BROWSERS) {
         for (const type of ["dragenter", "dragover", "drop"])
           window.dispatchEvent(new DragEvent(type, { dataTransfer: data, bubbles: true, cancelable: true }));
       });
-      await s.page.waitForFunction(() => document.getElementById("details").textContent.startsWith("dropped.pdf"), null, { timeout: 60_000 });
+      await s.page.waitForFunction(() => document.getElementById("headline").textContent.startsWith("dropped.pdf"), null, { timeout: 60_000 });
       check((await ready(s.page)) === "ready", "a PDF dropped on the page is opened");
       check(await s.page.locator("#drop").isHidden(), "the drop hint is hidden after the drop");
       await s.page.click("#tab-tables");
