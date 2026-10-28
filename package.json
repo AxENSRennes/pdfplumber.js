@@ -69,6 +69,8 @@
     "build:wasm": "node scripts/build-wasm.mjs",
     "build:cmaps": "node scripts/build-cmaps.mjs",
     "build:js": "node scripts/build-js.mjs",
+    "build:demo": "node scripts/build-demo.mjs",
+    "check:demo": "node scripts/check-demo.mjs",
     "test:js": "vitest run --config js/vitest.config.ts",
     "test:browsers": "scripts/check-browsers.sh",
     "typecheck": "tsc -p js/tsconfig.test.json",

@@ -18,3 +18,4 @@ corpus/external-holdout/*.pdf
 # Playwright and profiler outputs
 playwright-report/
 *.cpuprofile
+demo/dist/

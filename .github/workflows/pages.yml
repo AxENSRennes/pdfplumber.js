@@ -1,0 +1,83 @@
+# The online demo (demo/) on GitHub Pages: builds the package as it ships
+# (scripts/build.mjs: WebAssembly engine, CMaps, browser build), then the
+# demo's static folder (scripts/build-demo.mjs), checks it in Chromium
+# (scripts/check-demo.mjs), and deploys it.
+#
+# Needs Settings > Pages > Source: "GitHub Actions".
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# one deployment at a time; a newer push waits for the running one
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      # pdfplumber's sources (the Python environment that writes the CMaps
+      # installs it) and its test PDFs (the demo's samples); the other
+      # submodules are not needed
+      - name: Submodule upstream/pdfplumber-python
+        run: git submodule update --init --depth 1 upstream/pdfplumber-python
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      # Python 3.12 (.python-version) and pdfminer.six, for the CMaps
+      # (scripts/build-cmaps.mjs runs .venv/bin/python -m oracle.codegen.cmaps)
+      - uses: astral-sh/setup-uv@v6
+      - name: Python environment
+        run: uv sync --frozen
+
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build the package
+        run: node scripts/build.mjs
+        env:
+          CARGO_BUILD_JOBS: 4
+
+      - name: Build the demo
+        run: node scripts/build-demo.mjs
+
+      - name: Check the demo in Chromium
+        run: |
+          npx playwright install --with-deps chromium
+          node scripts/check-demo.mjs --browsers chromium
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: demo/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
